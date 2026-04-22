@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drafter Item Editor — Joinery Production</title>
+<style>
+:root{
+  --font-sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+  --font-mono: "SF Mono",Menlo,Monaco,Consolas,monospace;
+  --color-background-primary:#ffffff;
+  --color-background-secondary:#f9fafb;
+  --color-background-tertiary:#f3f4f6;
+  --color-background-info:#dbeafe;
+  --color-background-success:#dcfce7;
+  --color-background-warning:#fef3c7;
+  --color-background-danger:#fee2e2;
+  --color-border-primary:#d1d5db;
+  --color-border-secondary:#9ca3af;
+  --color-border-tertiary:#e5e7eb;
+  --color-border-success:#16a34a;
+  --color-border-danger:#dc2626;
+  --color-text-primary:#111827;
+  --color-text-secondary:#6b7280;
+  --color-text-tertiary:#9ca3af;
+  --color-text-info:#1e40af;
+  --color-text-success:#166534;
+  --color-text-warning:#854d0e;
+  --color-text-danger:#991b1b;
+  --border-radius-md:6px;
+  --border-radius-lg:10px;
+}
+*{box-sizing:border-box;}
+body{font-family:var(--font-sans);color:var(--color-text-primary);background:var(--color-background-secondary);margin:0;padding:0;font-size:13px;}
+
+/* ── Page frame ───────────────────────────────────────────────── */
+.page{max-width:1400px;margin:0 auto;background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);min-height:100vh;display:flex;flex-direction:column;}
+
+.ed-head{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.25rem;background:#f9fafb;border-bottom:.5px solid var(--color-border-tertiary);gap:12px;flex-wrap:wrap;}
+.ed-back{background:none;border:.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);padding:5px 11px;font-size:12px;cursor:pointer;font-family:var(--font-sans);color:var(--color-text-primary);}
+.ed-back:hover{background:var(--color-background-tertiary);}
+.ed-title{font-size:13px;font-weight:500;color:var(--color-text-primary);letter-spacing:.04em;text-transform:uppercase;}
+.ed-cutlist{font-family:var(--font-mono);font-size:14px;font-weight:500;background:#f3f4f6;color:#111827;padding:3px 10px;border-radius:var(--border-radius-md);}
+.ed-project{font-size:11px;color:var(--color-text-secondary);}
+.ed-item-switch{font-size:12px;padding:4px 8px;border:.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);font-family:var(--font-mono);}
+.ed-lock{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:4px 10px;border-radius:var(--border-radius-md);border:.5px solid var(--color-border-primary);cursor:pointer;background:#ffffff;font-family:var(--font-sans);color:var(--color-text-primary);}
+.ed-lock.locked{background:#fee2e2;color:#991b1b;border-color:#dc2626;}
+.ed-lock.unlocked{background:#dcfce7;color:#166534;border-color:#16a34a;}
+
+/* ── Body: split ──────────────────────────────────────────────── */
+.ed-body{flex:1;display:grid;grid-template-columns:320px 1fr;overflow:hidden;min-height:0;}
+.ed-left{padding:1rem 1.1rem;border-right:.5px solid var(--color-border-tertiary);overflow-y:auto;background:#ffffff;}
+.ed-right{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+
+/* ── Metadata panel ───────────────────────────────────────────── */
+.sect-title{font-size:10px;font-weight:600;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.05em;margin:.9rem 0 .35rem;padding-bottom:3px;border-bottom:.5px solid var(--color-border-tertiary);}
+.sect-title:first-child{margin-top:0;}
+.fld{display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:.5px dashed #f3f4f6;}
+.fld > label{width:120px;flex-shrink:0;font-size:10px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;padding-top:6px;}
+.fld > .fval{flex:1;min-width:0;}
+.finp,select.finp,textarea.finp{padding:5px 7px;border:.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);font-size:12px;background:#ffffff;color:#111827;font-family:var(--font-sans);width:100%;box-sizing:border-box;}
+.finp:focus{outline:none;border-color:#111827;}
+textarea.finp{resize:vertical;min-height:54px;}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;}
+.chk input{accent-color:#111827;}
+
+/* ── Right-side tabs ──────────────────────────────────────────── */
+.ed-tabs{display:flex;border-bottom:.5px solid var(--color-border-tertiary);background:#f9fafb;flex-shrink:0;}
+.ed-tab{padding:8px 16px;font-size:12px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--color-text-secondary);font-family:var(--font-sans);}
+.ed-tab.active{border-bottom-color:#111827;color:#111827;font-weight:500;background:#ffffff;}
+.ed-tab:hover:not(.active){color:#111827;}
+.ed-panel{flex:1;overflow-y:auto;padding:1rem 1.25rem;display:none;min-height:0;}
+.ed-panel.active{display:block;}
+
+/* ── Toolbar inside panel ─────────────────────────────────────── */
+.toolbar{display:flex;gap:8px;margin-bottom:.75rem;align-items:center;flex-wrap:wrap;}
+.btn{padding:5px 12px;border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;border:.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-primary);font-family:var(--font-sans);}
+.btn:hover{background:var(--color-background-tertiary);}
+.btn-primary{background:#111827;color:#ffffff;border-color:#111827;}
+.btn-primary:hover{background:#000;}
+.btn-ghost{border-color:var(--color-border-tertiary);color:var(--color-text-secondary);}
+.btn-xs{padding:2px 7px;font-size:11px;}
+
+/* ── Parts / hardware table ───────────────────────────────────── */
+.grid-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.grid-tbl th{text-align:left;padding:6px 7px;border-bottom:.5px solid var(--color-border-tertiary);font-size:10px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;background:#f9fafb;}
+.grid-tbl td{padding:4px 6px;border-bottom:.5px solid var(--color-border-tertiary);vertical-align:middle;}
+.grid-tbl tr:hover td{background:var(--color-background-secondary);}
+.grid-tbl input,.grid-tbl select{width:100%;padding:4px 6px;border:.5px solid var(--color-border-primary);border-radius:4px;font-size:11px;background:#ffffff;color:#111827;font-family:var(--font-sans);box-sizing:border-box;}
+.grid-tbl input:focus,.grid-tbl select:focus{outline:none;border-color:#111827;}
+.grid-tbl input[type=number]{font-family:var(--font-mono);text-align:right;}
+.grid-tbl .col-qty{width:48px;}
+.grid-tbl .col-dim{width:72px;}
+.grid-tbl .col-act{width:40px;text-align:right;}
+.grid-tbl .col-mat{width:160px;}
+.grid-tbl .col-paint{width:120px;}
+.grid-tbl .col-edge{width:80px;}
+.grid-tbl .col-avail{width:150px;}
+.rm-line{background:none;border:none;color:var(--color-text-tertiary);cursor:pointer;font-size:14px;}
+.rm-line:hover{color:var(--color-text-danger);}
+
+/* ── Module grouping row ──────────────────────────────────────── */
+.mod-hdr{background:#f3f4f6;font-weight:500;}
+.mod-hdr td{padding:6px 8px;font-size:11px;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.04em;}
+.mod-hdr .mod-no{font-family:var(--font-mono);background:#ffffff;padding:1px 7px;border-radius:3px;margin-right:6px;border:.5px solid var(--color-border-primary);}
+
+/* ── CV import widget ─────────────────────────────────────────── */
+.cv-import{border:1.5px dashed var(--color-border-primary);border-radius:var(--border-radius-md);padding:1rem;background:#f9fafb;margin-bottom:1rem;}
+.cv-import .cv-title{font-size:12px;font-weight:500;margin-bottom:4px;}
+.cv-import .cv-hint{font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;}
+.cv-import textarea{width:100%;min-height:60px;font-family:var(--font-mono);font-size:11px;padding:6px 8px;border:.5px solid var(--color-border-primary);border-radius:var(--border-radius-md);}
+
+/* ── Availability pills ───────────────────────────────────────── */
+.avail{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:500;white-space:nowrap;font-family:var(--font-mono);}
+.avail-stock{background:var(--color-background-success);color:var(--color-text-success);}
+.avail-eta{background:var(--color-background-info);color:var(--color-text-info);}
+.avail-late{background:var(--color-background-warning);color:var(--color-text-warning);}
+.avail-missing{background:var(--color-background-danger);color:var(--color-text-danger);}
+
+/* ── Footer actions ───────────────────────────────────────────── */
+.ed-foot{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1.25rem;border-top:.5px solid var(--color-border-tertiary);background:#f9fafb;gap:8px;flex-wrap:wrap;}
+.ed-foot .grp{display:flex;gap:6px;flex-wrap:wrap;}
+
+/* ── Edit log ─────────────────────────────────────────────────── */
+.log-block{font-family:var(--font-mono);font-size:11px;background:#f9fafb;border:.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 10px;max-height:260px;overflow-y:auto;line-height:1.55;color:var(--color-text-secondary);}
+.log-line{border-bottom:.5px dashed #f3f4f6;padding:2px 0;}
+.log-line:last-child{border-bottom:none;}
+
+/* ── Board tab placeholder ────────────────────────────────────── */
+.board-placeholder{border:1px dashed var(--color-border-primary);border-radius:var(--border-radius-md);padding:2rem;text-align:center;color:var(--color-text-secondary);background:#f9fafb;font-size:12px;}
+
+/* ── Toast ────────────────────────────────────────────────────── */
+.toast{position:fixed;bottom:20px;right:20px;background:#111827;color:#ffffff;padding:8px 14px;border-radius:var(--border-radius-md);font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:opacity .15s,transform .15s;pointer-events:none;z-index:200;}
+.toast.show{opacity:1;transform:translateY(0);}
+
+/* ── Lock banner ──────────────────────────────────────────────── */
+.lock-banner{padding:7px 12px;background:var(--color-background-warning);color:var(--color-text-warning);font-size:11px;border-bottom:.5px solid var(--color-border-tertiary);display:none;}
+.lock-banner.show{display:block;}
+
+/* ── Small-screen collapse ────────────────────────────────────── */
+@media(max-width:860px){.ed-body{grid-template-columns:1fr;}.ed-left{border-right:none;border-bottom:.5px solid var(--color-border-tertiary);}}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <div class="ed-head">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="ed-back" onclick="goBackToProject()">← Back to Project</button>
+      <select class="ed-item-switch" id="item-switch" onchange="switchItem(this.value)"></select>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="ed-title">Item Details</div>
+      <div class="ed-project" id="proj-name">Alfred Level 3 Fitout</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="ed-cutlist" id="cutlist-badge">CUTLIST # 297871</span>
+      <button class="ed-lock unlocked" id="lock-btn" onclick="toggleLock()">🔓 Unlocked</button>
+    </div>
+  </div>
+
+  <div class="lock-banner" id="lock-banner">This item is locked by another Drafter — read-only.</div>
+
+  <!-- ── Body ────────────────────────────────────────────────── -->
+  <div class="ed-body">
+
+    <!-- Left metadata panel -->
+    <div class="ed-left">
+      <div class="sect-title">Identification</div>
+      <div class="fld"><label>Cutlist #</label><div class="fval"><input class="finp mono" id="m-num" readonly></div></div>
+      <div class="fld"><label>Item ID</label><div class="fval"><input class="finp mono" id="m-itemCode"></div></div>
+      <div class="fld"><label>Group ID</label><div class="fval"><input class="finp mono" id="m-groupId"></div></div>
+      <div class="fld"><label>Code</label><div class="fval"><input class="finp" id="m-code"></div></div>
+
+      <div class="sect-title">Location</div>
+      <div class="fld"><label>Level</label><div class="fval"><input class="finp" id="m-level"></div></div>
+      <div class="fld"><label>Room #</label><div class="fval"><input class="finp" id="m-rmNo"></div></div>
+      <div class="fld"><label>Room Name</label><div class="fval"><input class="finp" id="m-rmDesc"></div></div>
+      <div class="fld"><label>Stage (site)</label><div class="fval">
+        <select class="finp" id="m-stage">
+          <option>Joinery Lab</option>
+          <option>Joinery General</option>
+          <option>PC2</option>
+          <option>Stone</option>
+          <option>Block B</option>
+        </select></div></div>
+      <div class="fld"><label>Zone</label><div class="fval"><input class="finp mono" id="m-zone"></div></div>
+
+      <div class="sect-title">Description</div>
+      <div class="fld"><label>Description</label><div class="fval"><textarea class="finp" id="m-desc"></textarea></div></div>
+      <div class="fld"><label>Size (mm)</label><div class="fval"><input class="finp mono" type="number" id="m-size"></div></div>
+      <div class="fld"><label>Qty</label><div class="fval"><input class="finp mono" type="number" id="m-qty"></div></div>
+
+      <div class="sect-title">Assignments</div>
+      <div class="fld"><label>Assembler</label><div class="fval"><input class="finp" id="m-assembler"></div></div>
+      <div class="fld"><label>Lister</label><div class="fval"><input class="finp" id="m-lister"></div></div>
+
+      <div class="sect-title">Options</div>
+      <div class="fld"><label>Painting Req</label><div class="fval"><label class="chk"><input type="checkbox" id="m-painting"> Yes</label></div></div>
+      <div class="fld"><label>Solid Surface</label><div class="fval"><label class="chk"><input type="checkbox" id="m-solid"> Yes</label></div></div>
+      <div class="fld"><label>Cutlist Printed</label><div class="fval"><label class="chk"><input type="checkbox" id="m-printed"> Yes</label></div></div>
+
+      <div class="sect-title">Files</div>
+      <div class="fld"><label>CV File</label><div class="fval"><input class="finp mono" id="m-cv"></div></div>
+      <div class="fld"><label>SketchUp</label><div class="fval"><input class="finp mono" id="m-skp"></div></div>
+      <div class="fld"><label>Floor Plan</label><div class="fval"><input class="finp mono" id="m-fp"></div></div>
+
+      <div class="sect-title">Notes</div>
+      <div class="fld"><label>Estimator</label><div class="fval"><textarea class="finp" id="m-notes"></textarea></div></div>
+    </div>
+
+    <!-- Right tabs -->
+    <div class="ed-right">
+      <div class="ed-tabs">
+        <button class="ed-tab active" data-tab="cutlist"  onclick="switchEdTab('cutlist')">Cutlist</button>
+        <button class="ed-tab"        data-tab="hardware" onclick="switchEdTab('hardware')">Hardware</button>
+        <button class="ed-tab"        data-tab="board"    onclick="switchEdTab('board')">Board</button>
+        <button class="ed-tab"        data-tab="log"      onclick="switchEdTab('log')">Log</button>
+      </div>
+
+      <!-- Cutlist tab -->
+      <div class="ed-panel active" id="panel-cutlist">
+
+        <div class="cv-import">
+          <div class="cv-title">🗂 Import from Cabinet Vision</div>
+          <div class="cv-hint">Paste CV CSV export (or choose a file). Creates Module → Part rows under this item. <strong>Edging spec</strong> and <strong>paint instruction</strong> are not exported by CV — you fill these in below.</div>
+          <textarea id="cv-csv" placeholder="MOD 1,Part Name,Qty,Len,Wid,Material,Edge,Colour,Comment
+1,Side Panel L,1,720,580,18-PB,2mm,White,&#10;1,Side Panel R,1,720,580,18-PB,2mm,White,"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <input type="file" id="cv-file" accept=".csv" style="font-size:11px;">
+            <button class="btn btn-primary btn-xs" onclick="importCV()">Import</button>
+            <button class="btn btn-xs btn-ghost" onclick="document.getElementById('cv-csv').value=''">Clear</button>
+            <span style="flex:1;"></span>
+            <span class="log-line" style="font-size:11px;color:var(--color-text-secondary);" id="cv-status"></span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn btn-xs" onclick="addModule()">+ Module</button>
+          <button class="btn btn-xs" onclick="addPart()">+ Part</button>
+          <span style="flex:1;"></span>
+          <span class="log-line" style="font-size:11px;color:var(--color-text-secondary);" id="parts-count"></span>
+        </div>
+
+        <table class="grid-tbl">
+          <thead>
+            <tr>
+              <th class="col-qty">Qty</th>
+              <th>Part Name</th>
+              <th class="col-dim">Len (mm)</th>
+              <th class="col-dim">Wid (mm)</th>
+              <th class="col-mat">Material</th>
+              <th class="col-edge">Edge</th>
+              <th class="col-edge">Edging Spec</th>
+              <th>Colour</th>
+              <th class="col-paint">Paint Instruction</th>
+              <th>Comment</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="parts-body"></tbody>
+        </table>
+
+        <div style="margin-top:1rem;">
+          <div class="sect-title" style="margin-top:0;">Cutlist Note</div>
+          <textarea class="finp" id="cutlist-note" style="min-height:50px;" placeholder="Note that appears on printed Cutlist PDF..."></textarea>
+        </div>
+      </div>
+
+      <!-- Hardware tab -->
+      <div class="ed-panel" id="panel-hardware">
+        <div class="toolbar">
+          <button class="btn btn-xs" onclick="addHardwareLine()">+ Hardware Line</button>
+          <button class="btn btn-xs btn-ghost" onclick="openCatalogAdder()">+ Add from Global Catalog</button>
+          <span style="flex:1;"></span>
+          <span class="log-line" style="font-size:11px;color:var(--color-text-secondary);" id="hw-count"></span>
+        </div>
+
+        <table class="grid-tbl">
+          <thead>
+            <tr>
+              <th class="col-qty">Qty</th>
+              <th class="col-mat">Material (Project Catalog)</th>
+              <th>Description</th>
+              <th>Supplier</th>
+              <th class="col-avail">Availability</th>
+              <th>Note</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="hw-body"></tbody>
+        </table>
+
+        <div style="margin-top:1rem;font-size:11px;color:var(--color-text-secondary);">
+          Material picker resolves via <code>project_hardware_catalog</code>. Availability derived live from <code>batch_allocations → procurement_batches.eta</code>.
+        </div>
+      </div>
+
+      <!-- Board tab -->
+      <div class="ed-panel" id="panel-board">
+        <div class="board-placeholder">
+          <div style="font-weight:500;margin-bottom:6px;">Board Optimisation (project-level)</div>
+          <div>View of the project's CutPlan scoped to this item's parts.<br>Editable only by the project's Optimisation Drafter.</div>
+          <div style="margin-top:12px;font-size:11px;">v1: view-only. v2: wires to the Machine team's Cut Schedule.</div>
+        </div>
+      </div>
+
+      <!-- Log tab -->
+      <div class="ed-panel" id="panel-log">
+        <div class="sect-title" style="margin-top:0;">Edit History</div>
+        <div class="log-block" id="log-body"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <div class="ed-foot">
+    <div class="grp">
+      <button class="btn btn-xs" onclick="printCutlist()">🖨 Print Cutlist</button>
+      <button class="btn btn-xs" onclick="printHardware()">🖨 Print Hardware</button>
+      <button class="btn btn-xs btn-primary" onclick="printCombined()">🖨 Print Combined PDF</button>
+    </div>
+    <div class="grp">
+      <span style="font-size:11px;color:var(--color-text-secondary);" id="save-state">All changes saved.</span>
+      <button class="btn btn-xs" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   Seed data — mirrors trackingv2_schema.sql.
+   In a real build, fetched from the API.
+   ============================================================ */
+
+const CURRENT_USER = { user_id: 1, username: 'DAVIDM', full_name: 'David M', role: 'DRAFTER' };
+
+const PROJECT = { project_id: 1, name: 'Alfred Level 3 Fitout', project_code: '2273' };
+
+/* Board materials (board_materials table) */
+const BOARD_MATERIALS = [
+  { material_id: 1, code: '18-PB',          description: '18mm Particle Board' },
+  { material_id: 2, code: '32-MDF',         description: '32mm MDF' },
+  { material_id: 3, code: '16-BLACK',       description: '16mm Black Melamine' },
+  { material_id: 4, code: '19-A/WALNUT/BAM X', description: '19mm A-Grade Walnut Veneer / BAM X' },
+  { material_id: 5, code: '25-SS304',       description: '25mm Stainless 304 Sheet' },
+];
+
+/* Hardware materials (hardware_materials) */
+const HARDWARE_MATERIALS = [
+  { material_id: 101, sku: '700.0KC2.054.00', description: 'Blum Clip-Top Hinge 110°', supplier: 'Lincoln Sentry', brand: 'Blum' },
+  { material_id: 102, sku: '550H4000',        description: 'Blum Tandem Runner 400mm',  supplier: 'Lincoln Sentry', brand: 'Blum' },
+  { material_id: 103, sku: 'HAF-192-HANDLE',  description: 'D-Handle 192mm Brushed SS',  supplier: 'Häfele',         brand: 'Häfele' },
+  { material_id: 104, sku: 'HET-SHELFPIN-5',  description: 'Shelf Pin 5mm',              supplier: 'Hettich',        brand: 'Hettich' },
+  { material_id: 105, sku: 'BLUM-BLUMOTION',  description: 'Blumotion Soft-close Adapter', supplier: 'Lincoln Sentry', brand: 'Blum' },
+];
+
+/* Extra catalogs (custom_made / benchtop_materials / appliances / equipment_hire) */
+const CUSTOM_MADE = [
+  { material_id: 201, internal_ref: 'CM-SIGNBOX-01', description: 'Bespoke signage box (reception)', vendor: 'Metalform' },
+];
+const BENCHTOP_MATERIALS = [
+  { material_id: 301, slab_id: 'CST-2297-A', description: 'Caesarstone 6131 Bianco Drift 20mm', material_type: 'stone',   supplier: 'CDK Stone' },
+];
+const APPLIANCES = [
+  { material_id: 401, model_number: 'MIELE-H7164BP', description: 'Miele 60cm Oven H7164BP',        manufacturer: 'Miele',   supplier: 'Winning Appliances' },
+];
+const EQUIPMENT_HIRE = [
+  { hire_id:    501, contract_ref: 'KENNARDS-0423-881', description: 'Kennards scissor lift — Alfred site', supplier: 'Kennards' },
+];
+
+/* Project hardware catalog (project_hardware_catalog) — project-scoped approved materials
+   across all 6 catalogs, resolved via material_type discriminator. */
+const PROJECT_HW_CATALOG = [
+  { catalog_id: 11, material_type: 'HARDWARE',  material_id: 101 },
+  { catalog_id: 12, material_type: 'HARDWARE',  material_id: 102 },
+  { catalog_id: 13, material_type: 'HARDWARE',  material_id: 103 },
+  { catalog_id: 14, material_type: 'HARDWARE',  material_id: 104 },
+  { catalog_id: 21, material_type: 'BOARD',     material_id: 1   },
+  { catalog_id: 22, material_type: 'BOARD',     material_id: 5   },
+  { catalog_id: 31, material_type: 'CUSTOM',    material_id: 201 },
+  { catalog_id: 41, material_type: 'BENCHTOP',  material_id: 301 },
+  { catalog_id: 51, material_type: 'APPLIANCE', material_id: 401 },
+  { catalog_id: 61, material_type: 'HIRE',      material_id: 501 },
+];
+
+/* Procurement batches + allocations — drive the availability strip */
+const BATCHES = [
+  { batch_id: 501, material_type: 'HARDWARE', material_id: 101, qty_ordered: 200, qty_received: 200, eta_date: '2026-04-02', received_date: '2026-04-02', supplier: 'Lincoln Sentry', po_ref: 'PO-2273-017' },
+  { batch_id: 502, material_type: 'HARDWARE', material_id: 102, qty_ordered: 50,  qty_received: 0,   eta_date: '2026-04-24', received_date: null,         supplier: 'Lincoln Sentry', po_ref: 'PO-2273-021' },
+  { batch_id: 503, material_type: 'HARDWARE', material_id: 103, qty_ordered: 60,  qty_received: 0,   eta_date: '2026-04-15', received_date: null,         supplier: 'Häfele',         po_ref: 'PO-2273-023' },
+];
+
+/* Seeded items (subset of trackingv2_schema.sql seed) */
+const ITEMS = [
+  {
+    item_id: 2, num: 297871, project_id: 1,
+    stage: 'Joinery General', zone: '03', level: '03', rmNo: '057', rmDesc: 'Dirty Utilities',
+    code: 'JO-SS02', description: 'SS Bench + OH Cupboard', size: 1500, qty: 1,
+    assembler: '', lister: 'Bill',
+    itemCode: '598241', groupId: '598241',
+    floorPlan: '3101-T1', rls: '6328-T1', joieryDetails: '6328-T1',
+    paintingReq: false, solidSurfaceReq: false, cutlistPrinted: true,
+    sketchupFile: '297871.skp', cabVisionFile: 'CV-297871.pdf',
+    estimatorNotes: 'Standard SS bench + OH cupboard unit. OH carcass boxed separately.',
+    cutlistOwner: 'DAVIDM', itemLocked: false,
+    cutlistNote: 'Assemble OH cupboard first; bench top last.',
+    modules: [
+      { module_id: 1, module_no: 'MOD 1', name: 'Bench Carcass', parts: [
+        { part_id: 11, qty: 2, partName: 'Side Panel',   len: 720, wid: 580, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'NONE',        comment: '' },
+        { part_id: 12, qty: 1, partName: 'Top',          len: 1500, wid: 600, boardCode: '25-SS304', edge: '—',    edgingSpec: '',        colour: 'SS',    paintInstruction: 'NONE',        comment: 'Stainless overlay' },
+        { part_id: 13, qty: 1, partName: 'Bottom',       len: 1460, wid: 580, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'NONE',        comment: '' },
+        { part_id: 14, qty: 1, partName: 'Back',         len: 1460, wid: 700, boardCode: '18-PB',    edge: '',     edgingSpec: '',        colour: 'White', paintInstruction: 'SINGLE_SIDE', comment: '' },
+      ]},
+      { module_id: 2, module_no: 'MOD 2', name: 'OH Cupboard', parts: [
+        { part_id: 21, qty: 2, partName: 'OH Side',      len: 700, wid: 320, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'DOUBLE_SIDE', comment: 'Match bench below' },
+        { part_id: 22, qty: 1, partName: 'OH Top',       len: 1500, wid: 320, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'SINGLE_SIDE', comment: '' },
+        { part_id: 23, qty: 2, partName: 'OH Door',      len: 695, wid: 745, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'EDGE_ONLY',   comment: '' },
+      ]},
+    ],
+    hardwareLines: [
+      { line_id: 1001, qty: 6, catalog_id: 11, note: 'OH cupboard doors' },
+      { line_id: 1002, qty: 2, catalog_id: 13, note: 'OH cupboard handles' },
+      { line_id: 1003, qty: 8, catalog_id: 14, note: 'Adjustable shelves' },
+      { line_id: 1004, qty: 2, catalog_id: 12, note: 'Not yet on-site' },
+    ],
+    editLog: [
+      { ts: '2026-04-17 10:14', who: 'DAVIDM', field: 'Description',  from: 'SS Bench', to: 'SS Bench + OH Cupboard' },
+      { ts: '2026-04-17 10:16', who: 'DAVIDM', field: 'Cutlist Note', from: '',         to: 'Assemble OH cupboard first; bench top last.' },
+    ],
+  },
+  {
+    item_id: 1, num: 297830, project_id: 1,
+    stage: 'Joinery General', zone: '03', level: '03', rmNo: '057', rmDesc: 'Dirty Utilities',
+    code: 'JO-SS01', description: 'SS Bench', size: 1200, qty: 1,
+    assembler: '', lister: 'John',
+    itemCode: '598200', groupId: '598200',
+    floorPlan: '3101-T1', rls: '6328-T1', joieryDetails: '6328-T1',
+    paintingReq: false, solidSurfaceReq: false, cutlistPrinted: true,
+    sketchupFile: '297830.skp', cabVisionFile: 'CV-297830.pdf',
+    estimatorNotes: '', cutlistOwner: 'DAVIDM', itemLocked: false,
+    cutlistNote: '',
+    modules: [
+      { module_id: 3, module_no: 'MOD 1', name: 'Bench', parts: [
+        { part_id: 31, qty: 2, partName: 'Side Panel', len: 720, wid: 580, boardCode: '18-PB',    edge: '2mm',  edgingSpec: 'ABS 2mm', colour: 'White', paintInstruction: 'NONE', comment: '' },
+        { part_id: 32, qty: 1, partName: 'Top',        len: 1200, wid: 600, boardCode: '25-SS304', edge: '',     edgingSpec: '',        colour: 'SS',    paintInstruction: 'NONE', comment: '' },
+      ]},
+    ],
+    hardwareLines: [],
+    editLog: [],
+  },
+  {
+    item_id: 10, num: 297961, project_id: 1,
+    stage: 'PC2', zone: '04', level: '03', rmNo: '102', rmDesc: 'PC2 Holding',
+    code: 'JL-PC201', description: 'PC2 Containment Bench', size: 2000, qty: 1,
+    assembler: 'Anna Wu', lister: 'Bill',
+    itemCode: '598331', groupId: '598331',
+    floorPlan: '3101-T1', rls: '6328-T1', joieryDetails: '6328-T1',
+    paintingReq: true, solidSurfaceReq: true, cutlistPrinted: false,
+    sketchupFile: '297961.skp', cabVisionFile: 'CV-297961.pdf',
+    estimatorNotes: 'PC2 containment — solid surface top. Verify sealing spec with site.',
+    cutlistOwner: 'DAVIDM', itemLocked: true,
+    cutlistNote: '',
+    modules: [],
+    hardwareLines: [],
+    editLog: [],
+  },
+];
+
+/* ============================================================
+   State
+   ============================================================ */
+
+// Allow deep-linking from the PM Project Workbench via ?item=<num>
+const _qsItem = new URLSearchParams(location.search).get('item');
+const _fromQs = _qsItem ? ITEMS.find(i => i.num === +_qsItem) : null;
+let currentItemId = _fromQs ? _fromQs.item_id : 2;
+let current       = ITEMS.find(i => i.item_id === currentItemId);
+let currentTab    = 'cutlist';
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+
+function $(id){ return document.getElementById(id); }
+function fmt(d){ if(!d) return ''; const p = d.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
+function today(){ return new Date('2026-04-19'); }
+function daysUntil(iso){ if(!iso) return null; return Math.floor((new Date(iso) - today()) / 86400000); }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); }
+function boardByCode(code){ return BOARD_MATERIALS.find(b => b.code === code); }
+function catalogRow(id){ return PROJECT_HW_CATALOG.find(c => c.catalog_id === id); }
+function hwMat(id){ return HARDWARE_MATERIALS.find(h => h.material_id === id); }
+
+function catalogDisplay(catalog_id){
+  const c = catalogRow(catalog_id);
+  if (!c) return { sku:'', desc:'', supplier:'' };
+  switch (c.material_type){
+    case 'HARDWARE': {
+      const h = hwMat(c.material_id);
+      return h ? { sku: h.sku, desc: h.description, supplier: h.supplier || '' } : { sku:'', desc:'', supplier:'' };
+    }
+    case 'BOARD': {
+      const b = BOARD_MATERIALS.find(x => x.material_id === c.material_id);
+      return b ? { sku: b.code, desc: b.description, supplier: b.supplier || '' } : { sku:'', desc:'', supplier:'' };
+    }
+    case 'CUSTOM': {
+      const x = CUSTOM_MADE.find(x => x.material_id === c.material_id);
+      return x ? { sku: x.internal_ref, desc: x.description, supplier: x.vendor || '' } : { sku:'', desc:'', supplier:'' };
+    }
+    case 'BENCHTOP': {
+      const x = BENCHTOP_MATERIALS.find(x => x.material_id === c.material_id);
+      return x ? { sku: x.slab_id, desc: x.description, supplier: x.supplier || '' } : { sku:'', desc:'', supplier:'' };
+    }
+    case 'APPLIANCE': {
+      const x = APPLIANCES.find(x => x.material_id === c.material_id);
+      return x ? { sku: x.model_number, desc: x.description, supplier: x.supplier || '' } : { sku:'', desc:'', supplier:'' };
+    }
+    case 'HIRE': {
+      const x = EQUIPMENT_HIRE.find(x => x.hire_id === c.material_id);
+      return x ? { sku: x.contract_ref, desc: x.description, supplier: x.supplier || '' } : { sku:'', desc:'', supplier:'' };
+    }
+  }
+  return { sku:'', desc:'(unknown)', supplier:'' };
+}
+
+/* Availability derived from BATCHES + allocations (single-line simulation) */
+function availabilityFor(catalog_id){
+  const c = catalogRow(catalog_id);
+  if (!c) return { cls:'avail-missing', text:'no catalog' };
+  const batch = BATCHES.find(b => b.material_type === c.material_type && b.material_id === c.material_id);
+  if (!batch) return { cls:'avail-missing', text:'not ordered' };
+  if (batch.received_date) return { cls:'avail-stock', text:`in stock (${batch.qty_received})` };
+  const d = daysUntil(batch.eta_date);
+  if (d === null) return { cls:'avail-missing', text:'no ETA' };
+  if (d < 0) return { cls:'avail-late', text:`overdue — ETA ${fmt(batch.eta_date)}` };
+  return { cls:'avail-eta', text:`ETA ${fmt(batch.eta_date)} (${d}d)` };
+}
+
+/* ============================================================
+   Render
+   ============================================================ */
+
+function renderItemSwitch(){
+  const s = $('item-switch');
+  s.innerHTML = ITEMS.map(i =>
+    `<option value="${i.item_id}" ${i.item_id===currentItemId?'selected':''}>#${i.num} — ${i.description}</option>`
+  ).join('');
+}
+
+function renderMeta(){
+  $('cutlist-badge').textContent = `CUTLIST # ${current.num}`;
+  $('proj-name').textContent = PROJECT.name;
+
+  $('m-num').value        = current.num;
+  $('m-itemCode').value   = current.itemCode || '';
+  $('m-groupId').value    = current.groupId || '';
+  $('m-code').value       = current.code || '';
+  $('m-level').value      = current.level || '';
+  $('m-rmNo').value       = current.rmNo || '';
+  $('m-rmDesc').value     = current.rmDesc || '';
+  $('m-stage').value      = current.stage || 'Joinery Lab';
+  $('m-zone').value       = current.zone || '';
+  $('m-desc').value       = current.description || '';
+  $('m-size').value       = current.size || '';
+  $('m-qty').value        = current.qty || '';
+  $('m-assembler').value  = current.assembler || '';
+  $('m-lister').value     = current.lister || '';
+  $('m-painting').checked = !!current.paintingReq;
+  $('m-solid').checked    = !!current.solidSurfaceReq;
+  $('m-printed').checked  = !!current.cutlistPrinted;
+  $('m-cv').value         = current.cabVisionFile || '';
+  $('m-skp').value        = current.sketchupFile || '';
+  $('m-fp').value         = current.floorPlan || '';
+  $('m-notes').value      = current.estimatorNotes || '';
+  $('cutlist-note').value = current.cutlistNote || '';
+
+  // Lock UI
+  const locked = !!current.itemLocked;
+  const b = $('lock-btn');
+  b.classList.toggle('locked', locked);
+  b.classList.toggle('unlocked', !locked);
+  b.innerHTML = locked ? '🔒 Locked' : '🔓 Unlocked';
+  $('lock-banner').classList.toggle('show', locked && current.cutlistOwner !== CURRENT_USER.username);
+
+  const readOnly = locked && current.cutlistOwner !== CURRENT_USER.username;
+  document.querySelectorAll('.ed-left .finp').forEach(el => { el.disabled = readOnly || el.id === 'm-num'; });
+}
+
+function renderParts(){
+  const tbody = $('parts-body');
+  const boardOpts = BOARD_MATERIALS.map(b => `<option value="${b.code}">${b.code}</option>`).join('');
+  const paintOpts = ['NONE','DOUBLE_SIDE','SINGLE_SIDE','EDGE_ONLY'].map(v => `<option value="${v}">${v.replace('_',' ')}</option>`).join('');
+
+  let rows = '';
+  let total = 0;
+  current.modules.forEach(mod => {
+    rows += `<tr class="mod-hdr"><td colspan="11"><span class="mod-no">${mod.module_no}</span>${mod.name || ''} <button class="btn btn-xs btn-ghost" onclick="addPartTo(${mod.module_id})">+ part</button></td></tr>`;
+    mod.parts.forEach(p => {
+      total += p.qty;
+      rows += `<tr data-part-id="${p.part_id}">
+        <td><input type="number" min="1" value="${p.qty}"  onchange="updatePart(${p.part_id},'qty',this.valueAsNumber)"></td>
+        <td><input type="text" value="${p.partName||''}"   onchange="updatePart(${p.part_id},'partName',this.value)"></td>
+        <td><input type="number" value="${p.len||''}"      onchange="updatePart(${p.part_id},'len',this.valueAsNumber)"></td>
+        <td><input type="number" value="${p.wid||''}"      onchange="updatePart(${p.part_id},'wid',this.valueAsNumber)"></td>
+        <td><select onchange="updatePart(${p.part_id},'boardCode',this.value)">${boardOpts.replace(`value="${p.boardCode}"`,`value="${p.boardCode}" selected`)}</select></td>
+        <td><input type="text" value="${p.edge||''}"       onchange="updatePart(${p.part_id},'edge',this.value)"></td>
+        <td><input type="text" value="${p.edgingSpec||''}" placeholder="e.g. ABS 2mm" onchange="updatePart(${p.part_id},'edgingSpec',this.value)"></td>
+        <td><input type="text" value="${p.colour||''}"     onchange="updatePart(${p.part_id},'colour',this.value)"></td>
+        <td><select onchange="updatePart(${p.part_id},'paintInstruction',this.value)">${paintOpts.replace(`value="${p.paintInstruction}"`,`value="${p.paintInstruction}" selected`)}</select></td>
+        <td><input type="text" value="${p.comment||''}"    onchange="updatePart(${p.part_id},'comment',this.value)"></td>
+        <td class="col-act"><button class="rm-line" onclick="removePart(${p.part_id})" title="Remove">×</button></td>
+      </tr>`;
+    });
+  });
+  if (!rows) rows = `<tr><td colspan="11" style="text-align:center;color:var(--color-text-tertiary);padding:1.5rem;">No parts yet. Import from CV above or add manually.</td></tr>`;
+  tbody.innerHTML = rows;
+  $('parts-count').textContent = `${current.modules.length} module(s), ${total} part(s) total`;
+}
+
+function renderHardware(){
+  const tbody = $('hw-body');
+  const catalogOpts = PROJECT_HW_CATALOG.map(c => {
+    const d = catalogDisplay(c.catalog_id);
+    return `<option value="${c.catalog_id}">${d.sku} — ${d.desc}</option>`;
+  }).join('');
+
+  let rows = '';
+  current.hardwareLines.forEach(l => {
+    const d = catalogDisplay(l.catalog_id);
+    const av = availabilityFor(l.catalog_id);
+    rows += `<tr data-line-id="${l.line_id}">
+      <td><input type="number" min="1" value="${l.qty}" onchange="updateHw(${l.line_id},'qty',this.valueAsNumber)"></td>
+      <td><select onchange="updateHw(${l.line_id},'catalog_id',+this.value)">${catalogOpts.replace(`value="${l.catalog_id}"`,`value="${l.catalog_id}" selected`)}</select></td>
+      <td style="font-size:11px;">${d.desc}</td>
+      <td style="font-size:11px;color:var(--color-text-secondary);">${d.supplier}</td>
+      <td><span class="avail ${av.cls}">${av.text}</span></td>
+      <td><input type="text" value="${l.note||''}" onchange="updateHw(${l.line_id},'note',this.value)"></td>
+      <td class="col-act"><button class="rm-line" onclick="removeHw(${l.line_id})" title="Remove">×</button></td>
+    </tr>`;
+  });
+  if (!rows) rows = `<tr><td colspan="7" style="text-align:center;color:var(--color-text-tertiary);padding:1.5rem;">No hardware lines yet.</td></tr>`;
+  tbody.innerHTML = rows;
+  $('hw-count').textContent = `${current.hardwareLines.length} line(s)`;
+}
+
+function renderLog(){
+  const body = $('log-body');
+  if (!current.editLog.length){
+    body.innerHTML = `<div class="log-line" style="color:var(--color-text-tertiary);">No edits yet.</div>`;
+    return;
+  }
+  body.innerHTML = current.editLog.slice().reverse().map(e =>
+    `<div class="log-line"><span style="color:var(--color-text-tertiary);">${e.ts}</span>  <span style="color:#111827;">${e.who}</span>  ${e.field}: <span style="color:var(--color-text-danger);">${e.from||'∅'}</span> → <span style="color:var(--color-text-success);">${e.to||'∅'}</span></div>`
+  ).join('');
+}
+
+function renderAll(){
+  renderMeta();
+  renderParts();
+  renderHardware();
+  renderLog();
+}
+
+/* ============================================================
+   Edit handlers
+   ============================================================ */
+
+function logEdit(field, from, to){
+  if (String(from) === String(to)) return;
+  const ts = new Date().toISOString().slice(0,16).replace('T',' ');
+  current.editLog.push({ ts, who: CURRENT_USER.username, field, from: String(from ?? ''), to: String(to ?? '') });
+  $('save-state').textContent = 'Unsaved changes.';
+  if (currentTab === 'log') renderLog();
+}
+
+/* Metadata field wiring */
+function bindMeta(id, key, kind){
+  $(id).addEventListener('change', e => {
+    const v = kind==='bool' ? e.target.checked : (kind==='num' ? +e.target.value : e.target.value);
+    logEdit(id.slice(2), current[key], v);
+    current[key] = v;
+  });
+}
+
+/* Parts editing */
+function updatePart(partId, field, value){
+  for (const mod of current.modules){
+    const p = mod.parts.find(x => x.part_id === partId);
+    if (p){ logEdit(`Part ${partId} ${field}`, p[field], value); p[field] = value; return; }
+  }
+}
+function removePart(partId){
+  for (const mod of current.modules){
+    const idx = mod.parts.findIndex(x => x.part_id === partId);
+    if (idx >= 0){ const removed = mod.parts.splice(idx,1)[0]; logEdit(`Part ${partId}`, removed.partName, 'removed'); renderParts(); return; }
+  }
+}
+function addModule(){
+  const id = Date.now();
+  const nextNo = current.modules.length + 1;
+  current.modules.push({ module_id: id, module_no: `MOD ${nextNo}`, name: 'New Module', parts: [] });
+  logEdit('Module', '', `added MOD ${nextNo}`);
+  renderParts();
+}
+function addPart(){
+  let mod = current.modules[current.modules.length - 1];
+  if (!mod){ addModule(); mod = current.modules[0]; }
+  addPartTo(mod.module_id);
+}
+function addPartTo(moduleId){
+  const mod = current.modules.find(m => m.module_id === moduleId);
+  if (!mod) return;
+  mod.parts.push({ part_id: Date.now(), qty: 1, partName: '', len: 0, wid: 0, boardCode: '18-PB', edge: '', edgingSpec: '', colour: '', paintInstruction: 'NONE', comment: '' });
+  logEdit(`Module ${mod.module_no}`, '', 'part added');
+  renderParts();
+}
+
+/* Hardware editing */
+function updateHw(lineId, field, value){
+  const l = current.hardwareLines.find(x => x.line_id === lineId);
+  if (!l) return;
+  logEdit(`HW line ${lineId} ${field}`, l[field], value);
+  l[field] = value;
+  if (field === 'catalog_id' || field === 'qty') renderHardware();
+}
+function removeHw(lineId){
+  const idx = current.hardwareLines.findIndex(x => x.line_id === lineId);
+  if (idx >= 0){ current.hardwareLines.splice(idx,1); logEdit(`HW line ${lineId}`, 'existing', 'removed'); renderHardware(); }
+}
+function addHardwareLine(){
+  const defaultCat = PROJECT_HW_CATALOG[0]?.catalog_id;
+  if (!defaultCat){ toast('Project catalog is empty'); return; }
+  current.hardwareLines.push({ line_id: Date.now(), qty: 1, catalog_id: defaultCat, note: '' });
+  logEdit('Hardware', '', 'line added');
+  renderHardware();
+}
+function openCatalogAdder(){
+  const remaining = HARDWARE_MATERIALS.filter(h => !PROJECT_HW_CATALOG.some(c => c.material_type==='HARDWARE' && c.material_id===h.material_id));
+  if (!remaining.length){ toast('Global catalog fully imported for this project'); return; }
+  const choice = prompt('Add from global catalog — enter SKU:\n\n' + remaining.map(r => `• ${r.sku} — ${r.description}`).join('\n'));
+  if (!choice) return;
+  const found = remaining.find(r => r.sku.toLowerCase() === choice.trim().toLowerCase());
+  if (!found){ toast('SKU not found'); return; }
+  const newCatId = Math.max(0, ...PROJECT_HW_CATALOG.map(c => c.catalog_id)) + 1;
+  PROJECT_HW_CATALOG.push({ catalog_id: newCatId, material_type: 'HARDWARE', material_id: found.material_id });
+  logEdit('ProjectHardwareCatalog', '', `+ ${found.sku}`);
+  toast(`Added ${found.sku} to project catalog`);
+  renderHardware();
+}
+
+/* CV Import — parses pasted CSV into modules + parts */
+function importCV(){
+  const raw = $('cv-csv').value.trim();
+  if (!raw){ toast('Paste a CV CSV export first'); return; }
+  const lines = raw.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2){ toast('CSV looks empty'); return; }
+  const rows = lines.slice(1).map(l => l.split(',').map(c => c.trim()));
+  const modsMap = new Map();
+  rows.forEach(r => {
+    const [modNo, partName, qty, len, wid, material, edge, colour, comment] = r;
+    const key = `MOD ${modNo}`;
+    if (!modsMap.has(key)) modsMap.set(key, []);
+    modsMap.get(key).push({
+      part_id: Date.now() + Math.floor(Math.random()*1000),
+      qty: +qty || 1,
+      partName: partName || '',
+      len: +len || 0,
+      wid: +wid || 0,
+      boardCode: boardByCode(material)?.code || '18-PB',
+      edge: edge || '',
+      edgingSpec: '',         /* missing from CV — Drafter fills in */
+      colour: colour || '',
+      paintInstruction: 'NONE', /* missing from CV — Drafter fills in */
+      comment: comment || '',
+    });
+  });
+  const merged = [...modsMap.entries()].map(([no, parts], i) => ({
+    module_id: Date.now() + i*10, module_no: no, name: '', parts
+  }));
+  current.modules = merged;
+  logEdit('CV Import', `${current.modules.length} modules`, `${merged.length} modules`);
+  $('cv-status').textContent = `Imported ${merged.length} modules, ${rows.length} parts. Fill in Edging Spec + Paint Instruction below.`;
+  toast('CV import complete');
+  renderParts();
+}
+
+/* ============================================================
+   Tab + nav
+   ============================================================ */
+
+function switchEdTab(name){
+  currentTab = name;
+  document.querySelectorAll('.ed-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.ed-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${name}`));
+  if (name === 'log') renderLog();
+}
+
+function switchItem(id){
+  currentItemId = +id;
+  current = ITEMS.find(i => i.item_id === currentItemId);
+  renderAll();
+  $('save-state').textContent = 'All changes saved.';
+}
+
+function goBackToProject(){
+  if ($('save-state').textContent.startsWith('Unsaved') && !confirm('You have unsaved changes. Leave anyway?')) return;
+  window.location.href = 'tracking_dashboard.html';
+}
+
+function toggleLock(){
+  if (current.itemLocked && current.cutlistOwner !== CURRENT_USER.username){
+    toast('Only the cutlist owner can unlock.');
+    return;
+  }
+  current.itemLocked = !current.itemLocked;
+  if (!current.cutlistOwner) current.cutlistOwner = CURRENT_USER.username;
+  logEdit('Lock', current.itemLocked ? 'unlocked' : 'locked', current.itemLocked ? 'locked' : 'unlocked');
+  renderMeta();
+}
+
+function saveItem(){
+  $('save-state').textContent = 'All changes saved.';
+  toast('Saved (prototype — no backend yet)');
+}
+
+/* ============================================================
+   Print stubs
+   ============================================================ */
+function printCutlist(){  toast('Print Cutlist → renders parts[] via headless Chrome (PDF engine: Chrome, resolved)'); }
+function printHardware(){ toast('Print Hardware → matches HARDWARE LIST sample PDF'); }
+function printCombined(){ toast('Combined PDF: cover + cutlist + CV drawing + floor plan + site measure (+ painting list)'); }
+
+/* ============================================================
+   Init
+   ============================================================ */
+
+// Wire metadata fields
+bindMeta('m-itemCode','itemCode','text');
+bindMeta('m-groupId','groupId','text');
+bindMeta('m-code','code','text');
+bindMeta('m-level','level','text');
+bindMeta('m-rmNo','rmNo','text');
+bindMeta('m-rmDesc','rmDesc','text');
+bindMeta('m-stage','stage','text');
+bindMeta('m-zone','zone','text');
+bindMeta('m-desc','description','text');
+bindMeta('m-size','size','num');
+bindMeta('m-qty','qty','num');
+bindMeta('m-assembler','assembler','text');
+bindMeta('m-lister','lister','text');
+bindMeta('m-painting','paintingReq','bool');
+bindMeta('m-solid','solidSurfaceReq','bool');
+bindMeta('m-printed','cutlistPrinted','bool');
+bindMeta('m-cv','cabVisionFile','text');
+bindMeta('m-skp','sketchupFile','text');
+bindMeta('m-fp','floorPlan','text');
+bindMeta('m-notes','estimatorNotes','text');
+$('cutlist-note').addEventListener('change', e => { logEdit('Cutlist Note', current.cutlistNote, e.target.value); current.cutlistNote = e.target.value; });
+
+renderItemSwitch();
+renderAll();
+</script>
+
+</body>
+</html>

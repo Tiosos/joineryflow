@@ -1,0 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tracking Dashboard — Joinery Production</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  /* Hi-fi palette — warm neutral + single warm accent (ref: wireframes-hifi.jsx) */
+  --font-sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+
+  --h-bg:#fbfaf7;
+  --h-surface:#ffffff;
+  --h-surface-alt:#f4f2ed;
+  --h-surface-deep:#ece9e0;
+  --h-line:#e4e0d8;
+  --h-line2:#d0ccc2;
+  --h-ink:#1b1a17;
+  --h-ink2:#5a574f;
+  --h-ink3:#8f8b80;
+  --h-ink4:#b5b1a6;
+  --h-accent:#c96442;
+  --h-accent-deep:#a84f31;
+  --h-accent-soft:#f3e0d6;
+  --h-good:#3f7d48;
+  --h-good-soft:#e2efdf;
+  --h-warn:#c48a2e;
+  --h-warn-soft:#f4e7cf;
+  --h-bad:#b4443d;
+  --h-bad-soft:#f2dcd9;
+  --h-info:#3d6b8a;
+  --h-info-soft:#dce6ed;
+
+  /* Legacy aliases mapped onto hi-fi tokens */
+  --color-background-primary:var(--h-bg);
+  --color-background-secondary:var(--h-surface-alt);
+  --color-background-tertiary:var(--h-surface-deep);
+  --color-background-info:var(--h-info-soft);
+  --color-background-success:var(--h-good-soft);
+  --color-background-warning:var(--h-warn-soft);
+  --color-background-danger:var(--h-bad-soft);
+  --color-border-primary:var(--h-line2);
+  --color-border-secondary:var(--h-line2);
+  --color-border-tertiary:var(--h-line);
+  --color-border-success:var(--h-good);
+  --color-border-danger:var(--h-bad);
+  --color-text-primary:var(--h-ink);
+  --color-text-secondary:var(--h-ink2);
+  --color-text-tertiary:var(--h-ink3);
+  --color-text-info:var(--h-info);
+  --color-text-success:var(--h-good);
+  --color-text-warning:#8a5f1e;
+  --color-text-danger:#7f2a25;
+  --border-radius-md:6px;
+  --border-radius-lg:10px;
+}
+*{box-sizing:border-box;}
+body{font-family:var(--font-sans);color:var(--h-ink);background:var(--h-bg);margin:0;padding:0;font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;}
+.mono,.h-mono{font-family:var(--font-mono);font-feature-settings:"tnum";}
+
+/* ───── Top chrome (hi-fi) ───── */
+.h-topbar{display:flex;align-items:center;gap:12px;padding:8px 20px;background:var(--h-surface);border-bottom:1px solid var(--h-line);height:48px;position:sticky;top:0;z-index:50;}
+.h-brand{display:flex;align-items:center;gap:8px;margin-right:4px;}
+.h-brand-mark{width:24px;height:24px;border-radius:6px;background:var(--h-ink);display:flex;align-items:center;justify-content:center;color:var(--h-bg);font-size:13px;font-weight:700;}
+.h-brand-wm{font-size:14px;font-weight:600;letter-spacing:-.2px;}
+.h-brand-wm span{color:var(--h-accent);}
+.h-topbar-spacer{flex:1;}
+.h-search{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--h-line);border-radius:6px;background:var(--h-bg);font-size:12px;color:var(--h-ink3);min-width:240px;}
+.h-avatar{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--h-accent);color:#fff;font-size:11px;font-weight:600;flex-shrink:0;}
+.h-wrap{padding:14px 20px 20px;}
+
+.tabs{display:flex;gap:2px;padding:0 20px;background:var(--h-surface);border-bottom:1px solid var(--h-line);overflow-x:auto;position:sticky;top:48px;z-index:49;}
+.tab{padding:10px 14px;font-size:13px;border:none;background:transparent;cursor:pointer;color:var(--h-ink2);font-family:var(--font-sans);white-space:nowrap;flex-shrink:0;border-radius:5px 5px 0 0;font-weight:500;border-bottom:2px solid transparent;}
+.tab.active{color:var(--h-ink);font-weight:600;border-bottom-color:var(--h-ink);background:var(--h-surface-alt);}
+.tab:hover:not(.active){color:var(--h-ink);background:var(--h-surface-alt);}
+.panel{display:none;}.panel.active{display:block;}
+
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:1.5rem;}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:1.5rem;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.metric{background:var(--h-surface);border:1px solid var(--h-line);border-radius:8px;padding:14px 16px;}
+.ml{font-size:10px;color:var(--h-ink3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-weight:600;}
+.mv{font-size:24px;font-weight:600;letter-spacing:-.4px;color:var(--h-ink);}
+.ms{font-size:11px;color:var(--h-ink3);margin-top:4px;}
+
+.table-card{background:var(--h-surface);border:1px solid var(--h-line);border-radius:8px;overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:12px;background:var(--h-surface);}
+/* Fixed-column-width lock — DATE is the authoritative layout; every sub-tab matches these widths exactly (item #27) */
+#items-head th[data-col="num"]    {width:56px; min-width:56px;}
+#items-head th[data-col="stage"]  {width:108px;min-width:108px;}
+#items-head th[data-col="zone"]   {width:44px; min-width:44px;}
+#items-head th[data-col="level"]  {width:44px; min-width:44px;}
+#items-head th[data-col="rmNo"]   {width:54px; min-width:54px;}
+#items-head th[data-col="rmDesc"] {width:88px; min-width:88px;}
+#items-head th[data-col="code"]   {width:68px; min-width:68px;}
+#items-head th[data-col="desc"]   {width:180px;min-width:180px;}
+#items-head th[data-col="status"] {width:82px; min-width:82px;}
+#items-head th[data-col="size"]   {width:58px; min-width:58px;}
+#items-head th[data-col="qty"]    {width:34px; min-width:34px;}
+th{text-align:left;padding:8px 10px;background:var(--h-surface-alt);border-bottom:1px solid var(--h-line);font-size:10px;font-weight:600;color:var(--h-ink3);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;}
+td{padding:8px 10px;border-bottom:1px solid var(--h-line);color:var(--h-ink);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--h-surface-alt);}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:var(--h-ink);}
+th .sort-arrow{display:inline-block;margin-left:3px;font-size:9px;color:var(--h-ink);}
+.btn-details{padding:2px 8px;font-size:11px;border-radius:4px;border:1px solid var(--h-accent);background:var(--h-surface);color:var(--h-accent);cursor:pointer;font-family:var(--font-sans);line-height:1.2;font-weight:500;}
+.btn-details:hover{background:var(--h-accent);color:#ffffff;}
+
+/* Material availability strip (trackingv2.md #32)
+   Derived from item_hardware_lines → batch_allocations → procurement_batches.eta */
+.avail-strip{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-size:10px;font-family:var(--font-mono);cursor:pointer;vertical-align:middle;}
+.avail-dot{display:inline-block;width:8px;height:8px;border-radius:50%;}
+.avail-dot.ready  {background:#16a34a;}
+.avail-dot.eta    {background:#2563eb;}
+.avail-dot.late   {background:#eab308;}
+.avail-dot.blocked{background:#dc2626;}
+.avail-dot.none   {background:#d1d5db;}
+.avail-count{color:#6b7280;}
+.avail-count.has-blocked{color:#991b1b;font-weight:500;}
+
+/* Availability breakdown popup */
+.avail-pop{position:absolute;background:#ffffff;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);box-shadow:0 8px 24px rgba(0,0,0,.15);padding:8px 10px;font-size:11px;z-index:150;min-width:260px;}
+.avail-pop h4{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:500;}
+.avail-pop-line{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:.5px dashed #f3f4f6;}
+.avail-pop-line:last-child{border-bottom:none;}
+.avail-pop-line .mat{color:#111827;}
+.avail-pop-line .st{font-family:var(--font-mono);font-size:10px;}
+.avail-pop-line .st.ready  {color:#166534;}
+.avail-pop-line .st.eta    {color:#1e40af;}
+.avail-pop-line .st.late   {color:#854d0e;}
+.avail-pop-line .st.blocked{color:#991b1b;}
+.btn.edit-on{background:#fef3c7;border-color:#eab308;color:#854d0e;font-weight:500;}
+.cell-input{width:100%;min-width:50px;padding:3px 5px;font-size:11px;border:.5px solid #d1d5db;border-radius:3px;font-family:var(--font-sans);background:#fffbeb;box-sizing:border-box;}
+.cell-input.mono{font-family:var(--font-mono);}
+.cell-input[type=date]{font-family:var(--font-mono);font-size:10px;}
+.edit-mode tr:hover td{background:transparent;}
+
+.b{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap;border:1px solid transparent;letter-spacing:.02em;}
+.b-draft{background:var(--h-surface-alt);color:var(--h-ink2);border-color:var(--h-line);}
+.b-done{background:var(--h-good-soft);color:var(--h-good);border-color:rgba(63,125,72,.2);}
+.b-active{background:var(--h-info-soft);color:var(--h-info);border-color:rgba(61,107,138,.2);}
+.b-warn{background:var(--h-warn-soft);color:#8a5f1e;border-color:rgba(196,138,46,.25);}
+.b-crit{background:var(--h-bad-soft);color:var(--h-bad);border-color:rgba(180,68,61,.2);}
+
+.toolbar{display:flex;gap:8px;margin-bottom:1rem;align-items:center;flex-wrap:wrap;}
+.stitle{font-size:14px;font-weight:600;margin:0 0 .75rem;color:var(--h-ink);letter-spacing:-.2px;}
+.btn{padding:5px 11px;border-radius:5px;font-size:12px;cursor:pointer;border:1px solid var(--h-line2);background:var(--h-surface);color:var(--h-ink);font-family:var(--font-sans);font-weight:500;line-height:1;display:inline-flex;align-items:center;gap:5px;}
+.btn:hover{background:var(--h-surface-alt);}
+.btn-accent{background:var(--h-accent);color:#fff;border-color:var(--h-accent);}
+.btn-accent:hover{background:var(--h-accent-deep);}
+.btn-primary{background:var(--h-ink);color:#fff;border-color:var(--h-ink);}
+.btn-primary:hover{background:#333;}
+.mono{font-family:var(--font-mono);font-size:11px;}
+.tr{text-align:right;}
+
+/* Date colour coding */
+.date-overdue{background:var(--h-bad-soft);color:var(--h-bad);padding:1px 4px;border-radius:3px;font-size:9px;display:inline-block;font-family:var(--font-mono);line-height:1.4;font-weight:600;}
+.date-soon{background:var(--h-accent-soft);color:var(--h-accent-deep);padding:1px 4px;border-radius:3px;font-size:9px;display:inline-block;font-family:var(--font-mono);line-height:1.4;font-weight:600;}
+.date-ok{color:var(--h-ink3);font-size:9px;font-family:var(--font-mono);}
+.date-done{color:var(--h-good);font-size:9px;font-family:var(--font-mono);font-weight:500;}
+
+/* Quick-filter chips (hi-fi pill) */
+.fm-btn{padding:4px 10px;border-radius:14px;font-size:11.5px;font-weight:500;cursor:pointer;border:1px solid var(--h-line);background:var(--h-surface);color:var(--h-ink);font-family:var(--font-sans);white-space:nowrap;line-height:1.4;}
+.fm-btn:hover{background:var(--h-surface-alt);}
+.fm-btn.active{background:var(--h-ink);color:var(--h-bg);border-color:var(--h-ink);}
+.fm-btn-fav{background:var(--h-warn-soft);color:#8a5f1e;border-color:rgba(196,138,46,.4);}
+.fm-btn-fav.active{background:var(--h-warn);color:#ffffff;border-color:var(--h-warn);}
+.fm-btn-green{background:var(--h-good-soft);color:var(--h-good);border-color:rgba(63,125,72,.35);}
+.fm-btn-green.active{background:var(--h-good);color:#ffffff;border-color:var(--h-good);}
+.fm-btn-red{background:var(--h-bad-soft);color:var(--h-bad);border-color:rgba(180,68,61,.3);}
+.fm-btn-red.active{background:var(--h-bad);color:#ffffff;border-color:var(--h-bad);}
+
+/* Job header */
+.job-hd{display:flex;gap:.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;}
+.job-code{font-family:var(--font-mono);font-size:14px;font-weight:600;background:var(--h-surface-alt);color:var(--h-ink);padding:4px 10px;border-radius:5px;border:1px solid var(--h-line);}
+.job-name{font-size:15px;font-weight:600;letter-spacing:-.2px;}
+.pid-badge{background:var(--h-accent-soft);color:var(--h-accent-deep);padding:3px 10px;border-radius:5px;font-family:var(--font-mono);font-size:12px;font-weight:600;border:1px solid rgba(201,100,66,.25);}
+
+/* Status stage columns — tighter, monospace dates */
+.stage-col{text-align:center;min-width:42px;max-width:50px;padding:3px 2px;font-size:9px;}
+.stage-col .due{font-size:9px;color:#9ca3af;font-family:var(--font-mono);}
+.stage-col .done{font-size:9px;color:#166534;font-family:var(--font-mono);font-weight:500;}
+#items-head th.stage-col{font-size:9px;padding:5px 2px;letter-spacing:0;}
+.item-id{font-family:var(--font-mono);font-size:10px;color:#6b7280;}
+
+/* Row item-ID cell */
+.item-id{font-family:var(--font-mono);font-size:11px;color:#6b7280;}
+.item-num{font-family:var(--font-mono);font-size:12px;font-weight:500;}
+
+/* Modal */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
+.modal-box{background:#ffffff;border:.5px solid #d1d5db;border-radius:var(--border-radius-lg);max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-hd{padding:1rem 1.25rem;border-bottom:.5px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.modal-body{padding:1.25rem;overflow-y:auto;flex:1;}
+.modal-ft{padding:.875rem 1.25rem;border-top:.5px solid #e5e7eb;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.fgrp{display:flex;flex-direction:column;gap:4px;}
+.fgrp.full{grid-column:1/-1;}
+.flbl{font-size:11px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;}
+.finp{padding:7px 10px;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);font-size:13px;background:#ffffff;color:#111827;font-family:var(--font-sans);width:100%;box-sizing:border-box;}
+.finp:focus{outline:none;border-color:#111827;}
+
+/* Project selector (custom dropdown) */
+.proj-sel{position:relative;display:inline-block;}
+.proj-trigger{display:inline-flex;align-items:center;gap:8px;background:var(--h-surface);border:1px solid var(--h-line);border-radius:5px;padding:6px 12px;font-size:14px;font-weight:600;color:var(--h-ink);cursor:pointer;font-family:var(--font-sans);letter-spacing:-.1px;}
+.proj-trigger:hover{background:var(--h-surface-alt);}
+.proj-trigger .caret{font-size:10px;color:var(--h-ink3);margin-left:4px;}
+.proj-menu{position:absolute;top:calc(100% + 4px);left:0;min-width:280px;background:var(--h-surface);border:1px solid var(--h-line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:100;padding:4px 0;display:none;}
+.proj-menu.open{display:block;}
+.proj-row{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;}
+.proj-row:hover{background:var(--h-surface-alt);}
+.proj-row.selected{background:var(--h-accent-soft);font-weight:600;color:var(--h-accent-deep);}
+.proj-name{flex:1;}
+.proj-star{background:none;border:none;cursor:pointer;font-size:15px;color:#d1d5db;padding:2px 4px;line-height:1;}
+.proj-star.on{color:#eab308;}
+.proj-star:hover{color:#eab308;}
+.proj-empty{padding:10px 12px;color:#9ca3af;font-size:12px;font-style:italic;}
+
+/* Filter row inside thead */
+.filter-row td{padding:6px 4px;border-bottom:.5px solid var(--color-border-tertiary);background:#fafafa;}
+.filter-row select{width:100%;font-size:12px;padding:4px 6px;border:.5px solid #d1d5db;border-radius:4px;background:#fff;color:#111827;font-family:var(--font-sans);box-sizing:border-box;}
+
+/* PROJECT DETAILS modal */
+.proj-box{background:#fff;border:.5px solid #d1d5db;border-radius:var(--border-radius-lg);max-width:1180px;width:100%;max-height:95vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;}
+.proj-hd{background:#e6eef5;padding:12px 1.25rem;display:flex;justify-content:space-between;align-items:center;border-bottom:.5px solid #d1d5db;}
+.proj-title{flex:1;text-align:center;font-size:16px;font-weight:500;letter-spacing:.05em;color:#1e3a5f;}
+.proj-winctrls{display:flex;gap:6px;color:#6b7280;}
+.proj-winctrls span{cursor:pointer;padding:2px 6px;font-size:13px;}
+.proj-body{display:grid;grid-template-columns:42% 58%;flex:1;overflow:hidden;min-height:0;}
+.proj-left,.proj-right{padding:1rem;overflow-y:auto;min-height:0;}
+.proj-left{border-right:.5px solid #e5e7eb;background:#f8fafc;}
+.pd-search{background:#e6eef5;padding:10px 12px;display:flex;gap:10px;align-items:center;margin-bottom:10px;border-radius:4px;}
+.pd-search input{flex:1;padding:6px 10px;border:.5px solid #bcd;border-radius:3px;font-size:12px;background:#fff;}
+.pd-pager{display:flex;gap:6px;align-items:center;font-size:12px;background:#fff;padding:4px 8px;border:.5px solid #bcd;border-radius:3px;}
+.pd-pager button{background:none;border:none;color:#2563eb;font-size:14px;cursor:pointer;padding:0 4px;}
+.pd-card{border:.5px solid #d1d5db;border-radius:4px;margin-bottom:10px;background:#fff;}
+.pd-card-hd{background:#e6eef5;padding:5px 10px;font-size:11px;font-weight:500;letter-spacing:.05em;color:#1e3a5f;text-align:center;border-bottom:.5px solid #d1d5db;}
+.pd-card-body{padding:8px 10px;display:flex;gap:10px;align-items:center;}
+.pd-field{flex:1;}
+.pd-sublbl{font-size:9px;font-weight:500;color:#6b7280;text-transform:uppercase;text-align:center;letter-spacing:.05em;background:#e6eef5;padding:3px;border-bottom:.5px solid #d1d5db;}
+.pd-val{padding:6px 8px;font-size:13px;color:#111827;}
+.pd-logo{width:90px;height:90px;border:.5px solid #d1d5db;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;background:#fff;flex-shrink:0;}
+.pd-row{display:grid;grid-template-columns:repeat(var(--cols,2),1fr);border-top:.5px solid #e5e7eb;}
+.pd-row > div{border-right:.5px solid #e5e7eb;}
+.pd-row > div:last-child{border-right:none;}
+.pd-dd{display:flex;align-items:center;padding:5px 8px;background:#fff;font-size:12px;color:#111827;justify-content:space-between;}
+.pd-dd .caret{color:#6b7280;font-size:9px;}
+.pd-tabs{display:flex;gap:0;margin-bottom:0;}
+.pd-tab{flex:1;padding:10px;border:.5px solid #d1d5db;border-bottom:none;background:#f3f4f6;cursor:pointer;font-size:13px;color:#6b7280;text-align:center;font-weight:500;}
+.pd-tab.active{background:#e6eef5;color:#1e3a5f;}
+.pd-tab:first-child{border-top-left-radius:4px;}
+.pd-tab:last-child{border-top-right-radius:4px;}
+.pd-pid{background:#f3f4f6;color:#6b7280;padding:3px 18px;font-size:11px;text-align:center;border:.5px solid #d1d5db;border-bottom:none;width:fit-content;margin:0 0 0 10px;}
+.pd-stats-tbl{width:100%;border-collapse:collapse;font-size:12px;border:.5px solid #d1d5db;background:#fff;}
+.pd-stats-tbl th{background:#e6eef5;color:#1e3a5f;padding:5px;font-size:11px;font-weight:500;letter-spacing:.03em;border-bottom:.5px solid #d1d5db;text-align:center;}
+.pd-stats-tbl td{padding:6px 10px;border-bottom:.5px solid #e5e7eb;border-right:.5px solid #e5e7eb;}
+.pd-stats-tbl td:first-child{background:#f8fafc;color:#6b7280;text-transform:uppercase;font-size:10px;letter-spacing:.04em;width:55%;}
+.pd-stats-tbl td:last-child{text-align:right;font-family:var(--font-mono);font-size:13px;}
+.pd-stats-tbl tr:last-child td{border-bottom:none;}
+.pd-total td{background:#fff!important;font-weight:600;text-decoration:underline;}
+.pd-prod{display:grid;grid-template-columns:auto 1fr;border:.5px solid #d1d5db;}
+.pd-prod > div{border-bottom:.5px solid #e5e7eb;padding:8px 12px;font-size:11px;}
+.pd-prod > div:nth-child(2n){text-align:right;font-family:var(--font-mono);font-size:15px;background:#fff;}
+.pd-prod > div:nth-child(2n-1){background:#f8fafc;color:#6b7280;}
+.pd-prod small{display:block;color:#9ca3af;font-size:9px;font-style:italic;margin-top:2px;}
+.pd-lift{border:.5px solid #d1d5db;min-height:180px;background:#fff;margin-top:10px;padding:10px;display:flex;align-items:flex-end;justify-content:center;color:#9ca3af;font-size:11px;font-style:italic;}
+.pd-tile{border:.5px solid #d1d5db;padding:6px 10px;background:#fff;text-align:center;min-width:100px;}
+.pd-tile .lbl{font-size:9px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;background:#e6eef5;padding:3px;margin:-6px -10px 6px;border-bottom:.5px solid #d1d5db;}
+.pd-tile .val{font-size:13px;color:#111827;font-family:var(--font-mono);}
+.pd-tile-red{background:#dc2626;color:#fff;border-color:#dc2626;font-weight:500;cursor:pointer;padding:14px 10px;font-size:12px;letter-spacing:.05em;}
+.pd-meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+
+/* ITEM DETAILS modal (reference: FileMaker screenshot) */
+.id-box{background:#fff;border:.5px solid #9ec9ad;border-radius:4px;max-width:900px;width:100%;max-height:95vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;}
+.id-hd{background:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:.5px solid #9ec9ad;}
+.id-close{background:#2f7a4d;color:#fff;border:none;width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:14px;line-height:1;}
+.id-title{flex:1;text-align:center;font-size:18px;font-weight:500;color:#2f7a4d;letter-spacing:.03em;}
+.id-head-row{background:#e7f1ea;padding:14px 18px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:stretch;border-bottom:.5px solid #9ec9ad;}
+.id-desc{font-size:20px;color:#111827;font-weight:400;align-self:center;}
+.id-jid{display:grid;grid-template-columns:auto 1fr;border:.5px solid #9ec9ad;background:#fff;min-width:220px;}
+.id-jid-lbl{background:#e7f1ea;color:#2f7a4d;padding:8px 16px;font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;border-right:.5px solid #9ec9ad;}
+.id-jid-val{padding:8px 16px;font-size:18px;color:#111827;display:flex;align-items:center;}
+.id-tabs{display:flex;gap:0;background:#fff;border-bottom:.5px solid #9ec9ad;}
+.id-tab{flex:1;padding:10px 16px;text-align:center;cursor:pointer;font-size:13px;color:#2f7a4d;background:#fff;border-right:.5px solid #d5e6db;}
+.id-tab:last-child{border-right:none;}
+.id-tab.active{background:#e7f1ea;color:#2f7a4d;font-weight:500;}
+.id-body{display:grid;grid-template-columns:50% 50%;flex:1;overflow:hidden;min-height:0;}
+.id-left,.id-right{padding:12px;overflow-y:auto;min-height:0;}
+.id-left{border-right:.5px solid #9ec9ad;}
+.id-row{display:grid;grid-template-columns:130px 1fr;gap:0;margin-bottom:3px;align-items:stretch;}
+.id-lbl{background:#e7f1ea;color:#2f7a4d;padding:7px 10px;font-size:12px;font-weight:500;text-align:right;border:.5px solid #9ec9ad;}
+.id-val{padding:7px 10px;font-size:13px;color:#111827;border:.5px solid #9ec9ad;border-left:none;min-height:16px;}
+.id-check-row{display:grid;grid-template-columns:130px auto;gap:0;margin-bottom:3px;}
+.id-check-row .id-lbl{background:#e7f1ea;}
+.id-check-row .id-check{padding:5px 10px;border:.5px solid #9ec9ad;border-left:none;display:flex;align-items:center;}
+.id-check-dot{width:14px;height:14px;border-radius:50%;border:1px solid #9ec9ad;display:inline-block;}
+.id-check-dot.on{background:#2f7a4d;border-color:#2f7a4d;}
+.id-check-tick{color:#2f7a4d;font-size:16px;}
+.id-idrow{display:grid;grid-template-columns:130px 1fr auto;margin-bottom:3px;}
+.id-idrow .id-lbl{background:#cfe3d6;}
+.id-idrow .id-val{border-right:none;font-family:var(--font-mono);}
+.id-idrow .id-icon{border:.5px solid #9ec9ad;background:#fff;padding:4px 8px;cursor:pointer;display:flex;align-items:center;}
+.id-notes{display:grid;grid-template-columns:130px 1fr;margin-top:6px;}
+.id-notes .id-lbl{align-items:center;display:flex;justify-content:flex-end;}
+.id-notes textarea{width:100%;border:.5px solid #9ec9ad;border-left:none;padding:8px 10px;font-family:var(--font-sans);font-size:12px;resize:vertical;min-height:72px;box-sizing:border-box;}
+.id-file-row{display:grid;grid-template-columns:150px 1fr auto;margin-bottom:3px;}
+.id-file-row .id-lbl{background:#e7f1ea;}
+.id-file-row .id-val{border-right:none;font-family:var(--font-mono);font-size:12px;}
+.id-file-row .id-icon{border:.5px solid #9ec9ad;background:#fff;padding:4px 8px;display:flex;align-items:center;color:#2f7a4d;}
+.id-docreg-hd{margin-top:10px;font-size:12px;color:#2f7a4d;text-align:center;}
+.id-docreg-hd small{color:#6b7280;margin-left:4px;font-size:10px;}
+.id-docreg{margin-top:6px;border:.5px solid #9ec9ad;height:260px;display:grid;grid-template-columns:1fr auto;}
+.id-docreg-body{padding:10px;}
+.id-docreg-scroll{display:flex;flex-direction:column;justify-content:space-between;border-left:.5px solid #9ec9ad;padding:6px 4px;}
+.id-docreg-scroll button{background:none;border:none;color:#2f7a4d;cursor:pointer;font-size:14px;padding:4px;}
+.id-ft{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-top:.5px solid #9ec9ad;background:#fff;gap:10px;}
+.id-ft .id-nav{background:none;border:none;color:#2f7a4d;cursor:pointer;font-size:13px;padding:6px 10px;}
+.id-ft .id-close-btn{background:#2f7a4d;color:#fff;border:none;padding:8px 32px;font-size:13px;font-weight:500;letter-spacing:.1em;cursor:pointer;border-radius:3px;}
+
+/* Stage mini-grid in modal (legacy) */
+.stage-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px;}
+.stage-cell{border:.5px solid #e5e7eb;border-radius:var(--border-radius-md);padding:8px;text-align:center;}
+.stage-cell .lbl{font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.stage-cell .val{font-size:11px;font-family:var(--font-mono);color:#111827;}
+.stage-cell.done{background:#f0fdf4;border-color:#86efac;}
+.stage-cell.overdue{background:#fef2f2;border-color:#fca5a5;}
+
+/* Sub-tab bar above the table */
+.subtabs{display:flex;gap:0;margin:4px 0 0;border-bottom:1px solid var(--h-line);background:var(--h-surface);border-radius:8px 8px 0 0;padding:0 6px;}
+.subtab{flex:0 0 auto;padding:8px 16px;background:transparent;border:none;border-bottom:2px solid transparent;font-size:12px;font-weight:500;color:var(--h-ink2);cursor:pointer;font-family:var(--font-sans);letter-spacing:.02em;}
+.subtab:hover{color:var(--h-ink);}
+.subtab.active{color:var(--h-ink);border-bottom-color:var(--h-ink);font-weight:600;background:transparent;}
+
+/* ITEM DETAILS tab panels */
+.id-tab{user-select:none;}
+.id-panel{display:none;flex:1;min-height:0;overflow:hidden;}
+.id-panel[data-id-panel="Details"]{grid-template-columns:50% 50%;}
+.id-panel[data-id-panel="Details"].active{display:grid;}
+.id-panel.panel-log.active,.id-panel.panel-actions.active,.id-panel.panel-query.active{display:block;padding:16px 18px;overflow-y:auto;}
+.id-log-list{font-size:12px;line-height:1.5;}
+.id-log-entry{padding:6px 8px;border-bottom:.5px dashed #d5e6db;}
+.id-log-entry:last-child{border-bottom:none;}
+.id-log-meta{font-family:var(--font-mono);font-size:10px;color:#6b7280;margin-right:8px;}
+.id-log-field{font-weight:500;color:#2f7a4d;}
+.id-log-delta{font-family:var(--font-mono);color:#111827;}
+.id-log-empty{color:#9ca3af;font-style:italic;text-align:center;padding:24px;}
+.id-placeholder{color:#9ca3af;font-style:italic;text-align:center;padding:40px;}
+
+/* Omit column (far-left) */
+.omit-col{width:22px;padding:0!important;text-align:center;vertical-align:middle;}
+.btn-omit{writing-mode:vertical-rl;transform:rotate(180deg);background:#f3f4f6;border:.5px solid #d1d5db;color:#6b7280;font-size:9px;padding:6px 2px;cursor:pointer;border-radius:2px;letter-spacing:.08em;font-family:var(--font-sans);text-transform:uppercase;}
+.btn-omit:hover{background:#fee2e2;color:#991b1b;border-color:#dc2626;}
+
+/* Row-count toggle */
+.row-count-bar{display:flex;align-items:center;gap:6px;margin-top:10px;}
+.row-count-field{display:none;background:#f9fafb;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);padding:4px 12px;font-size:12px;color:#111827;margin-left:auto;font-family:var(--font-mono);}
+.row-count-field.on{display:inline-block;}
+
+/* Status-symbol column (DATE sub-tab only, between REQ and SM) */
+.sym-col{width:42px;min-width:42px;max-width:46px;text-align:center;padding:2px 2px;vertical-align:middle;}
+#items-head th.sym-col{padding:3px 3px;}
+.sym-head{display:grid;grid-template-columns:1fr 1fr;gap:2px;justify-items:center;align-items:center;width:fit-content;margin:0 auto;}
+.sym-cell{cursor:default;}
+.sym-cell.editable{cursor:pointer;}
+.sym-cell.editable:hover{background:#f3f4f6;}
+.sym-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;font-size:10px;font-weight:700;font-family:var(--font-sans);line-height:1;box-sizing:border-box;}
+.sym-icon.q{border:1.3px solid #dc2626;color:#dc2626;background:#fff;}
+.sym-icon.e{border:1.3px solid #eab308;color:#eab308;background:#fff;}
+.sym-icon.ok{border:1.3px solid #16a34a;color:#16a34a;background:#fff;}
+.sym-icon.blk{border:1.3px solid #111827;color:#111827;background:#fff;position:relative;}
+.sym-icon.blk::after{content:"";position:absolute;left:1px;right:1px;top:50%;height:1.3px;background:#111827;transform:rotate(-45deg);}
+.sym-placeholder{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px dashed #d1d5db;}
+.sym-picker{position:absolute;z-index:200;display:none;background:#fff;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);box-shadow:0 6px 18px rgba(0,0,0,.12);padding:6px;gap:4px;}
+.sym-picker.open{display:inline-flex;}
+.sym-picker button{background:#fff;border:.5px solid #e5e7eb;border-radius:4px;padding:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;}
+.sym-picker button:hover{background:#f3f4f6;border-color:#9ca3af;}
+.sym-picker button.clear{font-size:10px;color:#6b7280;width:auto;padding:4px 6px;}
+
+/* Status column (hi-fi HStatus pills) */
+.status-cell{cursor:pointer;padding:4px 6px;}
+.status-btn{display:inline-block;padding:2px 9px;border-radius:3px;font-size:10px;font-weight:600;border:1px solid transparent;background:var(--h-surface-alt);color:var(--h-ink2);cursor:pointer;font-family:var(--font-sans);min-width:58px;text-align:center;letter-spacing:.03em;}
+.status-btn:hover{filter:brightness(0.96);}
+.s-CLEAR{background:var(--h-good-soft);color:var(--h-good);border-color:rgba(63,125,72,.18);}
+.s-VOID{background:var(--h-bad-soft);color:var(--h-bad);border-color:rgba(180,68,61,.18);}
+.s-NOTE{background:var(--h-warn-soft);color:#8a5f1e;border-color:rgba(196,138,46,.25);}
+.s-LIVE{background:var(--h-accent-soft);color:var(--h-accent-deep);border-color:rgba(201,100,66,.22);}
+.s-APPROVED{background:var(--h-good-soft);color:var(--h-good);border-color:rgba(63,125,72,.18);}
+.s-HOLD{background:var(--h-bad-soft);color:var(--h-bad);border-color:rgba(180,68,61,.18);}
+
+/* Status hover tooltip */
+.status-tooltip{position:fixed;z-index:500;background:#1f2937;color:#fff;padding:6px 10px;font-size:11px;border-radius:4px;max-width:280px;box-shadow:0 4px 12px rgba(0,0,0,.2);pointer-events:none;white-space:pre-wrap;line-height:1.4;display:none;}
+
+/* Status pop-up */
+.status-pop{position:fixed;z-index:600;background:#fff;border:.5px solid #9ca3af;border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.25);width:480px;font-family:var(--font-sans);display:none;}
+.status-pop.open{display:block;}
+.status-pop-hd{background:#2c3e5d;color:#fff;padding:8px;text-align:center;font-size:13px;font-weight:500;letter-spacing:.03em;}
+.status-pop-body{display:grid;grid-template-columns:150px 1fr;}
+.status-pop-left{border-right:.5px solid #d1d5db;padding:8px 10px;background:#f8fafc;}
+.sp-title{font-size:11px;font-weight:500;color:#374151;text-transform:none;text-align:center;padding:4px 0;background:#e7eef5;border:.5px solid #d1d5db;margin-bottom:6px;}
+.sp-title .sp-req{color:#dc2626;font-size:10px;margin-left:4px;}
+.status-pop-left label{display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px;cursor:pointer;color:#111827;}
+.status-pop-left label:hover{background:#eef2f7;}
+.status-pop-right{padding:8px 10px;}
+.status-pop-right textarea{width:100%;min-height:54px;border:.5px solid #d1d5db;border-radius:3px;padding:6px 8px;font-family:var(--font-sans);font-size:12px;box-sizing:border-box;resize:vertical;}
+.status-pop-actions{display:flex;gap:8px;margin-top:8px;justify-content:flex-end;}
+.sp-btn-update{background:#fff;border:1px solid #16a34a;color:#166534;padding:6px 12px;font-size:11px;border-radius:3px;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:4px;}
+.sp-btn-update:hover:not(:disabled){background:#dcfce7;}
+.sp-btn-update:disabled{opacity:.5;cursor:not-allowed;}
+.status-pop-log-wrap{border-top:.5px solid #d1d5db;padding:8px 10px;background:#fafafa;}
+.status-pop-log-body{height:130px;overflow-y:auto;border:.5px solid #d1d5db;background:#fff;padding:6px 8px;font-size:11px;color:#111827;}
+.sp-log-entry{padding:4px 0;border-bottom:.5px dashed #e5e7eb;}
+.sp-log-entry:last-child{border-bottom:none;}
+.sp-log-meta{font-family:var(--font-mono);font-size:10px;color:#6b7280;}
+.sp-log-status{font-weight:500;margin:0 4px;}
+.sp-log-empty{color:#9ca3af;font-style:italic;text-align:center;padding:14px;}
+
+/* Feedback widget */
+.fb-btn{position:fixed;bottom:20px;right:20px;background:#111827;color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:var(--font-sans);box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:100;}
+.fb-btn:hover{opacity:.9;}
+.fb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center;}
+.fb-overlay.active{display:flex;}
+.fb-box{background:#fff;border-radius:8px;padding:20px;width:400px;max-width:90vw;font-family:var(--font-sans);}
+.fb-box h3{margin:0 0 12px;font-size:14px;font-weight:500;}
+.fb-box label{display:block;font-size:11px;color:#6b7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+.fb-box select,.fb-box textarea{width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;font-family:inherit;font-size:13px;margin-bottom:10px;box-sizing:border-box;}
+.fb-box textarea{min-height:80px;resize:vertical;}
+.fb-actions{display:flex;gap:8px;justify-content:flex-end;}
+.fb-actions button{padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid #d1d5db;background:#fff;font-family:inherit;}
+.fb-actions .fb-submit{background:#111827;color:#fff;border-color:#111827;}
+.fb-thanks{color:#059669;font-size:12px;margin-top:8px;}
+.fb-error{color:#dc2626;font-size:12px;margin-top:-6px;margin-bottom:8px;}
+</style>
+</head>
+<body>
+
+<div class="h-topbar">
+  <div class="h-brand">
+    <div class="h-brand-mark">◴</div>
+    <div class="h-brand-wm">Joinery<span>Flow</span></div>
+  </div>
+  <div class="h-topbar-spacer"></div>
+  <div class="h-search">🔍 <span>Search · ⌘K</span></div>
+  <div class="h-avatar">BM</div>
+</div>
+
+<div class="tabs">
+  <button class="tab" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+  <button class="tab" data-tab="cutlist" onclick="switchTab('cutlist')">Cutlist</button>
+  <button class="tab" data-tab="orderbook" onclick="switchTab('orderbook')">Orderbook</button>
+  <button class="tab active" data-tab="tracking" onclick="switchTab('tracking')">Tracking</button>
+  <button class="tab" data-tab="ivariations" onclick="switchTab('ivariations')">iVariations</button>
+  <button class="tab" data-tab="shopdwgs" onclick="switchTab('shopdwgs')">Shop Dwgs</button>
+  <button class="tab" data-tab="isample" onclick="switchTab('isample')">iSample</button>
+</div>
+
+<div class="h-wrap">
+
+<div class="panel active" id="panel-tracking">
+
+  <div class="job-hd">
+    <span class="job-code" id="proj-code">2273</span>
+    <div class="proj-sel">
+      <button class="proj-trigger" id="proj-trigger" onclick="toggleProjMenu(event)">
+        <span id="proj-current">Alfred Level 3 Fitout</span>
+        <span class="caret">▼</span>
+      </button>
+      <div class="proj-menu" id="proj-menu"></div>
+    </div>
+    <button class="btn" onclick="openProjectDetails()" title="Project details">Info</button>
+    <span style="color:#6b7280;font-size:12px;">Carell PID</span>
+    <span class="pid-badge" id="proj-pid">808</span>
+    <span style="flex:1;"></span>
+    <button class="btn" onclick="openProcurement()" title="Open Procurement in an independent window (two-monitor workflow)">🛒 Open Procurement</button>
+    <button class="btn" id="edit-mode-btn" onclick="toggleEditMode()">Edit item</button>
+    <button class="btn" onclick="openNewItemModal()">+ New item</button>
+  </div>
+
+  <div class="toolbar" style="gap:6px;margin-top:-6px;">
+    <button class="fm-btn fm-btn-fav" id="proj-fav" onclick="setProjectScope('fav')" title="Show only favourite projects in the list">★ FAV</button>
+    <button class="fm-btn active" id="proj-all" onclick="setProjectScope('all')" title="Show all projects in the list">ALL</button>
+  </div>
+
+  <div class="g4">
+    <div class="metric"><div class="ml">Items in job</div><div class="mv" id="m-total">—</div><div class="ms" id="m-total-sub"></div></div>
+    <div class="metric"><div class="ml">Overdue</div><div class="mv" id="m-overdue" style="color:#991b1b;">—</div><div class="ms">across all stages</div></div>
+    <div class="metric"><div class="ml">Due this week</div><div class="mv" id="m-soon">—</div><div class="ms">within 7 days</div></div>
+    <div class="metric"><div class="ml">Installed</div><div class="mv" id="m-inst" style="color:#166534;">—</div><div class="ms" id="m-inst-sub"></div></div>
+  </div>
+
+  <!-- Item-grid quick filters (FAV/ALL moved to project selector) -->
+  <div class="toolbar" style="gap:6px;">
+    <button class="fm-btn" id="qf-my" onclick="applyQuickFilter('my',this)" title="My entries">My Entries</button>
+    <button class="fm-btn" id="qf-del" onclick="applyQuickFilter('deleted',this)" title="Deleted">Deleted</button>
+    <button class="fm-btn" id="qf-void" onclick="applyQuickFilter('void',this)" title="Void">Void</button>
+    <button class="fm-btn" id="qf-tg" onclick="applyQuickFilter('tgsolid',this)" title="Tg Solid">Tg Solid</button>
+    <button class="fm-btn" id="qf-orders" onclick="applyQuickFilter('orders',this)" title="Orders">Orders</button>
+    <span style="width:8px;"></span>
+    <button class="fm-btn fm-btn-red" id="qf-overdue" onclick="applyQuickFilter('overdue',this)" title="Overdue">Overdue</button>
+    <button class="fm-btn fm-btn-green" id="qf-done" onclick="applyQuickFilter('installed',this)" title="Installed">Installed</button>
+    <button class="fm-btn" onclick="renderItems()" title="Refresh">↻</button>
+  </div>
+
+  <!-- Search row -->
+  <div class="toolbar">
+    <input type="text" placeholder="Cutlist #" id="q-cutlist" oninput="renderItems()" style="width:110px;font-size:13px;padding:6px 10px;border:.5px solid #d1d5db;border-radius:6px;">
+    <input type="text" placeholder="Search items, rooms, codes…" id="q-items" oninput="renderItems()" style="flex:1;min-width:160px;font-size:13px;padding:6px 10px;border:.5px solid #d1d5db;border-radius:6px;">
+  </div>
+
+  <!-- Sub-panel tabs (DATE default; others swap the Assembler→INST column block) -->
+  <div class="subtabs" id="subtabs">
+    <button class="subtab active" data-sub="DATE"          onclick="switchSubTab('DATE')">DATE</button>
+    <button class="subtab"        data-sub="iTIME"         onclick="switchSubTab('iTIME')">iTIME</button>
+    <button class="subtab"        data-sub="HARDWARE"      onclick="switchSubTab('HARDWARE')">HARDWARE</button>
+    <button class="subtab"        data-sub="SITE MEASURE"  onclick="switchSubTab('SITE MEASURE')">SITE MEASURE</button>
+    <button class="subtab"        data-sub="INVOICE"       onclick="switchSubTab('INVOICE')">INVOICE</button>
+    <button class="subtab"        data-sub="QC"            onclick="switchSubTab('QC')">QC</button>
+  </div>
+
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr id="items-head">
+        <th class="omit-col"></th>
+        <th></th>
+        <th class="sortable" data-col="num">CUTLIST</th>
+        <th class="sortable" data-col="stage">Stage</th>
+        <th class="sortable" data-col="zone">Zone</th>
+        <th class="sortable" data-col="level">Level</th>
+        <th class="sortable" data-col="rmNo">Rm No.</th>
+        <th class="sortable" data-col="rmDesc">Room</th>
+        <th class="sortable" data-col="code">Code</th>
+        <th class="sortable" data-col="desc">Description</th>
+        <th class="sortable" data-col="status">STATUS</th>
+        <th class="sortable tr" data-col="size">Size</th>
+        <th class="sortable tr" data-col="qty">Qty</th>
+        <th class="sortable" data-col="assem">Assembler</th>
+        <th class="sortable" data-col="lister">Lister</th>
+        <th class="sortable stage-col" data-col="stage:REQ">REQ</th>
+        <th class="sym-col" title="Status symbol"><span class="sym-head"><span class="sym-icon q">?</span><span class="sym-icon e">!</span><span class="sym-icon ok">&#10003;</span><span class="sym-icon blk"></span></span></th>
+        <th class="sortable stage-col" data-col="stage:SM">SM</th>
+        <th class="sortable stage-col" data-col="stage:LISTED">LISTED</th>
+        <th class="sortable stage-col" data-col="stage:DOWN">DOWN</th>
+        <th class="sortable stage-col" data-col="stage:CNC">CNC</th>
+        <th class="sortable stage-col" data-col="stage:EDGED">EDGED</th>
+        <th class="sortable stage-col" data-col="stage:PAINTED">PAINTED</th>
+        <th class="sortable stage-col" data-col="stage:MADE">MADE</th>
+        <th class="sortable stage-col" data-col="stage:DEL">DEL</th>
+        <th class="sortable stage-col" data-col="stage:INST">INST</th>
+        <th class="sortable" data-col="itemId">Item ID</th>
+      </tr>
+      <tr class="filter-row">
+        <td></td>
+        <td><button class="fm-btn" id="btn-clear" onclick="clearAllFilters()" title="Clear all filters, searches and sort" style="padding:3px 8px;font-size:10px;">Clear</button></td>
+        <td></td>
+        <td><select id="f-stage" onchange="renderItems()"><option value="">All stages</option><option>Joinery Lab</option><option>Joinery General</option><option>PC2</option><option>Stone</option></select></td>
+        <td><select id="f-zone" onchange="renderItems()"><option value="">All zones</option><option>03</option><option>04</option><option>05</option></select></td>
+        <td><select id="f-level" onchange="renderItems()"><option value="">All levels</option></select></td>
+        <td><select id="f-rmno" onchange="renderItems()"><option value="">All rooms</option></select></td>
+        <td><select id="f-room" onchange="renderItems()"><option value="">All rooms</option></select></td>
+        <td><select id="f-code" onchange="renderItems()"><option value="">All codes</option></select></td>
+        <td></td>
+        <td><select id="f-status" onchange="renderItems()"><option value="">All statuses</option><option>CLEAR</option><option>VOID</option><option>NOTE!</option><option>LIVE</option><option>APPROVED</option><option>HOLD</option></select></td>
+        <td></td><td></td>
+        <td><select id="f-assem" onchange="renderItems()"><option value="">All assemblers</option></select></td>
+        <td><select id="f-lister" onchange="renderItems()"><option value="">All listers</option></select></td>
+        <td></td><td><select id="f-sym" onchange="renderItems()"><option value="">All symbols</option><option value="question">? Query</option><option value="warning">! Warning</option><option value="ok">&#10003; OK</option><option value="blocked">&#8856; Blocked</option><option value="__none__">(none)</option></select></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+      </tr>
+    </thead>
+    <tbody id="tbody-items"></tbody>
+  </table>
+  </div>
+
+  <div class="row-count-bar">
+    <button class="fm-btn" onclick="setRowCountVisible(true)" title="Show row count">Show</button>
+    <button class="fm-btn" onclick="setRowCountVisible(false)" title="Hide row count">Hide</button>
+    <span class="row-count-field" id="row-count-field">Total rows: 0</span>
+  </div>
+</div>
+
+<!-- Symbol picker popover (DATE sub-tab, edit mode) -->
+<div class="sym-picker" id="sym-picker" onclick="event.stopPropagation()"></div>
+
+<!-- Status tooltip + pop-up -->
+<div class="status-tooltip" id="status-tooltip"></div>
+<div class="status-pop" id="status-pop" onclick="event.stopPropagation()">
+  <div class="status-pop-hd">Add New Status</div>
+  <div class="status-pop-body">
+    <div class="status-pop-left">
+      <div class="sp-title">Status</div>
+      <div id="sp-status-list"></div>
+    </div>
+    <div class="status-pop-right">
+      <div class="sp-title">Status Notes<span class="sp-req">(*Required)</span></div>
+      <textarea id="sp-note" placeholder="Description of Status Change..." oninput="updateSpButtonState()"></textarea>
+      <div class="status-pop-actions">
+        <button class="sp-btn-update" id="sp-update-btn" onclick="saveStatusUpdate()" disabled>↻ Update Current Item</button>
+      </div>
+    </div>
+  </div>
+  <div class="status-pop-log-wrap">
+    <div class="sp-title" style="text-align:left;background:transparent;border:none;padding:0 0 4px;">Status Log</div>
+    <div class="status-pop-log-body" id="sp-log-body"></div>
+  </div>
+</div>
+
+<!-- Placeholder panels for other modules -->
+<div class="panel" id="panel-dashboard">
+  <div style="padding:4rem 2rem;text-align:center;color:#6b7280;">
+    <div style="font-size:18px;font-weight:500;color:#111827;margin-bottom:8px;">Dashboard</div>
+    <div style="font-size:13px;">🚧 Under development</div>
+  </div>
+</div>
+<div class="panel" id="panel-cutlist"><div class="stitle">Cutlist</div><p style="color:#6b7280;font-size:13px;">Cutlist module — per-job cut list lives here. Placeholder for v1.</p></div>
+<div class="panel" id="panel-orderbook"><div class="stitle">Orderbook</div><p style="color:#6b7280;font-size:13px;">Orderbook module — see <code>procurement_orderbook_dashboard.html</code>.</p></div>
+<div class="panel" id="panel-ivariations"><div class="stitle">iVariations</div><p style="color:#6b7280;font-size:13px;">Variation requests &amp; approvals — placeholder for v1.</p></div>
+<div class="panel" id="panel-shopdwgs"><div class="stitle">Shop Dwgs</div><p style="color:#6b7280;font-size:13px;">Shop drawings library — placeholder for v1.</p></div>
+<div class="panel" id="panel-isample"><div class="stitle">iSample</div><p style="color:var(--h-ink2);font-size:13px;">Sample sign-off tracking — placeholder for v1.</p></div>
+
+</div><!-- /.h-wrap -->
+
+<!-- Item detail modal (matches FileMaker ITEM DETAILS screenshot) -->
+<div id="item-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeItemModal()">
+  <div class="id-box">
+    <div class="id-hd">
+      <button class="id-close" onclick="closeItemModal()">✕</button>
+      <div class="id-title">ITEM DETAILS</div>
+      <div style="width:28px;"></div>
+    </div>
+
+    <div class="id-head-row">
+      <div class="id-desc" id="m-desc">—</div>
+      <div class="id-jid">
+        <div class="id-jid-lbl">JID</div>
+        <div class="id-jid-val" id="m-jid">—</div>
+      </div>
+    </div>
+
+    <div class="id-tabs">
+      <div class="id-tab active" data-id-tab="Details" onclick="switchItemTab('Details')">Details</div>
+      <div class="id-tab"         data-id-tab="Log"     onclick="switchItemTab('Log')">Log</div>
+      <div class="id-tab"         data-id-tab="Actions" onclick="switchItemTab('Actions')">Actions</div>
+      <div class="id-tab"         data-id-tab="Query"   onclick="switchItemTab('Query')">Query</div>
+    </div>
+
+    <div class="id-panel active" data-id-panel="Details">
+      <div class="id-left">
+        <div class="id-row"><div class="id-lbl">Level</div><div class="id-val" id="m-level"></div></div>
+        <div class="id-row"><div class="id-lbl">Room Number</div><div class="id-val" id="m-rmno"></div></div>
+        <div class="id-row"><div class="id-lbl">Rm Description</div><div class="id-val" id="m-rmdesc"></div></div>
+        <div class="id-row" style="margin-top:6px;"><div class="id-lbl">Floor Plan</div><div class="id-val" id="m-floorplan"></div></div>
+        <div class="id-row"><div class="id-lbl">RLS</div><div class="id-val" id="m-rls"></div></div>
+        <div class="id-row"><div class="id-lbl">Joiery Details</div><div class="id-val" id="m-joiery"></div></div>
+        <div class="id-check-row" style="margin-top:6px;">
+          <div class="id-lbl">Painting Required?</div>
+          <div class="id-check"><span class="id-check-dot" id="m-paint"></span></div>
+        </div>
+        <div class="id-check-row">
+          <div class="id-lbl">Solid Surface Req?</div>
+          <div class="id-check"><span class="id-check-dot" id="m-solid"></span></div>
+        </div>
+        <div class="id-check-row">
+          <div class="id-lbl">Cutlist Printed?</div>
+          <div class="id-check"><span class="id-check-tick" id="m-cutprint">✓</span></div>
+        </div>
+        <div class="id-idrow" style="margin-top:10px;">
+          <div class="id-lbl">Group ID</div>
+          <div class="id-val" id="m-groupid"></div>
+          <div class="id-icon">▤</div>
+        </div>
+        <div class="id-idrow">
+          <div class="id-lbl">Item ID</div>
+          <div class="id-val" id="m-itemid"></div>
+          <div class="id-icon">▤</div>
+        </div>
+        <div class="id-notes">
+          <div class="id-lbl">Estimator<br>Notes</div>
+          <textarea id="m-estnotes" placeholder=""></textarea>
+        </div>
+      </div>
+
+      <div class="id-right">
+        <div class="id-file-row">
+          <div class="id-lbl">SketchUp File</div>
+          <div class="id-val" id="m-skp"></div>
+          <div class="id-icon" title="SketchUp">🏠</div>
+        </div>
+        <div class="id-file-row">
+          <div class="id-lbl">CabVision&nbsp; File</div>
+          <div class="id-val" id="m-cabvision"></div>
+          <div class="id-icon"></div>
+        </div>
+        <div class="id-docreg-hd">DOCUMENT REGISTER <small>(FOR CURRENT ITEM)</small></div>
+        <div class="id-docreg">
+          <div class="id-docreg-body"></div>
+          <div class="id-docreg-scroll">
+            <button>▲</button>
+            <button>▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="id-panel panel-log" data-id-panel="Log">
+      <div style="font-size:13px;color:#2f7a4d;font-weight:500;margin-bottom:8px;">Edit History</div>
+      <div class="id-log-list" id="m-log-list"></div>
+    </div>
+    <div class="id-panel panel-actions" data-id-panel="Actions">
+      <div class="id-placeholder">Actions — under development</div>
+    </div>
+    <div class="id-panel panel-query" data-id-panel="Query">
+      <div class="id-placeholder">Query — under development</div>
+    </div>
+
+    <div class="id-ft">
+      <button class="id-nav" onclick="stepItem(-1)">&lt; PREVIOUS</button>
+      <button class="id-close-btn" onclick="closeItemModal()">CLOSE</button>
+      <button class="id-nav" onclick="stepItem(1)">NEXT &gt;</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT DETAILS modal -->
+<div id="proj-details-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeProjectDetails()">
+  <div class="proj-box">
+    <div class="proj-hd">
+      <div style="width:100px;"></div>
+      <div class="proj-title">PROJECT DETAILS</div>
+      <div class="proj-winctrls"><span>—</span><span>□</span><span onclick="closeProjectDetails()">✕</span></div>
+    </div>
+
+    <div style="padding:10px 1rem 0;display:flex;gap:10px;align-items:center;background:#f8fafc;">
+      <div class="pd-search" style="flex:1;margin-bottom:0;">
+        <span style="color:#6b7280;">🔍</span>
+        <div style="flex:1;">
+          <div style="font-size:10px;color:#1e3a5f;text-align:center;font-weight:500;letter-spacing:.05em;">SEARCH FOR PROJECT</div>
+          <input type="text" placeholder="Search for Project here…">
+        </div>
+        <div class="pd-pager"><button>◀</button><span>1 / 1</span><button>▶</button></div>
+      </div>
+    </div>
+
+    <div class="proj-body">
+      <!-- LEFT COLUMN -->
+      <div class="proj-left">
+        <!-- PROJECT -->
+        <div class="pd-card" style="display:grid;grid-template-columns:auto 1fr;gap:0;">
+          <div style="padding:10px;display:flex;align-items:center;justify-content:center;border-right:.5px solid #e5e7eb;background:#fff;">
+            <div class="pd-logo">LOGO</div>
+          </div>
+          <div>
+            <div class="pd-card-hd">PROJECT</div>
+            <div style="display:grid;grid-template-columns:70px 1fr;">
+              <div style="padding:8px;font-family:var(--font-mono);font-size:15px;text-align:center;background:#fff;border-right:.5px solid #e5e7eb;" id="pd-projnum">2273</div>
+              <div style="padding:8px;font-size:13px;background:#fff;" id="pd-projname">Alfred Level 3 Fitout</div>
+            </div>
+            <div class="pd-row">
+              <div><div class="pd-sublbl">BUILDER</div><div class="pd-dd" style="padding-left:0;"><span style="background:#1e3a5f;color:#fff;padding:4px 8px;font-size:11px;">arete</span><span style="flex:1;padding:0 8px;">Arete</span><span class="caret">▼</span></div></div>
+              <div><div class="pd-sublbl">PROJECT CLASSIFICATION</div><div class="pd-dd"><span>Major Project</span><span class="caret">▼</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SITE ADDRESS -->
+        <div class="pd-card" style="display:grid;grid-template-columns:auto 1fr;">
+          <div style="padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border-right:.5px solid #e5e7eb;background:#fff;width:100px;box-sizing:border-box;">
+            <div style="font-size:24px;">⛑️</div>
+            <div style="font-size:9px;color:#6b7280;text-align:center;">Site Address</div>
+          </div>
+          <div>
+            <div class="pd-card-hd">SITE ADDRESS</div>
+            <div class="pd-sublbl">STREET no. and STREET NAME</div>
+            <div class="pd-val">545 Saint Kilda Road</div>
+            <div class="pd-row" style="--cols:3;">
+              <div><div class="pd-sublbl">SUBURB</div><div class="pd-val">Melbourne</div></div>
+              <div><div class="pd-sublbl">P/CODE</div><div class="pd-val mono">3004</div></div>
+              <div><div class="pd-sublbl">STATE</div><div class="pd-dd"><span>VIC</span><span class="caret">▼</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTACT DETAILS -->
+        <div class="pd-card">
+          <div style="display:grid;grid-template-columns:auto 1fr 1fr;border-bottom:.5px solid #d1d5db;">
+            <div style="padding:6px 14px;background:#fff;font-size:11px;color:#6b7280;font-weight:500;">CONTACT DETAILS</div>
+            <div style="padding:6px 14px;background:#e6eef5;font-size:11px;color:#1e3a5f;text-align:center;font-weight:500;border-left:.5px solid #d1d5db;">OFFICE</div>
+            <div style="padding:6px 14px;background:#fff;font-size:11px;color:#6b7280;text-align:center;font-weight:500;border-left:.5px solid #d1d5db;">SITE</div>
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;">
+            <div style="padding:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-right:.5px solid #e5e7eb;background:#fff;width:100px;box-sizing:border-box;">
+              <div style="width:28px;height:28px;background:#1f2937;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;">Tg</div>
+              <div style="font-size:9px;color:#6b7280;text-align:center;">Trendgosa<br>Project Team.</div>
+            </div>
+            <div>
+              <div class="pd-row" style="--cols:3;">
+                <div><div class="pd-sublbl">TG PROJECT MANAGER</div><div class="pd-dd"><span>Richard Barr</span><span class="caret">▼</span></div></div>
+                <div><div class="pd-sublbl">EMAIL</div><div class="pd-val" style="font-size:11px;">Richard.Barr@trendgosa.com.au</div></div>
+                <div><div class="pd-sublbl">EXT</div><div class="pd-val mono">162</div></div>
+              </div>
+              <div class="pd-row" style="--cols:3;">
+                <div><div class="pd-sublbl">TG COORDINATOR</div><div class="pd-dd"><span>Ali Salem</span><span class="caret">▼</span></div></div>
+                <div><div class="pd-sublbl">EMAIL</div><div class="pd-val" style="font-size:11px;">Ali@trendgosa.com.au</div></div>
+                <div><div class="pd-sublbl">EXT</div><div class="pd-val mono">179</div></div>
+              </div>
+              <div class="pd-row" style="--cols:2;">
+                <div title="One Drafter per project runs board optimisation. PM-editable (trackingv2.md §11).">
+                  <div class="pd-sublbl">OPTIMISATION DRAFTER</div>
+                  <select id="pd-optimisation-drafter" onchange="setOptimisationDrafter(this.value)" style="width:100%;padding:5px 7px;border:.5px solid #d1d5db;border-radius:4px;font-size:12px;font-family:var(--font-sans);background:#fff;">
+                    <option value="">— unassigned —</option>
+                    <option value="DAVIDM">David M</option>
+                    <option value="BILLM">Bill M</option>
+                    <option value="CHRIS">Chris Anastasi</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="pd-sublbl">ROLE</div>
+                  <div class="pd-val" style="font-size:11px;color:#6b7280;">Runs board optimisation workbench. Edits Board tab in Item Editor.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CLIENT SITE CONTACT DETAILS -->
+        <div class="pd-card" style="display:grid;grid-template-columns:auto 1fr;">
+          <div style="padding:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-right:.5px solid #e5e7eb;background:#fff;width:100px;box-sizing:border-box;">
+            <div style="font-size:24px;">👥</div>
+            <div style="font-size:9px;color:#6b7280;text-align:center;">Client Site<br>Contact details.</div>
+          </div>
+          <div>
+            <div class="pd-card-hd">CONTACT DETAILS</div>
+            <table style="width:100%;font-size:11px;border-collapse:collapse;">
+              <thead>
+                <tr style="background:#fff;">
+                  <th style="padding:4px 8px;border-bottom:.5px solid #e5e7eb;text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;">POSITION</th>
+                  <th style="padding:4px 8px;border-bottom:.5px solid #e5e7eb;text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;">NAME</th>
+                  <th style="padding:4px 8px;border-bottom:.5px solid #e5e7eb;text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;">NOTES</th>
+                  <th style="padding:4px 8px;border-bottom:.5px solid #e5e7eb;text-align:left;font-size:9px;color:#6b7280;text-transform:uppercase;">MOBILE</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Contract<br><span style="font-size:9px;color:#9ca3af;">Company</span></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Jason Cardozo</td><td></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;font-family:var(--font-mono);">0404 398 418</td></tr>
+                <tr><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Project Engineer<br><span style="font-size:9px;color:#9ca3af;">Company</span></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Oliver Stapleton</td><td></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;font-family:var(--font-mono);">0491 130 347</td></tr>
+                <tr><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Site Manager<br><span style="font-size:9px;color:#9ca3af;">Company</span></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;">Scott MacKinven</td><td></td><td style="padding:5px 8px;border-bottom:.5px solid #f3f4f6;font-family:var(--font-mono);">0478 823 948</td></tr>
+                <tr><td style="padding:5px 8px;color:#9ca3af;font-style:italic;">Add new contact<br><span style="font-size:9px;">Company</span></td><td></td><td></td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="proj-right">
+        <div class="pd-tabs">
+          <div class="pd-tab active">PROJECT STATS</div>
+          <div class="pd-tab">CARS</div>
+          <div class="pd-tab">OH&S</div>
+          <div class="pd-tab">SCOPE</div>
+        </div>
+        <div class="pd-pid">PID</div>
+
+        <div style="display:grid;grid-template-columns:55% 45%;gap:10px;margin-top:10px;">
+          <!-- ADMIN STATS -->
+          <div>
+            <table class="pd-stats-tbl">
+              <thead><tr><th colspan="2">ADMIN STATS</th></tr></thead>
+              <tbody>
+                <tr><td>PROJECT MANAGE</td><td>40</td></tr>
+                <tr><td>SHOP DRAWING</td><td>56</td></tr>
+                <tr><td>PROCURING</td><td>17</td></tr>
+                <tr><td>MEETINGS</td><td></td></tr>
+                <tr><td>LISTING</td><td>241.5</td></tr>
+                <tr><td>DOCUMENT CONTROL</td><td>73</td></tr>
+                <tr><td>LISTING REWORKS</td><td></td></tr>
+                <tr class="pd-total"><td></td><td>441</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- PRODUCTION + LIFT -->
+          <div>
+            <div class="pd-stats-tbl" style="display:block;">
+              <div style="background:#e6eef5;color:#1e3a5f;padding:5px;font-size:11px;font-weight:500;text-align:center;border-bottom:.5px solid #d1d5db;">PRODUCTION / INSTALL</div>
+              <div class="pd-prod">
+                <div>Assembly Hours<small>*Data from TGPAY</small></div><div>207</div>
+                <div>Site Install Hours<small>*Data from TGPAY</small></div><div>131.5</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <div style="background:#e6eef5;color:#1e3a5f;padding:5px;font-size:11px;font-weight:500;text-align:center;border:.5px solid #d1d5db;border-bottom:none;">LIFT SIZE &amp; DETAILS</div>
+              <div class="pd-lift">Lift Size details</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- META TILES -->
+        <div class="pd-meta-grid">
+          <div class="pd-tile"><div class="lbl">Created Date</div><div class="val">30/09/2025</div></div>
+          <div class="pd-tile"><div class="lbl">STATUS</div><div class="val">Current</div></div>
+          <div class="pd-tile"><div class="lbl">Installation Start Date</div><div class="val">1/04/2026</div></div>
+          <div class="pd-tile pd-tile-red">TOTAL VALUE</div>
+          <div class="pd-tile"><div class="lbl">Created By</div><div class="val">DAVIDM</div></div>
+          <div class="pd-tile"><div class="lbl">TG SOLID</div><div class="val" style="color:#16a34a;">✓</div></div>
+          <div class="pd-tile pd-tile-red">CLOSE OUT<br>PROJECT</div>
+          <div class="pd-tile"><div class="lbl">TOTAL LINE ITEMS</div><div class="val"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==== Demo data ==== */
+const TODAY = new Date('2026-04-17');
+const STAGES = ['REQ','SM','LISTED','DOWN','CNC','EDGED','PAINTED','MADE','DEL','INST'];
+
+function d(str){ return str ? new Date(str) : null; }
+
+const ITEMS = [
+  mk(297830,'Joinery General','03','057','Dirty Utilities','JO-SS01','SS Bench',1200,1,'','John',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-28','2026-03-28'], LISTED:['2026-03-28','2026-03-28'],
+      DOWN:['2026-04-02','2026-04-02'], CNC:['2026-04-05','2026-04-05'], EDGED:['2026-04-06','2026-04-06'],
+      PAINTED:[null,null], MADE:['2026-04-10','2026-04-10'], DEL:['2026-04-14',null], INST:['2026-04-17',null]}),
+  mk(297871,'Joinery General','03','057','Dirty Utilities','JO-SS02','SS Bench + OH Cupboard',1500,1,'','Bill',
+     {REQ:['2026-04-01','2026-03-04'], SM:['2026-03-18','2026-03-18'], LISTED:['2026-03-23','2026-03-23'],
+      DOWN:['2026-03-23','2026-03-23'], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297910,'Joinery Lab','03','068','Bacterial Room','JL-BE01a','Lab Bench',1500,1,'','',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-05','2026-03-05'], LISTED:['2026-03-20',null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297911,'Joinery Lab','03','068','Bacterial Room','JL-BE01a','Lab Bench',1500,1,'','',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-05','2026-03-05'], LISTED:['2026-03-20',null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297912,'Joinery Lab','03','068','Bacterial Room','JL-BE01r','Lab Bench',1500,1,'','',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-05','2026-03-05'], LISTED:['2026-03-20',null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297913,'Joinery Lab','03','068','Bacterial Room','JL-BE01r','Lab Bench',1650,1,'','',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-05','2026-03-05'], LISTED:['2026-03-20',null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297914,'Joinery Lab','03','068','Bacterial Room','JL-BE01r','Lab Bench',1650,1,'','',
+     {REQ:['2026-04-01','2026-04-01'], SM:['2026-03-05','2026-03-05'], LISTED:['2026-03-20',null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297956,'Joinery Lab','03','068','Bacterial Room','JL-SB01a','SS Lab Bench',1200,1,'Chris Anastasi','Bill',
+     {REQ:['2026-04-01','2026-03-17'], SM:['2026-03-23','2026-03-23'], LISTED:['2026-03-25','2026-03-25'],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297960,'Joinery Lab','03','069','Clean Lab','JL-BE02','Lab Bench + OH',1800,2,'Chris Anastasi','Bill',
+     {REQ:['2026-04-20','2026-04-10'], SM:['2026-03-30','2026-03-30'], LISTED:['2026-04-02','2026-04-02'],
+      DOWN:['2026-04-08','2026-04-08'], CNC:['2026-04-15',null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297961,'PC2','04','102','PC2 Holding','JL-PC201','PC2 Containment Bench',2000,1,'Anna Wu','Bill',
+     {REQ:['2026-05-01',null], SM:['2026-04-12','2026-04-12'], LISTED:[null,null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+  mk(297975,'Stone','04','104','Reception','ST-CT01','Reception Counter Top',3200,1,'—','Bill',
+     {REQ:['2026-04-25','2026-04-10'], SM:['2026-03-30','2026-03-30'], LISTED:['2026-04-05','2026-04-05'],
+      DOWN:['2026-04-12','2026-04-12'], CNC:['2026-04-14','2026-04-14'], EDGED:['2026-04-15','2026-04-15'],
+      PAINTED:[null,null], MADE:['2026-04-16','2026-04-16'], DEL:['2026-04-22',null], INST:['2026-04-24',null]}),
+  mk(297988,'Joinery General','05','201','Tea Point','JO-TP01','Tea Point Joinery',2400,1,'John','Bill',
+     {REQ:['2026-05-15',null], SM:['2026-04-10','2026-04-10'], LISTED:[null,null],
+      DOWN:[null,null], CNC:[null,null], EDGED:[null,null], PAINTED:[null,null],
+      MADE:[null,null], DEL:[null,null], INST:[null,null]}),
+];
+
+/* Material availability (trackingv2.md #32)
+   Stand-in for the query: item_hardware_lines → batch_allocations →
+   procurement_batches.eta/received. In the real build this is an API aggregate. */
+const MATERIAL_AVAIL = {
+  297830: { lines:[{mat:'Blum Hinge 110°',            st:'ready'},   {mat:'Shelf Pin 5mm',            st:'ready'}] },
+  297871: { lines:[{mat:'Blum Hinge 110°',            st:'ready'},   {mat:'D-Handle 192mm',           st:'late', eta:'2026-04-15'}, {mat:'Shelf Pin 5mm', st:'blocked'}, {mat:'Blum Tandem Runner 400', st:'eta', eta:'2026-04-24'}] },
+  297910: { lines:[{mat:'18-PB board',                st:'ready'},   {mat:'Blum Hinge 110°',          st:'ready'}] },
+  297911: { lines:[{mat:'18-PB board',                st:'ready'},   {mat:'Blum Hinge 110°',          st:'ready'}] },
+  297912: { lines:[{mat:'18-PB board',                st:'ready'}] },
+  297913: { lines:[{mat:'18-PB board',                st:'ready'}] },
+  297914: { lines:[{mat:'18-PB board',                st:'ready'}] },
+  297956: { lines:[{mat:'25-SS304 sheet',             st:'eta', eta:'2026-04-28'}] },
+  297960: { lines:[{mat:'Blum Tandem Runner 400',     st:'eta', eta:'2026-04-24'}, {mat:'D-Handle 192mm', st:'eta', eta:'2026-04-15'}] },
+  297961: { lines:[{mat:'Miele H7164BP oven',         st:'eta', eta:'2026-05-05'}, {mat:'Solid surface sheet', st:'blocked'}] },
+  297975: { lines:[{mat:'Caesarstone 6131 slab',      st:'ready'}] },
+  297988: { lines:[] },
+};
+function availSummary(num){
+  const a = MATERIAL_AVAIL[num];
+  if (!a || !a.lines.length) return { worst:'none', ready:0, blocked:0, total:0 };
+  const rank = { blocked:4, late:3, eta:2, ready:1 };
+  let worstKey = 'ready', worstRank = 0;
+  let ready = 0, blocked = 0;
+  a.lines.forEach(l => {
+    if (l.st === 'ready') ready++;
+    if (l.st === 'blocked') blocked++;
+    if (rank[l.st] > worstRank){ worstRank = rank[l.st]; worstKey = l.st; }
+  });
+  return { worst: worstKey, ready, blocked, total: a.lines.length };
+}
+function availMarkup(num){
+  const s = availSummary(num);
+  if (s.total === 0) return `<span class="avail-strip" title="No hardware lines recorded"><span class="avail-dot none"></span></span>`;
+  const label = s.blocked ? `${s.ready}/${s.total} ✗${s.blocked}` : `${s.ready}/${s.total}`;
+  const cls = s.blocked ? 'avail-count has-blocked' : 'avail-count';
+  return `<span class="avail-strip" onclick="openAvailPop(event,${num})" title="Material availability — click for detail"><span class="avail-dot ${s.worst}"></span><span class="${cls}">${label}</span></span>`;
+}
+
+function mk(num,stage,zone,rmNo,rmDesc,code,desc,size,qty,assem,lister,stages){
+  const itemId = 598200 + num - 297830;
+  return {num,stage,zone,level:'03',rmNo,rmDesc,code,desc,size,qty,assem,lister,stages,
+          itemId, groupId: itemId,
+          floorPlan:'3101-T1', rls:'6328-T1', joieryDetails:'6328-T1',
+          paintingReq:false, solidSurfaceReq:false, cutlistPrinted:true,
+          sketchupFile: num + '.skp', cabVisionFile:'', estimatorNotes:'',
+          status:'CLEAR', statusLog:[], editLog:[], omitted:false, statusSymbol:null,
+          fav:false,deleted:false,void:false};
+}
+
+const CURRENT_USER = 'DAVIDM';
+const CURRENT_ROLE = 'DRAFTER';   // one of: CEO | PM | DRAFTER | FOREMAN | MACHINE | PROCUREMENT
+const WRITE_ROLES  = new Set(['CEO','PM','DRAFTER']);
+const STATUS_OPTIONS = ['CLEAR','VOID','NOTE!','LIVE','APPROVED','HOLD'];
+function statusClass(s){ return 's-' + s.replace('!',''); }
+
+/* Field labels for edit-log readability */
+const FIELD_LABELS = {
+  num:'Cutlist', stage:'Stage', zone:'Zone', level:'Level', rmNo:'Room Number',
+  rmDesc:'Room', code:'Code', desc:'Description', size:'Size', qty:'Qty',
+  assem:'Assembler', lister:'Lister', statusSymbol:'Status Symbol'
+};
+const SYMBOLS = [
+  {key:'question', cls:'q',   glyph:'?',       label:'Query'},
+  {key:'warning',  cls:'e',   glyph:'!',       label:'Warning'},
+  {key:'ok',       cls:'ok',  glyph:'\u2713',  label:'OK'},
+  {key:'blocked',  cls:'blk', glyph:'',        label:'Blocked'}
+];
+function symbolIconHTML(key){
+  const s = SYMBOLS.find(x => x.key === key);
+  if(!s) return '<span class="sym-placeholder" aria-hidden="true"></span>';
+  return `<span class="sym-icon ${s.cls}" title="${s.label}">${s.glyph}</span>`;
+}
+
+/* Sub-tab column configs: DATE is the default (existing columns); others render placeholder columns */
+const SUBTABS = {
+  'DATE':         { cols: null /* special-cased: keeps existing assem/lister + 10 stages */ },
+  'iTIME':        { cols: [{key:'hours',label:'Hours'},{key:'operator',label:'Operator'},{key:'start',label:'Start'},{key:'end',label:'End'}] },
+  'HARDWARE':     { cols: [{key:'hinges',label:'Hinges'},{key:'handles',label:'Handles'},{key:'runners',label:'Runners'},{key:'ordered',label:'Ordered'},{key:'received',label:'Received'}] },
+  'SITE MEASURE': { cols: [{key:'smdate',label:'SM Date'},{key:'by',label:'By'},{key:'variance',label:'Variance'},{key:'signoff',label:'Signed Off'}] },
+  'INVOICE':      { cols: [{key:'invno',label:'Invoice #'},{key:'invdate',label:'Date'},{key:'amount',label:'Amount'},{key:'paid',label:'Paid'}] },
+  'QC':           { cols: [{key:'checked',label:'Checked'},{key:'by',label:'By'},{key:'result',label:'Result'},{key:'rework',label:'Rework'}] }
+};
+let subTab = 'DATE';
+let defaultHeadHTML = null, defaultFilterHTML = null;
+
+/* ==== Tab switching ==== */
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name));
+}
+
+/* ==== Projects ==== */
+const PROJECTS = [
+  {name:'Alfred Level 3 Fitout', code:'2273', pid:'808'},
+  {name:'The Trentham',          code:'2301', pid:'812'},
+  {name:'7ss Flinder West',      code:'2318', pid:'825'},
+];
+const favouriteProjects = new Set(['Alfred Level 3 Fitout']);
+let currentProject = PROJECTS[0].name;
+let projectScope = 'all'; // 'all' | 'fav'
+
+function visibleProjects(){
+  return projectScope === 'fav'
+    ? PROJECTS.filter(p => favouriteProjects.has(p.name))
+    : PROJECTS;
+}
+
+function renderProjMenu(){
+  const menu = document.getElementById('proj-menu');
+  const list = visibleProjects();
+  if(list.length === 0){
+    menu.innerHTML = '<div class="proj-empty">No favourite projects yet — click a ★ to add one.</div>';
+    return;
+  }
+  menu.innerHTML = list.map(p => `
+    <div class="proj-row ${p.name===currentProject?'selected':''}" onclick="selectProject('${p.name.replace(/'/g,"\\'")}')">
+      <span class="proj-name">${p.name}</span>
+      <button class="proj-star ${favouriteProjects.has(p.name)?'on':''}"
+              onclick="event.stopPropagation();toggleFav('${p.name.replace(/'/g,"\\'")}')"
+              title="Toggle favourite">★</button>
+    </div>`).join('');
+}
+
+function toggleProjMenu(e){
+  e.stopPropagation();
+  document.getElementById('proj-menu').classList.toggle('open');
+}
+function selectProject(name){
+  currentProject = name;
+  const p = PROJECTS.find(x=>x.name===name);
+  document.getElementById('proj-current').textContent = name;
+  document.getElementById('proj-code').textContent = p.code;
+  document.getElementById('proj-pid').textContent = p.pid;
+  document.getElementById('proj-menu').classList.remove('open');
+  renderProjMenu();
+  renderItems();
+}
+function toggleFav(name){
+  if(favouriteProjects.has(name)) favouriteProjects.delete(name);
+  else favouriteProjects.add(name);
+  renderProjMenu();
+}
+function setProjectScope(scope){
+  projectScope = scope;
+  document.getElementById('proj-fav').classList.toggle('active', scope==='fav');
+  document.getElementById('proj-all').classList.toggle('active', scope==='all');
+  renderProjMenu();
+  document.getElementById('proj-menu').classList.add('open');
+}
+document.addEventListener('click', e => {
+  const menu = document.getElementById('proj-menu');
+  const trig = document.getElementById('proj-trigger');
+  if(menu && !menu.contains(e.target) && !trig.contains(e.target)){
+    menu.classList.remove('open');
+  }
+});
+
+/* ==== Item-grid quick filters ==== */
+let activeFilter = 'all';
+function applyQuickFilter(key,btn){
+  btn.classList.toggle('active');
+  activeFilter = btn.classList.contains('active') ? key : 'all';
+  renderItems();
+}
+
+function clearAllFilters(){
+  ['f-stage','f-zone','f-level','f-rmno','f-room','f-code','f-assem','f-lister','f-status','f-sym'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  ['q-items','q-cutlist'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.querySelectorAll('.toolbar .fm-btn.active').forEach(b=>{
+    if(b.id !== 'proj-fav' && b.id !== 'proj-all') b.classList.remove('active');
+  });
+  activeFilter = 'all';
+  sortState = {col:null, dir:0};
+  renderItems();
+}
+
+/* ==== Date formatting ==== */
+function fmt(date){
+  if(!date) return '';
+  const dd = String(date.getDate()).padStart(2,'0');
+  const mm = String(date.getMonth()+1).padStart(2,'0');
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+}
+function dateCell(dueStr, doneStr){
+  const due = d(dueStr), done = d(doneStr);
+  if(done){ return `<span class="date-done">${fmt(done)}</span>`; }
+  if(!due) return `<span class="date-ok">—</span>`;
+  const diff = (due - TODAY) / 86400000;
+  if(diff < 0) return `<span class="date-overdue">${fmt(due)}</span>`;
+  if(diff <= 3) return `<span class="date-soon">${fmt(due)}</span>`;
+  return `<span class="date-ok">${fmt(due)}</span>`;
+}
+
+/* ==== Filter-select population ==== */
+function fillSelect(id, values){
+  const sel = document.getElementById(id);
+  const keep = sel.querySelector('option[value=""]');
+  sel.innerHTML = '';
+  if(keep) sel.appendChild(keep);
+  [...new Set(values.filter(Boolean))].sort().forEach(v=>{
+    const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+  });
+}
+function populateRooms(){
+  fillSelect('f-rmno',   ITEMS.map(i=>i.rmNo));
+  fillSelect('f-room',   ITEMS.map(i=>i.rmDesc));
+  fillSelect('f-level',  ITEMS.map(i=>i.level));
+  fillSelect('f-code',   ITEMS.map(i=>i.code));
+  fillSelect('f-assem',  ITEMS.map(i=>i.assem));
+  fillSelect('f-lister', ITEMS.map(i=>i.lister));
+  // Also populate the toolbar room-number dropdown (if present) — kept for filter alignment
+}
+
+/* ==== Render ==== */
+function matchFilter(item){
+  if(item.omitted) return false;
+  const q  = document.getElementById('q-items').value.toLowerCase();
+  const qc = document.getElementById('q-cutlist').value.toLowerCase();
+  const fs = document.getElementById('f-stage').value;
+  const fz = document.getElementById('f-zone').value;
+  const fl = document.getElementById('f-level').value;
+  const frn= document.getElementById('f-rmno').value;
+  const fr = document.getElementById('f-room').value;
+  const fc = document.getElementById('f-code').value;
+  const fa = document.getElementById('f-assem') ? document.getElementById('f-assem').value : '';
+  const fli= document.getElementById('f-lister') ? document.getElementById('f-lister').value : '';
+  const fst= document.getElementById('f-status') ? document.getElementById('f-status').value : '';
+  const fsym= document.getElementById('f-sym') ? document.getElementById('f-sym').value : '';
+
+  if(q && !(item.desc+item.rmDesc+item.code).toLowerCase().includes(q)) return false;
+  if(qc && !String(item.num).includes(qc)) return false;
+  if(fs  && item.stage   !== fs)  return false;
+  if(fz  && item.zone    !== fz)  return false;
+  if(fl  && item.level   !== fl)  return false;
+  if(frn && item.rmNo    !== frn) return false;
+  if(fr  && item.rmDesc  !== fr)  return false;
+  if(fc  && item.code    !== fc)  return false;
+  if(fa  && item.assem   !== fa)  return false;
+  if(fli && item.lister  !== fli) return false;
+  if(fst && item.status  !== fst) return false;
+  if(fsym){
+    if(fsym === '__none__'){ if(item.statusSymbol) return false; }
+    else if(item.statusSymbol !== fsym) return false;
+  }
+
+  if(activeFilter==='fav' && !item.fav) return false;
+  if(activeFilter==='overdue'){
+    const hasOverdue = STAGES.some(s=>{
+      const due=d(item.stages[s][0]), done=d(item.stages[s][1]);
+      return due && !done && due < TODAY;
+    });
+    if(!hasOverdue) return false;
+  }
+  if(activeFilter==='installed' && !item.stages.INST[1]) return false;
+  if(activeFilter==='tgsolid' && item.stage!=='Stone') return false;
+  if(activeFilter==='my' && item.lister!=='Bill') return false;
+  return true;
+}
+
+let sortState = {col:null, dir:0}; // dir: 1 asc, -1 desc, 0 none
+
+function sortKey(it, col){
+  if(col && col.startsWith('stage:')){
+    const s = col.split(':')[1];
+    const [due,done] = it.stages[s];
+    const val = done || due;
+    return val ? new Date(val).getTime() : Number.POSITIVE_INFINITY;
+  }
+  const v = it[col];
+  return v == null ? '' : v;
+}
+
+function applySort(rows){
+  if(!sortState.col || sortState.dir===0) return rows;
+  const col = sortState.col, dir = sortState.dir;
+  return [...rows].sort((a,b)=>{
+    const av = sortKey(a,col), bv = sortKey(b,col);
+    if(typeof av === 'number' && typeof bv === 'number') return (av-bv)*dir;
+    return String(av).localeCompare(String(bv), undefined, {numeric:true}) * dir;
+  });
+}
+
+function updateHeaderArrows(){
+  document.querySelectorAll('#items-head th.sortable').forEach(th=>{
+    const existing = th.querySelector('.sort-arrow');
+    if(existing) existing.remove();
+    if(th.dataset.col === sortState.col && sortState.dir !== 0){
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+      th.appendChild(arrow);
+    }
+  });
+}
+
+function handleHeaderClick(col){
+  if(sortState.col !== col){ sortState = {col, dir:1}; }
+  else if(sortState.dir === 1){ sortState.dir = -1; }
+  else if(sortState.dir === -1){ sortState = {col:null, dir:0}; }
+  else { sortState = {col, dir:1}; }
+  renderItems();
+}
+
+let editMode = false;
+function toggleEditMode(){
+  editMode = !editMode;
+  const btn = document.getElementById('edit-mode-btn');
+  btn.textContent = editMode ? 'Done editing' : 'Edit item';
+  btn.classList.toggle('edit-on', editMode);
+  document.querySelector('#panel-tracking table').classList.toggle('edit-mode', editMode);
+  renderItems();
+}
+
+function logEdit(it, fieldLabel, oldVal, newVal){
+  if(!editMode) return;
+  if((oldVal ?? '') === (newVal ?? '')) return;
+  it.editLog = it.editLog || [];
+  it.editLog.push({
+    field: fieldLabel,
+    oldValue: oldVal ?? '',
+    newValue: newVal ?? '',
+    timestamp: new Date().toISOString(),
+    user: CURRENT_USER
+  });
+}
+function editField(num, field, value){
+  const it = ITEMS.find(i=>i.num===num);
+  if(!it) return;
+  const oldVal = it[field];
+  const newVal = (field==='size' || field==='qty') ? (Number(value) || 0) : value;
+  logEdit(it, FIELD_LABELS[field] || field, oldVal, newVal);
+  it[field] = newVal;
+}
+function editStage(num, stage, idx, value){
+  const it = ITEMS.find(i=>i.num===num);
+  if(!it) return;
+  const oldVal = it.stages[stage][idx];
+  const newVal = value || null;
+  logEdit(it, `${stage} (${idx===0?'due':'done'})`, oldVal, newVal);
+  it.stages[stage][idx] = newVal;
+}
+
+function txtInput(num, field, val, extraClass=''){
+  return `<input class="cell-input ${extraClass}" value="${(val??'').toString().replace(/"/g,'&quot;')}" oninput="editField(${num},'${field}',this.value)">`;
+}
+function numInput(num, field, val){
+  return `<input type="number" class="cell-input mono" value="${val||0}" oninput="editField(${num},'${field}',this.value)">`;
+}
+function stageInput(num, stage, idx, val){
+  return `<input type="date" class="cell-input" value="${val||''}" onchange="editStage(${num},'${stage}',${idx},this.value)">`;
+}
+
+/* Swap-zone cells (between Qty and Item ID) — depend on active sub-tab */
+function midCellsHTML(it){
+  if(subTab === 'DATE'){
+    const stageCells = STAGES.map(s => {
+      const [due,done] = it.stages[s];
+      if(editMode){
+        return `<td class="stage-col" style="padding:3px 2px;">
+          ${stageInput(it.num,s,0,due)}
+          ${stageInput(it.num,s,1,done)}
+        </td>`;
+      }
+      return `<td class="stage-col">${dateCell(due,done)}</td>`;
+    });
+    const symCell = `<td class="sym-col sym-cell${editMode?' editable':''}"${editMode?` onclick="openSymbolPicker(event,${it.num})"`:''}>${symbolIconHTML(it.statusSymbol)}</td>`;
+    const stageMid = [stageCells[0], symCell, ...stageCells.slice(1)].join('');
+    if(editMode){
+      return `<td>${txtInput(it.num,'assem',it.assem)}</td>
+              <td>${txtInput(it.num,'lister',it.lister)}</td>
+              ${stageMid}`;
+    }
+    return `<td>${it.assem||'<span style="color:#9ca3af;">—</span>'}</td>
+            <td>${it.lister||'<span style="color:#9ca3af;">—</span>'}</td>
+            ${stageMid}`;
+  }
+  const cols = SUBTABS[subTab].cols;
+  return cols.map(() => `<td style="color:#9ca3af;text-align:center;font-size:11px;">—</td>`).join('');
+}
+
+function rebuildHeadForSubTab(){
+  if(defaultHeadHTML === null){
+    defaultHeadHTML   = document.getElementById('items-head').innerHTML;
+    defaultFilterHTML = document.querySelector('.filter-row').innerHTML;
+  }
+  if(subTab === 'DATE'){
+    document.getElementById('items-head').innerHTML = defaultHeadHTML;
+    document.querySelector('.filter-row').innerHTML = defaultFilterHTML;
+    populateDynamicFilters();
+    return;
+  }
+  const cols = SUBTABS[subTab].cols;
+  const midThs = cols.map(c => `<th data-col="${c.key}">${c.label}</th>`).join('');
+  const midTds = cols.map(() => `<td></td>`).join('');
+  document.getElementById('items-head').innerHTML = `
+    <th class="omit-col"></th>
+    <th></th>
+    <th class="sortable" data-col="num">CUTLIST</th>
+    <th class="sortable" data-col="stage">Stage</th>
+    <th class="sortable" data-col="zone">Zone</th>
+    <th class="sortable" data-col="level">Level</th>
+    <th class="sortable" data-col="rmNo">Rm No.</th>
+    <th class="sortable" data-col="rmDesc">Room</th>
+    <th class="sortable" data-col="code">Code</th>
+    <th class="sortable" data-col="desc">Description</th>
+    <th class="sortable" data-col="status">STATUS</th>
+    <th class="sortable tr" data-col="size">Size</th>
+    <th class="sortable tr" data-col="qty">Qty</th>
+    ${midThs}
+    <th class="sortable" data-col="itemId">Item ID</th>
+  `;
+  document.querySelector('.filter-row').innerHTML = `
+    <td></td>
+    <td><button class="fm-btn" id="btn-clear" onclick="clearAllFilters()" title="Clear all filters, searches and sort" style="padding:3px 8px;font-size:10px;">Clear</button></td>
+    <td></td>
+    <td><select id="f-stage" onchange="renderItems()"><option value="">All stages</option><option>Joinery Lab</option><option>Joinery General</option><option>PC2</option><option>Stone</option></select></td>
+    <td><select id="f-zone" onchange="renderItems()"><option value="">All zones</option><option>03</option><option>04</option><option>05</option></select></td>
+    <td><select id="f-level" onchange="renderItems()"><option value="">All levels</option></select></td>
+    <td><select id="f-rmno" onchange="renderItems()"><option value="">All rooms</option></select></td>
+    <td><select id="f-room" onchange="renderItems()"><option value="">All rooms</option></select></td>
+    <td><select id="f-code" onchange="renderItems()"><option value="">All codes</option></select></td>
+    <td></td>
+    <td><select id="f-status" onchange="renderItems()"><option value="">All statuses</option><option>CLEAR</option><option>VOID</option><option>NOTE!</option><option>LIVE</option><option>APPROVED</option><option>HOLD</option></select></td>
+    <td></td><td></td>
+    ${midTds}
+    <td></td>
+  `;
+  populateDynamicFilters();
+}
+
+function switchSubTab(name){
+  if(!(name in SUBTABS)) return;
+  subTab = name;
+  document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('active', t.dataset.sub===name));
+  rebuildHeadForSubTab();
+  renderItems();
+}
+
+function populateDynamicFilters(){
+  fillSelect('f-rmno',   ITEMS.map(i=>i.rmNo));
+  fillSelect('f-room',   ITEMS.map(i=>i.rmDesc));
+  fillSelect('f-level',  ITEMS.map(i=>i.level));
+  fillSelect('f-code',   ITEMS.map(i=>i.code));
+  if(document.getElementById('f-assem'))  fillSelect('f-assem',  ITEMS.map(i=>i.assem));
+  if(document.getElementById('f-lister')) fillSelect('f-lister', ITEMS.map(i=>i.lister));
+}
+
+function renderItems(){
+  const tb = document.getElementById('tbody-items');
+  const rows = applySort(ITEMS.filter(matchFilter));
+  tb.innerHTML = rows.map(it => {
+    const omitCell = `<td class="omit-col"><button class="btn-omit" title="Hide this row" onclick="omitRow(${it.num})">Omit</button></td>`;
+    const statusCell = `<td class="status-cell"
+       onclick="openStatusPopup(event,${it.num})"
+       onmouseenter="showStatusTooltip(event,${it.num})"
+       onmousemove="moveStatusTooltip(event)"
+       onmouseleave="hideStatusTooltip()"><span class="status-btn ${statusClass(it.status)}">${it.status}</span></td>`;
+    const mid = midCellsHTML(it);
+
+    if(editMode){
+      const stageOpts = ['Joinery Lab','Joinery General','PC2','Stone']
+        .map(o=>`<option ${o===it.stage?'selected':''}>${o}</option>`).join('');
+      return `<tr>
+        ${omitCell}
+        <td><button class="btn-details" title="Item details" onclick="openItemModal(${it.num})">▶</button>${availMarkup(it.num)}</td>
+        <td>${numInput(it.num,'num',it.num)}</td>
+        <td><select class="cell-input" onchange="editField(${it.num},'stage',this.value)">${stageOpts}</select></td>
+        <td>${txtInput(it.num,'zone',it.zone,'mono')}</td>
+        <td>${txtInput(it.num,'level',it.level,'mono')}</td>
+        <td>${txtInput(it.num,'rmNo',it.rmNo,'mono')}</td>
+        <td>${txtInput(it.num,'rmDesc',it.rmDesc)}</td>
+        <td>${txtInput(it.num,'code',it.code,'mono')}</td>
+        <td>${txtInput(it.num,'desc',it.desc)}</td>
+        ${statusCell}
+        <td class="tr">${numInput(it.num,'size',it.size)}</td>
+        <td class="tr">${numInput(it.num,'qty',it.qty)}</td>
+        ${mid}
+        <td class="item-id">${it.itemId}</td>
+      </tr>`;
+    }
+
+    return `<tr>
+      ${omitCell}
+      <td><button class="btn-details" title="Item details" onclick="openItemModal(${it.num})">▶</button>${availMarkup(it.num)}</td>
+      <td><span class="item-num">${it.num}</span></td>
+      <td><span class="b b-active">${it.stage}</span></td>
+      <td class="mono">${it.zone}</td>
+      <td class="mono">${it.level}</td>
+      <td class="mono">${it.rmNo}</td>
+      <td>${it.rmDesc}</td>
+      <td class="mono">${it.code}</td>
+      <td>${it.desc}</td>
+      ${statusCell}
+      <td class="tr mono">${it.size}</td>
+      <td class="tr mono">${it.qty}</td>
+      ${mid}
+      <td class="item-id">${it.itemId}</td>
+    </tr>`;
+  }).join('');
+  updateHeaderArrows();
+  renderMetrics();
+  updateRowCountField(rows.length);
+}
+
+function renderMetrics(){
+  const total = ITEMS.length;
+  let overdue = 0, soon = 0, installed = 0;
+  ITEMS.forEach(it => {
+    const hasOverdue = STAGES.some(s=>{
+      const due=d(it.stages[s][0]), done=d(it.stages[s][1]);
+      return due && !done && due < TODAY;
+    });
+    const hasSoon = STAGES.some(s=>{
+      const due=d(it.stages[s][0]), done=d(it.stages[s][1]);
+      if(!due || done) return false;
+      const diff = (due - TODAY) / 86400000;
+      return diff >= 0 && diff <= 7;
+    });
+    if(hasOverdue) overdue++;
+    if(hasSoon) soon++;
+    if(it.stages.INST[1]) installed++;
+  });
+  document.getElementById('m-total').textContent = total;
+  document.getElementById('m-total-sub').textContent = `${[...new Set(ITEMS.map(i=>i.rmNo))].length} rooms`;
+  document.getElementById('m-overdue').textContent = overdue;
+  document.getElementById('m-soon').textContent = soon;
+  document.getElementById('m-inst').textContent = installed;
+  document.getElementById('m-inst-sub').textContent = `${Math.round(100*installed/total)}% complete`;
+}
+
+/* ==== Omit row ==== */
+function omitRow(num){
+  const it = ITEMS.find(i=>i.num===num);
+  if(it){ it.omitted = true; renderItems(); }
+}
+
+/* ==== Row-count toggle ==== */
+let rowCountVisible = false;
+function setRowCountVisible(v){
+  rowCountVisible = v;
+  document.getElementById('row-count-field').classList.toggle('on', v);
+}
+function updateRowCountField(n){
+  document.getElementById('row-count-field').textContent = `Total rows: ${n}`;
+}
+
+/* ==== Status hover tooltip ==== */
+function showStatusTooltip(e,num){
+  const it = ITEMS.find(i=>i.num===num);
+  if(!it) return;
+  const tip = document.getElementById('status-tooltip');
+  const latest = it.statusLog.length ? it.statusLog[it.statusLog.length-1].note : '';
+  tip.textContent = latest || 'No notes yet';
+  tip.style.display = 'block';
+  moveStatusTooltip(e);
+}
+function moveStatusTooltip(e){
+  const tip = document.getElementById('status-tooltip');
+  tip.style.left = (e.clientX + 14) + 'px';
+  tip.style.top  = (e.clientY + 14) + 'px';
+}
+function hideStatusTooltip(){
+  document.getElementById('status-tooltip').style.display = 'none';
+}
+
+/* ==== Status pop-up ==== */
+let spCurrentItem = null;
+let spSelected = 'CLEAR';
+function openStatusPopup(e,num){
+  e.stopPropagation();
+  hideStatusTooltip();
+  const it = ITEMS.find(i=>i.num===num);
+  if(!it) return;
+  spCurrentItem = num;
+  spSelected = it.status || 'CLEAR';
+  renderSpStatusList();
+  renderSpLog(it);
+  document.getElementById('sp-note').value = '';
+  updateSpButtonState();
+
+  const pop = document.getElementById('status-pop');
+  pop.classList.add('open');
+  // Anchor near the cell
+  const r = e.currentTarget.getBoundingClientRect();
+  const popW = 480;
+  let left = r.left;
+  if(left + popW > window.innerWidth - 10) left = window.innerWidth - popW - 10;
+  pop.style.left = left + 'px';
+  pop.style.top = (r.bottom + 4) + 'px';
+}
+function closeStatusPopup(){
+  document.getElementById('status-pop').classList.remove('open');
+  spCurrentItem = null;
+}
+function renderSpStatusList(){
+  document.getElementById('sp-status-list').innerHTML =
+    STATUS_OPTIONS.map(s => `
+      <label>
+        <input type="radio" name="sp-status" value="${s}" ${s===spSelected?'checked':''}
+               onchange="spSelected='${s}'">
+        ${s}
+      </label>`).join('');
+}
+function renderSpLog(it){
+  const body = document.getElementById('sp-log-body');
+  if(!it.statusLog.length){
+    body.innerHTML = '<div class="sp-log-empty">No status history yet.</div>';
+    return;
+  }
+  body.innerHTML = [...it.statusLog].reverse().map(e => {
+    const dt = new Date(e.timestamp);
+    const dd = String(dt.getDate()).padStart(2,'0');
+    const mm = String(dt.getMonth()+1).padStart(2,'0');
+    const yyyy = dt.getFullYear();
+    const hh = String(dt.getHours()).padStart(2,'0');
+    const mi = String(dt.getMinutes()).padStart(2,'0');
+    return `<div class="sp-log-entry">
+      <span class="sp-log-meta">${dd}/${mm}/${yyyy} ${hh}:${mi} · ${e.user}</span>
+      <span class="sp-log-status">${e.status}</span> — ${e.note}
+    </div>`;
+  }).join('');
+}
+function updateSpButtonState(){
+  const note = document.getElementById('sp-note').value.trim();
+  document.getElementById('sp-update-btn').disabled = note.length === 0;
+}
+function saveStatusUpdate(){
+  if(spCurrentItem == null) return;
+  const note = document.getElementById('sp-note').value.trim();
+  if(!note) return;
+  const it = ITEMS.find(i=>i.num===spCurrentItem);
+  if(!it) return;
+  const prevStatus = it.status;
+  if(prevStatus !== spSelected){
+    it.editLog = it.editLog || [];
+    it.editLog.push({
+      field:'Status', oldValue:prevStatus, newValue:spSelected,
+      timestamp:new Date().toISOString(), user:CURRENT_USER
+    });
+  }
+  it.status = spSelected;
+  it.statusLog.push({
+    status: spSelected,
+    note,
+    timestamp: new Date().toISOString(),
+    user: CURRENT_USER
+  });
+  closeStatusPopup();
+  renderItems();
+}
+document.addEventListener('click', e => {
+  const pop = document.getElementById('status-pop');
+  if(pop && pop.classList.contains('open') && !pop.contains(e.target)){
+    closeStatusPopup();
+  }
+  const sp = document.getElementById('sym-picker');
+  if(sp && sp.classList.contains('open') && !sp.contains(e.target)){
+    hideSymbolPicker();
+  }
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ closeStatusPopup(); hideSymbolPicker(); }
+});
+
+/* ==== Status-symbol picker ==== */
+let symbolPickerNum = null;
+function openSymbolPicker(ev, num){
+  if(!editMode) return;
+  ev.stopPropagation();
+  symbolPickerNum = num;
+  const sp = document.getElementById('sym-picker');
+  const buttons = SYMBOLS.map(s =>
+    `<button type="button" title="${s.label}" onclick="setStatusSymbol('${s.key}')">${symbolIconHTML(s.key)}</button>`
+  ).join('');
+  sp.innerHTML = buttons + `<button type="button" class="clear" title="Clear" onclick="setStatusSymbol(null)">Clear</button>`;
+  const r = ev.currentTarget.getBoundingClientRect();
+  sp.style.left = (window.scrollX + r.left) + 'px';
+  sp.style.top  = (window.scrollY + r.bottom + 4) + 'px';
+  sp.classList.add('open');
+}
+function hideSymbolPicker(){
+  const sp = document.getElementById('sym-picker');
+  if(sp) sp.classList.remove('open');
+  symbolPickerNum = null;
+}
+function setStatusSymbol(key){
+  if(symbolPickerNum == null) return;
+  editField(symbolPickerNum, 'statusSymbol', key);
+  hideSymbolPicker();
+  renderItems();
+}
+
+/* ==== Item detail modal ==== */
+let currentItemNum = null;
+function switchItemTab(name){
+  document.querySelectorAll('#item-modal .id-tab').forEach(t => t.classList.toggle('active', t.dataset.idTab===name));
+  document.querySelectorAll('#item-modal .id-panel').forEach(p => p.classList.toggle('active', p.dataset.idPanel===name));
+  if(name==='Log' && currentItemNum != null){
+    const it = ITEMS.find(i=>i.num===currentItemNum);
+    if(it) renderItemLog(it);
+  }
+}
+function renderItemLog(it){
+  const body = document.getElementById('m-log-list');
+  const log = it.editLog || [];
+  if(!log.length){
+    body.innerHTML = '<div class="id-log-empty">No edits yet.</div>';
+    return;
+  }
+  body.innerHTML = [...log].reverse().map(e => {
+    const dt = new Date(e.timestamp);
+    const dd = String(dt.getDate()).padStart(2,'0');
+    const mm = String(dt.getMonth()+1).padStart(2,'0');
+    const yyyy = dt.getFullYear();
+    const hh = String(dt.getHours()).padStart(2,'0');
+    const mi = String(dt.getMinutes()).padStart(2,'0');
+    const escape = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const oldV = escape(e.oldValue) || '<span style="color:#9ca3af;">∅</span>';
+    const newV = escape(e.newValue) || '<span style="color:#9ca3af;">∅</span>';
+    return `<div class="id-log-entry">
+      <span class="id-log-meta">${dd}/${mm}/${yyyy} ${hh}:${mi} · ${e.user}</span>
+      <span class="id-log-field">${escape(e.field)}</span>
+      <span class="id-log-delta"> · ${oldV} → ${newV}</span>
+    </div>`;
+  }).join('');
+}
+function openItemModal(num){
+  const it = ITEMS.find(i=>i.num===num);
+  if(!it) return;
+  // trackingv2.md #30: writable roles route to the Drafter Item Editor;
+  // everyone else falls through to the legacy read-only modal.
+  if (WRITE_ROLES.has(CURRENT_ROLE)){
+    window.location.href = `drafter_item_editor.html?item=${num}`;
+    return;
+  }
+  currentItemNum = num;
+  const set = (id,val)=>{ const el=document.getElementById(id); if(el) el.textContent = val ?? ''; };
+  set('m-desc', it.desc);
+  set('m-jid', it.code);
+  set('m-level', it.level);
+  set('m-rmno', it.rmNo);
+  set('m-rmdesc', it.rmDesc);
+  set('m-floorplan', it.floorPlan || '');
+  set('m-rls', it.rls || '');
+  set('m-joiery', it.joieryDetails || '');
+  set('m-groupid', it.groupId || it.itemId);
+  set('m-itemid', it.itemId);
+  set('m-skp', it.sketchupFile || '');
+  set('m-cabvision', it.cabVisionFile || '');
+  document.getElementById('m-estnotes').value = it.estimatorNotes || '';
+
+  const paint = document.getElementById('m-paint');
+  paint.classList.toggle('on', !!it.paintingReq);
+  const solid = document.getElementById('m-solid');
+  solid.classList.toggle('on', !!it.solidSurfaceReq);
+  document.getElementById('m-cutprint').style.visibility = it.cutlistPrinted===false ? 'hidden' : 'visible';
+
+  switchItemTab('Details');
+  renderItemLog(it);
+  document.getElementById('item-modal').style.display = 'flex';
+}
+function closeItemModal(){ document.getElementById('item-modal').style.display = 'none'; }
+function stepItem(dir){
+  const rows = ITEMS.filter(matchFilter);
+  if(!rows.length || currentItemNum==null) return;
+  const idx = rows.findIndex(i=>i.num===currentItemNum);
+  const next = rows[(idx + dir + rows.length) % rows.length];
+  openItemModal(next.num);
+}
+
+function openNewItemModal(){ alert('New-item form — v2 scope.'); }
+
+function openAvailPop(ev, num){
+  ev.stopPropagation();
+  closeAvailPop();
+  const a = MATERIAL_AVAIL[num];
+  if (!a) return;
+  const labelFor = l => l.st === 'eta' || l.st === 'late' ? `ETA ${l.eta || '?'}` : l.st.toUpperCase();
+  const body = a.lines.map(l =>
+    `<div class="avail-pop-line"><span class="mat">${l.mat}</span><span class="st ${l.st}">${labelFor(l)}</span></div>`
+  ).join('') || '<div style="color:#9ca3af;">No hardware lines yet.</div>';
+  const pop = document.createElement('div');
+  pop.className = 'avail-pop';
+  pop.id = 'avail-pop';
+  pop.innerHTML = `<h4>Materials — #${num}</h4>${body}<div style="margin-top:6px;font-size:10px;color:#9ca3af;">Click row ▶ for full hardware list.</div>`;
+  document.body.appendChild(pop);
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.left = (r.left + window.scrollX) + 'px';
+  pop.style.top  = (r.bottom + window.scrollY + 4) + 'px';
+  setTimeout(() => document.addEventListener('click', closeAvailPop, { once:true }), 0);
+}
+function closeAvailPop(){ const p = document.getElementById('avail-pop'); if (p) p.remove(); }
+
+function openProcurement(){
+  // trackingv2.md #31: independent window, scoped to current project, for
+  // the two-monitor workflow. The receiving page reads ?project=<name>.
+  const name = encodeURIComponent(currentProject || '');
+  window.open(`procurement_joinery_dashboard.html?project=${name}`, 'trendgosa-procurement',
+              'width=1200,height=900,menubar=no,toolbar=no');
+}
+
+function openProjectDetails(){
+  const p = PROJECTS.find(x=>x.name===currentProject);
+  if(p){
+    document.getElementById('pd-projnum').textContent = p.code;
+    document.getElementById('pd-projname').textContent = p.name;
+    const sel = document.getElementById('pd-optimisation-drafter');
+    if (sel){
+      sel.value = p.optimisationDrafter || '';
+      sel.disabled = CURRENT_ROLE !== 'PM' && CURRENT_ROLE !== 'CEO';
+      sel.title = sel.disabled ? 'Only PM/CEO can change the optimisation drafter.' : '';
+    }
+  }
+  document.getElementById('proj-details-modal').style.display = 'flex';
+}
+function closeProjectDetails(){ document.getElementById('proj-details-modal').style.display = 'none'; }
+
+function setOptimisationDrafter(username){
+  const p = PROJECTS.find(x => x.name === currentProject);
+  if (!p) return;
+  const old = p.optimisationDrafter || '';
+  p.optimisationDrafter = username;
+  console.log(`optimisation_drafter_id: ${old || '∅'} → ${username || '∅'} on project ${p.name}`);
+}
+
+/* ==== Init ==== */
+populateRooms();
+renderProjMenu();
+document.getElementById('items-head').addEventListener('click', e => {
+  const th = e.target.closest('th.sortable');
+  if(th && th.dataset.col) handleHeaderClick(th.dataset.col);
+});
+renderItems();
+</script>
+
+<!-- Feedback widget -->
+<button class="fb-btn" id="fb-btn" type="button" onclick="fbOpen()">Feedback</button>
+<div class="fb-overlay" id="fb-overlay" role="dialog" aria-label="Send feedback">
+  <div class="fb-box">
+    <h3>Send feedback</h3>
+    <label for="fb-category">Category</label>
+    <select id="fb-category">
+      <option value="bug">Bug</option>
+      <option value="feature">Feature request</option>
+      <option value="general">General</option>
+    </select>
+    <label for="fb-message">Message</label>
+    <textarea id="fb-message" placeholder="Tell us what you think…"></textarea>
+    <div class="fb-error" id="fb-error" style="display:none;">Please enter a message.</div>
+    <div class="fb-actions">
+      <button type="button" id="fb-cancel" onclick="fbClose()">Cancel</button>
+      <button type="button" class="fb-submit" id="fb-submit" onclick="fbSubmit()">Submit</button>
+    </div>
+    <div class="fb-thanks" id="fb-thanks" style="display:none;">Thanks! Your feedback was recorded.</div>
+  </div>
+</div>
+<script>
+window.__FEEDBACK__ = window.__FEEDBACK__ || [];
+function fbOpen(){
+  document.getElementById('fb-overlay').classList.add('active');
+  document.getElementById('fb-thanks').style.display='none';
+  document.getElementById('fb-error').style.display='none';
+  document.getElementById('fb-message').value='';
+}
+function fbClose(){ document.getElementById('fb-overlay').classList.remove('active'); }
+function fbSubmit(){
+  var msg = document.getElementById('fb-message').value.trim();
+  if(!msg){ document.getElementById('fb-error').style.display='block'; return; }
+  window.__FEEDBACK__.push({
+    category: document.getElementById('fb-category').value,
+    message: msg,
+    at: new Date().toISOString()
+  });
+  document.getElementById('fb-error').style.display='none';
+  document.getElementById('fb-thanks').style.display='block';
+  setTimeout(fbClose, 1200);
+}
+</script>
+
+</body>
+</html>

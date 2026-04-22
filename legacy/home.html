@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JoineryFlow — Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── H palette — from wireframes-hifi.jsx ───────────────────── */
+:root{
+  --h-bg:#fbfaf7;
+  --h-surface:#ffffff;
+  --h-surface-alt:#f4f2ed;
+  --h-line:#e4e0d8;
+  --h-ink:#1b1a17;
+  --h-ink2:#5a574f;
+  --h-ink3:#8f8b80;
+  --h-ink4:#c1beb4;
+  --h-accent:#c96442;
+  --h-accent-soft:#f3e0d6;
+  --h-good:#3f7d48;
+  --h-warn:#c48a2e;
+  --h-bad:#b4443d;
+  --h-info:#3d6b8a;
+  --h-radius:8px;
+  --h-radius-sm:5px;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:var(--font-sans);
+  font-feature-settings:"cv11","ss01","tnum";
+  font-size:13px;
+  color:var(--h-ink);
+  background:var(--h-bg);
+}
+.h-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+.h-eyebrow{font-size:10px;font-weight:600;color:var(--h-ink3);letter-spacing:.08em;text-transform:uppercase;}
+
+/* ── App chrome (HAppChrome) ────────────────────────────────── */
+.h-app{display:grid;grid-template-columns:220px 1fr;grid-template-rows:48px 1fr;height:100vh;}
+.h-topbar{
+  grid-column:1 / -1;
+  display:flex;align-items:center;gap:14px;
+  padding:0 16px;
+  background:var(--h-surface);
+  border-bottom:1px solid var(--h-line);
+  z-index:2;
+}
+.h-logo{display:flex;align-items:center;gap:8px;width:204px;padding-right:14px;border-right:1px solid var(--h-line);height:100%;}
+.h-logomark{width:26px;height:26px;border-radius:7px;background:var(--h-ink);color:var(--h-bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+.h-wordmark{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+.h-wordmark sub{font-size:10px;color:var(--h-ink3);font-weight:400;margin-left:6px;letter-spacing:.04em;text-transform:uppercase;vertical-align:baseline;}
+.h-tabs{display:flex;gap:2px;}
+.h-tab{padding:8px 12px;font-size:12.5px;color:var(--h-ink2);border-radius:6px;cursor:pointer;font-weight:500;}
+.h-tab:hover{background:var(--h-surface-alt);color:var(--h-ink);}
+.h-tab.active{background:var(--h-ink);color:var(--h-bg);}
+.h-search{margin-left:auto;display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--h-surface-alt);border-radius:20px;font-size:12px;color:var(--h-ink3);width:260px;}
+.h-search input{flex:1;border:none;background:transparent;outline:none;font-family:inherit;font-size:12px;color:var(--h-ink);}
+.h-who{display:flex;align-items:center;gap:10px;padding-left:10px;border-left:1px solid var(--h-line);}
+.h-who select{padding:4px 8px;border:1px solid var(--h-line);border-radius:6px;font-family:inherit;font-size:11.5px;background:var(--h-surface);color:var(--h-ink);}
+.h-avatar{width:28px;height:28px;border-radius:50%;background:var(--h-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.h-side{background:var(--h-surface);border-right:1px solid var(--h-line);overflow-y:auto;display:flex;flex-direction:column;}
+.h-side-head{padding:14px 14px 6px;display:flex;align-items:center;gap:6px;}
+.h-side-head .h-eyebrow{flex:1;}
+.h-scope{display:flex;gap:4px;padding:4px 14px 10px;}
+.h-scope button{flex:1;padding:5px 8px;font-size:11px;border:1px solid var(--h-line);border-radius:6px;background:var(--h-surface);color:var(--h-ink2);cursor:pointer;font-family:inherit;font-weight:500;}
+.h-scope button.active{background:var(--h-ink);color:var(--h-bg);border-color:var(--h-ink);}
+.h-proj-list{flex:1;padding:4px 8px 10px;}
+.h-proj{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:6px;cursor:pointer;margin-bottom:2px;}
+.h-proj:hover{background:var(--h-surface-alt);}
+.h-proj.active{background:var(--h-accent-soft);}
+.h-proj .star{color:var(--h-ink4);font-size:13px;cursor:pointer;width:14px;}
+.h-proj .star.on{color:var(--h-accent);}
+.h-proj .name{flex:1;font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.h-proj .code{font-size:10.5px;color:var(--h-ink3);}
+.h-side-foot{padding:10px 14px;border-top:1px solid var(--h-line);font-size:11px;color:var(--h-ink3);}
+
+/* ── Main ───────────────────────────────────────────────────── */
+.h-main{overflow-y:auto;}
+.h-pageheader{display:flex;align-items:flex-end;gap:10px;padding:16px 20px 10px;}
+.h-pageheader h1{font-size:20px;font-weight:600;letter-spacing:-.3px;margin:0;line-height:1.15;}
+.h-pageheader .sub{font-size:12px;color:var(--h-ink2);margin-top:2px;}
+.h-pageheader .grow{flex:1;}
+.h-btn{padding:6px 12px;font-size:12px;border-radius:6px;border:1px solid var(--h-line);background:var(--h-surface);color:var(--h-ink);cursor:pointer;font-family:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
+.h-btn:hover{background:var(--h-surface-alt);}
+.h-btn-accent{background:var(--h-accent);color:#fff;border-color:var(--h-accent);}
+.h-btn-accent:hover{background:#b4583a;}
+.h-btn-ghost{background:transparent;border-color:transparent;color:var(--h-ink2);}
+.h-btn-ghost:hover{background:var(--h-surface-alt);}
+
+/* KPI cards */
+.h-card{background:var(--h-surface);border:1px solid var(--h-line);border-radius:var(--h-radius);}
+.h-kpis{padding:0 20px 22px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.h-kpi{padding:14px;}
+.h-kpi .v{display:flex;align-items:baseline;gap:8px;margin-top:6px;}
+.h-kpi .v .num{font-size:22px;font-weight:600;letter-spacing:-.4px;}
+.h-kpi .v .delta{font-size:11px;font-weight:500;}
+.h-kpi .delta.up{color:var(--h-good);}
+.h-kpi .delta.down{color:var(--h-bad);}
+.h-kpi .delta.warn{color:var(--h-warn);}
+.h-kpi .foot{font-size:11px;color:var(--h-ink3);margin-top:4px;}
+
+/* Two-column row */
+.h-2col{padding:0 20px 20px;display:grid;grid-template-columns:1.35fr 1fr;gap:14px;}
+@media(max-width:1100px){.h-2col{grid-template-columns:1fr;}}
+
+/* Card head */
+.card-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--h-line);}
+.card-head .title{font-size:13px;font-weight:600;}
+.card-head .grow{flex:1;}
+.card-head .link{font-size:11px;color:var(--h-accent);cursor:pointer;}
+.h-pill{display:inline-block;font-size:10.5px;font-weight:500;padding:2px 8px;border:1px solid var(--h-line);border-radius:20px;background:var(--h-surface-alt);color:var(--h-ink2);}
+
+/* My day */
+.row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--h-line);}
+.row:last-child{border-bottom:none;}
+.row:hover{background:var(--h-surface-alt);}
+.row .check{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--h-ink4);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.row .check.done{background:var(--h-good);border-color:var(--h-good);color:#fff;font-size:9px;font-weight:700;}
+.row .proj-tag{font-size:10px;font-weight:600;letter-spacing:.04em;}
+.row .task{flex:1;font-size:13px;}
+.row .task.done{text-decoration:line-through;color:var(--h-ink3);}
+.row .h-pill.next{background:var(--h-accent-soft);color:var(--h-accent);border-color:rgba(201,100,66,.2);}
+.row .hr{font-size:11px;color:var(--h-ink3);width:30px;text-align:right;}
+
+/* Deliveries */
+.d-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--h-line);}
+.d-row:last-child{border-bottom:none;}
+.d-row .t{font-size:12px;font-weight:600;width:40px;}
+.d-row .mid{flex:1;min-width:0;}
+.d-row .sup{font-size:12.5px;font-weight:500;}
+.d-row .sub{font-size:10.5px;color:var(--h-ink3);letter-spacing:.04em;}
+.h-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;letter-spacing:.04em;}
+.h-status.good{background:#e4efe5;color:var(--h-good);}
+.h-status.bad{background:#f4e0df;color:var(--h-bad);}
+.h-status.warn{background:#f4ebd9;color:var(--h-warn);}
+.h-status.info{background:#dfe6ec;color:var(--h-info);}
+.h-status.accent{background:var(--h-accent-soft);color:var(--h-accent);}
+.h-status.neutral{background:var(--h-surface-alt);color:var(--h-ink3);}
+
+/* Tiles (role surfaces) */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:12px 14px;}
+.tile{border:1px solid var(--h-line);border-radius:var(--h-radius-sm);padding:11px 13px;background:var(--h-surface);cursor:pointer;text-align:left;font-family:inherit;color:inherit;display:flex;flex-direction:column;gap:3px;}
+.tile:hover{border-color:var(--h-ink4);background:var(--h-surface-alt);}
+.tile.primary{border-color:var(--h-accent);background:var(--h-accent-soft);}
+.tile.disabled{opacity:.5;cursor:not-allowed;}
+.tile.disabled:hover{background:var(--h-surface);border-color:var(--h-line);}
+.tile .t-name{font-size:12.5px;font-weight:600;color:var(--h-ink);}
+.tile .t-desc{font-size:10.5px;color:var(--h-ink2);line-height:1.4;}
+.tile .t-coming{color:var(--h-ink3);font-weight:400;font-size:10px;margin-left:4px;}
+
+/* Team card */
+.team-you{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--h-accent-soft);border-bottom:1px solid var(--h-line);}
+.av{width:34px;height:34px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;position:relative;flex-shrink:0;}
+.av .dot{position:absolute;bottom:-1px;right:-1px;width:11px;height:11px;border-radius:50%;border:2px solid var(--h-surface);}
+.team-you .who-text{flex:1;min-width:0;}
+.team-you .who-name{font-size:12.5px;font-weight:600;}
+.team-you .who-sub{font-size:11px;color:var(--h-ink2);}
+.team-strip{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--h-line);}
+.team-tile{padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:5px;border-right:1px solid var(--h-line);}
+.team-tile:last-child{border-right:none;}
+.team-tile .tname{font-size:11.5px;font-weight:500;}
+.team-tile .st{font-size:10px;font-weight:600;}
+.team-tile .loc{font-size:10px;color:var(--h-ink3);text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.activity-head{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--h-bg);border-bottom:1px solid var(--h-line);}
+.act-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--h-line);}
+.act-row:last-child{border-bottom:none;}
+.act-row .mid{flex:1;min-width:0;}
+.act-row .line{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.act-row .line b{font-weight:600;}
+.act-row .line .verb{color:var(--h-ink2);}
+.act-row .sub{font-size:11px;color:var(--h-ink3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.act-row .when{font-size:10.5px;color:var(--h-ink3);width:52px;text-align:right;}
+
+.h-3col{padding:0 20px 28px;display:grid;grid-template-columns:1fr;gap:14px;}
+</style>
+</head>
+<body>
+
+<div class="h-app">
+
+  <!-- ── Top bar ─────────────────────────────────────────── -->
+  <div class="h-topbar">
+    <div class="h-logo">
+      <div class="h-logomark">&#9716;</div>
+      <div class="h-wordmark">JoineryFlow<sub>Hartwood</sub></div>
+    </div>
+    <div class="h-tabs">
+      <div class="h-tab active">Dashboard</div>
+      <div class="h-tab" onclick="go('tracking_dashboard.html')">Tracking</div>
+      <div class="h-tab" onclick="go('drafter_item_editor.html')">List</div>
+      <div class="h-tab" onclick="go('procurement_orderbook_dashboard.html')">Orderbook</div>
+      <div class="h-tab">Shop Dwgs</div>
+      <div class="h-tab">iSample</div>
+    </div>
+    <div class="h-search">
+      <span>&#9906;</span>
+      <input placeholder="Jump to project, item, PO…">
+      <span class="h-mono" style="font-size:10px;color:var(--h-ink4);">⌘K</span>
+    </div>
+    <div class="h-who">
+      <select id="role-select" onchange="setRole(this.value)">
+        <option value="CEO">CEO</option>
+        <option value="PM">PM</option>
+        <option value="DRAFTER" selected>Drafter</option>
+        <option value="FOREMAN">Foreman</option>
+        <option value="MACHINE">Machine</option>
+        <option value="PROCUREMENT">Procurement</option>
+      </select>
+      <div class="h-avatar" id="who-avatar">BM</div>
+    </div>
+  </div>
+
+  <!-- ── Sidebar (FAV/ALL project list) ───────────────────── -->
+  <div class="h-side">
+    <div class="h-side-head"><span class="h-eyebrow">Projects</span></div>
+    <div class="h-scope">
+      <button class="active" data-scope="fav" onclick="setScope('fav')">&#9733; Fav</button>
+      <button data-scope="all" onclick="setScope('all')">All</button>
+    </div>
+    <div class="h-proj-list" id="proj-list"></div>
+    <div class="h-side-foot">Hartwood Joinery Co. · Studio plan</div>
+  </div>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <div class="h-main">
+
+    <div class="h-pageheader">
+      <div>
+        <h1 id="greeting">Monday, 20 Apr</h1>
+        <div class="sub" id="greeting-sub">Good morning, Bill — 3 items need you before lunch.</div>
+      </div>
+      <div class="grow"></div>
+      <button class="h-btn">&#x27F3; Sync</button>
+      <button class="h-btn h-btn-accent">＋ New project</button>
+    </div>
+
+    <!-- KPIs (HiDashA pattern) -->
+    <div class="h-kpis">
+      <div class="h-card h-kpi">
+        <div class="h-eyebrow">Overdue stages</div>
+        <div class="v"><span class="num h-mono" id="k-overdue">3</span><span class="delta down">+1</span></div>
+        <div class="foot">across 2 projects</div>
+      </div>
+      <div class="h-card h-kpi">
+        <div class="h-eyebrow">Due within 3 days</div>
+        <div class="v"><span class="num h-mono" id="k-soon">5</span><span class="delta warn">watch</span></div>
+        <div class="foot">incl. Alfred L3 island</div>
+      </div>
+      <div class="h-card h-kpi">
+        <div class="h-eyebrow">In progress</div>
+        <div class="v"><span class="num h-mono" id="k-inprog">8</span><span class="delta up">+2</span></div>
+        <div class="foot">from yesterday</div>
+      </div>
+      <div class="h-card h-kpi">
+        <div class="h-eyebrow">Deliveries today</div>
+        <div class="v"><span class="num h-mono">4</span><span class="delta down">1 overdue</span></div>
+        <div class="foot">Hafele overdue · 3 live</div>
+      </div>
+    </div>
+
+    <!-- My day + Deliveries -->
+    <div class="h-2col">
+
+      <div class="h-card">
+        <div class="card-head">
+          <div class="title">My day</div>
+          <span class="h-pill">8 open · 2 done</span>
+          <div class="grow"></div>
+          <button class="h-btn h-btn-ghost" style="font-size:11px;">Showing: All</button>
+          <span class="link">View details →</span>
+        </div>
+        <div id="myday"></div>
+      </div>
+
+      <div class="h-card" style="align-self:start;">
+        <div class="card-head">
+          <div class="title">Deliveries today</div>
+          <span class="h-pill">4</span>
+          <div class="grow"></div>
+          <span class="link" onclick="go('procurement_orderbook_dashboard.html')">Orderbook →</span>
+        </div>
+        <div id="deliveries"></div>
+      </div>
+
+    </div>
+
+    <!-- Role surfaces + Team -->
+    <div class="h-3col">
+
+      <div class="h-card">
+        <div class="card-head">
+          <div class="title">Your surfaces — <span id="role-label" style="color:var(--h-ink3);font-weight:500;">Drafter</span></div>
+          <div class="grow"></div>
+          <span class="h-pill" id="role-pill">editor access</span>
+        </div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+
+      <div class="h-card">
+        <div class="card-head">
+          <div class="title">Team</div>
+          <span class="h-pill">Today · 8</span>
+          <div class="grow"></div>
+          <span style="font-size:11px;color:var(--h-ink3);">Mon 20 Apr</span>
+          <span class="link" style="margin-left:10px;">Team board →</span>
+        </div>
+
+        <div class="team-you">
+          <div class="av" style="background:var(--h-accent);">BM<span class="dot" style="background:var(--h-good);"></span></div>
+          <div class="who-text">
+            <div class="who-name">You · Bill Ma</div>
+            <div class="who-sub"><b style="color:var(--h-good);">In</b> · Office · <span style="color:var(--h-ink3);">Estimating — heads-down till 12pm</span></div>
+          </div>
+          <button class="h-btn" style="background:var(--h-surface);">&#9998; Update status</button>
+        </div>
+
+        <div class="team-strip" id="team-strip"></div>
+
+        <div class="activity-head">
+          <span class="h-eyebrow" style="color:var(--h-ink2);">Recent activity</span>
+          <div style="flex:1;"></div>
+          <span class="link">Full log →</span>
+        </div>
+        <div id="activity"></div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<script>
+const CURRENT_USER = { username:'BM', full_name:'Bill Ma' };
+
+const PROJECTS = [
+  { id:1, name:'Alfred Level 3 Fitout', code:'2273', status:'Current', fav:true,  active:true  },
+  { id:2, name:'The Trentham',          code:'2301', status:'Current', fav:true,  active:false },
+  { id:3, name:'Monash FFT',            code:'2347', status:'Current', fav:true,  active:false },
+  { id:4, name:'VSBA Mickleham',        code:'2351', status:'Current', fav:false, active:false },
+  { id:5, name:'7ss Flinder West',      code:'2318', status:'Hold',    fav:false, active:false },
+];
+
+const MYDAY = [
+  { proj:'ALFRED L3',      task:'Check & revise shop drawings for island',      hr:'3h',  badge:'next', color:'var(--h-accent)', done:false },
+  { proj:'ALFRED L3',      task:'Approve laminate sample #A-23 for reception',  hr:'1h',  badge:null,   color:'var(--h-accent)', done:true  },
+  { proj:'VSBA MICKLEHAM', task:'Procure acoustic panels — call Autex back',    hr:'2h',  badge:null,   color:'var(--h-info)',   done:false },
+  { proj:'TRENTHAM',       task:'Call Hafele re: bullnose handles availability',hr:'30m', badge:null,   color:'var(--h-bad)',    done:false },
+];
+
+const DELIVERIES = [
+  { t:'09:20', sup:'Briggs Veneer', proj:'ALFRED L3',  po:'PO#2273-011', st:'ARRIVED' },
+  { t:'11:00', sup:'Hafele',        proj:'TRENTHAM',   po:'PO#2289-003', st:'OVERDUE' },
+  { t:'14:30', sup:'Polytec',       proj:'MONASH FFT', po:'PO#2351-007', st:'LIVE'    },
+  { t:'16:00', sup:'Laminex',       proj:'VSBA',       po:'PO#2347-004', st:'LIVE'    },
+];
+
+const TEAM = [
+  { name:'Jules Roh',    initial:'JR', color:'#3d6b8a', st:'On site', loc:'Alfred L3'   },
+  { name:'Rin Park',     initial:'RP', color:'#3f7d48', st:'In',      loc:'Drafting'    },
+  { name:'Sam Oduya',    initial:'SO', color:'#7a5193', st:'Shop',    loc:'Floor'       },
+  { name:'Mina Klee',    initial:'MK', color:'#b4443d', st:'In',      loc:'Purchasing'  },
+  { name:'Priya Shah',   initial:'PS', color:'#c48a2e', st:'WFH',     loc:'Sample specs'},
+  { name:'Theo Akkad',   initial:'TA', color:'#6f7a51', st:'Shop',    loc:'Assembly'    },
+  { name:'Dan Kowalski', initial:'DK', color:'#8f8b80', st:'Off',     loc:'PTO'         },
+];
+const STATUS_COL = { 'In':'var(--h-good)', 'On site':'var(--h-info)', 'Shop':'var(--h-accent)', 'WFH':'var(--h-warn)', 'Off':'var(--h-ink3)' };
+
+const ACTIVITY = [
+  { initial:'JR', color:'#3d6b8a', name:'Jules Roh', verb:'approved 12 parts',        sub:'Alfred L3 · island carcass',    when:'18m',    tag:'cutlist'  },
+  { initial:'RP', color:'#3f7d48', name:'Rin Park',  verb:'uploaded shop dwg v4',     sub:'VSBA wall assembly',            when:'42m',    tag:'drawings' },
+  { initial:'MK', color:'#b4443d', name:'Mina Klee', verb:'placed order — $1,840',    sub:'Hafele hinges · ETA Thu',       when:'1h',     tag:'orders'   },
+  { initial:'SO', color:'#7a5193', name:'Sam Oduya', verb:'scanned 58 kits',          sub:'Shop-floor tablet · Alfred L3', when:'1h 20m', tag:'hardware' },
+  { initial:'BM', color:'var(--h-accent)', name:'You', verb:'set sample A-23 to NOTE!', sub:'Alfred L3 · Meeting Rm',      when:'2h',     tag:'samples'  },
+];
+
+/* Role surfaces — trackingv2.md §4 #29 */
+const TILES = [
+  { key:'workbench', name:'PM Project Workbench', desc:'Grid of items across a project — progress, dates, status.', href:'tracking_dashboard.html',            roles:['CEO','PM','DRAFTER','FOREMAN'] },
+  { key:'editor',    name:'Drafter Item Editor',  desc:'Item-centric editor with Cutlist / Hardware / Board tabs.', href:'drafter_item_editor.html',           roles:['CEO','PM','DRAFTER'], primaryFor:['DRAFTER'] },
+  { key:'procure',   name:'Procurement Orderbook',desc:'Independent window — batches, allocations, ETAs.',         href:'procurement_orderbook_dashboard.html', roles:['CEO','PM','DRAFTER','MACHINE','PROCUREMENT'], primaryFor:['PROCUREMENT'] },
+  { key:'exec',      name:'Exec Dashboard',       desc:'Cross-project KPIs + weekly auto-report.',                  href:'#', roles:['CEO'], primaryFor:['CEO'], disabled:true },
+  { key:'shopfloor', name:'Shop Floor Today',     desc:'Foreman today board — worker assignment, done logging.',   href:'#', roles:['FOREMAN','MACHINE'], primaryFor:['FOREMAN'], disabled:true },
+  { key:'cutsched',  name:'Machine Cut Schedule', desc:"Today's cut queue across projects.",                        href:'#', roles:['MACHINE'], primaryFor:['MACHINE'], disabled:true },
+];
+
+const ROLE_LABEL = { CEO:'CEO', PM:'Project Manager', DRAFTER:'Drafter', FOREMAN:'Foreman', MACHINE:'Machine Team', PROCUREMENT:'Procurement' };
+/* §1.5.6 role reconciliation */
+const AUTH_ROLE = { CEO:'Admin', PM:'Manager', DRAFTER:'Editor', PROCUREMENT:'Editor', FOREMAN:'Viewer', MACHINE:'Viewer' };
+
+const STATUS_CLASS = {
+  ARRIVED:'good', APPROVED:'good', CLEAR:'good',
+  LIVE:'accent', RTO:'accent', NEXT:'accent',
+  HOLD:'warn', 'NOTE!':'warn',
+  VOID:'bad', REJECTED:'bad', OVERDUE:'bad',
+  SUBMITTED:'info', ORDERED:'info',
+  TBC:'neutral',
+};
+
+let currentRole  = 'DRAFTER';
+let currentScope = 'fav';
+
+const $ = id => document.getElementById(id);
+
+function renderProjects(){
+  const list = PROJECTS.filter(p => currentScope === 'all' || p.fav);
+  $('proj-list').innerHTML = list.map(p => `
+    <div class="h-proj ${p.active ? 'active' : ''}" onclick="openProject(${p.id})">
+      <span class="star ${p.fav ? 'on' : ''}" onclick="toggleFav(event,${p.id})">${p.fav ? '&#9733;' : '&#9734;'}</span>
+      <span class="name">${p.name}</span>
+      <span class="code h-mono">${p.code}</span>
+    </div>
+  `).join('') || `<div style="font-size:11px;color:var(--h-ink3);padding:10px 8px;">No projects in scope.</div>`;
+  document.querySelectorAll('.h-scope button').forEach(b => b.classList.toggle('active', b.dataset.scope === currentScope));
+}
+
+function renderMyDay(){
+  $('myday').innerHTML = MYDAY.map(m => `
+    <div class="row">
+      <div class="check ${m.done ? 'done' : ''}">${m.done ? '✓' : ''}</div>
+      <span class="proj-tag" style="color:${m.color};">${m.proj}</span>
+      <span class="task ${m.done ? 'done' : ''}">${m.task}</span>
+      ${m.badge ? `<span class="h-pill next">◎ ${m.badge}</span>` : ''}
+      <span class="hr h-mono">${m.hr}</span>
+    </div>
+  `).join('');
+}
+
+function renderDeliveries(){
+  $('deliveries').innerHTML = DELIVERIES.map(d => `
+    <div class="d-row">
+      <div class="t h-mono">${d.t}</div>
+      <div class="mid">
+        <div class="sup">${d.sup}</div>
+        <div class="sub">${d.proj} · <span class="h-mono">${d.po}</span></div>
+      </div>
+      <span class="h-status ${STATUS_CLASS[d.st] || 'neutral'}">${d.st}</span>
+    </div>
+  `).join('');
+}
+
+function renderTeam(){
+  $('team-strip').innerHTML = TEAM.map(p => `
+    <div class="team-tile">
+      <div class="av" style="background:${p.color};width:32px;height:32px;font-size:11px;">
+        ${p.initial}<span class="dot" style="background:${STATUS_COL[p.st]};width:10px;height:10px;"></span>
+      </div>
+      <div class="tname">${p.name.split(' ')[0]}</div>
+      <div class="st" style="color:${STATUS_COL[p.st]};">${p.st}</div>
+      <div class="loc">${p.loc}</div>
+    </div>
+  `).join('');
+}
+
+function renderActivity(){
+  $('activity').innerHTML = ACTIVITY.map(a => `
+    <div class="act-row">
+      <div class="av" style="background:${a.color};width:26px;height:26px;font-size:10px;">${a.initial}</div>
+      <div class="mid">
+        <div class="line"><b>${a.name}</b> <span class="verb">${a.verb}</span></div>
+        <div class="sub">${a.sub}</div>
+      </div>
+      <span class="h-pill">${a.tag}</span>
+      <span class="when h-mono">${a.when}</span>
+    </div>
+  `).join('');
+}
+
+function renderTiles(){
+  const available = TILES.filter(t => t.roles.includes(currentRole));
+  $('tiles').innerHTML = available.map(t => {
+    const cls = [
+      'tile',
+      (t.primaryFor || []).includes(currentRole) ? 'primary' : '',
+      t.disabled ? 'disabled' : '',
+    ].filter(Boolean).join(' ');
+    const onclick = t.disabled ? '' : `onclick="go('${t.href}')"`;
+    return `<button class="${cls}" ${onclick}>
+      <div class="t-name">${t.name}${t.disabled ? ' <span class="t-coming">(v2)</span>' : ''}</div>
+      <div class="t-desc">${t.desc}</div>
+    </button>`;
+  }).join('');
+  $('role-label').textContent = ROLE_LABEL[currentRole];
+  $('role-pill').textContent  = `${AUTH_ROLE[currentRole]} access`;
+}
+
+function setRole(r){ currentRole = r; renderTiles(); }
+function setScope(s){ currentScope = s; renderProjects(); }
+function toggleFav(ev, id){
+  ev.stopPropagation();
+  const p = PROJECTS.find(x => x.id === id);
+  if (p){ p.fav = !p.fav; renderProjects(); }
+}
+function openProject(id){
+  const p = PROJECTS.find(x => x.id === id);
+  if (!p) return;
+  window.location.href = `tracking_dashboard.html?project=${encodeURIComponent(p.name)}`;
+}
+function go(href){ if (href && href !== '#') window.location.href = href; }
+
+$('who-avatar').textContent = CURRENT_USER.username;
+renderProjects();
+renderMyDay();
+renderDeliveries();
+renderTeam();
+renderActivity();
+renderTiles();
+</script>
+</body>
+</html>

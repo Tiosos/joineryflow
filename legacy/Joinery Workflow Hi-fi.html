@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Joinery Workflow — Hi-fi</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #f0eee9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #root { height: 100%; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- canvas + hi-fi primitives -->
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="wireframes-hifi.jsx"></script>
+
+<!-- hi-fi screens -->
+<script type="text/babel" src="hi-login-it.jsx"></script>
+<script type="text/babel" src="hi-dashboard.jsx"></script>
+<script type="text/babel" src="hi-tracking-list.jsx"></script>
+<script type="text/babel" src="hi-order-dwg-sample.jsx"></script>
+
+<script type="text/babel">
+const AB_W = 1280;
+const AB_H = 820;
+
+function App() {
+  return (
+    <DesignCanvas>
+      {/* Intro */}
+      <DCSection id="intro" title="Hi-fi direction" subtitle="Single polished look across the whole app · Inter + JetBrains Mono · warm accent #c96442">
+        <DCArtboard id="intro-note" label="Readme" width={520} height={AB_H}>
+          <div style={{ padding: 36, height: '100%', background: '#fbfaf7', fontFamily: 'Inter, -apple-system, sans-serif', color: '#1b1a17', overflow: 'auto' }}>
+            <div style={{ fontSize: 11, letterSpacing: 0.1, textTransform: 'uppercase', color: '#8f8b80', fontWeight: 600 }}>Readme</div>
+            <h2 style={{ fontSize: 24, margin: '8px 0 12px', letterSpacing: -0.4 }}>JoineryFlow — hi-fi</h2>
+            <p style={{ fontSize: 13, color: '#5a574f', lineHeight: 1.6 }}>
+              Every tab in the revised top nav: Dashboard · Tracking · List · Orderbook · Shop Dwgs · iSample. Plus Login and IT Management.
+            </p>
+
+            <div style={{ height: 1, background: '#e4e0d8', margin: '18px 0' }}/>
+
+            <div style={{ fontSize: 11, letterSpacing: 0.1, textTransform: 'uppercase', color: '#8f8b80', fontWeight: 600, marginBottom: 6 }}>Variations</div>
+            <ul style={{ fontSize: 13, lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
+              <li><b>Dashboard</b> — 5 directions · A (Command deck) is the default</li>
+              <li><b>Tracking</b> — dense table + part drawer</li>
+              <li><b>List</b> — Cutlist (A+B+D combined) + Hardware Portal (catalogue-grouped cart)</li>
+              <li><b>Orderbook</b> — subtabs (Open default) with supplier groups</li>
+              <li><b>Shop Drawings</b> — thumbnail grid with version + reviewer chips</li>
+              <li><b>iSample</b> — sample-wall board</li>
+              <li><b>Login</b> + <b>IT Management</b> — auth & admin surfaces</li>
+            </ul>
+
+            <div style={{ height: 1, background: '#e4e0d8', margin: '18px 0' }}/>
+
+            <div style={{ fontSize: 11, letterSpacing: 0.1, textTransform: 'uppercase', color: '#8f8b80', fontWeight: 600, marginBottom: 6 }}>System</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 14 }}>
+              {[['#fbfaf7','bg'],['#ffffff','surface'],['#c96442','accent'],['#1b1a17','ink'],['#3f7d48','good'],['#b4443d','bad']].map(([c,n]) => (
+                <div key={n} style={{ textAlign:'center' }}>
+                  <div style={{ background:c, height: 36, borderRadius: 5, border: `1px solid #e4e0d8` }}/>
+                  <div style={{ fontSize:10, color:'#8f8b80', marginTop: 4 }}>{n}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: 12, background: '#f3e0d6', borderLeft: '3px solid #c96442', fontSize: 12, lineHeight: 1.55, borderRadius: 4 }}>
+              Scroll around the canvas — each artboard is a full-res screen. Click the expand icon on any artboard to open it fullscreen.
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      {/* Login + IT */}
+      <DCSection id="auth" title="Entry & admin" subtitle="Login + workspace management">
+        <DCArtboard id="auth-login" label="Login" width={AB_W} height={AB_H}><HiLogin /></DCArtboard>
+        <DCArtboard id="auth-it" label="IT Management" width={AB_W} height={AB_H}><HiITManagement /></DCArtboard>
+      </DCSection>
+
+      {/* Dashboard */}
+      <DCSection id="dash" title="Dashboard" subtitle="5 directions · A is the default">
+        <DCArtboard id="dash-a" label="A · Command deck (default)" width={AB_W} height={AB_H}><HiDashA /></DCArtboard>
+        <DCArtboard id="dash-b" label="B · Activity stream" width={AB_W} height={AB_H}><HiDashB /></DCArtboard>
+        <DCArtboard id="dash-c" label="C · My-day Kanban" width={AB_W} height={AB_H}><HiDashC /></DCArtboard>
+        <DCArtboard id="dash-d" label="D · Week timeline" width={AB_W} height={AB_H}><HiDashD /></DCArtboard>
+        <DCArtboard id="dash-e" label="E · BrB staff board" width={AB_W} height={AB_H}><HiDashE /></DCArtboard>
+      </DCSection>
+
+      {/* Tracking */}
+      <DCSection id="track" title="Tracking" subtitle="Part-level statuses with drawer">
+        <DCArtboard id="track-a" label="Tracking · table + drawer" width={AB_W} height={AB_H}><HiTracking /></DCArtboard>
+      </DCSection>
+
+      {/* List */}
+      <DCSection id="list" title="List" subtitle="Cutlist (default) + Hardware Portal — subtabs inside one tab">
+        <DCArtboard id="list-cut" label="Cutlist · room-tree + dense parts + CV import" width={AB_W} height={AB_H}><HiListCutlist /></DCArtboard>
+        <DCArtboard id="list-hw" label="Hardware Portal · pantry → cart (grouped by catalogue)" width={AB_W} height={AB_H}><HiListHardware /></DCArtboard>
+      </DCSection>
+
+      {/* Orderbook */}
+      <DCSection id="order" title="Orderbook" subtitle="Subtabs: Open (default) · In transit · Delivered · Returns · Suppliers">
+        <DCArtboard id="order-open" label="Open POs · grouped by supplier" width={AB_W} height={AB_H}><HiOrderbookOpen /></DCArtboard>
+      </DCSection>
+
+      {/* Shop Dwgs */}
+      <DCSection id="dwg" title="Shop Drawings" subtitle="Thumbnail grid · version + reviewer chips">
+        <DCArtboard id="dwg-grid" label="Current drawings" width={AB_W} height={AB_H}><HiShopDrawings /></DCArtboard>
+      </DCSection>
+
+      {/* iSample */}
+      <DCSection id="sample" title="iSample" subtitle="Sample wall board · client-approval track">
+        <DCArtboard id="sample-board" label="Sample wall" width={AB_W} height={AB_H}><HiSamplebook /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

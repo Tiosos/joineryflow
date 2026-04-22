@@ -1,0 +1,1721 @@
+
+<h2 class="sr-only">Procurement Orderbook System — interactive dashboard with purchase orders, vendor management, approval workflows, inventory tracking, and budget monitoring</h2>
+<style>
+.tabs{display:flex;border-bottom:0.5px solid var(--color-border-tertiary);margin-bottom:1.5rem;overflow-x:auto;}
+.tab{padding:8px 14px;font-size:13px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--color-text-secondary);font-family:var(--font-sans);white-space:nowrap;flex-shrink:0;}
+.tab.active{border-bottom-color:var(--color-text-primary);color:var(--color-text-primary);font-weight:500;}
+.tab:hover:not(.active){color:var(--color-text-primary);}
+.panel{display:none;}.panel.active{display:block;}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:1.5rem;}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:1.5rem;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:1rem;}
+.ml{font-size:11px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.mv{font-size:22px;font-weight:500;}
+.ms{font-size:11px;color:var(--color-text-tertiary);margin-top:3px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;padding:7px 10px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;}
+td{padding:8px 10px;border-bottom:0.5px solid var(--color-border-tertiary);color:var(--color-text-primary);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--color-background-secondary);}
+.b{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:500;}
+.b-draft{background:var(--color-background-tertiary);color:var(--color-text-secondary);}
+.b-pending,.b-low,.b-review{background:var(--color-background-warning);color:var(--color-text-warning);}
+.b-approved,.b-active{background:var(--color-background-info);color:var(--color-text-info);}
+.b-rejected,.b-critical{background:var(--color-background-danger);color:var(--color-text-danger);}
+.b-delivered,.b-ok{background:var(--color-background-success);color:var(--color-text-success);}
+.toolbar{display:flex;gap:8px;margin-bottom:1rem;align-items:center;flex-wrap:wrap;}
+.stitle{font-size:14px;font-weight:500;margin:0 0 .75rem;color:var(--color-text-primary);}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:10px;}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.prog{height:6px;border-radius:3px;background:var(--color-border-tertiary);overflow:hidden;margin:8px 0 5px;}
+.pf{height:100%;border-radius:3px;}
+.btn{padding:5px 12px;border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-primary);font-family:var(--font-sans);}
+.btn-ok{background:var(--color-background-success);color:var(--color-text-success);border:0.5px solid var(--color-border-success);}
+.btn-dn{background:var(--color-background-danger);color:var(--color-text-danger);border:0.5px solid var(--color-border-danger);}
+.mono{font-family:var(--font-mono);font-size:12px;}
+.tr{text-align:right;}
+.up{color:var(--color-text-success);}
+.dn{color:var(--color-text-danger);}
+
+/* ── PO Modal ── */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
+.modal-box{background:#ffffff;border:.5px solid #d1d5db;border-radius:var(--border-radius-lg);max-width:740px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-hd{padding:1rem 1.25rem;border-bottom:.5px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:#ffffff;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0;}
+.modal-body{padding:1.25rem;overflow-y:auto;flex:1;background:#ffffff;}
+.modal-ft{padding:.875rem 1.25rem;border-top:.5px solid #e5e7eb;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;background:#ffffff;border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.fgrp{display:flex;flex-direction:column;gap:4px;}
+.fgrp.full{grid-column:1/-1;}
+.flbl{font-size:11px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;}
+.finp{padding:7px 10px;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);font-size:13px;background:#ffffff;color:#111827;font-family:var(--font-sans);width:100%;box-sizing:border-box;}
+.finp:focus{outline:none;border-color:#111827;}
+.li-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
+.li-tbl th{font-size:10px;font-weight:500;color:#6b7280;text-transform:uppercase;padding:5px 6px;border-bottom:.5px solid #e5e7eb;text-align:left;}
+.li-tbl td{padding:4px 3px;border-bottom:.5px solid #e5e7eb;vertical-align:middle;}
+.li-tbl input{width:100%;padding:5px 6px;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);font-size:12px;background:#ffffff;color:#111827;font-family:var(--font-sans);box-sizing:border-box;}
+.li-tbl input:focus{outline:none;border-color:#111827;}
+.sql-blk{background:#f9fafb;border:0.5px solid #e5e7eb;border-radius:var(--border-radius-md);padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:#374151;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow-y:auto;line-height:1.5;}
+.po-num-badge{font-family:var(--font-mono);font-size:14px;font-weight:500;background:#f3f4f6;color:#111827;padding:3px 10px;border-radius:var(--border-radius-md);}
+.sect-title{font-size:13px;font-weight:500;color:#111827;margin:0 0 .65rem;}
+.divider{border:none;border-top:.5px solid #e5e7eb;margin:1.1rem 0;}
+
+/* ── Priority badges ── */
+.b-pri-high{background:var(--color-background-danger);color:var(--color-text-danger);}
+.b-pri-med{background:var(--color-background-warning);color:var(--color-text-warning);}
+.b-pri-low{background:var(--color-background-tertiary);color:var(--color-text-secondary);}
+
+/* ── File attachment zone ── */
+.drop-zone{border:1.5px dashed #d1d5db;border-radius:var(--border-radius-md);padding:1.25rem;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative;background:#ffffff;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:#111827;background:#f9fafb;}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.attach-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f3f4f6;border-radius:var(--border-radius-md);margin-top:6px;}
+.attach-icon{font-size:15px;flex-shrink:0;}
+.attach-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111827;}
+.attach-size{font-size:11px;color:#9ca3af;flex-shrink:0;}
+.attach-rm{background:none;border:none;cursor:pointer;color:#9ca3af;font-size:13px;padding:0 3px;flex-shrink:0;line-height:1;}
+.attach-rm:hover{color:#dc2626;}
+
+/* ── FileMaker status badges (filemaker.md §2.6) ── */
+.b-hold{background:#ffedd5;color:#9a3412;}      /* HOLD — orange/amber */
+.b-quote{background:#fef3c7;color:#854d0e;}     /* QUOTE — yellow */
+.b-next{background:#cffafe;color:#155e75;}      /* NEXT — blue/teal */
+
+/* ── Required-date colour coding (filemaker.md §2.5) ── */
+.date-overdue{background:#fecaca;color:#991b1b;padding:1px 7px;border-radius:3px;font-size:11px;}
+.date-soon{background:#fbcfe8;color:#9d174d;padding:1px 7px;border-radius:3px;font-size:11px;}
+.date-ok{color:var(--color-text-tertiary);font-size:12px;}
+
+/* ── FileMaker toolbar quick-filter buttons (filemaker.md §2.2) ── */
+.fm-btn{padding:5px 11px;border-radius:999px;font-size:11px;font-weight:500;cursor:pointer;border:.5px solid #d1d5db;background:#ffffff;color:#111827;font-family:var(--font-sans);white-space:nowrap;}
+.fm-btn:hover{background:#f3f4f6;}
+.fm-btn.active{background:#111827;color:#ffffff;border-color:#111827;}
+.fm-btn-rto{border-color:#111827;}
+.fm-btn-tbo{background:#dbeafe;color:#1e40af;border-color:#1e40af;}
+.fm-btn-tbo.active{background:#1e40af;color:#ffffff;}
+.fm-btn-new{background:#fee2e2;color:#991b1b;border-color:#dc2626;}
+.fm-btn-clear{background:#dcfce7;color:#166534;border-color:#16a34a;}
+.fm-btn-green{background:#dcfce7;color:#166534;border-color:#16a34a;}
+.fm-btn-green.active{background:#16a34a;color:#ffffff;}
+.fm-daterange{display:flex;gap:4px;align-items:center;font-size:11px;color:var(--color-text-secondary);}
+.fm-daterange input{padding:4px 7px;border:.5px solid #d1d5db;border-radius:var(--border-radius-md);font-size:12px;background:#ffffff;color:#111827;}
+
+/* ── Item Details split-panel modal (filemaker.md §2.9) ── */
+.det-box{background:#ffffff;border:.5px solid #d1d5db;border-radius:var(--border-radius-lg);width:100%;max-width:1100px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.det-hd{padding:.75rem 1.25rem;border-bottom:.5px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;background:#f9fafb;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0;flex-shrink:0;}
+.det-actions{display:flex;gap:6px;align-items:center;}
+.det-actions .btn{padding:4px 11px;font-size:11px;font-weight:500;}
+.det-body{display:grid;grid-template-columns:40% 60%;flex:1;overflow:hidden;min-height:0;}
+.det-left{padding:1rem 1.1rem;border-right:.5px solid #e5e7eb;overflow-y:auto;background:#ffffff;}
+.det-right{display:flex;flex-direction:column;overflow:hidden;min-height:0;background:#ffffff;}
+.det-tabs{display:flex;border-bottom:.5px solid #e5e7eb;background:#f9fafb;overflow-x:auto;flex-shrink:0;}
+.det-tab{padding:7px 12px;font-size:11px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:#6b7280;font-family:var(--font-sans);white-space:nowrap;flex-shrink:0;}
+.det-tab.active{border-bottom-color:#111827;color:#111827;font-weight:500;background:#ffffff;}
+.det-tab:hover:not(.active){color:#111827;}
+.det-panel{flex:1;overflow-y:auto;padding:1rem;display:none;}
+.det-panel.active{display:block;}
+.det-field{display:flex;align-items:flex-start;gap:10px;padding:4px 0;border-bottom:.5px dashed #f3f4f6;}
+.det-field > label{width:140px;flex-shrink:0;font-size:10px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;padding-top:6px;}
+.det-field > .det-val{flex:1;min-width:0;}
+.det-field .finp{font-size:12px;padding:5px 7px;}
+.det-field textarea.finp{resize:vertical;min-height:38px;}
+.det-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.det-sect-title{font-size:11px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.05em;margin:.9rem 0 .35rem;padding-bottom:3px;border-bottom:.5px solid #e5e7eb;}
+.det-sect-title:first-child{margin-top:0;}
+.det-price-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;}
+.det-price-row.tot{font-weight:500;color:#111827;border-top:.5px solid #e5e7eb;padding-top:6px;margin-top:3px;}
+.det-drop{border:1.5px dashed #d1d5db;border-radius:var(--border-radius-md);padding:.9rem;text-align:center;cursor:pointer;background:#ffffff;position:relative;min-height:100px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
+.det-drop:hover,.det-drop.drag-over{border-color:#111827;background:#f9fafb;}
+.det-drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.det-drop-label{font-size:11px;color:#6b7280;margin-top:4px;}
+.det-zone-title{font-size:10px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.det-date-tbl{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:.5px solid #e5e7eb;border-radius:var(--border-radius-md);overflow:hidden;margin-top:1rem;}
+.det-date-cell{padding:.45rem .6rem;border-right:.5px solid #e5e7eb;background:#ffffff;text-align:center;}
+.det-date-cell:last-child{border-right:none;}
+.det-date-cell .lbl{font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+.det-date-cell .val{font-size:12px;color:#111827;font-family:var(--font-mono);}
+.create-po-btn{background:#dc2626;color:#ffffff;border:none;padding:7px 14px;border-radius:var(--border-radius-md);font-size:12px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);}
+.create-po-btn:hover{background:#b91c1c;}
+.det-rec-nav{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b7280;font-family:var(--font-mono);}
+.det-rec-nav button{background:none;border:.5px solid #d1d5db;padding:1px 7px;border-radius:3px;cursor:pointer;color:#111827;}
+.det-rec-nav button:hover{background:#f3f4f6;}
+.det-prod-img{width:100%;height:140px;border:.5px dashed #d1d5db;border-radius:var(--border-radius-md);background:#f9fafb url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>') center no-repeat;background-size:48px;display:flex;align-items:flex-end;justify-content:center;color:#9ca3af;font-size:10px;padding-bottom:6px;}
+.det-changelog{font-family:var(--font-mono);font-size:10px;color:#6b7280;background:#f9fafb;border:.5px solid #e5e7eb;border-radius:var(--border-radius-md);padding:7px 9px;white-space:pre-wrap;max-height:90px;overflow-y:auto;}
+
+/* Feedback widget */
+.fb-btn{position:fixed;bottom:20px;right:20px;background:var(--color-text-primary);color:var(--color-background-primary);border:none;border-radius:20px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:var(--font-sans);box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:100;}
+.fb-btn:hover{opacity:.9;}
+.fb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center;}
+.fb-overlay.active{display:flex;}
+.fb-box{background:var(--color-background-primary);border-radius:var(--border-radius-lg);padding:20px;width:400px;max-width:90vw;font-family:var(--font-sans);}
+.fb-box h3{margin:0 0 12px;font-size:14px;font-weight:500;color:var(--color-text-primary);}
+.fb-box label{display:block;font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+.fb-box select,.fb-box textarea{width:100%;padding:6px 8px;border:.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-family:inherit;font-size:13px;margin-bottom:10px;box-sizing:border-box;background:var(--color-background-primary);color:var(--color-text-primary);}
+.fb-box textarea{min-height:80px;resize:vertical;}
+.fb-actions{display:flex;gap:8px;justify-content:flex-end;}
+.fb-actions button{padding:6px 12px;border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;border:.5px solid var(--color-border-tertiary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:inherit;}
+.fb-actions .fb-submit{background:var(--color-text-primary);color:var(--color-background-primary);border-color:var(--color-text-primary);}
+.fb-thanks{color:var(--color-text-success);font-size:12px;margin-top:8px;}
+.fb-error{color:var(--color-text-danger);font-size:12px;margin-top:-6px;margin-bottom:8px;}
+</style>
+
+<div style="padding-top:1rem;">
+<div class="tabs">
+  <button class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+  <button class="tab" data-tab="orders" onclick="switchTab('orders')">Purchase orders</button>
+  <button class="tab" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
+  <button class="tab" data-tab="approvals" onclick="switchTab('approvals')">Approvals <span id="appr-badge" style="background:var(--color-background-danger);color:var(--color-text-danger);border-radius:20px;padding:1px 6px;font-size:10px;margin-left:3px;">5</span></button>
+  <button class="tab" data-tab="inventory" onclick="switchTab('inventory')">Inventory</button>
+  <button class="tab" data-tab="budget" onclick="switchTab('budget')">Budget</button>
+</div>
+
+<div class="panel active" id="panel-dashboard">
+  <div class="g4">
+    <div class="metric"><div class="ml">Total POs</div><div class="mv">142</div><div class="ms up">+12 this month</div></div>
+    <div class="metric"><div class="ml">Pending approval</div><div class="mv">5</div><div class="ms dn">3 high priority</div></div>
+    <div class="metric"><div class="ml">Total spend YTD</div><div class="mv">$2.40M</div><div class="ms">72% of budget</div></div>
+    <div class="metric"><div class="ml">Active vendors</div><div class="mv">34</div><div class="ms">2 under review</div></div>
+  </div>
+  <div class="g2">
+    <div>
+      <div class="stitle">Spend by category (YTD)</div>
+      <div style="position:relative;height:210px;"><canvas id="catChart" role="img" aria-label="Bar chart of YTD spend by category: IT 890K, Facilities 578K, Logistics 412K, Services 375K, Office 145K">IT 890K, Facilities 578K, Logistics 412K, Services 375K, Office 145K</canvas></div>
+    </div>
+    <div>
+      <div class="stitle">Recent activity</div>
+      <div id="activity"></div>
+      <button class="btn" style="margin-top:10px;width:100%;" onclick="sendPrompt('Give me a full procurement activity report for this month, including PO trends, top vendors by spend, and any budget overruns.')">Generate activity report ↗</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-orders">
+  <!-- FileMaker quick-filter toolbar (filemaker.md §2.2) -->
+  <div class="toolbar" style="gap:6px;">
+    <button class="fm-btn fm-btn-rto" id="qf-rto"  onclick="applyQuickFilter('rto',this)"     title="Show only NEXT items">RTO</button>
+    <button class="fm-btn fm-btn-tbo" id="qf-tbo"  onclick="applyQuickFilter('tbo',this)"     title="Show NEXT and QUOTE items">TBO</button>
+    <button class="fm-btn fm-btn-new"              onclick="openNewPOModal()"                 title="Create a new purchase order">+ NEW</button>
+    <button class="fm-btn fm-btn-clear"            onclick="clearAllFilters()"                title="Clear all filters (required date within past 2 years)">↻ CLEAR</button>
+    <button class="fm-btn"                         onclick="switchTab('vendors')"             title="Supplier view">Supplier</button>
+    <button class="fm-btn" id="qf-po"   onclick="applyQuickFilter('po',this)"      title="Filter by purchase order">Po</button>
+    <button class="fm-btn fm-btn-green" id="qf-due"     onclick="applyQuickFilter('due',this)"     title="Show items with a due date">Due</button>
+    <button class="fm-btn fm-btn-green" id="qf-overdue" onclick="applyQuickFilter('overdue',this)" title="Show overdue items">Over Due</button>
+    <button class="fm-btn fm-btn-green" id="qf-arrived" onclick="applyQuickFilter('arrived',this)" title="Show arrived/received items">Arrived</button>
+    <button class="fm-btn fm-btn-green" id="qf-my"      onclick="applyQuickFilter('my',this)"      title="Show my orders (Bill)">My Orders</button>
+    <span class="fm-daterange">
+      📅 <input type="date" id="f-date-from" onchange="renderOrders()" title="From required date">
+      → <input type="date" id="f-date-to"   onchange="renderOrders()" title="To required date">
+    </span>
+    <button class="fm-btn" onclick="renderOrders()" title="Refresh">↻</button>
+  </div>
+  <!-- Search &amp; filter strip (filemaker.md §2.3 + §2.4) -->
+  <div class="toolbar">
+    <input type="text" placeholder="Search orders, items, product codes..." id="q-orders" oninput="renderOrders()" style="flex:1;min-width:140px;font-size:13px;">
+    <input type="text" placeholder="Cutlist #" id="q-cutlist" oninput="renderOrders()" style="width:100px;font-size:13px;" title="Cutlist number filter">
+    <select id="f-status" onchange="renderOrders()" style="font-size:13px;">
+      <option value="">All statuses</option>
+      <option>Draft</option><option>Pending</option><option>Approved</option>
+      <option>Rejected</option><option>Delivered</option>
+      <option>Hold</option><option>Quote</option><option>Next</option>
+    </select>
+    <select id="f-cat" onchange="renderOrders()" style="font-size:13px;">
+      <option value="">All categories</option>
+      <option>IT</option><option>Office</option><option>Logistics</option>
+      <option>Facilities</option><option>Services</option>
+    </select>
+    <select id="f-pri" onchange="renderOrders()" style="font-size:13px;">
+      <option value="">All priorities</option>
+      <option>High</option><option>Medium</option><option>Low</option>
+    </select>
+    <select id="f-project" onchange="renderOrders()" style="font-size:13px;">
+      <option value="">All projects</option>
+    </select>
+  </div>
+  <table>
+    <thead><tr>
+      <th>PO number</th><th>Vendor</th><th>Item</th>
+      <th>Cutlist</th><th>Project</th><th>Category</th><th>Priority</th>
+      <th>Required</th><th>Ordered</th><th>Due</th><th>Arrived</th>
+      <th class="tr">Amount</th><th>Status</th>
+    </tr></thead>
+    <tbody id="tbody-orders"></tbody>
+  </table>
+</div>
+
+<div class="panel" id="panel-vendors">
+  <div class="toolbar">
+    <input type="text" placeholder="Search vendors..." id="q-vendors" oninput="renderVendors()" style="flex:1;min-width:120px;font-size:13px;">
+    <select id="f-vcat" onchange="renderVendors()" style="font-size:13px;"><option value="">All categories</option><option>IT</option><option>Office</option><option>Logistics</option><option>Facilities</option><option>Services</option></select>
+    <button class="btn" onclick="sendPrompt('Help me onboard a new vendor into the procurement system. What information do I need to collect?')">+ Add vendor ↗</button>
+  </div>
+  <table>
+    <thead><tr><th>Vendor</th><th>Category</th><th>Contact</th><th>Rating</th><th class="tr">Active POs</th><th>Status</th></tr></thead>
+    <tbody id="tbody-vendors"></tbody>
+  </table>
+</div>
+
+<div class="panel" id="panel-approvals">
+  <div class="stitle">Pending approvals</div>
+  <div id="approval-cards"></div>
+  <div class="stitle" style="margin-top:1.5rem;">Approval history</div>
+  <table>
+    <thead><tr><th>PO</th><th>Requester</th><th>Approver</th><th class="tr">Amount</th><th>Decision</th><th>Date</th></tr></thead>
+    <tbody id="tbody-history"></tbody>
+  </table>
+</div>
+
+<div class="panel" id="panel-inventory">
+  <div class="toolbar">
+    <input type="text" placeholder="Search items..." id="q-inv" oninput="renderInventory()" style="flex:1;min-width:120px;font-size:13px;">
+    <select id="f-inv" onchange="renderInventory()" style="font-size:13px;"><option value="">All stock levels</option><option value="OK">OK</option><option value="Low">Low stock</option><option value="Critical">Critical</option></select>
+    <button class="btn" onclick="sendPrompt('Which inventory items in my procurement system are critically low and need urgent reordering?')">Reorder alerts ↗</button>
+  </div>
+  <table>
+    <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th class="tr">On hand</th><th class="tr">Reorder pt.</th><th>Unit</th><th>Stock level</th></tr></thead>
+    <tbody id="tbody-inv"></tbody>
+  </table>
+</div>
+
+<div class="panel" id="panel-budget">
+  <div class="g3">
+    <div class="metric"><div class="ml">Total budget</div><div class="mv">$3.35M</div></div>
+    <div class="metric"><div class="ml">Total spent</div><div class="mv">$2.40M</div></div>
+    <div class="metric"><div class="ml">Remaining</div><div class="mv up">$0.95M</div></div>
+  </div>
+  <div class="stitle">Cost center breakdown</div>
+  <div id="budget-cards"></div>
+  <button class="btn" style="margin-top:4px;width:100%;" onclick="sendPrompt('Which cost centers in my procurement system are at risk of going over budget? Give me a risk analysis and recommendations.')">Budget risk analysis ↗</button>
+</div>
+</div>
+
+<!-- ── New PO Modal ── -->
+<div id="po-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeNewPOModal()">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <div>
+        <div id="modal-title-text" style="font-size:15px;font-weight:500;color:#111827;">New Purchase Order</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:3px;">PO Number: <span id="new-po-number" class="po-num-badge">—</span></div>
+      </div>
+      <button onclick="closeNewPOModal()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#6b7280;padding:4px 8px;line-height:1;">✕</button>
+    </div>
+
+    <!-- Success state -->
+    <div id="po-success" style="display:none;padding:2rem 1.5rem;text-align:center;background:#ffffff;border-radius:var(--border-radius-lg);">
+      <div style="font-size:36px;margin-bottom:10px;color:#16a34a;">✓</div>
+      <div id="po-success-title" style="font-size:15px;font-weight:500;margin-bottom:4px;color:#111827;">Purchase Order Created</div>
+      <div id="po-success-label" style="font-size:13px;color:#6b7280;margin-bottom:1.25rem;"></div>
+      <div style="text-align:left;">
+        <div class="flbl" style="margin-bottom:6px;">SQL executed on procurement_db</div>
+        <pre id="po-sql-out" class="sql-blk"></pre>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:1.25rem;">
+        <button class="btn" onclick="closeNewPOModal()">Close</button>
+        <button id="btn-create-another" class="btn" onclick="resetPOModal()">+ Create another</button>
+      </div>
+    </div>
+
+    <!-- Form state -->
+    <div id="po-form-state" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="modal-body">
+
+        <div class="sect-title">Order details</div>
+        <div class="fg">
+          <div class="fgrp">
+            <label class="flbl">Vendor *</label>
+            <select id="po-vendor" class="finp">
+              <option value="">Select vendor…</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Category *</label>
+            <select id="po-category" class="finp">
+              <option value="">Select category…</option>
+              <option>IT</option><option>Office</option><option>Logistics</option>
+              <option>Facilities</option><option>Services</option><option>Other</option>
+            </select>
+          </div>
+          <div class="fgrp full">
+            <label class="flbl">Description *</label>
+            <textarea id="po-desc" class="finp" rows="2" placeholder="Brief description of what is being purchased…" style="resize:vertical;"></textarea>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Cost center *</label>
+            <select id="po-costcenter" class="finp">
+              <option value="">Select cost center…</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Requester *</label>
+            <select id="po-requester" class="finp">
+              <option value="">Select requester…</option>
+              <option>James Wilson</option><option>Emma Torres</option>
+              <option>Liam Park</option><option>Sarah Mitchell</option>
+              <option>Tom Lee</option><option>David Ng</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Required date</label>
+            <input type="date" id="po-reqdate" class="finp">
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Currency</label>
+            <select id="po-currency" class="finp">
+              <option>AUD</option><option>USD</option><option>EUR</option><option>GBP</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">Priority *</label>
+            <select id="po-priority" class="finp">
+              <option value="Low">Low</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div class="fgrp full">
+            <label class="flbl">Notes</label>
+            <textarea id="po-notes" class="finp" rows="2" placeholder="Any additional notes or instructions…" style="resize:vertical;"></textarea>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="sect-title">Attachments</div>
+        <div class="drop-zone" id="drop-zone"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="handleDrop(event)">
+          <input type="file" id="file-input" multiple
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.zip,.csv"
+            onchange="handleFileSelect(event)">
+          <div style="font-size:22px;margin-bottom:6px;">📎</div>
+          <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);">Drop files here or click to browse</div>
+          <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:3px;">PDF, Word, Excel, images, ZIP — max 20 MB each</div>
+        </div>
+        <div id="attach-list"></div>
+
+        <hr class="divider">
+
+        <div class="row" style="margin-bottom:.65rem;align-items:center;">
+          <div class="sect-title" style="margin:0;">Line items</div>
+          <button type="button" class="btn" onclick="addLineItem()">+ Add line</button>
+        </div>
+        <table class="li-tbl">
+          <thead>
+            <tr>
+              <th style="width:32%;">Description</th>
+              <th style="width:12%;">SKU</th>
+              <th style="width:8%;">Qty</th>
+              <th style="width:9%;">Unit</th>
+              <th style="width:13%;">Unit price</th>
+              <th style="width:8%;">Tax %</th>
+              <th style="width:13%;text-align:right;">Line total</th>
+              <th style="width:5%;"></th>
+            </tr>
+          </thead>
+          <tbody id="li-tbody"></tbody>
+        </table>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:10px 0 0;border-top:.5px solid var(--color-border-tertiary);margin-top:4px;">
+          <span style="font-size:12px;color:var(--color-text-secondary);">Total amount</span>
+          <span id="po-total" class="mono" style="font-size:15px;font-weight:500;">$0.00</span>
+        </div>
+
+      </div>
+      <div class="modal-ft">
+        <button id="ft-cancel" class="btn" onclick="closeNewPOModal()">Cancel</button>
+        <button id="ft-draft"  class="btn" onclick="submitPO('Draft')" style="background:#f3f4f6;">Save as draft</button>
+        <button id="ft-submit" class="btn btn-ok" onclick="submitPO('Pending')">Submit for approval</button>
+        <button id="ft-save"   class="btn btn-ok" onclick="submitPO('_edit')" style="display:none;">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Item Details Modal (FileMaker Details window — filemaker.md §2.9) ── -->
+<div id="det-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeDetailsModal()">
+  <div class="det-box">
+    <!-- Title bar & action buttons (§2.9.1) -->
+    <div class="det-hd">
+      <div class="det-actions">
+        <button class="btn" onclick="closeDetailsModal()">✕ CLOSE</button>
+        <button class="btn" onclick="duplicateDetRecord()">DUPLICATE</button>
+        <button class="btn" onclick="removeDetRecord()">REMOVE</button>
+        <button class="btn" onclick="switchTab('inventory');closeDetailsModal();">STOCK</button>
+        <span style="font-size:10px;color:#9ca3af;font-family:var(--font-mono);margin-left:8px;">_RecordID <span id="det-recid">—</span></span>
+      </div>
+      <div class="det-actions">
+        <button id="det-edit-toggle" class="btn btn-dn" onclick="toggleDetEdit()">EDIT</button>
+        <button class="btn" onclick="removeDetRecord()" style="background:#fee2e2;color:#991b1b;">DELETE</button>
+        <span class="det-rec-nav" style="margin-left:8px;">
+          <button onclick="navigateDetRecord(-1)">◀</button>
+          <span id="det-rec-pos">— / —</span>
+          <button onclick="navigateDetRecord(1)">▶</button>
+        </span>
+      </div>
+    </div>
+
+    <div class="det-body">
+      <!-- ═══════ LEFT PANEL — Order fields (§2.9.2) ═══════ -->
+      <div class="det-left">
+        <div class="det-sect-title">Order identification</div>
+        <div class="det-field"><label>Order number</label><div class="det-val"><input class="finp" id="d-order-num"></div></div>
+        <div class="det-field"><label>Date ordered</label><div class="det-val"><input type="date" class="finp" id="d-date-ordered"></div></div>
+        <div class="det-field"><label>Priority</label><div class="det-val">
+          <select class="finp" id="d-priority">
+            <option>Next</option><option>Hold</option><option>Quote</option>
+            <option>High</option><option>Medium</option><option>Low</option>
+          </select>
+        </div></div>
+        <div class="det-field"><label>Date required</label><div class="det-val"><input type="date" class="finp" id="d-req-date"></div></div>
+        <div style="margin-top:4px;"><button class="create-po-btn" onclick="alert('NEW! — create a new linked order line')">📋 NEW!</button></div>
+
+        <div class="det-sect-title">Project &amp; logistics</div>
+        <div class="det-field"><label>Project</label><div class="det-val"><input class="finp" id="d-project"></div></div>
+        <div class="det-field"><label>Location</label><div class="det-val"><input class="finp" id="d-location"></div></div>
+        <div class="det-field"><label>Supplier</label><div class="det-val"><input class="finp" id="d-supplier"></div></div>
+        <div class="det-field"><label>Order type</label><div class="det-val"><input class="finp" id="d-order-type"></div></div>
+        <div class="det-field"><label>Cutlist no.</label><div class="det-val"><input class="finp" id="d-cutlist"></div></div>
+        <div class="det-field"><label>Supplier ref no.</label><div class="det-val"><input class="finp" id="d-supplier-ref"></div></div>
+
+        <div class="det-sect-title">Requester details</div>
+        <div class="det-2col">
+          <div class="det-field"><label>Requested by</label><div class="det-val"><input class="finp" id="d-requested-by"></div></div>
+          <div class="det-field"><label>Ext</label><div class="det-val"><input class="finp" id="d-ext"></div></div>
+          <div class="det-field"><label>Requested date</label><div class="det-val"><input type="date" class="finp" id="d-requested-date"></div></div>
+          <div class="det-field"><label>Time</label><div class="det-val"><input class="finp" id="d-requested-time" placeholder="HH:MM:SS"></div></div>
+        </div>
+
+        <div class="det-sect-title">Product &amp; quantity</div>
+        <div class="det-field"><label>Product code</label><div class="det-val"><input class="finp" id="d-product-code"></div></div>
+        <div class="det-field"><label>Stock tracked</label><div class="det-val"><input type="checkbox" id="d-stock-tracked" style="width:auto;"></div></div>
+        <div class="det-field"><label>Qty</label><div class="det-val"><input type="number" class="finp" id="d-qty" min="0" step="0.001" oninput="recalcDetPricing()"></div></div>
+        <div class="det-field"><label>Description</label><div class="det-val"><textarea class="finp" id="d-desc" rows="3"></textarea></div></div>
+
+        <div class="det-sect-title">Pricing</div>
+        <div class="det-field"><label>GST applicable</label><div class="det-val"><input type="checkbox" id="d-gst-applicable" style="width:auto;" onchange="recalcDetPricing()"></div></div>
+        <div class="det-field"><label>GST included</label><div class="det-val"><input type="checkbox" id="d-gst-included" style="width:auto;" onchange="recalcDetPricing()"></div></div>
+        <div class="det-2col">
+          <div class="det-field"><label>Cost</label><div class="det-val"><input type="number" class="finp" id="d-unit-cost" min="0" step="0.01" oninput="recalcDetPricing()"></div></div>
+          <div class="det-field"><label>UM</label><div class="det-val"><input class="finp" id="d-um" placeholder="units"></div></div>
+        </div>
+        <div style="margin-top:6px;padding:8px 10px;background:#f9fafb;border-radius:var(--border-radius-md);">
+          <div class="det-price-row"><span>Sub total</span><span class="mono" id="d-subtotal">$0.00</span></div>
+          <div class="det-price-row"><span>GST (10%)</span><span class="mono" id="d-gst-amt">$0.00</span></div>
+          <div class="det-price-row tot"><span>Grand total</span><span class="mono" id="d-grand">$0.00</span></div>
+        </div>
+      </div>
+
+      <!-- ═══════ RIGHT PANEL — Tab navigation (§2.9.3) ═══════ -->
+      <div class="det-right">
+        <div class="det-tabs">
+          <button class="det-tab active" data-det-tab="home"     onclick="switchDetTab('home',this)">HOME</button>
+          <button class="det-tab"        data-det-tab="delivery" onclick="switchDetTab('delivery',this)">Delivery</button>
+          <button class="det-tab"        data-det-tab="glassc"   onclick="switchDetTab('glassc',this)">Glass C</button>
+          <button class="det-tab"        data-det-tab="timber"   onclick="switchDetTab('timber',this)">Timber</button>
+          <button class="det-tab"        data-det-tab="stock"    onclick="switchDetTab('stock',this)">Stock</button>
+          <button class="det-tab"        data-det-tab="tracking" onclick="switchDetTab('tracking',this)">Tracking</button>
+          <button class="det-tab"        data-det-tab="supplier" onclick="switchDetTab('supplier',this)">Supplier</button>
+          <button class="det-tab"        data-det-tab="tgsolid"  onclick="switchDetTab('tgsolid',this)">TGSolid</button>
+          <button class="det-tab"        data-det-tab="cutlists" onclick="switchDetTab('cutlists',this)">Cutlists</button>
+          <button class="det-tab"        data-det-tab="admin"    onclick="switchDetTab('admin',this)">ADMIN</button>
+        </div>
+
+        <!-- HOME panel (§2.9.4) -->
+        <div class="det-panel active" id="det-panel-home">
+          <!-- Zone A — Create PO -->
+          <div style="margin-bottom:1rem;">
+            <button class="create-po-btn" onclick="createPOFromDetails()">📄 Create PO!</button>
+          </div>
+
+          <!-- Zone B — File & PDF Attachments -->
+          <div class="det-2col" style="margin-bottom:1rem;">
+            <div>
+              <div class="det-zone-title">File</div>
+              <div class="det-drop" id="det-drop-file"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="handleDetDrop(event,'file')">
+                <input type="file" multiple onchange="handleDetFile(event,'file')">
+                <div style="font-size:20px;">📎</div>
+                <div class="det-drop-label">Attach any file by dragging and dropping into this box</div>
+              </div>
+              <div id="det-file-list" style="margin-top:6px;"></div>
+            </div>
+            <div>
+              <div class="det-zone-title">PDF</div>
+              <div class="det-drop" id="det-drop-pdf"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="handleDetDrop(event,'pdf')">
+                <input type="file" accept=".pdf" multiple onchange="handleDetFile(event,'pdf')">
+                <div style="font-size:20px;">📄</div>
+                <div class="det-drop-label">Drop PDF specs here — preview &amp; View button appears below</div>
+              </div>
+              <div id="det-pdf-list" style="margin-top:6px;"></div>
+            </div>
+          </div>
+
+          <!-- Zone C — Product Details -->
+          <div class="det-2col" style="margin-bottom:1rem;">
+            <div>
+              <div class="det-zone-title">Product image</div>
+              <div class="det-drop" id="det-drop-img" style="height:140px;padding:0;"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="handleDetDrop(event,'image')">
+                <input type="file" accept="image/*" onchange="handleDetFile(event,'image')">
+                <div class="det-prod-img" id="det-prod-img">Drag or click to upload</div>
+              </div>
+            </div>
+            <div>
+              <div class="det-zone-title">Product info</div>
+              <div class="det-field"><label>Product code</label><div class="det-val"><input class="finp" id="d-home-product-code"></div></div>
+              <div class="det-field"><label>Product website</label><div class="det-val"><input class="finp" id="d-product-website" type="url" placeholder="https://..."></div></div>
+              <div class="det-field"><label>Description</label><div class="det-val"><textarea class="finp" id="d-product-desc" rows="3"></textarea></div></div>
+            </div>
+          </div>
+
+          <!-- Zone D — Comments & Log -->
+          <div class="det-zone-title">ChangeLog <span style="font-weight:400;color:#9ca3af;">(internal only)</span></div>
+          <div class="det-changelog" id="d-changelog">—</div>
+
+          <div class="det-zone-title" style="margin-top:10px;">Line item comments <span style="font-weight:400;color:#16a34a;">✓ printed on PO</span></div>
+          <textarea class="finp" id="d-line-comments" rows="2" placeholder="Appears on the printed Purchase Order"></textarea>
+
+          <div class="det-zone-title" style="margin-top:10px;">Internal comments <span style="font-weight:400;color:#dc2626;">✗ NOT printed</span></div>
+          <textarea class="finp" id="d-internal-comments" rows="2" placeholder="Internal notes for procurement team only"></textarea>
+
+          <!-- §2.9.5 Date tracking table -->
+          <div class="det-date-tbl">
+            <div class="det-date-cell"><div class="lbl">Requested</div><div class="val" id="d-td-requested">—</div></div>
+            <div class="det-date-cell"><div class="lbl">Ordered</div><div class="val" id="d-td-ordered">—</div></div>
+            <div class="det-date-cell"><div class="lbl">Due</div><div class="val" id="d-td-due">—</div></div>
+            <div class="det-date-cell"><div class="lbl">Arrived</div><div class="val" id="d-td-arrived">—</div></div>
+          </div>
+        </div>
+
+        <!-- Placeholder panels for the remaining 9 tabs -->
+        <div class="det-panel" id="det-panel-delivery"><div style="color:#9ca3af;font-size:12px;">Delivery details and instructions — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-glassc"><div style="color:#9ca3af;font-size:12px;">Glass-specific cutting/specification details — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-timber"><div style="color:#9ca3af;font-size:12px;">Timber-specific specification details — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-stock"><div style="color:#9ca3af;font-size:12px;">Stock reservation &amp; availability — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-tracking"><div style="color:#9ca3af;font-size:12px;">Delivery tracking and logistics updates — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-supplier"><div style="color:#9ca3af;font-size:12px;">Supplier contact details and notes — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-tgsolid"><div style="color:#9ca3af;font-size:12px;">TGSolid (solid surface) specific details — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-cutlists"><div style="color:#9ca3af;font-size:12px;">Linked cutlist records — coming soon.</div></div>
+        <div class="det-panel" id="det-panel-admin"><div style="color:#9ca3af;font-size:12px;">Administrative notes &amp; internal flags — coming soon.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// POS — FileMaker-aligned sample data (filemaker.md §2.5, §2.9.2)
+// Fields: id, v (vendor/supplier), d (item description), cat, date (required),
+// amt, s (status), pri (priority),
+// cutlist, proj, loc, orderType, supplierRef, orderedDate, dueDate, arrivedDate,
+// requestedBy, ext, requestedDate, productCode, stockTracked,
+// qty, um (unit of measure), unitCost, gstApplicable, gstIncluded,
+// productWebsite, productDesc, lineComments, internalComments, changelog
+const POS=[
+  {id:'PO-2024-001',v:'Tech Solutions Ltd',d:'Laptop procurement — MacBook Pro 14" × 10 units',cat:'IT',date:'2024-11-01',amt:48500,s:'Delivered',pri:'Medium',
+   cutlist:'',proj:'IT Refresh FY25',loc:'HQ-L2-ITRoom',orderType:'STOCK-PURCHASE',supplierRef:'TS-48500',orderedDate:'2024-10-15',dueDate:'2024-10-28',arrivedDate:'2024-11-01',
+   requestedBy:'David Ng',ext:'105',requestedDate:'2024-10-10',productCode:'MBP14-M3',stockTracked:true,
+   qty:10,um:'units',unitCost:4850.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://techsol.com/mbp14-m3',productDesc:'MacBook Pro 14" M3 Pro 512GB',
+   lineComments:'Space Grey. Engraving not required.',internalComments:'FY25 refresh cycle',changelog:'2024-10-10 — Created by David Ng\n2024-11-01 — Delivered'},
+  {id:'PO-2024-002',v:'OfficeWorld Supplies',d:'Office stationery & consumables',cat:'Office',date:'2024-11-05',amt:3200,s:'Approved',pri:'Low',
+   cutlist:'',proj:'General Office',loc:'HQ-L1-Store',orderType:'STOCK-PURCHASE',supplierRef:'OW-29384',orderedDate:'2024-11-02',dueDate:'2024-11-08',arrivedDate:'',
+   requestedBy:'Emma Torres',ext:'210',requestedDate:'2024-10-30',productCode:'OW-BUNDLE-Q4',stockTracked:true,qty:1,um:'bundle',unitCost:3200.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://officeworld.com',productDesc:'Q4 stationery bundle',lineComments:'',internalComments:'',changelog:''},
+  {id:'PO-2024-003',v:'CloudCore Systems',d:'Annual cloud infrastructure licenses',cat:'IT',date:'2024-11-08',amt:125000,s:'Pending',pri:'High',
+   cutlist:'',proj:'Cloud FY25',loc:'AWS-SYD',orderType:'SERVICE-CONTRACT',supplierRef:'CC-2025-ENT',orderedDate:'',dueDate:'2024-12-01',arrivedDate:'',
+   requestedBy:'James Wilson',ext:'115',requestedDate:'2024-11-01',productCode:'CC-ENT-YR',stockTracked:false,qty:1,um:'year',unitCost:125000.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://cloudcore.io/enterprise',productDesc:'Enterprise tier — 500 seats',lineComments:'Auto-renews. Invoice quarterly.',internalComments:'CFO approved ceiling $130k',changelog:''},
+  {id:'PO-2024-004',v:'FastFreight Logistics',d:'Q4 warehouse distribution contract',cat:'Logistics',date:'2024-11-10',amt:67800,s:'Approved',pri:'Medium',
+   cutlist:'',proj:'Distribution Q4',loc:'Warehouse-N',orderType:'SERVICE-CONTRACT',supplierRef:'FF-Q4-2024',orderedDate:'2024-11-05',dueDate:'2024-12-31',arrivedDate:'',
+   requestedBy:'Liam Park',ext:'320',requestedDate:'2024-10-20',productCode:'FF-DIST-Q4',stockTracked:false,qty:1,um:'contract',unitCost:67800.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'',productDesc:'Quarterly distribution contract',lineComments:'',internalComments:'',changelog:''},
+  {id:'PO-2024-005',v:'Facility Pro Services',d:'HVAC maintenance & repair',cat:'Facilities',date:'2024-11-12',amt:15400,s:'Pending',pri:'Medium',
+   cutlist:'',proj:'HQ Facilities',loc:'HQ-Rooftop',orderType:'MAINTENANCE',supplierRef:'FP-HVAC-231',orderedDate:'',dueDate:'2024-11-20',arrivedDate:'',
+   requestedBy:'Emma Torres',ext:'210',requestedDate:'2024-11-06',productCode:'HVAC-Q4',stockTracked:false,qty:1,um:'visit',unitCost:15400.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'',productDesc:'Annual HVAC servicing',lineComments:'Book after hours',internalComments:'',changelog:''},
+  {id:'PO-2024-006',v:'Legal & Advisory Partners',d:'Contract legal review services',cat:'Services',date:'2024-11-14',amt:22000,s:'Draft',pri:'Low',
+   cutlist:'',proj:'Compliance FY25',loc:'',orderType:'PROFESSIONAL-SERVICES',supplierRef:'',orderedDate:'',dueDate:'',arrivedDate:'',
+   requestedBy:'Sarah Mitchell',ext:'440',requestedDate:'2024-11-12',productCode:'LAP-REV',stockTracked:false,qty:40,um:'hours',unitCost:550.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'',productDesc:'Senior partner review @ $550/hr',lineComments:'',internalComments:'',changelog:''},
+  {id:'PO-2024-007',v:'PrintMaster Co.',d:'Marketing collateral printing',cat:'Office',date:'2024-11-15',amt:8750,s:'Rejected',pri:'Low',
+   cutlist:'',proj:'Marketing Q4',loc:'',orderType:'STOCK-PURCHASE',supplierRef:'PM-89231',orderedDate:'',dueDate:'',arrivedDate:'',
+   requestedBy:'Tom Lee',ext:'180',requestedDate:'2024-11-08',productCode:'PM-Q4-PACK',stockTracked:false,qty:500,um:'units',unitCost:17.50,gstApplicable:true,gstIncluded:false,
+   productWebsite:'',productDesc:'Trifold brochures 500qty',lineComments:'',internalComments:'Over budget — resubmit with revised qty',changelog:''},
+  {id:'PO-2024-008',v:'DataSec Innovations',d:'Cybersecurity audit & penetration testing',cat:'IT',date:'2024-11-18',amt:35000,s:'Pending',pri:'High',
+   cutlist:'',proj:'Security FY25',loc:'All',orderType:'PROFESSIONAL-SERVICES',supplierRef:'DS-AUDIT-25',orderedDate:'',dueDate:'2024-12-15',arrivedDate:'',
+   requestedBy:'Liam Park',ext:'320',requestedDate:'2024-11-13',productCode:'DS-PENTEST',stockTracked:false,qty:1,um:'engagement',unitCost:35000.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'',productDesc:'Annual pen test + SOC2 gap analysis',lineComments:'',internalComments:'',changelog:''},
+  {id:'PO-2024-009',v:'Schiavello Manufacturing',d:'1.2mm grade 316 stainless steel benchtop with lip & Splashback & Sink',cat:'Facilities',date:'2026-03-09',amt:3551,s:'Next',pri:'Next',
+   cutlist:'297959',proj:'Alfred Level 3 Fitout',loc:'lv3 JL-SB01a S/S BENCHTOP',orderType:'CONTRACTOR-MANUFACTURING',supplierRef:'856495',orderedDate:'',dueDate:'',arrivedDate:'',
+   requestedBy:'Bill',ext:'112',requestedDate:'2026-03-04',productCode:'53620916',stockTracked:true,qty:2,um:'units',unitCost:3551.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://schiavello.com/product/53620916',productDesc:'1.2mm grade 316 stainless steel benchtop with lip, splashback and sink cutout',
+   lineComments:'With Mixer Cutout, substrate from Trendgosa',internalComments:'Confirm sink size with site team before cutting',
+   changelog:'2026-03-04 10:08 — Created by Bill\n2026-03-04 14:20 — Cutlist 297959 linked'},
+  {id:'PO-2024-010',v:'Autex Australia Pty Ltd',d:'2440 × 1200 × 12 Cube Gherkin acoustic panel',cat:'Facilities',date:'2026-02-16',amt:2420,s:'Quote',pri:'Quote',
+   cutlist:'298104',proj:'100 Franklin Common Area',loc:'Acp72',orderType:'CONTRACTOR-MANUFACTURING',supplierRef:'AX-GH2440',orderedDate:'',dueDate:'2026-02-16',arrivedDate:'',
+   requestedBy:'Ali',ext:'208',requestedDate:'2026-02-01',productCode:'Cube_Gherkin12mm',stockTracked:false,qty:4,um:'sheets',unitCost:605.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://autexglobal.com/cube',productDesc:'Cube acoustic panel — Gherkin 12mm',lineComments:'',internalComments:'Waiting for supplier quote confirmation',changelog:''},
+  {id:'PO-2024-011',v:'Mitchell Laminates Pty Ltd',d:'2800 × 1200 × 24 Echopanel Sage 580',cat:'Facilities',date:'2026-02-16',amt:1840,s:'Hold',pri:'Hold',
+   cutlist:'298110',proj:'100 Franklin Common Area',loc:'Acp50',orderType:'CONTRACTOR-MANUFACTURING',supplierRef:'ML-EP2812',orderedDate:'',dueDate:'',arrivedDate:'',
+   requestedBy:'Ali',ext:'208',requestedDate:'2026-02-01',productCode:'EP2812245AG580',stockTracked:false,qty:2,um:'sheets',unitCost:920.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://mitchelllaminates.com.au',productDesc:'Echopanel Sage 580 24mm',lineComments:'',internalComments:'Client changed colour — on hold pending confirm',changelog:''},
+  {id:'PO-2024-012',v:'Tech Solutions Ltd',d:'Server rack expansion units — 42U × 2',cat:'IT',date:'2025-11-22',amt:74200,s:'Pending',pri:'Medium',
+   cutlist:'',proj:'Datacenter FY25',loc:'DC-Room-B',orderType:'STOCK-PURCHASE',supplierRef:'TS-RACK-42U',orderedDate:'',dueDate:'2025-12-10',arrivedDate:'',
+   requestedBy:'James Wilson',ext:'115',requestedDate:'2025-11-15',productCode:'RACK-42U-APC',stockTracked:true,qty:2,um:'units',unitCost:37100.00,gstApplicable:true,gstIncluded:false,
+   productWebsite:'https://techsol.com/rack-42u',productDesc:'APC 42U server rack with PDU',lineComments:'',internalComments:'',changelog:''},
+];
+const VENDORS=[
+  {n:'Tech Solutions Ltd',cat:'IT',email:'sarah.chen@techsol.com',rating:4.8,pos:3,s:'Active'},
+  {n:'OfficeWorld Supplies',cat:'Office',email:'orders@officeworld.com',rating:4.2,pos:1,s:'Active'},
+  {n:'CloudCore Systems',cat:'IT',email:'enterprise@cloudcore.io',rating:4.6,pos:2,s:'Active'},
+  {n:'FastFreight Logistics',cat:'Logistics',email:'accounts@fastfreight.com',rating:4.4,pos:2,s:'Active'},
+  {n:'Facility Pro Services',cat:'Facilities',email:'service@facilitypro.com',rating:3.9,pos:1,s:'Active'},
+  {n:'Legal & Advisory Partners',cat:'Services',email:'billing@lap.com.au',rating:4.7,pos:1,s:'Under review'},
+  {n:'DataSec Innovations',cat:'IT',email:'ops@datasec.com',rating:4.5,pos:1,s:'Active'},
+  {n:'BuildRight Contractors',cat:'Facilities',email:'projects@buildright.com',rating:4.1,pos:1,s:'Active'},
+  {n:'HR Dynamics',cat:'Services',email:'sales@hrdynamics.com',rating:4.3,pos:1,s:'Active'},
+  {n:'FleetCare Auto',cat:'Logistics',email:'fleet@fleetcare.com.au',rating:3.8,pos:1,s:'Under review'},
+];
+const PENDING=[
+  {id:'PO-2024-003',v:'CloudCore Systems',d:'Annual cloud infrastructure licenses',amt:125000,req:'James Wilson',pri:'High',days:3},
+  {id:'PO-2024-005',v:'Facility Pro Services',d:'HVAC maintenance & repair',amt:15400,req:'Emma Torres',pri:'Medium',days:1},
+  {id:'PO-2024-008',v:'DataSec Innovations',d:'Cybersecurity audit & penetration testing',amt:35000,req:'Liam Park',pri:'High',days:5},
+  {id:'PO-2024-009',v:'BuildRight Contractors',d:'Office renovation — Level 3',amt:198000,req:'Sarah Mitchell',pri:'Low',days:2},
+  {id:'PO-2024-012',v:'Tech Solutions Ltd',d:'Server rack expansion units',amt:74200,req:'James Wilson',pri:'Medium',days:4},
+];
+const HISTORY=[
+  {id:'PO-2024-001',req:'Emma Torres',apr:'David Ng',amt:48500,dec:'Approved',date:'2024-10-30'},
+  {id:'PO-2024-002',req:'Tom Lee',apr:'Sarah Mitchell',amt:3200,dec:'Approved',date:'2024-11-04'},
+  {id:'PO-2024-004',req:'Liam Park',apr:'David Ng',amt:67800,dec:'Approved',date:'2024-11-09'},
+  {id:'PO-2024-007',req:'Tom Lee',apr:'Sarah Mitchell',amt:8750,dec:'Rejected',date:'2024-11-14'},
+  {id:'PO-2024-010',req:'Emma Torres',apr:'David Ng',amt:12300,dec:'Approved',date:'2024-11-19'},
+];
+const INV=[
+  {n:'Laptop — MacBook Pro 14"',sku:'IT-LP-001',cat:'IT Hardware',qty:24,rop:10,unit:'units',lv:'OK'},
+  {n:'Office Chair — Ergonomic',sku:'OFF-CH-007',cat:'Furniture',qty:6,rop:8,unit:'units',lv:'Low'},
+  {n:'A4 Copy Paper',sku:'OFF-PA-002',cat:'Stationery',qty:3,rop:20,unit:'boxes',lv:'Critical'},
+  {n:'Toner Cartridge — HP Black',sku:'OFF-TC-014',cat:'Stationery',qty:18,rop:10,unit:'units',lv:'OK'},
+  {n:'Network Switch — 24 Port',sku:'IT-NS-003',cat:'IT Hardware',qty:4,rop:3,unit:'units',lv:'OK'},
+  {n:'Safety Gloves — Medium',sku:'FAC-GL-022',cat:'Safety',qty:7,rop:15,unit:'pairs',lv:'Low'},
+  {n:'UPS Battery Backup 1500VA',sku:'IT-UP-009',cat:'IT Hardware',qty:2,rop:4,unit:'units',lv:'Critical'},
+  {n:'Cleaning Supplies Bundle',sku:'FAC-CS-001',cat:'Facilities',qty:45,rop:20,unit:'packs',lv:'OK'},
+  {n:'HDMI Cable 2m',sku:'IT-CA-018',cat:'IT Accessories',qty:32,rop:15,unit:'units',lv:'OK'},
+];
+const BUDGET=[
+  {cc:'Information Technology',budget:1200000,spent:890000},
+  {cc:'Office & Stationery',budget:180000,spent:145000},
+  {cc:'Logistics & Distribution',budget:750000,spent:412000},
+  {cc:'Facilities & Maintenance',budget:620000,spent:578000},
+  {cc:'Professional Services',budget:600000,spent:375000},
+];
+const ACTIVITY=[
+  {s:'approved',txt:'PO-2024-010 approved by David Ng',t:'2h ago'},
+  {s:'pending',txt:'PO-2024-012 submitted for approval',t:'4h ago'},
+  {s:'delivered',txt:'PO-2024-001 marked as delivered',t:'Yesterday'},
+  {s:'rejected',txt:'PO-2024-007 rejected by Sarah Mitchell',t:'2 days ago'},
+  {s:'draft',txt:'PO-2024-011 created as draft',t:'2 days ago'},
+];
+
+const money=n=>'$'+n.toLocaleString();
+
+function priClass(p){
+  if(p==='High')return'b-pri-high';
+  if(p==='Medium')return'b-pri-med';
+  if(p==='Next')return'b-next';
+  if(p==='Hold')return'b-hold';
+  if(p==='Quote')return'b-quote';
+  return'b-pri-low';
+}
+function statusClass(s){
+  const key=(s||'').toLowerCase();
+  if(key==='hold')return'b-hold';
+  if(key==='quote')return'b-quote';
+  if(key==='next')return'b-next';
+  return 'b-'+key;
+}
+
+// Working-days calculation for "approaching within 3 working days" (filemaker.md §2.5)
+function workingDaysBetween(d1,d2){
+  if(!(d1 instanceof Date)||!(d2 instanceof Date))return null;
+  let count=0;const one=24*60*60*1000;
+  const start=new Date(Math.min(d1,d2));const end=new Date(Math.max(d1,d2));
+  for(let t=start.getTime();t<=end.getTime();t+=one){
+    const dow=new Date(t).getDay();
+    if(dow!==0&&dow!==6)count++;
+  }
+  return d1<=d2?count-1:-(count-1);
+}
+// Date colour coding — filemaker.md §2.5:
+//   red    = past due (before today)
+//   pink   = within 3 working days
+//   normal = future > 3 working days
+function fmtDateCell(dStr){
+  if(!dStr)return'<td></td>';
+  const d=new Date(dStr);if(isNaN(d))return`<td class="date-ok">${dStr}</td>`;
+  const today=new Date();today.setHours(0,0,0,0);
+  const wd=workingDaysBetween(today,d);
+  if(d<today)        return`<td><span class="date-overdue" title="Overdue">${dStr}</span></td>`;
+  if(wd!==null&&wd<=3)return`<td><span class="date-soon" title="Due within 3 working days">${dStr}</span></td>`;
+  return`<td class="date-ok">${dStr}</td>`;
+}
+
+// Active FileMaker quick-filter: null | 'rto' | 'tbo' | 'due' | 'overdue' | 'arrived' | 'my' | 'po'
+let activeQuickFilter=null;
+
+function applyQuickFilter(kind,btnEl){
+  activeQuickFilter=(activeQuickFilter===kind)?null:kind;
+  document.querySelectorAll('.fm-btn').forEach(b=>b.classList.remove('active'));
+  if(activeQuickFilter&&btnEl)btnEl.classList.add('active');
+  renderOrders();
+}
+
+function clearAllFilters(){
+  activeQuickFilter=null;
+  document.querySelectorAll('.fm-btn').forEach(b=>b.classList.remove('active'));
+  ['q-orders','q-cutlist','f-status','f-cat','f-pri','f-project','f-date-from','f-date-to'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  // CLEAR also restricts to required_date within past 2 years (filemaker.md §2.2)
+  const today=new Date();
+  const twoYrsAgo=new Date(today.getFullYear()-2,today.getMonth(),today.getDate());
+  document.getElementById('f-date-from').value=twoYrsAgo.toISOString().split('T')[0];
+  renderOrders();
+}
+
+function populateProjectFilter(){
+  const sel=document.getElementById('f-project');if(!sel)return;
+  const projects=[...new Set(POS.map(o=>o.proj).filter(Boolean))].sort();
+  sel.innerHTML='<option value="">All projects</option>'+projects.map(p=>`<option>${p}</option>`).join('');
+}
+
+function passesQuickFilter(o){
+  const today=new Date();today.setHours(0,0,0,0);
+  const req=o.date?new Date(o.date):null;
+  switch(activeQuickFilter){
+    case'rto':     return o.s==='Next';
+    case'tbo':     return o.s==='Next'||o.s==='Quote';
+    case'due':     return !!o.dueDate && !o.arrivedDate;
+    case'overdue': return req && req<today && !o.arrivedDate && !['Delivered','Cancelled','Rejected'].includes(o.s);
+    case'arrived': return !!o.arrivedDate;
+    case'my':      return o.requestedBy==='Bill';   // current user (FileMaker demo = Bill)
+    case'po':      return !!o.id;                   // show all POs (kept for parity)
+    default:       return true;
+  }
+}
+
+function renderOrders(){
+  const q      =(document.getElementById('q-orders').value||'').toLowerCase();
+  const qCut   =(document.getElementById('q-cutlist').value||'').toLowerCase();
+  const s      = document.getElementById('f-status').value;
+  const c      = document.getElementById('f-cat').value;
+  const p      = document.getElementById('f-pri').value;
+  const proj   = document.getElementById('f-project').value;
+  const dFrom  = document.getElementById('f-date-from').value;
+  const dTo    = document.getElementById('f-date-to').value;
+
+  document.getElementById('tbody-orders').innerHTML=POS
+    .filter(o=>{
+      if(!passesQuickFilter(o))              return false;
+      if(s    && o.s    !== s)               return false;
+      if(c    && o.cat  !== c)               return false;
+      if(p    && o.pri  !== p)               return false;
+      if(proj && o.proj !== proj)            return false;
+      if(qCut && !(o.cutlist||'').toLowerCase().includes(qCut)) return false;
+      if(dFrom && (!o.date || o.date<dFrom)) return false;
+      if(dTo   && (!o.date || o.date>dTo))   return false;
+      if(q){
+        const hay=(o.id+o.v+o.d+(o.loc||'')+(o.productCode||'')+(o.requestedBy||'')).toLowerCase();
+        if(!hay.includes(q))                 return false;
+      }
+      return true;
+    })
+    .map(o=>`<tr title="Click Item to view details — other cells open Edit">
+      <td class="mono" onclick="openEditPOModal('${o.id}')" style="cursor:pointer;">${o.id}</td>
+      <td onclick="openEditPOModal('${o.id}')" style="cursor:pointer;font-weight:500;">${o.v}</td>
+      <td onclick="openItemDetailsModal('${o.id}')" style="cursor:pointer;color:var(--color-text-primary);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:#d1d5db;" title="Open Item Details">${o.d}</td>
+      <td class="mono" style="font-size:11px;color:var(--color-text-secondary);">${o.cutlist||''}</td>
+      <td style="font-size:11px;color:var(--color-text-secondary);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.proj||''}</td>
+      <td style="font-size:11px;">${o.cat}</td>
+      <td><span class="b ${priClass(o.pri||'Low')}">${o.pri||'Low'}</span></td>
+      ${fmtDateCell(o.date)}
+      <td class="date-ok">${o.orderedDate||''}</td>
+      <td class="date-ok">${o.dueDate||''}</td>
+      <td class="date-ok">${o.arrivedDate||''}</td>
+      <td class="tr mono">${money(o.amt)}</td>
+      <td><span class="b ${statusClass(o.s)}">${o.s}</span></td>
+    </tr>`).join('');
+}
+
+function renderVendors(){
+  const q=(document.getElementById('q-vendors').value||'').toLowerCase();
+  const c=document.getElementById('f-vcat').value;
+  document.getElementById('tbody-vendors').innerHTML=VENDORS
+    .filter(v=>(!c||v.cat===c)&&(!q||(v.n+v.cat+v.email).toLowerCase().includes(q)))
+    .map(v=>`<tr>
+      <td style="font-weight:500;">${v.n}</td>
+      <td style="font-size:12px;">${v.cat}</td>
+      <td style="font-size:12px;color:var(--color-text-secondary);">${v.email}</td>
+      <td class="mono">${v.rating.toFixed(1)} / 5.0</td>
+      <td class="tr">${v.pos}</td>
+      <td><span class="b b-${v.s==='Active'?'active':'review'}">${v.s}</span></td>
+    </tr>`).join('');
+}
+
+function renderApprovals(){
+  document.getElementById('approval-cards').innerHTML=PENDING.map(a=>`
+    <div class="card">
+      <div class="row">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:500;font-size:13px;">${a.id} — ${a.d}</div>
+          <div style="font-size:12px;color:var(--color-text-secondary);margin-top:3px;">${a.v} · Requested by ${a.req} · ${a.days} day${a.days>1?'s':''} ago</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div class="mono" style="font-weight:500;">${money(a.amt)}</div>
+          <span class="b b-${a.pri==='High'?'rejected':a.pri==='Medium'?'pending':'draft'}" style="margin-top:4px;">${a.pri} priority</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-ok" onclick="sendPrompt('I want to approve PO ${a.id} from ${a.v} for $${a.amt.toLocaleString()}. What information should the approver record and what happens next in the workflow?')">Approve ↗</button>
+        <button class="btn btn-dn" onclick="sendPrompt('I want to reject PO ${a.id} from ${a.v}. What reason should be provided and what happens next?')">Reject ↗</button>
+        <button class="btn" onclick="openViewDetailsModal('${a.id}')">View details</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('tbody-history').innerHTML=HISTORY.map(h=>`<tr>
+    <td class="mono">${h.id}</td><td>${h.req}</td><td>${h.apr}</td>
+    <td class="tr mono">${money(h.amt)}</td>
+    <td><span class="b b-${h.dec.toLowerCase()}">${h.dec}</span></td>
+    <td style="font-size:12px;color:var(--color-text-tertiary);">${h.date}</td>
+  </tr>`).join('');
+}
+
+function renderInventory(){
+  const q=(document.getElementById('q-inv').value||'').toLowerCase();
+  const f=document.getElementById('f-inv').value;
+  document.getElementById('tbody-inv').innerHTML=INV
+    .filter(i=>(!f||i.lv===f)&&(!q||(i.n+i.sku+i.cat).toLowerCase().includes(q)))
+    .map(i=>`<tr>
+      <td style="font-weight:500;font-size:13px;">${i.n}</td>
+      <td class="mono">${i.sku}</td>
+      <td style="font-size:12px;color:var(--color-text-secondary);">${i.cat}</td>
+      <td class="tr">${i.qty}</td><td class="tr">${i.rop}</td>
+      <td style="font-size:12px;color:var(--color-text-tertiary);">${i.unit}</td>
+      <td><span class="b b-${i.lv.toLowerCase()}">${i.lv}</span></td>
+    </tr>`).join('');
+}
+
+function renderBudget(){
+  document.getElementById('budget-cards').innerHTML=BUDGET.map(b=>{
+    const pct=Math.round(b.spent/b.budget*100);
+    const col=pct>=90?'#E24B4A':pct>=75?'#BA7517':'#1D9E75';
+    return `<div class="card">
+      <div class="row" style="margin-bottom:2px;">
+        <div style="font-weight:500;font-size:13px;">${b.cc}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary);">${money(b.spent)} of ${money(b.budget)}</div>
+      </div>
+      <div class="prog"><div class="pf" style="width:${pct}%;background:${col};"></div></div>
+      <div class="row" style="font-size:11px;color:var(--color-text-tertiary);">
+        <span>${pct}% utilised</span><span>${money(b.budget-b.spent)} remaining</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderActivity(){
+  document.getElementById('activity').innerHTML=ACTIVITY.map(a=>`
+    <div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--color-border-tertiary);">
+      <span class="b b-${a.s}" style="flex-shrink:0;font-size:10px;">${a.s}</span>
+      <span style="flex:1;font-size:12px;color:var(--color-text-primary);">${a.txt}</span>
+      <span style="font-size:11px;color:var(--color-text-tertiary);white-space:nowrap;">${a.t}</span>
+    </div>`).join('');
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+populateProjectFilter();renderOrders();renderVendors();renderApprovals();renderInventory();renderBudget();renderActivity();
+
+// ── PO Modal (create + edit) ──────────────────────────────────────────────────
+let liCount = 0;
+let attachedFiles = [];
+let poModalMode = 'create';   // 'create' | 'edit'
+let editingPoId = null;
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (['pdf'].includes(ext))                    return '📄';
+  if (['doc','docx'].includes(ext))             return '📝';
+  if (['xls','xlsx','csv'].includes(ext))       return '📊';
+  if (['png','jpg','jpeg','gif'].includes(ext)) return '🖼️';
+  if (['zip','rar'].includes(ext))              return '🗜️';
+  return '📎';
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+function renderAttachList() {
+  document.getElementById('attach-list').innerHTML = attachedFiles.map((f,i) => `
+    <div class="attach-item">
+      <span class="attach-icon">${fileIcon(f.name)}</span>
+      <span class="attach-name">${f.name}</span>
+      <span class="attach-size">${fmtSize(f.size)}</span>
+      <button class="attach-rm" onclick="removeAttach(${i})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function handleFileSelect(e) {
+  addFiles(Array.from(e.target.files));
+  e.target.value = '';
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files));
+}
+
+function addFiles(files) {
+  const MAX = 20 * 1024 * 1024;
+  files.forEach(f => {
+    if (f.size > MAX) { alert(`"${f.name}" exceeds the 20 MB limit and was skipped.`); return; }
+    if (!attachedFiles.find(x => x.name === f.name && x.size === f.size)) attachedFiles.push(f);
+  });
+  renderAttachList();
+}
+
+function removeAttach(i) {
+  attachedFiles.splice(i, 1);
+  renderAttachList();
+}
+
+function generateNextPONumber() {
+  const yr = new Date().getFullYear();
+  const nums = POS
+    .filter(p => p.id.startsWith('PO-' + yr + '-'))
+    .map(p => parseInt(p.id.split('-')[2]))
+    .filter(n => !isNaN(n));
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return `PO-${yr}-${String(next).padStart(3,'0')}`;
+}
+
+function populateDropdowns() {
+  document.getElementById('po-vendor').innerHTML =
+    '<option value="">Select vendor…</option>' +
+    VENDORS.map(v => `<option>${v.n} (${v.cat})</option>`).join('');
+  document.getElementById('po-costcenter').innerHTML =
+    '<option value="">Select cost center…</option>' +
+    BUDGET.map(b => `<option>${b.cc}</option>`).join('');
+}
+
+function setFieldsReadOnly(readOnly) {
+  document.querySelectorAll('#po-form-state .finp, #li-tbody input').forEach(el => {
+    el.disabled = readOnly;
+    el.style.opacity = readOnly ? '0.75' : '1';
+    el.style.cursor  = readOnly ? 'default' : '';
+  });
+  document.getElementById('drop-zone').style.pointerEvents = readOnly ? 'none' : '';
+  document.getElementById('drop-zone').style.opacity       = readOnly ? '0.6'  : '1';
+  const addLineBtn = document.querySelector('#po-form-state .row .btn');
+  if (addLineBtn) { addLineBtn.style.display = readOnly ? 'none' : ''; }
+  document.querySelectorAll('#li-tbody .attach-rm').forEach(b => b.style.display = readOnly ? 'none' : '');
+}
+
+function setModalMode(mode) {
+  poModalMode = mode;
+  const titles = { create:'New Purchase Order', edit:'Edit Purchase Order', view:'Purchase Order Details' };
+  document.getElementById('modal-title-text').textContent = titles[mode] || titles.create;
+
+  const isCreate = mode === 'create';
+  const isEdit   = mode === 'edit';
+  const isView   = mode === 'view';
+
+  document.getElementById('ft-cancel').textContent    = isView ? 'Close' : 'Cancel';
+  document.getElementById('ft-draft').style.display   = isCreate ? '' : 'none';
+  document.getElementById('ft-submit').style.display  = isCreate ? '' : 'none';
+  document.getElementById('ft-save').style.display    = isEdit   ? '' : 'none';
+}
+
+function openNewPOModal() {
+  poModalMode = 'create';
+  editingPoId = null;
+  populateDropdowns();
+  resetPOModal();
+  setModalMode('create');
+  document.getElementById('new-po-number').textContent = generateNextPONumber();
+  document.getElementById('po-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function openViewDetailsModal(poId) {
+  const po = POS.find(o => o.id === poId);
+  const ap = PENDING.find(o => o.id === poId);
+  if (!po && !ap) return;
+
+  editingPoId  = null;
+  poModalMode  = 'view';
+
+  populateDropdowns();
+  resetPOModal();
+  setModalMode('view');
+
+  // Header
+  document.getElementById('new-po-number').textContent = poId;
+
+  // Merge data from both sources
+  const vendor  = po ? po.v   : (ap ? ap.v   : '');
+  const cat     = po ? po.cat : '';
+  const desc    = po ? po.d   : (ap ? ap.d   : '');
+  const date    = po ? po.date: '';
+  const pri     = po ? po.pri : (ap ? ap.pri : 'Medium');
+  const amt     = po ? po.amt : (ap ? ap.amt : 0);
+  const req     = ap ? ap.req : '';
+
+  // Pre-fill fields
+  const vendorOpt = [...document.getElementById('po-vendor').options].find(o => o.text.startsWith(vendor));
+  if (vendorOpt) vendorOpt.selected = true;
+  document.getElementById('po-category').value = cat;
+  document.getElementById('po-desc').value     = desc;
+  document.getElementById('po-reqdate').value  = date;
+  document.getElementById('po-priority').value = pri;
+  if (req) document.getElementById('po-requester').value = req;
+
+  // Seed one line item
+  document.getElementById('li-tbody').innerHTML = '';
+  liCount = 0;
+  addLineItem();
+  document.getElementById('li-d-1').value = desc;
+  document.getElementById('li-q-1').value = 1;
+  document.getElementById('li-p-1').value = amt;
+  recalcLine(1);
+
+  // Lock all fields after a tick (so dropdowns render first)
+  setTimeout(() => setFieldsReadOnly(true), 0);
+
+  document.getElementById('po-success').style.display    = 'none';
+  document.getElementById('po-form-state').style.display = 'flex';
+  document.getElementById('po-modal').style.display      = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function openEditPOModal(poId) {
+  const po = POS.find(o => o.id === poId);
+  if (!po) return;
+  editingPoId = poId;
+  poModalMode = 'edit';
+
+  populateDropdowns();
+  resetPOModal();
+  setModalMode('edit');
+
+  // Pre-fill header
+  document.getElementById('new-po-number').textContent = po.id;
+
+  // Pre-fill fields
+  const vendorOpt = [...document.getElementById('po-vendor').options]
+    .find(o => o.text.startsWith(po.v));
+  if (vendorOpt) vendorOpt.selected = true;
+
+  document.getElementById('po-category').value = po.cat || '';
+  document.getElementById('po-desc').value      = po.d   || '';
+  document.getElementById('po-reqdate').value   = po.date|| '';
+  document.getElementById('po-priority').value  = po.pri || 'Medium';
+
+  const statusSel = document.getElementById('po-status-edit');
+  if (statusSel) statusSel.value = po.s || 'Draft';
+
+  // Pre-fill a single line item from the stored amount
+  document.getElementById('li-tbody').innerHTML = '';
+  liCount = 0;
+  addLineItem();
+  document.getElementById('li-d-1').value = po.d;
+  document.getElementById('li-q-1').value = 1;
+  document.getElementById('li-p-1').value = po.amt;
+  recalcLine(1);
+
+  document.getElementById('po-success').style.display   = 'none';
+  document.getElementById('po-form-state').style.display = 'flex';
+  document.getElementById('po-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeNewPOModal() {
+  document.getElementById('po-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function resetPOModal() {
+  ['po-vendor','po-category','po-desc','po-costcenter','po-requester',
+   'po-reqdate','po-notes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('po-currency').value = 'AUD';
+  document.getElementById('po-priority').value = 'Medium';
+  document.getElementById('li-tbody').innerHTML = '';
+  document.getElementById('po-total').textContent = '$0.00';
+  attachedFiles = [];
+  renderAttachList();
+  document.getElementById('po-success').style.display = 'none';
+  document.getElementById('po-form-state').style.display = 'flex';
+  liCount = 0;
+  addLineItem();
+  setFieldsReadOnly(false);
+}
+
+function addLineItem() {
+  liCount++;
+  const i = liCount;
+  const tr = document.createElement('tr');
+  tr.id = `li-${i}`;
+  tr.innerHTML = `
+    <td><input type="text" placeholder="Item description" id="li-d-${i}" oninput="recalcLine(${i})"></td>
+    <td><input type="text" placeholder="SKU" id="li-s-${i}"></td>
+    <td><input type="number" value="1" min="0" step="0.001" id="li-q-${i}" oninput="recalcLine(${i})"></td>
+    <td><input type="text" placeholder="units" id="li-u-${i}"></td>
+    <td><input type="number" value="0.00" min="0" step="0.01" id="li-p-${i}" oninput="recalcLine(${i})"></td>
+    <td><input type="number" value="10" min="0" max="100" step="0.01" id="li-t-${i}" oninput="recalcLine(${i})"></td>
+    <td style="text-align:right;padding-right:6px;"><span id="li-tot-${i}" class="mono">$0.00</span></td>
+    <td><button type="button" onclick="removeLineItem(${i})" style="background:none;border:none;cursor:pointer;color:var(--color-text-secondary);font-size:13px;padding:2px 4px;">✕</button></td>`;
+  document.getElementById('li-tbody').appendChild(tr);
+}
+
+function removeLineItem(i) {
+  document.getElementById(`li-${i}`)?.remove();
+  recalcTotal();
+}
+
+function recalcLine(i) {
+  const qty   = parseFloat(document.getElementById(`li-q-${i}`)?.value) || 0;
+  const price = parseFloat(document.getElementById(`li-p-${i}`)?.value) || 0;
+  const tot   = Math.round(qty * price * 100) / 100;
+  const el    = document.getElementById(`li-tot-${i}`);
+  if (el) el.textContent = '$' + tot.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+  recalcTotal();
+}
+
+function recalcTotal() {
+  let grand = 0;
+  document.getElementById('li-tbody').querySelectorAll('tr').forEach(row => {
+    const id = row.id.replace('li-','');
+    const q  = parseFloat(document.getElementById(`li-q-${id}`)?.value) || 0;
+    const p  = parseFloat(document.getElementById(`li-p-${id}`)?.value) || 0;
+    grand += q * p;
+  });
+  grand = Math.round(grand * 100) / 100;
+  document.getElementById('po-total').textContent =
+    '$' + grand.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function collectLineItems() {
+  const items = [];
+  let lineNum = 1;
+  document.getElementById('li-tbody').querySelectorAll('tr').forEach(row => {
+    const id   = row.id.replace('li-','');
+    const desc = document.getElementById(`li-d-${id}`)?.value.trim();
+    if (!desc) return;
+    items.push({
+      line: lineNum++,
+      desc,
+      sku  : document.getElementById(`li-s-${id}`)?.value.trim() || null,
+      qty  : parseFloat(document.getElementById(`li-q-${id}`)?.value) || 1,
+      unit : document.getElementById(`li-u-${id}`)?.value.trim() || null,
+      price: parseFloat(document.getElementById(`li-p-${id}`)?.value) || 0,
+      tax  : parseFloat(document.getElementById(`li-t-${id}`)?.value) || 10,
+    });
+  });
+  return items;
+}
+
+function buildSQL(po, items) {
+  const esc = s => (s||'').replace(/'/g,"\\'");
+  let sql =
+`-- ── Insert Purchase Order ────────────────────────────────────────
+INSERT INTO purchase_orders
+  (po_number, vendor_id, requester_id, cost_center_id,
+   description, category, status, priority,
+   total_amount, currency, required_date, notes, created_at)
+VALUES (
+  '${po.num}',
+  (SELECT vendor_id FROM vendors WHERE name = '${esc(po.vendor)}'),
+  (SELECT user_id   FROM users       WHERE name = '${esc(po.requester)}'),
+  (SELECT cost_center_id FROM cost_centers WHERE name = '${esc(po.cc)}'),
+  '${esc(po.desc)}', '${po.cat}', '${po.status}', '${po.pri}',
+  ${po.total.toFixed(2)}, '${po.currency}',
+  ${po.date ? "'"+po.date+"'" : 'NULL'},
+  ${po.notes ? "'"+esc(po.notes)+"'" : 'NULL'},
+  NOW()
+);\n`;
+
+  if (items.length) {
+    sql += `\n-- ── Insert Line Items ───────────────────────────────────────────
+INSERT INTO po_line_items
+  (po_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate)
+VALUES\n`;
+    sql += items.map(li =>
+      `  (LAST_INSERT_ID(), ${li.line}, '${esc(li.desc)}', ` +
+      `${li.sku?"'"+li.sku+"'":"NULL"}, ${li.qty}, ` +
+      `${li.unit?"'"+li.unit+"'":"NULL"}, ${li.price.toFixed(4)}, ${li.tax.toFixed(2)})`
+    ).join(',\n') + ';\n';
+
+    sql += `\n-- ── Record Budget Commitment ─────────────────────────────────────
+INSERT INTO budget_transactions
+  (cost_center_id, po_id, amount, transaction_type, description, transaction_date, created_at)
+VALUES (
+  (SELECT cost_center_id FROM cost_centers WHERE name = '${esc(po.cc)}'),
+  LAST_INSERT_ID(), ${po.total.toFixed(2)}, 'Commitment',
+  'Commitment for ${po.num} — ${esc(po.desc.substring(0,40))}',
+  CURDATE(), NOW()
+);\n`;
+  }
+
+  if (po.files.length) {
+    sql += `\n-- ── Register Attachments ────────────────────────────────────────
+-- (store via API/file service; record metadata in po_attachments)\n`;
+    po.files.forEach((f,i) => {
+      sql += `INSERT INTO po_attachments (po_id, file_name, file_size_bytes, uploaded_at)\n`;
+      sql += `VALUES (LAST_INSERT_ID(), '${esc(f.name)}', ${f.size}, NOW());\n`;
+    });
+  }
+
+  return sql;
+}
+
+function buildUpdateSQL(po, items) {
+  const esc = s => (s||'').replace(/'/g,"\\'");
+  let sql =
+`-- ── Update Purchase Order ────────────────────────────────────────
+UPDATE purchase_orders SET
+  vendor_id      = (SELECT vendor_id FROM vendors WHERE name = '${esc(po.vendor)}'),
+  description    = '${esc(po.desc)}',
+  category       = '${po.cat}',
+  priority       = '${po.pri}',
+  total_amount   = ${po.total.toFixed(2)},
+  currency       = '${po.currency}',
+  required_date  = ${po.date ? "'"+po.date+"'" : 'NULL'},
+  notes          = ${po.notes ? "'"+esc(po.notes)+"'" : 'NULL'},
+  updated_at     = NOW()
+WHERE po_number = '${po.num}';\n`;
+
+  if (items.length) {
+    sql += `\n-- ── Replace Line Items ──────────────────────────────────────────
+DELETE FROM po_line_items
+  WHERE po_id = (SELECT po_id FROM purchase_orders WHERE po_number = '${po.num}');
+
+INSERT INTO po_line_items
+  (po_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate)
+VALUES\n`;
+    sql += items.map(li =>
+      `  ((SELECT po_id FROM purchase_orders WHERE po_number='${po.num}'), ` +
+      `${li.line}, '${esc(li.desc)}', ` +
+      `${li.sku?"'"+li.sku+"'":"NULL"}, ${li.qty}, ` +
+      `${li.unit?"'"+li.unit+"'":"NULL"}, ${li.price.toFixed(4)}, ${li.tax.toFixed(2)})`
+    ).join(',\n') + ';\n';
+  }
+
+  if (po.files.length) {
+    sql += `\n-- ── Add New Attachments ─────────────────────────────────────────\n`;
+    po.files.forEach(f => {
+      sql += `INSERT INTO po_attachments (po_id, file_name, file_size_bytes, uploaded_at)\n`;
+      sql += `  VALUES ((SELECT po_id FROM purchase_orders WHERE po_number='${po.num}'), '${esc(f.name)}', ${f.size}, NOW());\n`;
+    });
+  }
+  return sql;
+}
+
+function submitPO(status) {
+  const vendor    = document.getElementById('po-vendor').value;
+  const cat       = document.getElementById('po-category').value;
+  const desc      = document.getElementById('po-desc').value.trim();
+  const cc        = document.getElementById('po-costcenter').value;
+  const requester = document.getElementById('po-requester').value;
+  const date      = document.getElementById('po-reqdate').value;
+  const currency  = document.getElementById('po-currency').value;
+  const pri       = document.getElementById('po-priority').value;
+  const notes     = document.getElementById('po-notes').value.trim();
+  const isEdit    = poModalMode === 'edit';
+
+  if (!vendor || !cat || !desc) {
+    alert('Please fill in all required fields: Vendor, Category, Description.');
+    return;
+  }
+  if (!isEdit && (!cc || !requester)) {
+    alert('Please fill in all required fields: Cost Center, Requester.');
+    return;
+  }
+
+  const poNum = document.getElementById('new-po-number').textContent;
+  const items = collectLineItems();
+  const total = items.reduce((s,li) => s + li.qty * li.price, 0);
+  const po    = { num:poNum, vendor:vendor.split(' (')[0], cat, desc, cc, requester, date, currency, pri, notes, status, total, files:[...attachedFiles] };
+
+  if (isEdit) {
+    // Update existing PO in array
+    const idx = POS.findIndex(o => o.id === editingPoId);
+    if (idx !== -1) {
+      POS[idx] = { ...POS[idx], v:po.vendor, d:desc, cat, date:date||POS[idx].date, amt:Math.round(total*100)/100, pri };
+    }
+    renderOrders();
+    const sql = buildUpdateSQL(po, items);
+    document.getElementById('po-sql-out').textContent = sql;
+    document.getElementById('po-success-label').textContent = `${poNum} · ${pri} priority · changes saved`;
+  } else {
+    // Insert new PO
+    POS.unshift({ id:poNum, v:po.vendor, d:desc, cat, date:new Date().toISOString().split('T')[0], amt:Math.round(total*100)/100, s:status, pri });
+    renderOrders();
+    const sql = buildSQL(po, items);
+    document.getElementById('po-sql-out').textContent = sql;
+    const filesSummary = po.files.length ? `\n${po.files.length} attachment${po.files.length>1?'s':''}: ${po.files.map(f=>f.name).join(', ')}` : '';
+    document.getElementById('po-success-label').textContent = `${poNum} · ${pri} priority · saved as "${status}"${filesSummary}`;
+  }
+
+  document.getElementById('po-success-title').textContent      = isEdit ? 'Changes Saved' : 'Purchase Order Created';
+  document.getElementById('btn-create-another').style.display  = isEdit ? 'none' : '';
+  document.getElementById('po-form-state').style.display = 'none';
+  document.getElementById('po-success').style.display    = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Item Details Modal (FileMaker Details window — filemaker.md §2.9)
+// ═══════════════════════════════════════════════════════════════════════════════
+let currentDetId   = null;
+let detEditMode    = false;
+let detAttachments = { file:[], pdf:[], image:[] };
+
+// FileMaker Details field IDs — everything the modal controls
+const DET_FIELDS = [
+  'd-order-num','d-date-ordered','d-priority','d-req-date','d-project','d-location',
+  'd-supplier','d-order-type','d-cutlist','d-supplier-ref',
+  'd-requested-by','d-ext','d-requested-date','d-requested-time',
+  'd-product-code','d-stock-tracked','d-qty','d-desc',
+  'd-gst-applicable','d-gst-included','d-unit-cost','d-um',
+  'd-home-product-code','d-product-website','d-product-desc',
+  'd-line-comments','d-internal-comments',
+];
+
+function openItemDetailsModal(poId) {
+  const po = POS.find(o => o.id === poId);
+  if (!po) return;
+  currentDetId = poId;
+  detEditMode  = false;
+  detAttachments = { file:[], pdf:[], image:[] };
+
+  // Populate left panel
+  document.getElementById('d-order-num').value       = po.id                 || '';
+  document.getElementById('d-date-ordered').value    = po.orderedDate        || '';
+  document.getElementById('d-priority').value        = po.pri                || 'Medium';
+  document.getElementById('d-req-date').value        = po.date               || '';
+  document.getElementById('d-project').value         = po.proj               || '';
+  document.getElementById('d-location').value        = po.loc                || '';
+  document.getElementById('d-supplier').value        = po.v                  || '';
+  document.getElementById('d-order-type').value      = po.orderType          || '';
+  document.getElementById('d-cutlist').value         = po.cutlist            || '';
+  document.getElementById('d-supplier-ref').value    = po.supplierRef        || '';
+  document.getElementById('d-requested-by').value    = po.requestedBy        || '';
+  document.getElementById('d-ext').value             = po.ext                || '';
+  document.getElementById('d-requested-date').value  = po.requestedDate      || '';
+  document.getElementById('d-requested-time').value  = po.requestedTime      || '';
+  document.getElementById('d-product-code').value    = po.productCode        || '';
+  document.getElementById('d-stock-tracked').checked = !!po.stockTracked;
+  document.getElementById('d-qty').value             = po.qty                || 1;
+  document.getElementById('d-desc').value            = po.d                  || '';
+  document.getElementById('d-gst-applicable').checked= po.gstApplicable!==false;
+  document.getElementById('d-gst-included').checked  = !!po.gstIncluded;
+  document.getElementById('d-unit-cost').value       = po.unitCost           || 0;
+  document.getElementById('d-um').value              = po.um                 || 'units';
+
+  // HOME tab — Zone C product info
+  document.getElementById('d-home-product-code').value = po.productCode      || '';
+  document.getElementById('d-product-website').value   = po.productWebsite   || '';
+  document.getElementById('d-product-desc').value      = po.productDesc      || '';
+
+  // HOME tab — Zone D comments & log
+  document.getElementById('d-changelog').textContent   = po.changelog        || '—';
+  document.getElementById('d-line-comments').value     = po.lineComments     || '';
+  document.getElementById('d-internal-comments').value = po.internalComments || '';
+
+  // Date tracking footer (§2.9.5)
+  document.getElementById('d-td-requested').textContent = po.requestedDate || '—';
+  document.getElementById('d-td-ordered').textContent   = po.orderedDate   || '—';
+  document.getElementById('d-td-due').textContent       = po.dueDate       || '—';
+  document.getElementById('d-td-arrived').textContent   = po.arrivedDate   || '—';
+
+  // Record ID + nav position
+  const idx = POS.findIndex(o => o.id === poId);
+  document.getElementById('det-recid').textContent   = 228000 + idx;
+  document.getElementById('det-rec-pos').textContent = `${idx+1} / ${POS.length}`;
+
+  // Reset attachments display + default to HOME tab
+  renderDetFileLists();
+  switchDetTab('home', document.querySelector('.det-tab[data-det-tab="home"]'));
+
+  recalcDetPricing();
+  setDetReadOnly(true);
+  document.getElementById('det-edit-toggle').textContent = 'EDIT';
+
+  document.getElementById('det-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetailsModal() {
+  document.getElementById('det-modal').style.display = 'none';
+  document.body.style.overflow = '';
+  currentDetId = null;
+}
+
+function switchDetTab(name, btn) {
+  document.querySelectorAll('.det-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.det-panel').forEach(p => p.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const panel = document.getElementById('det-panel-' + name);
+  if (panel) panel.classList.add('active');
+}
+
+function setDetReadOnly(readOnly) {
+  DET_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = readOnly;
+    el.style.opacity = readOnly ? '0.85' : '1';
+  });
+  document.querySelectorAll('#det-modal .det-drop').forEach(z => {
+    z.style.pointerEvents = readOnly ? 'none' : '';
+    z.style.opacity       = readOnly ? '0.7' : '1';
+  });
+}
+
+function toggleDetEdit() {
+  detEditMode = !detEditMode;
+  setDetReadOnly(!detEditMode);
+  const btn = document.getElementById('det-edit-toggle');
+  if (detEditMode) {
+    btn.textContent = 'SAVE';
+    btn.classList.remove('btn-dn'); btn.classList.add('btn-ok');
+  } else {
+    saveDetChanges();
+    btn.textContent = 'EDIT';
+    btn.classList.remove('btn-ok'); btn.classList.add('btn-dn');
+  }
+}
+
+function saveDetChanges() {
+  if (!currentDetId) return;
+  const idx = POS.findIndex(o => o.id === currentDetId);
+  if (idx === -1) return;
+  const qty      = parseFloat(document.getElementById('d-qty').value) || 1;
+  const unitCost = parseFloat(document.getElementById('d-unit-cost').value) || 0;
+  const po = POS[idx];
+  Object.assign(po, {
+    orderedDate      : document.getElementById('d-date-ordered').value,
+    pri              : document.getElementById('d-priority').value,
+    date             : document.getElementById('d-req-date').value,
+    proj             : document.getElementById('d-project').value,
+    loc              : document.getElementById('d-location').value,
+    v                : document.getElementById('d-supplier').value,
+    orderType        : document.getElementById('d-order-type').value,
+    cutlist          : document.getElementById('d-cutlist').value,
+    supplierRef      : document.getElementById('d-supplier-ref').value,
+    requestedBy      : document.getElementById('d-requested-by').value,
+    ext              : document.getElementById('d-ext').value,
+    requestedDate    : document.getElementById('d-requested-date').value,
+    requestedTime    : document.getElementById('d-requested-time').value,
+    productCode      : document.getElementById('d-product-code').value,
+    stockTracked     : document.getElementById('d-stock-tracked').checked,
+    qty,
+    d                : document.getElementById('d-desc').value,
+    gstApplicable    : document.getElementById('d-gst-applicable').checked,
+    gstIncluded      : document.getElementById('d-gst-included').checked,
+    unitCost,
+    um               : document.getElementById('d-um').value,
+    productWebsite   : document.getElementById('d-product-website').value,
+    productDesc      : document.getElementById('d-product-desc').value,
+    lineComments     : document.getElementById('d-line-comments').value,
+    internalComments : document.getElementById('d-internal-comments').value,
+    amt              : Math.round(qty * unitCost * 100) / 100,
+  });
+  // Append to changelog
+  const stamp = new Date().toISOString().replace('T',' ').slice(0,16);
+  po.changelog = (po.changelog ? po.changelog + '\n' : '') + `${stamp} — Edited via Details window`;
+  document.getElementById('d-changelog').textContent = po.changelog;
+  renderOrders();
+  populateProjectFilter();
+}
+
+function recalcDetPricing() {
+  const qty       = parseFloat(document.getElementById('d-qty').value) || 0;
+  const unitCost  = parseFloat(document.getElementById('d-unit-cost').value) || 0;
+  const gstApp    = document.getElementById('d-gst-applicable').checked;
+  const gstInc    = document.getElementById('d-gst-included').checked;
+  const subtotal  = qty * unitCost;
+  const gstAmt    = (gstApp && !gstInc) ? subtotal * 0.10 : 0;
+  const grand     = subtotal + gstAmt;
+  const fmt = n => '$' + n.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('d-subtotal').textContent = fmt(subtotal);
+  document.getElementById('d-gst-amt').textContent  = fmt(gstAmt);
+  document.getElementById('d-grand').textContent    = fmt(grand);
+}
+
+function handleDetFile(e, type) {
+  addDetFiles(Array.from(e.target.files), type);
+  e.target.value = '';
+}
+
+function handleDetDrop(e, type) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  addDetFiles(Array.from(e.dataTransfer.files), type);
+}
+
+function addDetFiles(files, type) {
+  if (!detAttachments[type]) detAttachments[type] = [];
+  files.forEach(f => {
+    if (f.size > 20 * 1024 * 1024) { alert(`"${f.name}" exceeds 20 MB — skipped.`); return; }
+    if (!detAttachments[type].find(x => x.name === f.name && x.size === f.size)) {
+      detAttachments[type].push(f);
+    }
+    if (type === 'image') {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = document.getElementById('det-prod-img');
+        img.style.background = `center/cover no-repeat url(${ev.target.result})`;
+        img.textContent = '';
+      };
+      reader.readAsDataURL(f);
+    }
+  });
+  renderDetFileLists();
+}
+
+function renderDetFileLists() {
+  ['file','pdf'].forEach(type => {
+    const host = document.getElementById(`det-${type}-list`);
+    if (!host) return;
+    host.innerHTML = (detAttachments[type] || []).map((f,i) => `
+      <div class="attach-item">
+        <span class="attach-icon">${fileIcon(f.name)}</span>
+        <span class="attach-name">${f.name}</span>
+        <span class="attach-size">${fmtSize(f.size)}</span>
+        ${type === 'pdf' ? '<button class="btn" style="padding:2px 8px;font-size:10px;" onclick="alert(\'Preview not available in demo\')">View</button>' : ''}
+        <button class="attach-rm" onclick="detAttachments['${type}'].splice(${i},1);renderDetFileLists();" title="Remove">✕</button>
+      </div>`).join('');
+  });
+}
+
+function navigateDetRecord(dir) {
+  if (!currentDetId) return;
+  const idx = POS.findIndex(o => o.id === currentDetId);
+  const next = idx + dir;
+  if (next < 0 || next >= POS.length) return;
+  openItemDetailsModal(POS[next].id);
+}
+
+function duplicateDetRecord() {
+  if (!currentDetId) return;
+  const src = POS.find(o => o.id === currentDetId);
+  if (!src) return;
+  const newId = generateNextPONumber();
+  const copy = { ...src, id: newId, s: 'Draft', orderedDate: '', dueDate: '', arrivedDate: '', changelog: `${new Date().toISOString().slice(0,16).replace('T',' ')} — Duplicated from ${src.id}` };
+  POS.unshift(copy);
+  renderOrders();
+  alert(`Duplicated ${src.id} → ${newId} (status: Draft)`);
+  openItemDetailsModal(newId);
+}
+
+function removeDetRecord() {
+  if (!currentDetId) return;
+  if (!confirm(`Remove record ${currentDetId}? (In the real system this is a soft delete.)`)) return;
+  const idx = POS.findIndex(o => o.id === currentDetId);
+  if (idx !== -1) POS.splice(idx, 1);
+  renderOrders();
+  closeDetailsModal();
+}
+
+function createPOFromDetails() {
+  if (!currentDetId) return;
+  // Persist any edits first
+  if (detEditMode) saveDetChanges();
+  const po = POS.find(o => o.id === currentDetId);
+  if (!po) return;
+  po.s = 'Pending';
+  po.orderedDate = new Date().toISOString().split('T')[0];
+  const stamp = new Date().toISOString().replace('T',' ').slice(0,16);
+  po.changelog = (po.changelog ? po.changelog + '\n' : '') + `${stamp} — Create PO! pressed → status Pending`;
+  document.getElementById('d-changelog').textContent = po.changelog;
+  document.getElementById('d-td-ordered').textContent = po.orderedDate;
+  renderOrders();
+  alert(`Create PO! — ${po.id} moved to Pending and submitted for approval.`);
+}
+
+new Chart(document.getElementById('catChart'),{
+  type:'bar',
+  data:{
+    labels:['IT','Facilities','Logistics','Services','Office'],
+    datasets:[{data:[890,578,412,375,145],backgroundColor:['#378ADD','#D85A30','#BA7517','#7F77DD','#1D9E75'],borderRadius:4,borderSkipped:false}]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' $'+c.raw+'K'}}},
+    scales:{
+      x:{grid:{display:false},border:{display:false},ticks:{color:'rgba(128,128,128,0.8)',font:{size:11}}},
+      y:{border:{display:false},ticks:{color:'rgba(128,128,128,0.8)',font:{size:11},callback:v=>'$'+v+'K'},grid:{color:'rgba(128,128,128,0.1)'}}
+    }
+  }
+});
+</script>
+
+<!-- Feedback widget -->
+<button class="fb-btn" id="fb-btn" type="button" onclick="fbOpen()">Feedback</button>
+<div class="fb-overlay" id="fb-overlay" role="dialog" aria-label="Send feedback">
+  <div class="fb-box">
+    <h3>Send feedback</h3>
+    <label for="fb-category">Category</label>
+    <select id="fb-category">
+      <option value="bug">Bug</option>
+      <option value="feature">Feature request</option>
+      <option value="general">General</option>
+    </select>
+    <label for="fb-message">Message</label>
+    <textarea id="fb-message" placeholder="Tell us what you think…"></textarea>
+    <div class="fb-error" id="fb-error" style="display:none;">Please enter a message.</div>
+    <div class="fb-actions">
+      <button type="button" id="fb-cancel" onclick="fbClose()">Cancel</button>
+      <button type="button" class="fb-submit" id="fb-submit" onclick="fbSubmit()">Submit</button>
+    </div>
+    <div class="fb-thanks" id="fb-thanks" style="display:none;">Thanks! Your feedback was recorded.</div>
+  </div>
+</div>
+<script>
+window.__FEEDBACK__ = window.__FEEDBACK__ || [];
+function fbOpen(){
+  document.getElementById('fb-overlay').classList.add('active');
+  document.getElementById('fb-thanks').style.display='none';
+  document.getElementById('fb-error').style.display='none';
+  document.getElementById('fb-message').value='';
+}
+function fbClose(){ document.getElementById('fb-overlay').classList.remove('active'); }
+function fbSubmit(){
+  var msg = document.getElementById('fb-message').value.trim();
+  if(!msg){ document.getElementById('fb-error').style.display='block'; return; }
+  window.__FEEDBACK__.push({
+    category: document.getElementById('fb-category').value,
+    message: msg,
+    at: new Date().toISOString()
+  });
+  document.getElementById('fb-error').style.display='none';
+  document.getElementById('fb-thanks').style.display='block';
+  setTimeout(fbClose, 1200);
+}
+</script>
