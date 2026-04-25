@@ -10,7 +10,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, 6-tab chrome, server-side proxy.
-- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth).
+- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth, 0005 procurement_user_profile, 0006 procurement views, 0007 material catalog hybrid).
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 8 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only.
 - `tests/e2e/` — Playwright smoke spec.
@@ -20,7 +20,7 @@ Layout:
 
 ```
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
-make migrate      # apply Alembic 0001 -> 0004
+make migrate      # apply Alembic 0001 -> 0007
 make seed         # create hartwood-joinery workspace + 8 users (dev password: hartwood-dev)
 make test         # pytest in api container (34 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
