@@ -4,37 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Nature
 
-This is a **design + prototype repo** for **JoineryFlow**, a web replacement for a FileMaker-based joinery production system. It contains:
+**JoineryFlow** monorepo — a web replacement for a FileMaker-based joinery production system. Built across 7 sub-projects; **Foundation** (this branch) ships the auth shell, schema, and 6-tab IA. Subsequent sub-projects (PM Workbench, Procurement Workbench, Shop Floor, etc.) extend onto this base.
 
-- Hi-fi visual specs as standalone **React JSX files** (`hi-*.jsx`, `wireframes-hifi.jsx`) — design artifacts, not a built application. No `package.json`, no bundler config, no build step currently wired up.
-- Self-contained **HTML prototypes** (`tracking_dashboard.html`, `procurement_orderbook_dashboard.html`, `drafter_item_editor.html`, `home.html`, `Joinery Workflow Hi-fi.html`) that render via raw CDN React/Tailwind — open directly in a browser.
-- A **FastAPI + SQLAlchemy (MySQL)** backend for the procurement module (`procurement_api.py`).
-- **MySQL schemas** (`procurement_schema.sql`, `trackingv2_schema.sql`).
-- Product and build spec documents (`product_spec.md`, `trackingv2.md`).
+Layout:
 
-There is no root package manifest, no test suite, no CI, and no git repo initialized here. Treat edits as design-doc / prototype iteration unless the user explicitly asks to scaffold a real app.
+- `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
+- `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, 6-tab chrome, server-side proxy.
+- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth).
+- `seed/` — `seed.hartwood_joinery` dev seed (workspace + 8 staff users).
+- `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only.
+- `tests/e2e/` — Playwright smoke spec.
+- `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 
-## Running / Developing
-
-### FastAPI backend (`procurement_api.py`)
+## Foundation dev loop
 
 ```
-pip install fastapi uvicorn sqlalchemy pymysql cryptography pydantic[email] python-multipart
-export DATABASE_URL="mysql+pymysql://user:password@localhost/procurement_db"
-export UPLOAD_DIR=./uploads
-export ALLOW_ORIGINS=http://localhost:3000,http://localhost:5173
-uvicorn procurement_api:app --reload
+make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
+make migrate      # apply Alembic 0001 -> 0004
+make seed         # create hartwood-joinery workspace + 8 users (dev password: hartwood-dev)
+make test         # pytest in api container (34 tests)
+make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
-Schema is loaded from `procurement_schema.sql` / `trackingv2_schema.sql` directly into MySQL. The API uses raw `text()` queries via SQLAlchemy, not ORM models.
+Login: http://localhost:3000/login -> `rin.park@hartwood.test` / `hartwood-dev` (or any `*.hartwood.test` seed user).
+API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through Next.js to FastAPI).
 
-### HTML prototypes
+**Important:** Running `make test` TRUNCATEs `workspace`, `app_user`, `session`, `audit_log` between cases. Re-run `make seed` if you need login working after a test run.
 
-Open the `.html` files directly in a browser. They pull React + Tailwind from CDNs and include their own mock data.
+## Auth & RBAC
 
-### JSX hi-fi files
+- Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
+- 5 auth roles: `admin`, `manager`, `editor`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py`. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
+- 6 IA modules + admin-only IT: `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, `it_management`.
+- 4 actions: `read`, `write`, `approve`, `comment`.
+- FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action)` factory in `apps/api/app/auth/rbac.py`.
+- All authenticated mutations write to `audit_log` via `apps/api/app/auth/audit.py`.
 
-`wireframes-hifi.jsx`, `hi-dashboard.jsx`, `hi-login-it.jsx`, `hi-order-dwg-sample.jsx`, `hi-tracking-list.jsx` are React component source shown inside the `Joinery Workflow Hi-fi.html` canvas. When modifying, preserve the `H` palette object and primitive class names (`.h-btn`, `.h-pill`, `.h-card`, `.h-eyebrow`, `.h-subtab`, `.h-mono`, `HAvatar`, `HStatus`, `HIcon`, `Icons`) — other surfaces import them by convention.
+## Web shell
+
+- Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
+- `apps/web/middleware.ts` enforces login redirect on all non-public paths.
+- `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + 6-tab strip + SideBar).
+- Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
 
 ## Architecture (big picture)
 
@@ -57,35 +68,23 @@ Open the `.html` files directly in a browser. They pull React + Tailwind from CD
   - `Status` = record state (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`).
   - `Status Symbol` = Drafter-only UI flag, not reported.
 
-**Role model.** Six operational roles (CEO, PM, Drafter, Foreman, Machine, Procurement) map onto four auth roles (Admin, Manager, Editor, Viewer) — see `product_spec.md` §11. Drafter is the authoritative data-entry point; every other role is upstream or downstream.
+**Role model.** Six operational JTBD roles (CEO, PM, Drafter, Foreman, Machine, Procurement) map onto **five** auth roles (admin, manager, editor, purchase_officer, viewer). Procurement -> purchase_officer; CEO -> admin; PM -> manager; Drafter/Foreman/Machine -> editor; Observer -> viewer. Drafter is the authoritative data-entry point; every other role is upstream or downstream.
 
-**Procurement backend** (`procurement_api.py`) aligns 1:1 with FileMaker Orderbook layout and is the template for how other modules will be wired to MySQL. It uses raw SQL via `sqlalchemy.text()` + Pydantic v2 schemas; no ORM models. Uploads go to `UPLOAD_DIR` on disk.
+**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). 26 endpoints, all gated by `require_permission("orderbook", action)`. Mounted at `/procurement/*`. Some legacy DB views (`v_po_summary`, `v_inventory_status`, `v_budget_utilisation`) are not yet recreated in migration 0002 — endpoints depending on them will fail at runtime until a follow-up migration adds them.
 
 ## Design system (binding)
 
-Tokens, typography, status colours, and primitive class names are defined **once** in `wireframes-hifi.jsx` (the `H` palette + primitive `<style>` block) and reused everywhere. When editing any surface:
+Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and are mirrored as a JS object in `apps/web/lib/tokens.ts`. When editing any surface:
 
-- Do not invent new colors — use `H.bg / surface / surfaceAlt / ink / ink2..4 / accent / accentSoft / good / warn / bad / info`.
-- Typography: Inter for UI, JetBrains Mono (`.h-mono`, with `tnum`) for part #, PO #, ETAs, money.
-- Status taxonomy is canonical across modules — see `product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 top tabs**: `Dashboard · Tracking · List · Orderbook · Shop Dwgs · iSample`. The older 7-tab layout in `tracking_dashboard.html` is legacy; new work uses 6 tabs with Cutlist + Hardware as subtabs under **List**.
-
-## Surface ↔ source file map
-
-When asked to change a screen, identify the source first (`trackingv2.md` §1.5.1 has the full binding):
-
-| Surface | Source component | File |
-|---|---|---|
-| Login / IT Management | `HiLogin`, `HiITManagement` | `hi-login-it.jsx` |
-| Dashboard (Command deck = v1 default) | `HiDashA` (B–E deferred) | `hi-dashboard.jsx` |
-| Tracking grid | `HiTracking` | `hi-tracking-list.jsx` |
-| List — Cutlist / Hardware Portal | `HiListCutlist`, `HiListHardware` | `hi-tracking-list.jsx` |
-| Orderbook | `HiOrderbookOpen` | `hi-order-dwg-sample.jsx` |
-| Shop Drawings | `HiShopDrawings` | `hi-order-dwg-sample.jsx` |
-| iSample | `HiSamplebook` | `hi-order-dwg-sample.jsx` |
-| Chrome + primitives + tokens | `HAppChrome`, `H`, `Icons` | `wireframes-hifi.jsx` |
+- Do not invent new colors — use Tailwind utilities `bg-h-bg`, `bg-h-surface`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `text-h-accent`. Inline styles can use `H.bg`, `H.ink`, etc. from `lib/tokens.ts`.
+- Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
+- Typography: Inter (default sans) for UI, JetBrains Mono (`.h-mono`, with `tnum`) for part #, PO #, ETAs, money. Mono utility not yet wired — add in a future task.
+- Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
+- IA is fixed to **6 top tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Tab strip lives in `apps/web/components/chrome/TabStrip.tsx`.
 
 ## Reference docs (read before large changes)
 
-- `product_spec.md` — product overview, roles, data model invariants, design tokens, IA. Authoritative.
-- `trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
+- `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface.
+- `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
+- `docs/superpowers/specs/2026-04-22-foundation-design.md` — Foundation spec.
+- `docs/superpowers/plans/2026-04-22-foundation.md` — 31-task implementation plan (tracks all build decisions).
