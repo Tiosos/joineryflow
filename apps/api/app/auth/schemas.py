@@ -1,9 +1,12 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class LoginIn(BaseModel):
     workspace_slug: str
-    email: EmailStr
+    # Plain str (not EmailStr): user creation enforces format upstream; login
+    # is keyed by (workspace_slug, email) and must accept seed emails like
+    # `*.hartwood.test` (RFC 6761 reserved TLD that email-validator rejects).
+    email: str
     password: str
 
 
