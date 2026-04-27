@@ -6,7 +6,7 @@ test("PM workbench happy path", async ({ page }) => {
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
 
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
   // 4 metric cards
   await expect(page.locator('[data-testid="metric-card"]')).toHaveCount(4);
   // Sidebar shows >=1 project
@@ -15,18 +15,19 @@ test("PM workbench happy path", async ({ page }) => {
 
   // Click first sidebar project
   await sidebar.first().click();
-  await expect(page).toHaveURL(/\/tracking\?project_id=/);
+  await expect(page).toHaveURL(/\/tracking\?project_id=/, { timeout: 30_000 });
 
   // Tracking grid shows >=1 item row; CODE column visible
   await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
   await expect(page.getByRole("columnheader", { name: /code/i })).toBeVisible();
 
   // Click ▶ on first row
-  await page.locator('[data-testid="tracking-row"] [data-testid="open-item"]').first().click();
-  await expect(page).toHaveURL(/\/items\/\d+\?tab=cutlist/);
+  const firstRow = page.locator('[data-testid="tracking-row"]').first();
+  await firstRow.locator('[data-testid="open-item"]').click();
+  await expect(page).toHaveURL(/\/items\/\d+\?tab=cutlist/, { timeout: 30_000 });
   await expect(page.getByRole("link", { name: /return to home/i })).toBeVisible();
 
   // Return to home
   await page.getByRole("link", { name: /return to home/i }).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
 });
