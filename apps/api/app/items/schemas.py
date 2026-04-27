@@ -140,3 +140,42 @@ class ItemOut(BaseModel):
     hardware_lines: list[HardwareLineOut]
     edit_log: list[EditLogRow]
     lock_warning: LockWarning | None
+
+
+# ── Write input models (T15) ───────────────────────────────────────────────────
+
+
+class CreateItemIn(BaseModel):
+    """Payload for POST /projects/{pid}/items."""
+    description: str | None = None
+    qty: int | None = None
+    stage: str | None = None
+    code: str | None = None
+    level: str | None = None
+    room_no: str | None = None     # DB col: rm_no
+    room_desc: str | None = None   # DB col: rm_desc
+    zone: str | None = None        # varchar(16) in DB
+
+
+class PatchItemIn(BaseModel):
+    """Payload for PATCH /items/{id}.
+
+    Status and lifecycle_stage are excluded — those go through T16 endpoints.
+    status_symbol is a varchar FK to status_symbols; excluded here (no _id alias).
+    """
+    description: str | None = None
+    qty: int | None = None
+    stage: str | None = None
+    code: str | None = None
+    level: str | None = None
+    room_no: str | None = None
+    room_desc: str | None = None
+    zone: str | None = None
+    estimator_notes: str | None = None
+    painting_required: bool | None = None    # DB col: painting_req
+    solid_surface_required: bool | None = None  # DB col: solid_surface_req
+
+
+class LockTransferIn(BaseModel):
+    """Payload for POST /items/{id}/lock when transferring ownership."""
+    owner_id: int

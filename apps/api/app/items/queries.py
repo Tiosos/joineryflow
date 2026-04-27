@@ -28,6 +28,11 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
+from ..edit_log import write_edit_log, write_edit_log_many
+from .schemas import CreateItemIn, PatchItemIn
+
 # Workspace isolation clause (items -> projects -> pm_id -> app_user.workspace_id).
 _WORKSPACE_FILTER = """
     EXISTS (
@@ -558,3 +563,370 @@ def get_item_detail(
         "edit_log": edit_log,
         "lock_warning": lock_warning,
     }
+
+
+# ── Write helpers (T15) ────────────────────────────────────────────────────────
+
+
+def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
+    """Return True if the project's pm_id belongs to workspace_id."""
+    row = db.execute(
+        text(
+            """
+            SELECT 1 FROM projects p
+            JOIN app_user au ON au.id = p.pm_id
+            WHERE p.project_id = :pid AND au.workspace_id = :wid
+            """
+        ),
+        {"pid": project_id, "wid": workspace_id},
+    ).first()
+    return row is not None
+
+
+def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
+    """Fetch bare item columns for mutation helpers.  Returns None if 404."""
+    row = db.execute(
+        text(
+            f"""
+            SELECT
+                i.item_id,
+                i.project_id,
+                i.description,
+                i.qty,
+                i.stage,
+                i.code,
+                i.level,
+                i.rm_no,
+                i.rm_desc,
+                i.zone,
+                i.estimator_notes,
+                i.painting_req,
+                i.solid_surface_req,
+                i.item_locked,
+                i.cutlist_owner_id
+            FROM items i
+            WHERE i.item_id = :iid
+              AND {_WORKSPACE_FILTER}
+            """
+        ),
+        {"iid": item_id, "wid": workspace_id},
+    ).mappings().first()
+    return dict(row) if row is not None else None
+
+
+def create_item(
+    db: Session,
+    *,
+    workspace_id: int,
+    project_id: int,
+    payload: CreateItemIn,
+    actor_id: int,
+) -> int | None:
+    """INSERT a new item.  Returns new item_id, or None if project not in workspace.
+
+    items.num has a global UNIQUE constraint (legacy FK artefact).  We generate
+    it as nextval('items_item_id_seq') + 100_000 to ensure uniqueness without
+    colliding with the PK sequence.
+    """
+    if not _project_in_workspace(db, project_id=project_id, workspace_id=workspace_id):
+        return None
+
+    iid = db.execute(
+        text(
+            """
+            INSERT INTO items(
+                num, project_id, status,
+                description, qty, stage, code, level,
+                rm_no, rm_desc, zone, item_locked
+            )
+            VALUES (
+                nextval('items_item_id_seq') + 100000,
+                :pid, 'CLEAR',
+                :desc, :qty, :stage, :code, :level,
+                :room_no, :room_desc, :zone, false
+            )
+            RETURNING item_id
+            """
+        ),
+        {
+            "pid": project_id,
+            "desc": payload.description,
+            "qty": payload.qty,
+            "stage": payload.stage,
+            "code": payload.code,
+            "level": payload.level,
+            "room_no": payload.room_no,
+            "room_desc": payload.room_desc,
+            "zone": payload.zone,
+        },
+    ).scalar()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="item.create",
+        target=str(iid),
+        payload={"project_id": project_id, "description": payload.description},
+    )
+    write_edit_log(
+        db,
+        item_id=iid,
+        actor_id=actor_id,
+        field="_create",
+        old_value=None,
+        new_value=str(payload.model_dump(exclude_none=True)),
+    )
+    return iid
+
+
+# Field map: PatchItemIn attribute -> (DB column, old_value_key_in_row)
+_PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
+    ("description",          "description",     "description"),
+    ("qty",                  "qty",             "qty"),
+    ("stage",                "stage",           "stage"),
+    ("code",                 "code",            "code"),
+    ("level",                "level",           "level"),
+    ("room_no",              "rm_no",           "rm_no"),
+    ("room_desc",            "rm_desc",         "rm_desc"),
+    ("zone",                 "zone",            "zone"),
+    ("estimator_notes",      "estimator_notes", "estimator_notes"),
+    ("painting_required",    "painting_req",    "painting_req"),
+    ("solid_surface_required","solid_surface_req","solid_surface_req"),
+]
+
+
+def patch_item(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    payload: PatchItemIn,
+    actor_id: int,
+) -> dict | None:
+    """Apply a partial update to an item.  Returns the row dict via get_item_detail
+    or None if item not found/out-of-workspace.
+
+    Soft-lock semantics (spec §6.4):
+    - If cutlist_owner_id IS NULL:  set item_locked=true and cutlist_owner_id=actor.
+    - If item_locked AND cutlist_owner_id != actor:  emit 'item.lock_overridden'
+      audit row WITHOUT changing ownership.
+    Edit log: one row per changed field.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return None
+
+    # ── Collect changed fields (skip None values — partial update) ────────────
+    updates: dict[str, object] = {}   # col -> new_value
+    changes: list[tuple[str, str | None, str | None]] = []   # (field, old, new)
+
+    for attr, col, row_key in _PATCH_FIELD_MAP:
+        new_val = getattr(payload, attr)
+        if new_val is None:
+            continue
+        old_val = current.get(row_key)
+        if new_val != old_val:
+            updates[col] = new_val
+            changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
+
+    # ── Soft-lock: claim ownership if unowned; warn on override ──────────────
+    owner_id: int | None = current["cutlist_owner_id"]
+    is_locked: bool = bool(current["item_locked"])
+
+    if owner_id is None:
+        # First-save claim
+        updates["item_locked"] = True
+        updates["cutlist_owner_id"] = actor_id
+    elif is_locked and owner_id != actor_id:
+        # Non-owner editing a locked item — audit warning only, don't steal lock
+        write_audit(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor_id,
+            event="item.lock_overridden",
+            target=str(item_id),
+            payload={"prior_owner_id": owner_id, "new_owner_id": actor_id},
+        )
+
+    # ── Build UPDATE if anything changed ─────────────────────────────────────
+    if updates:
+        set_clauses = ", ".join(f"{col} = :{col}" for col in updates)
+        params = {"iid": item_id, **{col: val for col, val in updates.items()}}
+        db.execute(
+            text(f"UPDATE items SET {set_clauses}, updated_at = now() WHERE item_id = :iid"),
+            params,
+        )
+        db.flush()
+
+    # ── Edit log rows ─────────────────────────────────────────────────────────
+    if changes:
+        write_edit_log_many(db, item_id=item_id, actor_id=actor_id, changes=changes)
+
+    return current   # caller re-fetches via get_item_detail for the full payload
+
+
+def delete_item(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    actor_id: int,
+) -> str:
+    """Delete an item.  Returns 'OK', 'NOT_FOUND', or 'IN_USE'.
+
+    IN_USE if any item_hardware_lines for this item are referenced by
+    batch_allocations — indicates procurement data would be orphaned.
+    Writes audit and edit_log BEFORE the delete so foreign-key cascade
+    doesn't remove the log target.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return "NOT_FOUND"
+
+    # Guard: any hardware lines referenced by batch_allocations?
+    in_use = db.execute(
+        text(
+            """
+            SELECT 1 FROM item_hardware_lines hl
+            JOIN batch_allocations ba ON ba.item_hardware_line_id = hl.line_id
+            WHERE hl.item_id = :iid
+            LIMIT 1
+            """
+        ),
+        {"iid": item_id},
+    ).first()
+    if in_use is not None:
+        return "IN_USE"
+
+    # Write audit + edit_log before DELETE (CASCADE would nuke item_edit_log)
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="item.delete",
+        target=str(item_id),
+        payload={"description": current.get("description")},
+    )
+    write_edit_log(
+        db,
+        item_id=item_id,
+        actor_id=actor_id,
+        field="_delete",
+        old_value=str(current.get("description")),
+        new_value=None,
+    )
+
+    db.execute(text("DELETE FROM items WHERE item_id = :iid"), {"iid": item_id})
+    db.flush()
+    return "OK"
+
+
+def claim_or_release_lock(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    actor: AuthUser,
+    action: str,
+    owner_id: int | None = None,
+) -> str:
+    """Manage soft-lock state.  action ∈ {'claim', 'release', 'transfer'}.
+
+    Returns 'OK', 'NOT_FOUND', or 'FORBIDDEN'.
+
+    claim   (POST /items/{id}/lock, no body):
+        Always takes lock for actor.
+    release (DELETE /items/{id}/lock):
+        Clears item_locked; cutlist_owner_id is NOT cleared (sticky claim).
+    transfer (POST /items/{id}/lock with {owner_id: N}):
+        Requires actor == current owner OR auth_role in {manager, admin}.
+        Verifies new owner_id is in caller's workspace.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return "NOT_FOUND"
+
+    prior_owner: int | None = current["cutlist_owner_id"]
+
+    if action == "claim":
+        db.execute(
+            text(
+                """
+                UPDATE items
+                   SET item_locked = true,
+                       cutlist_owner_id = :actor_id,
+                       updated_at = now()
+                 WHERE item_id = :iid
+                """
+            ),
+            {"actor_id": actor.id, "iid": item_id},
+        )
+        db.flush()
+        write_audit(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor.id,
+            event="item.lock",
+            target=str(item_id),
+            payload={},
+        )
+
+    elif action == "release":
+        db.execute(
+            text(
+                """
+                UPDATE items
+                   SET item_locked = false,
+                       updated_at = now()
+                 WHERE item_id = :iid
+                """
+            ),
+            {"iid": item_id},
+        )
+        db.flush()
+        write_audit(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor.id,
+            event="item.unlock",
+            target=str(item_id),
+            payload={},
+        )
+
+    elif action == "transfer":
+        # Permission: must be current owner OR manager/admin
+        if prior_owner != actor.id and actor.auth_role not in ("manager", "admin"):
+            return "FORBIDDEN"
+
+        # Validate new owner is in caller's workspace
+        new_owner_row = db.execute(
+            text("SELECT 1 FROM app_user WHERE id = :uid AND workspace_id = :wid"),
+            {"uid": owner_id, "wid": workspace_id},
+        ).first()
+        if new_owner_row is None:
+            return "FORBIDDEN"
+
+        db.execute(
+            text(
+                """
+                UPDATE items
+                   SET cutlist_owner_id = :new_owner,
+                       item_locked = true,
+                       updated_at = now()
+                 WHERE item_id = :iid
+                """
+            ),
+            {"new_owner": owner_id, "iid": item_id},
+        )
+        db.flush()
+        write_audit(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor.id,
+            event="item.lock_transfer",
+            target=str(item_id),
+            payload={"from": prior_owner, "to": owner_id},
+        )
+
+    return "OK"

@@ -810,3 +810,104 @@ def test_availability_cross_workspace_404():
     c_b, _wid_b, _uid_b = _login()
     r = c_b.get(f"/items/{iid}/availability")
     assert r.status_code == 404
+
+
+# ── T15 write tests ────────────────────────────────────────────────────────────
+
+
+def test_post_item_writes_create_log_row():
+    """POST /projects/{pid}/items creates an item and writes field='_create' edit log row."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+    finally:
+        db.close()
+
+    r = c.post(
+        f"/projects/{pid}/items",
+        json={"description": "New cabinet", "qty": 2, "code": "CAB-NEW"},
+    )
+    assert r.status_code == 201, r.text
+    iid = r.json()["id"]
+
+    db = SessionLocal()
+    try:
+        logs = db.execute(
+            text("SELECT field, actor_id FROM item_edit_log WHERE item_id = :iid"),
+            {"iid": iid},
+        ).mappings().all()
+    finally:
+        db.close()
+
+    create_logs = [l for l in logs if l["field"] == "_create"]
+    assert len(create_logs) == 1, f"Expected 1 _create log row, got {logs}"
+    assert create_logs[0]["actor_id"] == uid
+
+
+def test_patch_item_writes_one_log_row_per_changed_field():
+    """PATCH changes 3 fields → 3 item_edit_log rows inserted."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=101, description="Before patch")
+    finally:
+        db.close()
+
+    r = c.patch(
+        f"/items/{iid}",
+        json={"description": "After patch", "qty": 5, "code": "PATCHED-01"},
+    )
+    assert r.status_code == 200, r.text
+
+    db = SessionLocal()
+    try:
+        log_count = db.execute(
+            text("SELECT COUNT(*) FROM item_edit_log WHERE item_id = :iid"),
+            {"iid": iid},
+        ).scalar()
+    finally:
+        db.close()
+
+    assert log_count == 3, f"Expected 3 log rows for 3 changed fields, got {log_count}"
+
+
+def test_delete_item_409_when_hardware_allocated():
+    """DELETE returns 409 if item has a hardware line referenced by a batch allocation."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=201, description="Allocated item")
+
+        # Catalog + hardware line
+        mat_id = _seed_hardware_material(db, workspace_id=wid)
+        cat_id = _seed_catalog_row(db, project_id=pid, material_id=mat_id, added_by=uid)
+        line_id = _seed_hardware_line(db, item_id=iid, catalog_id=cat_id)
+
+        # Procurement batch allocated to the line
+        batch_id = _seed_procurement_batch(db, project_id=pid)
+        _seed_batch_allocation(db, line_id=line_id, batch_id=batch_id)
+    finally:
+        db.close()
+
+    r = c.delete(f"/items/{iid}")
+    assert r.status_code == 409, r.text
+    assert "allocated" in r.json()["detail"].lower()
+
+
+def test_editor_post_item_403():
+    """An editor (not drafter/manager/admin) cannot POST a new item."""
+    c, wid, uid = _login(role="editor")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+    finally:
+        db.close()
+
+    r = c.post(
+        f"/projects/{pid}/items",
+        json={"description": "Should fail"},
+    )
+    assert r.status_code == 403, r.text
