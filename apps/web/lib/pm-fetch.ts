@@ -49,22 +49,22 @@ export const PM = {
   projects: (origin = "", fav?: boolean) =>
     call<ProjectListOut>(`${origin}/api/projects${fav === undefined ? "" : `?fav=${fav}`}`),
 
-  project: (origin: string, pid: number) =>
+  project: (origin = "", pid: number) =>
     call<ProjectOut>(`${origin}/api/projects/${pid}`),
 
-  trackingGrid: (origin: string, pid: number, q?: URLSearchParams) =>
+  trackingGrid: (origin = "", pid: number, q?: URLSearchParams) =>
     call<TrackingGridOut>(`${origin}/api/projects/${pid}/items${q ? `?${q}` : ""}`),
 
-  item: (origin: string, id: number) =>
+  item: (origin = "", id: number) =>
     call<ItemOut>(`${origin}/api/items/${id}`),
 
-  availability: (origin: string, id: number) =>
+  availability: (origin = "", id: number) =>
     call<AvailabilityOut>(`${origin}/api/items/${id}/availability`),
 
-  catalog: (origin: string, pid: number) =>
+  catalog: (origin = "", pid: number) =>
     call<HardwareCatalogOut>(`${origin}/api/projects/${pid}/hardware_catalog`),
 
-  sourceCatalog: (origin: string, table: string) =>
+  sourceCatalog: (origin = "", table: string) =>
     call<{ table: string; rows: { id: number; sku: string | null; name: string; unit_cost: number | null }[] }>(
       `${origin}/api/source_catalog/${table}`
     ),
