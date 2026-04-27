@@ -38,15 +38,18 @@ export function Cart({ item, availability, onRefresh }: CartProps) {
   }, {});
 
   async function deleteLine(lineId: number) {
-    const prev = lines;
-    setLines((l) => l.filter((x) => x.id !== lineId));
+    let snapshot: HardwareLineOut[] = [];
+    setLines((current) => {
+      snapshot = current;
+      return current.filter((x) => x.id !== lineId);
+    });
     try {
       await PM.deleteHardwareLine(lineId);
       setError(null);
       router.refresh();
       onRefresh();
     } catch {
-      setLines(prev);
+      setLines(snapshot);
       setError("Failed to delete line");
     }
   }
@@ -117,6 +120,12 @@ function CartLine({
   const [qty, setQty] = useState(line.qty);
   const [note, setNote] = useState(line.note ?? "");
   const qtyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (qtyTimer.current) clearTimeout(qtyTimer.current);
+    };
+  }, []);
 
   function adjustQty(delta: number) {
     const next = Math.max(1, qty + delta);

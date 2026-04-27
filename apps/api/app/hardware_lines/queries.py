@@ -639,10 +639,12 @@ def list_source_catalog(
     equipment_hire uses hire_id as PK; all others use material_id.
     """
     pk_col = "hire_id" if table == "equipment_hire" else "material_id"
+    # custom_made uses `vendor` instead of `supplier`; expose as NULL for API consistency.
+    supplier_expr = "NULL::text AS supplier" if table == "custom_made" else "supplier"
     rows = db.execute(
         text(
             f"""
-            SELECT {pk_col} AS source_id, sku, description, supplier, unit_cost
+            SELECT {pk_col} AS source_id, sku, description, {supplier_expr}, unit_cost
             FROM {table}
             WHERE workspace_id = :wid
             ORDER BY description

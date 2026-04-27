@@ -31,11 +31,15 @@ export function HardwareTab({ item }: HardwareTabProps) {
   }, [item.id, item.project_id]);
 
   function refreshCatalog() {
-    PM.catalog("", item.project_id).catch(() => null).then(setCatalog);
+    PM.catalog("", item.project_id)
+      .then(setCatalog)
+      .catch(() => { /* keep existing catalog */ });
   }
 
   function refreshAvailability() {
-    PM.availability("", item.id).catch(() => null).then(setAvailability);
+    PM.availability("", item.id)
+      .then(setAvailability)
+      .catch(() => { /* keep existing availability */ });
   }
 
   function refreshAll() {
