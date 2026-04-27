@@ -16,7 +16,7 @@ test("login → six tabs → logout", async ({ page }) => {
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
 
-  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
 
   for (const label of [
     "Dashboard",
