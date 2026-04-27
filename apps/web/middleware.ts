@@ -11,7 +11,12 @@ export function middleware(req: NextRequest) {
   if (!tok) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  return NextResponse.next();
+  // Pass the pathname as a request header so Server Components can read it.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
 export const config = {
