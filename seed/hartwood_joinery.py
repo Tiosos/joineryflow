@@ -19,7 +19,7 @@ USERS: list[tuple[str, str, str, str]] = [
     ("aria.voss@hartwood.test", "Aria Voss", "admin", "CEO"),
     ("rin.park@hartwood.test", "Rin Park", "manager", "PM"),
     ("theo.blake@hartwood.test", "Theo Blake", "manager", "PM"),
-    ("noa.lindqvist@hartwood.test", "Noa Lindqvist", "editor", "Drafter"),
+    ("noa.lindqvist@hartwood.test", "Noa Lindqvist", "drafter", "Drafter"),
     ("juno.okafor@hartwood.test", "Juno Okafor", "editor", "Foreman"),
     ("kai.matthews@hartwood.test", "Kai Matthews", "editor", "Machine"),
     ("mina.klee@hartwood.test", "Mina Klee", "purchase_officer", "Procurement"),
@@ -53,6 +53,10 @@ def main() -> None:
                 ),
                 {"w": wid, "e": email, "n": name, "p": pw, "r": role, "j": jtbd},
             )
+        db.execute(text("""
+  UPDATE app_user SET auth_role='drafter'
+  WHERE workspace_id=:w AND email='noa.lindqvist@hartwood.test'
+"""), {"w": wid})
         db.commit()
         print(f"seeded workspace {wid} with {len(USERS)} users")
     finally:

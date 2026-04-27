@@ -16,3 +16,4 @@ class MeOut(BaseModel):
     email: str
     full_name: str
     auth_role: str
+    jtbd_role: str | None = None

@@ -10,7 +10,7 @@ from .schemas import UserOut, UserPatch
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-_VALID_ROLES = {"admin", "manager", "editor", "purchase_officer", "viewer"}
+_VALID_ROLES = {"admin", "manager", "editor", "drafter", "purchase_officer", "viewer"}
 _PATCHABLE = ("full_name", "auth_role", "jtbd_role", "is_active")
 
 
