@@ -17,25 +17,28 @@ export function PartsGrid({ module }: PartsGridProps) {
   const [error, setError] = useState<string | null>(null);
 
   async function patchCell(partId: number, field: keyof PatchPartIn, value: unknown) {
-    const prev = rows;
-    // Optimistic update
+    // Snapshot the specific field value BEFORE optimistic update
+    const prevValue = rows.find((p) => p.id === partId)?.[field as keyof PartRow];
+
+    // Optimistic update — only this part, only this field
     setRows((r) =>
-      r.map((p) =>
-        p.id === partId ? { ...p, [field]: value, _saved: false, _saving: true } : p
-      )
+      r.map((p) => (p.id === partId ? { ...p, [field]: value, _saved: false } : p))
     );
+
     try {
       await PM.patchPart(partId, { [field]: value } as PatchPartIn);
       setRows((r) =>
-        r.map((p) =>
-          p.id === partId ? { ...p, [field]: value, _saved: true, _saving: false } : p
-        )
+        r.map((p) => (p.id === partId ? { ...p, _saved: true } : p))
       );
       setError(null);
       router.refresh();
     } catch {
-      setRows(prev);
-      setError(`Failed to save ${field}`);
+      // v1: inline error banner instead of toast — wire to a toast primitive in a future task
+      // Rollback only this field on this part
+      setRows((r) =>
+        r.map((p) => (p.id === partId ? { ...p, [field]: prevValue } : p))
+      );
+      setError(`Failed to save ${String(field)}`);
     }
   }
 
@@ -233,8 +236,10 @@ function CellInput({ onCommit, className, defaultValue, ...props }: CellInputPro
   const savedRef = useRef(String(defaultValue ?? ""));
 
   function handleBlur() {
-    onCommit(value);
-    savedRef.current = value;
+    if (value !== savedRef.current) {
+      onCommit(value);
+      savedRef.current = value;
+    }
   }
 
   return (

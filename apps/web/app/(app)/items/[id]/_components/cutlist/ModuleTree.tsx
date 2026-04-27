@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type { ModuleOut } from "@/lib/pm-types";
@@ -12,15 +13,17 @@ interface ModuleTreeProps {
 
 export function ModuleTree({ itemId, modules, activeModuleId, onSelect }: ModuleTreeProps) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   async function addModule() {
     try {
       const nextNo = String(modules.length + 1).padStart(2, "0");
       const m = await PM.createModule(itemId, { module_no: nextNo, name: "New module" });
+      setError(null);
       router.refresh();
       onSelect(m.id);
     } catch {
-      // silently fail — error surfaced by API 4xx in network tab
+      setError("Failed to add module");
     }
   }
 
@@ -41,6 +44,7 @@ export function ModuleTree({ itemId, modules, activeModuleId, onSelect }: Module
           {m.name ?? "Untitled module"}
         </button>
       ))}
+      {error && <p className="text-xs text-h-bad px-3">{error}</p>}
       <button
         type="button"
         onClick={addModule}
