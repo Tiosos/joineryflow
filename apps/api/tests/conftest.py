@@ -28,3 +28,38 @@ def workspace_id(db):
         text("INSERT INTO workspace(slug,name) VALUES('test','Test') RETURNING id")
     ).scalar()
     return wid
+
+
+TRUNCATE_TABLES = (
+    "project_hardware_catalog_log",
+    "project_hardware_catalog",
+    "item_hardware_lines",
+    "parts",
+    "modules",
+    "item_status_log",
+    "item_edit_log",
+    "item_stages",
+    "items",
+    "project_favourites",
+    "projects",
+    "audit_log",
+    "session",
+    "app_user",
+    "workspace",
+)
+
+
+@pytest.fixture
+def truncate_all():
+    """Use in autouse cleanup fixtures in route tests that need full TRUNCATE."""
+    from app.db import SessionLocal
+
+    def _do():
+        s = SessionLocal()
+        try:
+            s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
+            s.commit()
+        finally:
+            s.close()
+
+    return _do
