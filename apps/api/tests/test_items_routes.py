@@ -660,3 +660,153 @@ def test_get_item_404_for_cross_workspace():
     c_b, _wid_b, _uid_b = _login()
     r = c_b.get(f"/items/{iid}")
     assert r.status_code == 404
+
+
+# ── Availability helpers ───────────────────────────────────────────────────────
+
+
+def _seed_item(db, *, project_id: int, uid: int, num: int = 1) -> int:
+    """Insert a bare item and return item_id. Alias for _insert_item for availability tests."""
+    return _insert_item(db, project_id=project_id, num=num)
+
+
+def _seed_procurement_batch(
+    db,
+    *,
+    project_id: int,
+    eta_date: str | None = None,
+    received_date: str | None = None,
+) -> int:
+    """Insert a procurement_batches row and return batch_id.
+
+    Uses material_type='HARDWARE' and material_id=1 as defaults — sufficient for
+    the availability endpoint which only needs the batch_id FK.
+    """
+    bid = db.execute(
+        text(
+            """
+            INSERT INTO procurement_batches
+                (project_id, material_type, material_id, qty_ordered, eta_date, received_date)
+            VALUES (:pid, 'HARDWARE', 1, 1, CAST(:eta AS date), CAST(:recv AS date))
+            RETURNING batch_id
+            """
+        ),
+        {"pid": project_id, "eta": eta_date, "recv": received_date},
+    ).scalar()
+    db.commit()
+    return bid
+
+
+def _seed_batch_allocation(
+    db,
+    *,
+    line_id: int,
+    batch_id: int,
+) -> int:
+    """Insert a batch_allocations row and return allocation_id."""
+    aid = db.execute(
+        text(
+            """
+            INSERT INTO batch_allocations
+                (batch_id, item_hardware_line_id, qty_allocated)
+            VALUES (:bid, :lid, 1)
+            RETURNING allocation_id
+            """
+        ),
+        {"bid": batch_id, "lid": line_id},
+    ).scalar()
+    db.commit()
+    return aid
+
+
+# ── GET /items/{id}/availability tests ────────────────────────────────────────
+
+
+def test_availability_empty_when_no_lines():
+    """Item with 0 hardware lines returns lines: []."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _seed_item(db, project_id=pid, uid=uid, num=1)
+    finally:
+        db.close()
+
+    r = c.get(f"/items/{iid}/availability")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["item_id"] == iid
+    assert body["lines"] == []
+
+
+def test_availability_three_states():
+    """Three hardware lines exercise ready, ordered, and none statuses."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _seed_item(db, project_id=pid, uid=uid, num=2)
+
+        # Catalog row required for FK
+        mat_id = _seed_hardware_material(db, workspace_id=wid)
+        cat_id = _seed_catalog_row(db, project_id=pid, material_id=mat_id, added_by=uid)
+
+        # Line A: allocated + received → ready
+        line_a = _seed_hardware_line(db, item_id=iid, catalog_id=cat_id)
+        batch_recv = _seed_procurement_batch(
+            db,
+            project_id=pid,
+            eta_date="2026-05-01",
+            received_date="2026-04-20",   # received → ready
+        )
+        _seed_batch_allocation(db, line_id=line_a, batch_id=batch_recv)
+
+        # Line B: allocated but NOT received → ordered
+        line_b = _seed_hardware_line(db, item_id=iid, catalog_id=cat_id)
+        batch_ord = _seed_procurement_batch(
+            db,
+            project_id=pid,
+            eta_date="2026-06-01",
+            received_date=None,           # not yet received → ordered
+        )
+        _seed_batch_allocation(db, line_id=line_b, batch_id=batch_ord)
+
+        # Line C: no allocation → none
+        _seed_hardware_line(db, item_id=iid, catalog_id=cat_id)
+    finally:
+        db.close()
+
+    r = c.get(f"/items/{iid}/availability")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["item_id"] == iid
+
+    lines_by_status = {ln["status"]: ln for ln in body["lines"]}
+    assert set(lines_by_status.keys()) == {"ready", "ordered", "none"}
+
+    ready = lines_by_status["ready"]
+    assert ready["eta"] == "2026-05-01"
+    assert ready["batch_id"] == batch_recv
+
+    ordered = lines_by_status["ordered"]
+    assert ordered["eta"] == "2026-06-01"
+    assert ordered["batch_id"] == batch_ord
+
+    none_line = lines_by_status["none"]
+    assert none_line["eta"] is None
+    assert none_line["batch_id"] is None
+
+
+def test_availability_cross_workspace_404():
+    """Workspace B cannot access workspace A's item availability — must get 404."""
+    c_a, wid_a, uid_a = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid_a, uid=uid_a, code="AV-A-001")
+        iid = _seed_item(db, project_id=pid, uid=uid_a, num=3)
+    finally:
+        db.close()
+
+    c_b, _wid_b, _uid_b = _login()
+    r = c_b.get(f"/items/{iid}/availability")
+    assert r.status_code == 404

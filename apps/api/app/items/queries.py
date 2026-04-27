@@ -183,6 +183,96 @@ def list_items_for_project(
     return results
 
 
+def get_item_availability(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+) -> dict | None:
+    """Return per-hardware-line availability roll-up for an item.
+
+    Status semantics (derived from procurement_batches.received_date):
+      - 'ready'   : at least one linked procurement_batch has received_date IS NOT NULL.
+      - 'ordered' : at least one batch_allocation exists but no batch has been received yet.
+      - 'none'    : no batch_allocation rows for this line.
+
+    Schema drift vs. spec:
+      - batch_allocations has no received_at column; received state is
+        procurement_batches.received_date IS NOT NULL.
+      - procurement_batches.expected_arrival -> eta_date.
+      - procurement_batches.id -> batch_id.
+
+    For lines with multiple batches, returns the batch with the latest eta_date
+    (NULLS LAST) as the representative batch_id and eta.
+
+    Returns None if the item does not exist or belongs to a different workspace.
+    """
+    # Workspace visibility check: same EXISTS chain as _WORKSPACE_FILTER.
+    exists_row = db.execute(
+        text(
+            f"""
+            SELECT 1
+            FROM items i
+            WHERE i.item_id = :iid
+              AND {_WORKSPACE_FILTER}
+            """
+        ),
+        {"iid": item_id, "wid": workspace_id},
+    ).first()
+
+    if exists_row is None:
+        return None
+
+    # Aggregate per hardware line.
+    line_rows = db.execute(
+        text(
+            """
+            WITH lines AS (
+                SELECT hl.line_id
+                FROM item_hardware_lines hl
+                WHERE hl.item_id = :iid
+            )
+            SELECT
+                l.line_id,
+                CASE
+                    WHEN COUNT(pb.batch_id) FILTER (
+                        WHERE pb.received_date IS NOT NULL
+                    ) > 0 THEN 'ready'
+                    WHEN COUNT(ba.allocation_id) > 0 THEN 'ordered'
+                    ELSE 'none'
+                END                                                     AS status,
+                MAX(pb.eta_date)                                        AS eta,
+                (
+                    ARRAY_AGG(
+                        pb.batch_id
+                        ORDER BY pb.eta_date DESC NULLS LAST
+                    )
+                )[1]                                                    AS batch_id
+            FROM lines l
+            LEFT JOIN batch_allocations ba
+                   ON ba.item_hardware_line_id = l.line_id
+            LEFT JOIN procurement_batches pb
+                   ON pb.batch_id = ba.batch_id
+            GROUP BY l.line_id
+            ORDER BY l.line_id
+            """
+        ),
+        {"iid": item_id},
+    ).mappings().all()
+
+    lines = [
+        {
+            "line_id": r["line_id"],
+            "status": r["status"],
+            "eta": r["eta"],
+            "batch_id": r["batch_id"],
+        }
+        for r in line_rows
+    ]
+
+    return {"item_id": item_id, "lines": lines}
+
+
 def get_item_detail(
     db: Session,
     *,

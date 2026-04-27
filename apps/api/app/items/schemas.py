@@ -11,6 +11,7 @@ Column aliasing note (legacy FileMaker schema -> API contract):
   items.solid_surface_req -> solid_surface_required
 """
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -98,6 +99,21 @@ class LockWarning(BaseModel):
     owner_id: int
     owner_name: str
     last_edit_minutes_ago: int
+
+
+# ── Availability schemas (GET /items/{id}/availability) ───────────────────────
+
+
+class AvailabilityLine(BaseModel):
+    line_id: int
+    status: Literal["ready", "ordered", "none"]
+    eta: date | None
+    batch_id: int | None
+
+
+class AvailabilityOut(BaseModel):
+    item_id: int
+    lines: list[AvailabilityLine]
 
 
 class ItemOut(BaseModel):

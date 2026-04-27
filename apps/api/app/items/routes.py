@@ -5,8 +5,8 @@ from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..projects.queries import get_project
-from .queries import get_item_detail, list_items_for_project
-from .schemas import ItemOut, TrackingGridOut
+from .queries import get_item_availability, get_item_detail, list_items_for_project
+from .schemas import AvailabilityOut, ItemOut, TrackingGridOut
 
 router = APIRouter(prefix="", tags=["items"])
 
@@ -37,6 +37,20 @@ def get_project_items(
         q=q,
     )
     return {"project_id": pid, "items": items}
+
+
+@router.get("/items/{id}/availability", response_model=AvailabilityOut)
+def get_availability(
+    id: int,
+    user: AuthUser = Depends(require_permission("list", "read")),
+    db: Session = Depends(get_db),
+):
+    detail = get_item_availability(
+        db, item_id=id, workspace_id=user.workspace_id
+    )
+    if detail is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    return detail
 
 
 @router.get("/items/{id}", response_model=ItemOut)
