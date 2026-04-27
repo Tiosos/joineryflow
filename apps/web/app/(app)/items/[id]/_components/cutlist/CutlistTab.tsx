@@ -15,7 +15,7 @@ export function CutlistTab({ item }: CutlistTabProps) {
 
   const activeModule = item.modules.find((m) => m.id === activeModuleId) ?? null;
 
-  if (item.modules.length === 0 && activeModuleId === null) {
+  if (item.modules.length === 0) {
     return (
       <div className="flex gap-4">
         <ModuleTree
@@ -40,7 +40,7 @@ export function CutlistTab({ item }: CutlistTabProps) {
         onSelect={setActiveModuleId}
       />
       {activeModule ? (
-        <PartsGrid key={activeModule.id} itemId={item.id} module={activeModule} />
+        <PartsGrid key={activeModule.id} module={activeModule} />
       ) : (
         <div className="flex-1 text-sm text-h-muted">Select a module.</div>
       )}

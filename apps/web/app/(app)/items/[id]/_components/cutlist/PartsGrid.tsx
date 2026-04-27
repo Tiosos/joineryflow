@@ -2,10 +2,9 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
-import type { ModuleOut, PartOut, PatchPartIn } from "@/lib/pm-types";
+import type { ModuleOut, PartOut, PatchPartIn, PaintInstruction } from "@/lib/pm-types";
 
 interface PartsGridProps {
-  itemId: number;
   module: ModuleOut;
 }
 
@@ -44,9 +43,10 @@ export function PartsGrid({ module }: PartsGridProps) {
 
   async function addRow() {
     try {
-      await PM.createPart(module.id, { part_name: "", qty: 1 });
+      const newPart = await PM.createPart(module.id, { part_name: "", qty: 1 });
+      setRows((r) => [...r, { ...newPart, _saved: true }]);
       setError(null);
-      router.refresh();
+      router.refresh(); // keep server state in sync
     } catch {
       setError("Failed to add part");
     }
@@ -130,6 +130,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.qty)}
           data-field="qty"
           type="number"
           defaultValue={String(part.qty)}
@@ -140,6 +141,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.part_name)}
           data-field="part_name"
           defaultValue={part.part_name ?? ""}
           onCommit={(v) => onPatch(part.id, "part_name", v)}
@@ -149,6 +151,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.len_mm ?? "")}
           data-field="len_mm"
           type="number"
           defaultValue={part.len_mm !== null ? String(part.len_mm) : ""}
@@ -159,6 +162,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.wid_mm ?? "")}
           data-field="wid_mm"
           type="number"
           defaultValue={part.wid_mm !== null ? String(part.wid_mm) : ""}
@@ -179,6 +183,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.edge)}
           data-field="edge"
           defaultValue={part.edge ?? ""}
           onCommit={(v) => onPatch(part.id, "edge", v || null)}
@@ -188,6 +193,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.colour)}
           data-field="colour"
           defaultValue={part.colour ?? ""}
           onCommit={(v) => onPatch(part.id, "colour", v || null)}
@@ -196,16 +202,15 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
       </td>
 
       <td className="py-1 pr-1">
-        <CellInput
-          data-field="paint_instruction"
-          defaultValue={part.paint_instruction ?? ""}
-          onCommit={(v) => onPatch(part.id, "paint_instruction", v || null)}
-          className="min-w-[80px]"
+        <PaintSelect
+          defaultValue={part.paint_instruction}
+          onCommit={(v) => onPatch(part.id, "paint_instruction", v)}
         />
       </td>
 
       <td className="py-1 pr-1">
         <CellInput
+          key={String(part.comment)}
           data-field="comment"
           defaultValue={part.comment ?? ""}
           onCommit={(v) => onPatch(part.id, "comment", v || null)}
@@ -255,5 +260,40 @@ function CellInput({ onCommit, className, defaultValue, ...props }: CellInputPro
         className ?? "",
       ].join(" ")}
     />
+  );
+}
+
+const PAINT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "—" },
+  { value: "NONE", label: "None" },
+  { value: "DOUBLE_SIDE", label: "Double side" },
+  { value: "SINGLE_SIDE", label: "Single side" },
+  { value: "EDGE_ONLY", label: "Edge only" },
+];
+
+interface PaintSelectProps {
+  defaultValue: string | null;
+  onCommit: (value: string | null) => void;
+}
+
+function PaintSelect({ defaultValue, onCommit }: PaintSelectProps) {
+  const [value, setValue] = useState(defaultValue ?? "");
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value;
+    setValue(v);
+    onCommit(v === "" ? null : (v as PaintInstruction));
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={handleChange}
+      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-h-ink hover:border-h-line focus:border-h-accent focus:outline-none focus:bg-h-bg transition-colors w-24"
+    >
+      {PAINT_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
   );
 }
