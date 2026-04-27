@@ -1,21 +1,26 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import type { Me } from "@/lib/session";
 import { TopBar } from "./TopBar";
 import { TabStrip } from "./TabStrip";
-import { SideBar } from "./SideBar";
 
 interface HAppChromeProps {
   user: Me;
-  editorMode?: boolean;
+  /** Server-rendered sidebar, passed as a slot from the layout. */
+  sidebar: React.ReactNode;
   children: React.ReactNode;
 }
 
-export function HAppChrome({ user, editorMode, children }: HAppChromeProps) {
+export function HAppChrome({ user, sidebar, children }: HAppChromeProps) {
+  const pathname = usePathname();
+  const editorMode = pathname.startsWith("/items/");
   return (
     <div className="min-h-screen bg-h-bg">
       <TopBar user={user} editorMode={editorMode} />
       {!editorMode && <TabStrip />}
       <div className="flex">
-        {!editorMode && <SideBar />}
+        {!editorMode && sidebar}
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>
