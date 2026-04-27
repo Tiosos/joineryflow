@@ -198,3 +198,53 @@ def test_patch_pm_id_explicit_null_rejected():
     pid = r.json()["id"]
     r2 = c.patch(f"/projects/{pid}", json={"pm_id": None})
     assert r2.status_code == 422
+
+
+def test_add_fav_then_list_with_fav_true_returns_it():
+    c, _, uid = _login("manager")
+    r = c.post("/projects", json={"project_code": "FAV-001", "name": "Fav project"})
+    pid = r.json()["id"]
+
+    # POST favourite
+    r2 = c.post(f"/projects/{pid}/favourites")
+    assert r2.status_code == 204
+
+    # List with fav_only=true returns it
+    r3 = c.get("/projects", params={"fav_only": "true"})
+    assert r3.status_code == 200
+    pids = [p["id"] for p in r3.json()["projects"]]
+    assert pid in pids
+
+    # ProjectOut.is_favourite is true
+    r4 = c.get(f"/projects/{pid}")
+    assert r4.json()["is_favourite"] is True
+
+
+def test_remove_fav_idempotent_no_404():
+    c, _, _ = _login("manager")
+    r = c.post("/projects", json={"project_code": "FAV-002", "name": "Fav project"})
+    pid = r.json()["id"]
+
+    # DELETE on a non-favourited project: 204 (idempotent), not 404
+    r2 = c.delete(f"/projects/{pid}/favourites")
+    assert r2.status_code == 204
+
+    # Add then remove twice — second remove still 204
+    c.post(f"/projects/{pid}/favourites")
+    r3 = c.delete(f"/projects/{pid}/favourites")
+    assert r3.status_code == 204
+    r4 = c.delete(f"/projects/{pid}/favourites")
+    assert r4.status_code == 204
+
+
+def test_fav_cross_workspace_404():
+    """Workspace-B user cannot favourite workspace-A's project."""
+    c_a, _, _ = _login("manager")
+    r = c_a.post("/projects", json={"project_code": "WS-A-FAV", "name": "A's project"})
+    pid = r.json()["id"]
+
+    c_b, _, _ = _login("manager")
+    r2 = c_b.post(f"/projects/{pid}/favourites")
+    assert r2.status_code == 404
+    r3 = c_b.delete(f"/projects/{pid}/favourites")
+    assert r3.status_code == 404

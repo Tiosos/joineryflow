@@ -151,6 +151,27 @@ _PATCH_COL_MAP = {
 }
 
 
+def add_favourite(db: Session, *, project_id: int, user_id: int) -> None:
+    db.execute(
+        text("""
+            INSERT INTO project_favourites(project_id, user_id)
+            VALUES (:p, :u) ON CONFLICT DO NOTHING
+        """),
+        {"p": project_id, "u": user_id},
+    )
+    db.flush()
+
+
+def remove_favourite(db: Session, *, project_id: int, user_id: int) -> None:
+    db.execute(
+        text("""
+            DELETE FROM project_favourites WHERE project_id = :p AND user_id = :u
+        """),
+        {"p": project_id, "u": user_id},
+    )
+    db.flush()
+
+
 def patch_project(
     db: Session,
     *,

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import current_user, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
-from .queries import create_project, get_project, list_projects, patch_project
+from .queries import add_favourite, create_project, get_project, list_projects, patch_project, remove_favourite
 from .schemas import CreateProjectIn, PatchProjectIn, ProjectListOut, ProjectOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -101,3 +101,29 @@ def patch_project_route(
         raise HTTPException(status_code=404, detail="project not found")
     db.commit()
     return row
+
+
+@router.post("/{pid}/favourites", status_code=204)
+def add_fav(
+    pid: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if get_project(db, project_id=pid, workspace_id=user.workspace_id,
+                   current_user_id=user.id) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    add_favourite(db, project_id=pid, user_id=user.id)
+    db.commit()
+
+
+@router.delete("/{pid}/favourites", status_code=204)
+def del_fav(
+    pid: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if get_project(db, project_id=pid, workspace_id=user.workspace_id,
+                   current_user_id=user.id) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    remove_favourite(db, project_id=pid, user_id=user.id)
+    db.commit()
