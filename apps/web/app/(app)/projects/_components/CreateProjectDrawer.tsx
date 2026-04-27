@@ -116,7 +116,7 @@ export function CreateProjectDrawer() {
                 />
               </label>
               {error && (
-                <p className="rounded bg-red-100 p-2 text-xs text-red-800">
+                <p className="rounded border border-h-bad/30 bg-h-bad/10 p-2 text-xs text-h-bad">
                   {error}
                 </p>
               )}
