@@ -27,7 +27,7 @@ export default function Login() {
         setErr("Invalid credentials");
         return;
       }
-      r.replace("/dashboard");
+      r.replace("/home");
     } finally {
       setBusy(false);
     }
