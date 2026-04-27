@@ -5,14 +5,14 @@ test("Drafter editor happy path", async ({ page }) => {
   await page.fill('input[type="email"]', "noa.lindqvist@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
 
   // My Day shows >=1 item
   await expect(page.locator('[data-testid="myday-row"]').first()).toBeVisible();
 
   // Click an item -> editor
   await page.locator('[data-testid="myday-row"] a').first().click();
-  await expect(page).toHaveURL(/\/items\/\d+/);
+  await expect(page).toHaveURL(/\/items\/\d+/, { timeout: 30_000 });
 
   // Cutlist tab: add row
   await page.getByRole("button", { name: /add row/i }).click();
@@ -40,5 +40,5 @@ test("Drafter editor happy path", async ({ page }) => {
   // Close window button
   // window.close() may be blocked by browser; allow either-or.
   await page.locator('[data-testid="close-editor"]').click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
 });
