@@ -65,7 +65,7 @@ export const PM = {
     call<HardwareCatalogOut>(`${origin}/api/projects/${pid}/hardware_catalog`),
 
   sourceCatalog: (origin = "", table: string) =>
-    call<{ table: string; rows: { id: number; sku: string | null; name: string; unit_cost: number | null }[] }>(
+    call<{ table: string; rows: { source_id: number; sku: string | null; description: string; supplier: string | null; unit_cost: number | null }[] }>(
       `${origin}/api/source_catalog/${table}`
     ),
 

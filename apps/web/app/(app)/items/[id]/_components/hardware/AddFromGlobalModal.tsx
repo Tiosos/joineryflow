@@ -46,8 +46,7 @@ export function AddFromGlobalModal({
     PM.sourceCatalog("", activeTable)
       .then((data) => {
         if (!cancelled) {
-          // Backend returns { source_id, sku, description, supplier, unit_cost }
-          setRows(data.rows as unknown as SourceRow[]);
+          setRows(data.rows);
           setLoading(false);
         }
       })
