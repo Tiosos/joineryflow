@@ -77,7 +77,7 @@ export default async function TrackingPage({
   }
 
   const canEdit =
-    me?.auth_role === "editor" ||
+    me?.auth_role === "drafter" ||
     me?.auth_role === "manager" ||
     me?.auth_role === "admin";
 
