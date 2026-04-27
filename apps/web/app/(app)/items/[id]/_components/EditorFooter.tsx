@@ -24,13 +24,13 @@ export function EditorFooter({
     currentUserId !== null && item.cutlist_owner_id === currentUserId;
   const isManagerOrAdmin =
     currentUserRole === "manager" || currentUserRole === "admin";
-  const canToggleLock = isOwner || isManagerOrAdmin || !item.item_locked;
+  const canToggleLock = isOwner || isManagerOrAdmin;
 
   async function handleLockToggle() {
     setBusy(true);
     setError(null);
     try {
-      if (item.item_locked && isOwner) {
+      if (item.item_locked) {
         await PM.unlockItem(item.id);
       } else {
         await PM.lockItem(item.id);
