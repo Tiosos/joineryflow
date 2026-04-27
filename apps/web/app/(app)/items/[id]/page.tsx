@@ -1,22 +1,18 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
-import { fetchMe } from "@/lib/session";
+import { fetchMe, getSessionCookie } from "@/lib/session";
 import { ItemHeader } from "./_components/ItemHeader";
 import { ItemMetadataPanel } from "./_components/ItemMetadataPanel";
 import { EditorTabs } from "./_components/EditorTabs";
 import { SoftLockBanner } from "./_components/SoftLockBanner";
 import { EditorFooter } from "./_components/EditorFooter";
 
-const COOKIE_NAME = "jf_session";
-
-async function fetchItem(
-  id: number,
-  cookieHeader: string,
-): Promise<ItemOut | null> {
+async function fetchItem(id: number): Promise<ItemOut | null> {
+  const tok = await getSessionCookie();
+  if (!tok) return null;
   const apiUrl = process.env.API_URL ?? "http://api:8000";
   const r = await fetch(`${apiUrl}/items/${id}`, {
-    headers: { cookie: cookieHeader },
+    headers: { cookie: `jf_session=${tok}` },
     cache: "no-store",
   }).catch(() => null);
   if (!r || !r.ok) return null;
@@ -37,12 +33,8 @@ export default async function ItemEditorPage({
   const sp = await searchParams;
   const tab = sp.tab ?? "cutlist";
 
-  const c = await cookies();
-  const tok = c.get(COOKIE_NAME)?.value ?? "";
-  const cookieHeader = `${COOKIE_NAME}=${tok}`;
-
   const [item, me] = await Promise.all([
-    fetchItem(id, cookieHeader),
+    fetchItem(id),
     fetchMe(),
   ]);
 

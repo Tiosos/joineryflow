@@ -27,6 +27,35 @@ const FIELDS: {
   },
 ];
 
+interface BoolFieldProps {
+  label: string;
+  initialValue: boolean;
+  onToggle: (v: boolean) => Promise<boolean>;
+}
+
+function BoolField({ label, initialValue, onToggle }: BoolFieldProps) {
+  const [checked, setChecked] = useState(initialValue);
+
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.checked;
+    setChecked(next); // optimistic
+    const success = await onToggle(next);
+    if (!success) setChecked(!next); // rollback
+  }
+
+  return (
+    <label className="flex items-center gap-2 text-sm text-h-ink cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={handleChange}
+        className="rounded border-h-line"
+      />
+      {label}
+    </label>
+  );
+}
+
 interface MetaFieldProps {
   label: string;
   defaultValue: string;
@@ -122,22 +151,18 @@ export function ItemMetadataPanel({ item }: Props) {
           const v = item[f.key as keyof ItemOut] as unknown;
           if (f.type === "checkbox") {
             return (
-              <label
-                key={f.key as string}
-                className="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  defaultChecked={Boolean(v)}
-                  onChange={(e) => patchField(f.key, e.target.checked)}
+              <div key={f.key as string}>
+                <BoolField
+                  label={f.label}
+                  initialValue={Boolean(v)}
+                  onToggle={(next) => patchField(f.key, next)}
                 />
-                <span className="text-h-ink">{f.label}</span>
                 {errors[f.key as string] && (
                   <span className="text-xs text-h-bad">
                     {errors[f.key as string]}
                   </span>
                 )}
-              </label>
+              </div>
             );
           }
           const strVal = v == null ? "" : String(v);
@@ -168,6 +193,13 @@ export function ItemMetadataPanel({ item }: Props) {
             </div>
           );
         })}
+        {/* group_id is read-only in v1 — not exposed in PatchItemIn */}
+        {item.group_id && (
+          <div className="space-y-1">
+            <p className="text-xs text-h-muted">Group ID</p>
+            <p className="text-sm text-h-ink font-mono">{item.group_id}</p>
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium uppercase text-h-muted mb-1">
             Estimator notes

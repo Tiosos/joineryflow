@@ -11,11 +11,9 @@ export function ItemHeader({ item }: Props) {
   const router = useRouter();
 
   function close() {
-    if (typeof window !== "undefined") {
-      window.close();
-      // If window.close() was a no-op (browser blocked it), fall back.
-      if (!window.closed) router.push("/home");
-    }
+    window.close();
+    // If window.close() was a no-op (browser blocked it), fall back.
+    if (!window.closed) router.push("/home");
   }
 
   return (

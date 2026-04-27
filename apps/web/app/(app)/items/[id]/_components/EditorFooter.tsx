@@ -22,9 +22,15 @@ export function EditorFooter({
 
   const isOwner =
     currentUserId !== null && item.cutlist_owner_id === currentUserId;
-  const isManagerOrAdmin =
-    currentUserRole === "manager" || currentUserRole === "admin";
-  const canToggleLock = isOwner || isManagerOrAdmin;
+  const hasDrafterRole =
+    currentUserRole === "drafter" ||
+    currentUserRole === "manager" ||
+    currentUserRole === "admin";
+  // Any drafter+ can lock (claim) an unlocked item.
+  // Only the owner, manager, or admin can unlock.
+  const canToggleLock = item.item_locked
+    ? isOwner || currentUserRole === "manager" || currentUserRole === "admin"
+    : hasDrafterRole;
 
   async function handleLockToggle() {
     setBusy(true);
