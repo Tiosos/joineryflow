@@ -22,9 +22,14 @@ from .conftest import TRUNCATE_TABLES
 
 # Source tables beyond the base TRUNCATE_TABLES list that we insert into
 _EXTRA_TABLES = (
+    "status_options",
+    "item_stages",
+    "item_edit_log",
+    "item_status_log",
+    "item_hardware_lines",
+    "items",
     "project_hardware_catalog_log",
     "project_hardware_catalog",
-    "item_hardware_lines",
     "board_materials",
     "hardware_materials",
     "custom_made",
@@ -84,16 +89,16 @@ def _login(role: str = "manager"):
 
 
 def _create_project(db, *, uid: int, code: str = "HJ-001") -> int:
-    """Insert a project owned by uid and return project_id."""
+    """Insert a project owned by uid and return project_id. Name is derived from code to stay unique."""
     pid = db.execute(
         text(
             """
             INSERT INTO projects(project_code, name, pm_id)
-            VALUES (:code, 'Test Project', :uid)
+            VALUES (:code, :name, :uid)
             RETURNING project_id
             """
         ),
-        {"code": code, "uid": uid},
+        {"code": code, "name": f"Project {code}", "uid": uid},
     ).scalar()
     db.commit()
     return pid
@@ -258,3 +263,248 @@ def test_catalog_includes_qty_and_unit_cost():
     row = rows[0]
     assert abs(row["unit_cost"] - 24.99) < 0.01
     assert row["qty"] == 1.0
+
+
+# ── T18 tests ──────────────────────────────────────────────────────────────────
+
+
+def _seed_status(db) -> None:
+    """Seed status_options reference rows (FK target for items.status)."""
+    for key, order in [("CLEAR", 1), ("HOLD", 2), ("LIVE", 3), ("VOID", 4)]:
+        db.execute(
+            text(
+                "INSERT INTO status_options(status_key, sort_order) "
+                "VALUES(:k, :o) ON CONFLICT DO NOTHING"
+            ),
+            {"k": key, "o": order},
+        )
+    db.commit()
+
+
+def _create_item(db, *, project_id: int, uid: int, code: str = "ITEM-001") -> int:
+    """Insert an item under a project and return item_id."""
+    _seed_status(db)
+    iid = db.execute(
+        text(
+            """
+            INSERT INTO items(project_id, num, status)
+            VALUES (:pid, 1, 'CLEAR')
+            RETURNING item_id
+            """
+        ),
+        {"pid": project_id},
+    ).scalar()
+    db.commit()
+    return iid
+
+
+def _add_hardware_line(db, *, item_id: int, catalog_id: int, qty: int = 1) -> int:
+    """Raw insert an item_hardware_lines row and return line_id."""
+    lid = db.execute(
+        text(
+            """
+            INSERT INTO item_hardware_lines(item_id, catalog_id, qty)
+            VALUES (:iid, :cid, :qty)
+            RETURNING line_id
+            """
+        ),
+        {"iid": item_id, "cid": catalog_id, "qty": qty},
+    ).scalar()
+    db.commit()
+    return lid
+
+
+def test_add_catalog_writes_log_in_same_txn():
+    """POST hardware_catalog inserts both catalog row and log row."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-A1")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18A", sku="SKU-T18A", description="Oak T18A")
+    finally:
+        db.close()
+
+    r = c.post(
+        f"/projects/{pid}/hardware_catalog",
+        json={"source_table": "board_materials", "source_id": board_mid},
+    )
+    assert r.status_code == 201, r.text
+    cid = r.json()["catalog_id"]
+
+    db = SessionLocal()
+    try:
+        cat_count = db.execute(
+            text("SELECT COUNT(*) FROM project_hardware_catalog WHERE catalog_id = :cid"),
+            {"cid": cid},
+        ).scalar()
+        log_count = db.execute(
+            text(
+                "SELECT COUNT(*) FROM project_hardware_catalog_log "
+                "WHERE project_id = :pid AND action = 'ADD'"
+            ),
+            {"pid": pid},
+        ).scalar()
+    finally:
+        db.close()
+
+    assert cat_count == 1
+    assert log_count == 1
+
+
+def test_add_catalog_invalid_source_404():
+    """POST hardware_catalog with non-existent source_id returns 404."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-A2")
+    finally:
+        db.close()
+
+    r = c.post(
+        f"/projects/{pid}/hardware_catalog",
+        json={"source_table": "board_materials", "source_id": 999999},
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_remove_catalog_409_when_referenced():
+    """DELETE hardware_catalog returns 409 when a hardware_line references it."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-B1")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18B", sku="SKU-T18B", description="Walnut T18B")
+        cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
+        iid = _create_item(db, project_id=pid, uid=uid)
+        _add_hardware_line(db, item_id=iid, catalog_id=cid)
+    finally:
+        db.close()
+
+    r = c.delete(f"/projects/{pid}/hardware_catalog/{cid}")
+    assert r.status_code == 409, r.text
+
+
+def test_remove_catalog_writes_remove_log_row():
+    """DELETE hardware_catalog inserts a REMOVE log row."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-B2")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18C", sku="SKU-T18C", description="Birch T18C")
+        cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
+    finally:
+        db.close()
+
+    r = c.delete(f"/projects/{pid}/hardware_catalog/{cid}")
+    assert r.status_code == 204, r.text
+
+    db = SessionLocal()
+    try:
+        log_count = db.execute(
+            text(
+                "SELECT COUNT(*) FROM project_hardware_catalog_log "
+                "WHERE project_id = :pid AND action = 'REMOVE'"
+            ),
+            {"pid": pid},
+        ).scalar()
+    finally:
+        db.close()
+
+    assert log_count == 1
+
+
+def test_create_hardware_line_validates_catalog_belongs_to_project():
+    """POST hardware_line with catalog_id from a different project returns 404."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid_a = _create_project(db, uid=uid, code="T18-C1A")
+        pid_b = _create_project(db, uid=uid, code="T18-C1B")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18D", sku="SKU-T18D", description="Maple T18D")
+        # Add catalog row to project B
+        cid_b = _add_to_catalog(db, project_id=pid_b, material_type="BOARD", material_id=board_mid, added_by=uid)
+        # Create item in project A
+        iid_a = _create_item(db, project_id=pid_a, uid=uid)
+    finally:
+        db.close()
+
+    # Try to create hardware line for item in project A using catalog from project B
+    r = c.post(
+        f"/items/{iid_a}/hardware_lines",
+        json={"catalog_id": cid_b, "qty": 1},
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_patch_hardware_line_qty_writes_edit_log():
+    """PATCH qty writes one item_edit_log row with field='hardware_lines.qty'."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-D1")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18E", sku="SKU-T18E", description="Pine T18E")
+        cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
+        iid = _create_item(db, project_id=pid, uid=uid)
+        lid = _add_hardware_line(db, item_id=iid, catalog_id=cid, qty=1)
+    finally:
+        db.close()
+
+    r = c.patch(f"/hardware_lines/{lid}", json={"qty": 5})
+    assert r.status_code == 200, r.text
+    assert r.json()["qty"] == 5
+
+    db = SessionLocal()
+    try:
+        log_count = db.execute(
+            text(
+                "SELECT COUNT(*) FROM item_edit_log "
+                "WHERE item_id = :iid AND field = 'hardware_lines.qty'"
+            ),
+            {"iid": iid},
+        ).scalar()
+    finally:
+        db.close()
+
+    assert log_count == 1
+
+
+def test_editor_403_on_hardware_line_create():
+    """A user with auth_role='editor' gets 403 when POSTing a hardware line."""
+    c, wid, uid = _login(role="editor")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-E1")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18F", sku="SKU-T18F", description="Cedar T18F")
+        cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
+        iid = _create_item(db, project_id=pid, uid=uid)
+    finally:
+        db.close()
+
+    r = c.post(f"/items/{iid}/hardware_lines", json={"catalog_id": cid, "qty": 1})
+    assert r.status_code == 403, r.text
+
+
+def test_availability_endpoint_reflects_new_line():
+    """After POSTing a hardware_line, GET /items/{id}/availability shows it as 'none'."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code="T18-F1")
+        board_mid = _insert_board(db, wid=wid, code="BRD-T18G", sku="SKU-T18G", description="Ash T18G")
+        cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
+        iid = _create_item(db, project_id=pid, uid=uid)
+    finally:
+        db.close()
+
+    r = c.post(f"/items/{iid}/hardware_lines", json={"catalog_id": cid, "qty": 2})
+    assert r.status_code == 201, r.text
+    lid = r.json()["id"]
+
+    r = c.get(f"/items/{iid}/availability")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["item_id"] == iid
+    lines = body["lines"]
+    assert len(lines) == 1
+    assert lines[0]["line_id"] == lid
+    assert lines[0]["status"] == "none"
