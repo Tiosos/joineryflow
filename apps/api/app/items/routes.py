@@ -13,6 +13,8 @@ from .queries import (
     get_item_detail,
     list_items_for_project,
     patch_item,
+    patch_item_status,
+    patch_lifecycle,
 )
 from .schemas import (
     AvailabilityOut,
@@ -20,6 +22,8 @@ from .schemas import (
     ItemOut,
     LockTransferIn,
     PatchItemIn,
+    PatchItemStatusIn,
+    PatchLifecycleIn,
     TrackingGridOut,
 )
 
@@ -200,6 +204,64 @@ def lock_item(
             status_code=403,
             detail="only owner, manager, or admin can transfer lock",
         )
+    db.commit()
+    return get_item_detail(
+        db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
+    )
+
+
+# ── T16 lifecycle / status endpoints ──────────────────────────────────────────
+
+
+@router.patch("/items/{id}/status", response_model=ItemOut)
+def patch_status_route(
+    id: int,
+    payload: PatchItemStatusIn,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Update items.status.  Allowed for any role with tracking:write
+    (admin, manager, editor, drafter — NOT purchase_officer or viewer).
+    """
+    ok = patch_item_status(
+        db,
+        item_id=id,
+        workspace_id=user.workspace_id,
+        status=payload.status,
+        actor_id=user.id,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="item not found")
+    db.commit()
+    return get_item_detail(
+        db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
+    )
+
+
+@router.patch("/items/{id}/lifecycle/{stage_key}", response_model=ItemOut)
+def patch_lifecycle_route(
+    id: int,
+    stage_key: str,
+    payload: PatchLifecycleIn,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """UPSERT due_date / done_date for a lifecycle stage on an item.
+    Allowed for any role with tracking:write.
+    Returns 400 for unknown stage_key, 404 if item not found.
+    """
+    result = patch_lifecycle(
+        db,
+        item_id=id,
+        workspace_id=user.workspace_id,
+        stage_key=stage_key,
+        payload=payload,
+        actor_id=user.id,
+    )
+    if result == "INVALID_STAGE_KEY":
+        raise HTTPException(status_code=400, detail="unknown stage_key")
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="item not found")
     db.commit()
     return get_item_detail(
         db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id

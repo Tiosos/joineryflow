@@ -179,3 +179,25 @@ class PatchItemIn(BaseModel):
 class LockTransferIn(BaseModel):
     """Payload for POST /items/{id}/lock when transferring ownership."""
     owner_id: int
+
+
+# ── T16 write input models ─────────────────────────────────────────────────────
+
+
+class PatchItemStatusIn(BaseModel):
+    """Payload for PATCH /items/{id}/status.
+
+    Valid values match status_options.status_key rows seeded by tests and
+    migrations. The spec names are CLEAR | VOID | NOTE! | LIVE | APPROVED | HOLD.
+    No transition graph is enforced (spec §6.2 v1).
+    """
+    status: Literal["CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"]
+
+
+class PatchLifecycleIn(BaseModel):
+    """Payload for PATCH /items/{id}/lifecycle/{stage_key}.
+
+    Both fields are optional; send only what needs changing.
+    """
+    due_date: date | None = None
+    done_date: date | None = None

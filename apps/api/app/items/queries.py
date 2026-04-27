@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
-from .schemas import CreateItemIn, PatchItemIn
+from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
 
 # Workspace isolation clause (items -> projects -> pm_id -> app_user.workspace_id).
 _WORKSPACE_FILTER = """
@@ -819,6 +819,164 @@ def delete_item(
 
     db.execute(text("DELETE FROM items WHERE item_id = :iid"), {"iid": item_id})
     db.flush()
+    return "OK"
+
+
+# ── T16 write helpers ─────────────────────────────────────────────────────────
+
+VALID_STAGE_KEYS = (
+    "REQ", "SM", "LISTED", "DOWN", "CNC",
+    "EDGED", "PAINTED", "MADE", "DEL", "INST",
+)
+
+
+def patch_item_status(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    status: str,
+    actor_id: int,
+) -> bool:
+    """Update items.status.  Returns True if updated, False if item not found.
+
+    Writes to item_status_log (the actual table, which records status changes
+    with columns: item_id, status, note, changed_by), audit_log, and item_edit_log.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return False
+
+    prev_status = db.execute(
+        text("SELECT status FROM items WHERE item_id = :iid"),
+        {"iid": item_id},
+    ).scalar()
+
+    db.execute(
+        text(
+            "UPDATE items SET status = :s, updated_at = now() WHERE item_id = :iid"
+        ),
+        {"s": status, "iid": item_id},
+    )
+    db.flush()
+
+    # item_status_log records status changes: (item_id, status, note, changed_by)
+    db.execute(
+        text(
+            """
+            INSERT INTO item_status_log(item_id, status, note, changed_by)
+            VALUES (:iid, :s, '', :cb)
+            """
+        ),
+        {"iid": item_id, "s": status, "cb": str(actor_id)},
+    )
+    db.flush()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="item.status",
+        target=str(item_id),
+        payload={"old": prev_status, "new": status},
+    )
+    write_edit_log(
+        db,
+        item_id=item_id,
+        actor_id=actor_id,
+        field="item.status",
+        old_value=prev_status,
+        new_value=status,
+    )
+    return True
+
+
+def patch_lifecycle(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    stage_key: str,
+    payload: PatchLifecycleIn,
+    actor_id: int,
+) -> str:
+    """UPSERT item_stages row for (item_id, stage_key).
+
+    Returns 'OK', 'NOT_FOUND', or 'INVALID_STAGE_KEY'.
+
+    Writes audit_log and item_edit_log per changed field.
+    Does NOT write to item_status_log — that table is for status changes,
+    not lifecycle date changes (schema drift from spec).
+    """
+    if stage_key not in VALID_STAGE_KEYS:
+        return "INVALID_STAGE_KEY"
+
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return "NOT_FOUND"
+
+    # Fetch current stage row (if any) to capture old values for edit_log
+    existing = db.execute(
+        text(
+            """
+            SELECT due_date, done_date
+            FROM item_stages
+            WHERE item_id = :iid AND stage_key = :sk
+            """
+        ),
+        {"iid": item_id, "sk": stage_key},
+    ).mappings().first()
+
+    old_due = existing["due_date"] if existing else None
+    old_done = existing["done_date"] if existing else None
+
+    # UPSERT: composite PK (item_id, stage_key) guarantees uniqueness
+    db.execute(
+        text(
+            """
+            INSERT INTO item_stages(item_id, stage_key, due_date, done_date)
+            VALUES (:iid, :sk, :due, :done)
+            ON CONFLICT (item_id, stage_key)
+            DO UPDATE SET
+                due_date  = COALESCE(EXCLUDED.due_date,  item_stages.due_date),
+                done_date = COALESCE(EXCLUDED.done_date, item_stages.done_date)
+            """
+        ),
+        {
+            "iid": item_id,
+            "sk": stage_key,
+            "due": payload.due_date,
+            "done": payload.done_date,
+        },
+    )
+    db.flush()
+
+    # Audit and edit_log per changed field
+    audit_payload: dict = {}
+    changes: list[tuple[str, str | None, str | None]] = []
+
+    if payload.due_date is not None and payload.due_date != old_due:
+        field_name = f"lifecycle.{stage_key}.due_date"
+        audit_payload["due_date"] = str(payload.due_date)
+        changes.append((field_name, str(old_due) if old_due else None, str(payload.due_date)))
+
+    if payload.done_date is not None and payload.done_date != old_done:
+        field_name = f"lifecycle.{stage_key}.done_date"
+        audit_payload["done_date"] = str(payload.done_date)
+        changes.append((field_name, str(old_done) if old_done else None, str(payload.done_date)))
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event=f"item.lifecycle.{stage_key}",
+        target=str(item_id),
+        payload=audit_payload,
+    )
+
+    if changes:
+        write_edit_log_many(db, item_id=item_id, actor_id=actor_id, changes=changes)
+
     return "OK"
 
 
