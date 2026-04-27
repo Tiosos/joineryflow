@@ -48,7 +48,7 @@ _ITEM_COLS = """
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
     (
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT hl.line_id)
         FROM item_hardware_lines hl
         JOIN batch_allocations ba ON ba.item_hardware_line_id = hl.line_id
         WHERE hl.item_id = i.item_id

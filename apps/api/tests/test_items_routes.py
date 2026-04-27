@@ -348,3 +348,84 @@ def test_availability_rollup_counts_lines():
     avail = items[0]["availability"]
     assert avail["ready"] == 1
     assert avail["blocked"] == 1
+
+
+def test_availability_rollup_dedups_split_allocations():
+    """A hardware line with 2 batch_allocations rows must count as 1 ready, not 2."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=1)
+
+        # project_hardware_catalog entry
+        cat_id = db.execute(
+            text(
+                """
+                INSERT INTO project_hardware_catalog
+                    (project_id, material_type, material_id, added_by)
+                VALUES (:pid, 'HARDWARE', 1, :uid)
+                RETURNING catalog_id
+                """
+            ),
+            {"pid": pid, "uid": uid},
+        ).scalar()
+
+        # One hardware line on the item
+        line_id = db.execute(
+            text(
+                """
+                INSERT INTO item_hardware_lines(item_id, qty, catalog_id)
+                VALUES (:iid, 2, :cid)
+                RETURNING line_id
+                """
+            ),
+            {"iid": iid, "cid": cat_id},
+        ).scalar()
+
+        # Two procurement batches (split shipments)
+        batch_id_1 = db.execute(
+            text(
+                """
+                INSERT INTO procurement_batches
+                    (project_id, material_type, material_id, qty_ordered)
+                VALUES (:pid, 'HARDWARE', 1, 3)
+                RETURNING batch_id
+                """
+            ),
+            {"pid": pid},
+        ).scalar()
+        batch_id_2 = db.execute(
+            text(
+                """
+                INSERT INTO procurement_batches
+                    (project_id, material_type, material_id, qty_ordered)
+                VALUES (:pid, 'HARDWARE', 1, 2)
+                RETURNING batch_id
+                """
+            ),
+            {"pid": pid},
+        ).scalar()
+
+        # Allocate the same line from two different batches (split delivery)
+        db.execute(
+            text(
+                """
+                INSERT INTO batch_allocations
+                    (batch_id, item_hardware_line_id, qty_allocated)
+                VALUES (:bid1, :lid, 1), (:bid2, :lid, 1)
+                """
+            ),
+            {"bid1": batch_id_1, "bid2": batch_id_2, "lid": line_id},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    r = c.get(f"/projects/{pid}/items")
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    avail = items[0]["availability"]
+    assert avail["ready"] == 1, f"Expected ready=1, got {avail['ready']} (bug: COUNT(*) double-counts split allocations)"
+    assert avail["blocked"] == 0
