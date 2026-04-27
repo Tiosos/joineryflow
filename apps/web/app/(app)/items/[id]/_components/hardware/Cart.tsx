@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type {
@@ -19,6 +19,10 @@ export function Cart({ item, availability, onRefresh }: CartProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [lines, setLines] = useState<HardwareLineOut[]>(item.hardware_lines);
+
+  useEffect(() => {
+    setLines(item.hardware_lines);
+  }, [item.hardware_lines]);
 
   if (lines.length === 0) {
     return (

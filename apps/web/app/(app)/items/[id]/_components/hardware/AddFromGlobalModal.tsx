@@ -76,6 +76,7 @@ export function AddFromGlobalModal({
       await PM.addCatalog(projectId, {
         source_table: activeTable,
         source_id: row.source_id,
+        qty: 1,
       });
       onAdded();
     } catch {

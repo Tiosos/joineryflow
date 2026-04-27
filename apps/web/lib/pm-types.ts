@@ -298,6 +298,7 @@ export interface HardwareCatalogOut {
 export interface AddCatalogIn {
   source_table: SourceTable;
   source_id: number;
+  qty?: number; // default 1 on backend
 }
 
 export interface CreateHardwareLineIn {

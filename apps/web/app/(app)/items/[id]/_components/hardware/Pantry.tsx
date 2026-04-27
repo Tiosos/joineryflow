@@ -79,6 +79,9 @@ export function Pantry({ item, catalog, onOpenModal, onRefresh }: PantryProps) {
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm text-h-ink">{r.name || "—"}</p>
+                  {r.sku && (
+                    <p className="truncate text-xs font-mono text-h-muted">{r.sku}</p>
+                  )}
                   {r.supplier && (
                     <p className="truncate text-xs text-h-muted">{r.supplier}</p>
                   )}
