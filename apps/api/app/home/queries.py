@@ -205,6 +205,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     overdue_count = int(overdue_row["cnt"]) if overdue_row else 0
 
     # metric 2: open_pos — purchase_orders NOT in terminal states
+    # TODO(multi-tenant): purchase_orders has no workspace_id column; this counts across all workspaces. Add workspace_id in a follow-up migration.
     open_pos_row = db.execute(
         text(
             """
@@ -233,6 +234,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     deliveries_week_count = int(deliveries_week_row["cnt"]) if deliveries_week_row else 0
 
     # metric 4: pending_approvals — approval_workflows with status='Pending'
+    # TODO(multi-tenant): approval_workflows has no workspace_id column; same limitation as open_pos above.
     pending_approvals_row = db.execute(
         text(
             """
