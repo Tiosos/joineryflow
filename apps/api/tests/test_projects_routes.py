@@ -158,3 +158,43 @@ def test_list_fav_only_filters_to_favourites():
     assert len(projects) == 1
     assert projects[0]["id"] == pid1
     assert projects[0]["is_favourite"] is True
+
+
+def test_patch_404_for_other_workspace():
+    """PATCH from workspace B on workspace A's project must not mutate it."""
+    c_a, _wid_a, _uid_a = _login("manager")
+    r = c_a.post("/projects", json={"project_code": "WS-A-FIX", "name": "A's project"})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    original_status = r.json()["status"]
+
+    c_b, _wid_b, _uid_b = _login("manager")
+    r2 = c_b.patch(f"/projects/{pid}", json={"status": "Closed"})
+    assert r2.status_code == 404
+
+    # Verify A's project was NOT mutated.
+    r3 = c_a.get(f"/projects/{pid}")
+    assert r3.json()["status"] == original_status
+
+
+def test_patch_pm_id_to_other_workspace_rejected():
+    """Supplying a pm_id that belongs to another workspace must be rejected with 422."""
+    c_a, _wid_a, _uid_a = _login("manager")
+    r = c_a.post("/projects", json={"project_code": "WS-A-PM", "name": "A's project"})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+
+    # uid_b is a user in workspace B — not in workspace A.
+    _c_b, _wid_b, uid_b = _login("manager")
+    r2 = c_a.patch(f"/projects/{pid}", json={"pm_id": uid_b})
+    assert r2.status_code == 422
+
+
+def test_patch_pm_id_explicit_null_rejected():
+    """PATCH with pm_id: null must be rejected with 422 (Pydantic validator)."""
+    c, _wid, _uid = _login("manager")
+    r = c.post("/projects", json={"project_code": "WS-NULL", "name": "X"})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    r2 = c.patch(f"/projects/{pid}", json={"pm_id": None})
+    assert r2.status_code == 422

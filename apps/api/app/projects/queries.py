@@ -14,6 +14,16 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from .schemas import CreateProjectIn, PatchProjectIn
 
+
+def _assert_user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> None:
+    """Raise ValueError if user_id does not belong to workspace_id."""
+    row = db.execute(
+        text("SELECT 1 FROM app_user WHERE id = :u AND workspace_id = :w"),
+        {"u": user_id, "w": workspace_id},
+    ).first()
+    if not row:
+        raise ValueError("pm_id does not belong to this workspace")
+
 # ── Workspace-scoping clause ──────────────────────────────────────────────────
 # Projects have no workspace_id column.  We scope via: projects whose pm_id
 # belongs to the requesting workspace, OR projects with no pm_id assigned yet.
@@ -101,6 +111,9 @@ def create_project(
     payload: CreateProjectIn,
     actor_id: int,
 ) -> int:
+    if payload.pm_id is not None:
+        _assert_user_in_workspace(db, user_id=payload.pm_id, workspace_id=workspace_id)
+
     row = db.execute(
         text(
             """
@@ -155,14 +168,31 @@ def patch_project(
             current_user_id=actor_id,
         )
 
+    # CRITICAL #2: validate pm_id belongs to this workspace before any write.
+    if "pm_id" in fields and fields["pm_id"] is not None:
+        _assert_user_in_workspace(db, user_id=fields["pm_id"], workspace_id=workspace_id)
+
     set_clauses = ", ".join(
         f"{_PATCH_COL_MAP[k]} = :{k}" for k in fields if k in _PATCH_COL_MAP
     )
-    params = {**fields, "pid": project_id}
-    db.execute(
-        text(f"UPDATE projects SET {set_clauses} WHERE project_id = :pid"),
+    # CRITICAL #1: scope the UPDATE to this workspace via the pm_id subquery.
+    # If 0 rows affected the project either doesn't exist or belongs to another workspace.
+    params = {**fields, "pid": project_id, "wid": workspace_id}
+    result = db.execute(
+        text(
+            f"""
+            UPDATE projects
+               SET {set_clauses}
+             WHERE project_id = :pid
+               AND pm_id IN (
+                   SELECT id FROM app_user WHERE workspace_id = :wid
+               )
+            """
+        ),
         params,
     )
+    if result.rowcount == 0:
+        return None
 
     # One audit row per changed field.
     for field_name, new_val in fields.items():

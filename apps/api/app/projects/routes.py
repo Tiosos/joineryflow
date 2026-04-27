@@ -55,12 +55,15 @@ def create_project_route(
     if body.pm_id is None:
         body = body.model_copy(update={"pm_id": user.id})
 
-    new_id = create_project(
-        db,
-        workspace_id=user.workspace_id,
-        payload=body,
-        actor_id=user.id,
-    )
+    try:
+        new_id = create_project(
+            db,
+            workspace_id=user.workspace_id,
+            payload=body,
+            actor_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     db.commit()
 
     row = get_project(
@@ -84,13 +87,16 @@ def patch_project_route(
     if user.auth_role not in ("manager", "admin"):
         raise HTTPException(status_code=403, detail="manager or admin required")
 
-    row = patch_project(
-        db,
-        project_id=pid,
-        workspace_id=user.workspace_id,
-        payload=body,
-        actor_id=user.id,
-    )
+    try:
+        row = patch_project(
+            db,
+            project_id=pid,
+            workspace_id=user.workspace_id,
+            payload=body,
+            actor_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not row:
         raise HTTPException(status_code=404, detail="project not found")
     db.commit()
