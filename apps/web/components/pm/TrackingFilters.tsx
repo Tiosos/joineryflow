@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const STATUS_OPTIONS = ["", "CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"] as const;
@@ -16,10 +16,6 @@ export function TrackingFilters() {
   const [stage, setStage] = useState(params.get("stage") ?? "");
   const [query, setQuery] = useState(params.get("q") ?? "");
 
-  // Track whether this is the first mount so the debounce doesn't fire
-  // immediately on mount (which would cancel any concurrent navigation).
-  const hasMounted = useRef(false);
-
   function pushParams(updates: Record<string, string>) {
     const next = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(updates)) {
@@ -29,14 +25,13 @@ export function TrackingFilters() {
     router.push(`?${next.toString()}`);
   }
 
-  // Debounce free-text search — skip on initial mount to avoid pushing
-  // the same URL that was just loaded (which would cancel any concurrent
-  // navigation away from this page).
+  // Debounce free-text search. Skip the push when the debounced value
+  // already matches the URL — otherwise this fires on mount and on
+  // unrelated route transitions, which can cancel an in-flight
+  // navigation away from /tracking.
   useEffect(() => {
-    if (!hasMounted.current) {
-      hasMounted.current = true;
-      return;
-    }
+    const current = params.get("q") ?? "";
+    if (query === current) return;
     const t = setTimeout(() => pushParams({ q: query }), 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
