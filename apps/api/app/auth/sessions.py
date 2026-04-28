@@ -24,6 +24,7 @@ class AuthUser:
     email: str
     full_name: str
     auth_role: str
+    jtbd_role: str | None = None
 
 
 def _h(token: str) -> bytes:
@@ -54,7 +55,7 @@ def lookup_session(db: Session, token: str) -> AuthUser:
         text(
             """
             SELECT s.user_id, s.last_seen_at, s.hard_expires_at, s.revoked_at,
-                   u.workspace_id, u.email, u.full_name, u.auth_role, u.is_active
+                   u.workspace_id, u.email, u.full_name, u.auth_role, u.jtbd_role, u.is_active
             FROM session s
             JOIN app_user u ON u.id = s.user_id
             WHERE s.token_hash = :h
@@ -79,6 +80,7 @@ def lookup_session(db: Session, token: str) -> AuthUser:
         email=row["email"],
         full_name=row["full_name"],
         auth_role=row["auth_role"],
+        jtbd_role=row["jtbd_role"],
     )
 
 

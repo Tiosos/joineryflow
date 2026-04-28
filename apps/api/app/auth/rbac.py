@@ -38,3 +38,20 @@ def require_permission(module: str, action: str):
         return user
 
     return _dep
+
+
+def require_drafter():
+    """Allow only auth_role in {drafter, manager, admin}.
+
+    Use for the spec §2.4 invariant 5 — narrow gate on item / module /
+    part / hardware_line / project_hardware_catalog mutations."""
+
+    def _dep(user: AuthUser = Depends(current_user)) -> AuthUser:
+        if user.auth_role not in ("drafter", "manager", "admin"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="drafter, manager, or admin required",
+            )
+        return user
+
+    return _dep

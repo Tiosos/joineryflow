@@ -16,7 +16,7 @@ test("login → six tabs → logout", async ({ page }) => {
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
 
-  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
 
   for (const label of [
     "Dashboard",
@@ -26,7 +26,7 @@ test("login → six tabs → logout", async ({ page }) => {
     "iSample",
     "Orderbook",
   ]) {
-    await expect(page.getByRole("link", { name: label })).toBeVisible();
+    await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
 
   await page.click('button:has-text("Sign out")');

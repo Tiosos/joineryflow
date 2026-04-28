@@ -6,7 +6,7 @@ truth for what each role can do per IA module; it is consulted by the
 """
 from typing import Literal
 
-Role = Literal["admin", "manager", "editor", "purchase_officer", "viewer"]
+Role = Literal["admin", "manager", "editor", "drafter", "purchase_officer", "viewer"]
 Module = Literal[
     "dashboard",
     "tracking",
@@ -41,6 +41,15 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         for m in ("dashboard", "tracking", "list", "shop_dwgs", "isample")
     }
     | {"orderbook": {"read", "comment"}, "it_management": set()},
+    "drafter": {
+        "dashboard":     {"read"},
+        "tracking":      {"read", "write", "approve", "comment"},
+        "list":          {"read", "write", "approve", "comment"},
+        "shop_dwgs":     {"read"},
+        "isample":       {"read"},
+        "orderbook":     {"read"},
+        "it_management": set(),
+    },
     "purchase_officer": {
         "dashboard": {"read"},
         "tracking": {"read", "comment"},

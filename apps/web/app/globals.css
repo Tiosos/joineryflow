@@ -7,6 +7,9 @@
   --h-muted: oklch(55% 0.02 95);
   --h-line: oklch(90% 0.005 95);
   --h-accent: oklch(56% 0.15 150);
+  --h-good: oklch(64% 0.18 145);
+  --h-warn: oklch(75% 0.18 80);
+  --h-bad: oklch(58% 0.20 25);
 }
 
 @theme inline {
@@ -16,6 +19,9 @@
   --color-h-muted: var(--h-muted);
   --color-h-line: var(--h-line);
   --color-h-accent: var(--h-accent);
+  --color-h-good: var(--h-good);
+  --color-h-warn: var(--h-warn);
+  --color-h-bad: var(--h-bad);
   --font-sans: var(--font-geist-sans, system-ui, sans-serif);
   --font-mono: var(--font-geist-mono, ui-monospace, monospace);
 }

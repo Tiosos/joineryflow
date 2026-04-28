@@ -13,6 +13,9 @@ export const H = {
   muted: "var(--color-h-muted)",
   line: "var(--color-h-line)",
   accent: "var(--color-h-accent)",
+  good: "var(--color-h-good)",
+  warn: "var(--color-h-warn)",
+  bad: "var(--color-h-bad)",
 } as const;
 
 export type HToken = keyof typeof H;

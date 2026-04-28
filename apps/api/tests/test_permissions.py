@@ -25,3 +25,16 @@ CASES = [
 @pytest.mark.parametrize("role,module,action,expected", CASES)
 def test_matrix(role, module, action, expected):
     assert has_permission(role, module, action) is expected
+
+
+@pytest.mark.parametrize("module,action,allowed", [
+    ("dashboard",     "read",    True),
+    ("tracking",      "write",   True),
+    ("tracking",      "approve", True),
+    ("list",          "write",   True),
+    ("shop_dwgs",     "write",   False),
+    ("orderbook",     "approve", False),
+    ("it_management", "read",    False),
+])
+def test_drafter_matrix(module, action, allowed):
+    assert has_permission("drafter", module, action) is allowed

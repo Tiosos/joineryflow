@@ -84,3 +84,11 @@ def test_patch_rejects_bad_auth_role():
     me = c.get("/auth/me").json()
     r = c.patch(f"/users/{me['id']}", json={"auth_role": "godking"})
     assert r.status_code == 400
+
+
+def test_patch_accepts_drafter_auth_role():
+    c, _, _ = _login("admin")
+    me = c.get("/auth/me").json()
+    r = c.patch(f"/users/{me['id']}", json={"auth_role": "drafter"})
+    assert r.status_code == 200
+    assert r.json()["auth_role"] == "drafter"

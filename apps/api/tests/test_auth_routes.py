@@ -80,3 +80,36 @@ def test_login_unknown_user():
         json={"workspace_slug": "nope", "email": "nope@example.com", "password": "x"},
     )
     assert r.status_code == 401
+
+
+def test_me_includes_jtbd_role():
+    suffix = uuid.uuid4().hex[:8]
+    slug = f"h-{suffix}"
+    email = f"d-{suffix}@example.com"
+    db = SessionLocal()
+    try:
+        wid = db.execute(
+            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
+            {"s": slug},
+        ).scalar()
+        db.execute(
+            text(
+                """
+                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role, jtbd_role)
+                VALUES (:w, :e, 'Drafter User', :p, 'drafter', 'Drafter')
+                """
+            ),
+            {"w": wid, "e": email, "p": hash_password("pw")},
+        )
+        db.commit()
+    finally:
+        db.close()
+    c = TestClient(app)
+    r = c.post(
+        "/auth/login",
+        json={"workspace_slug": slug, "email": email, "password": "pw"},
+    )
+    assert r.status_code == 200, r.text
+    r2 = c.get("/auth/me")
+    assert r2.status_code == 200
+    assert r2.json()["jtbd_role"] == "Drafter"

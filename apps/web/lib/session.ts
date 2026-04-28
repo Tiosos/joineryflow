@@ -8,7 +8,7 @@ export type Me = {
   workspace_id: number;
   email: string;
   full_name: string;
-  auth_role: "admin" | "manager" | "editor" | "purchase_officer" | "viewer";
+  auth_role: "admin" | "manager" | "editor" | "drafter" | "purchase_officer" | "viewer";
 };
 
 export async function getSessionCookie(): Promise<string | null> {

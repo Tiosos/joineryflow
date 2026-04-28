@@ -10,19 +10,19 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, 6-tab chrome, server-side proxy.
-- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth, 0005 procurement_user_profile, 0006 procurement views, 0007 material catalog hybrid).
+- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth, 0005 procurement_user_profile, 0006 procurement views, 0007 material catalog hybrid, 0008 drafter role widening, 0009 app_user repoint + projects.pm_id).
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 8 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only.
-- `tests/e2e/` — Playwright smoke spec.
+- `tests/e2e/` — Playwright specs: `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts` (PM happy path), `drafter_editor.spec.ts` (drafter happy path).
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 
 ## Foundation dev loop
 
 ```
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
-make migrate      # apply Alembic 0001 -> 0007
-make seed         # create hartwood-joinery workspace + 8 users (dev password: hartwood-dev)
-make test         # pytest in api container (34 tests)
+make migrate      # apply Alembic 0001 -> 0009
+make seed         # create hartwood-joinery workspace + 8 users + 2 projects + ~40 items/modules/parts/hardware (dev password: hartwood-dev)
+make test         # pytest in api container (~74 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
@@ -88,3 +88,19 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
 - `docs/superpowers/specs/2026-04-22-foundation-design.md` — Foundation spec.
 - `docs/superpowers/plans/2026-04-22-foundation.md` — 31-task implementation plan (tracks all build decisions).
+- `docs/superpowers/specs/2026-04-25-pm-workbench-design.md` — PM Workbench + Drafter Editor spec (sub-projects #2 + #3).
+- `docs/superpowers/plans/2026-04-25-pm-workbench.md` — 33-task implementation plan for sub-projects #2 + #3.
+
+## PM Workbench (sub-project #2 + #3)
+
+- Lives on top of Foundation; migrations 0008 (drafter role widening) + 0009 (legacy users -> app_user repoint, projects.pm_id, drop users).
+- Drafter-narrow gate: `require_drafter()` — items / modules / parts / hardware_lines / project_hardware_catalog mutations only allow `auth_role IN {drafter, manager, admin}`.
+- New routers under `apps/api/app/{home, projects, items, parts, hardware_lines}/`. Mounted in `main.py`.
+- Every item-scoped mutation writes both `audit_log` (workspace governance) and `item_edit_log` (item history) in the same DB transaction. Helper: `apps/api/app/edit_log.py`.
+- Web routes: `/home` (default landing, replaces `/dashboard`), `/projects`, `/tracking?project_id=`, `/items/[id]?tab=cutlist|hardware|board|log`.
+- Editor mode is detected by middleware writing `x-pathname`; layout reads it and hides TabStrip + SideBar, swapping in a "← Return to home" link.
+- State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
+- Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`.
+- PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
+- Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
+- Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
