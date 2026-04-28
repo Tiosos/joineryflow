@@ -385,31 +385,25 @@ def main() -> None:
                 for seq_idx, (part_name, len_mm, wid_mm, bm_idx) in enumerate(PARTS_TEMPLATE):
                     bm_id = board_material_ids[bm_idx]
                     seq_num = seq_idx + 1
-                    exists = db.execute(
+                    db.execute(
                         text(
-                            "SELECT 1 FROM parts WHERE module_id=:mid AND seq=:seq LIMIT 1"
+                            """
+                            INSERT INTO parts
+                                (module_id, seq, qty, part_name, len_mm, wid_mm,
+                                 board_material_id, paint_instruction)
+                            VALUES (:mid, :seq, 1, :name, :len, :wid, :bm, 'NONE')
+                            ON CONFLICT (module_id, seq) DO NOTHING
+                            """
                         ),
-                        {"mid": mod_id, "seq": seq_num},
-                    ).scalar()
-                    if not exists:
-                        db.execute(
-                            text(
-                                """
-                                INSERT INTO parts
-                                    (module_id, seq, qty, part_name, len_mm, wid_mm,
-                                     board_material_id, paint_instruction)
-                                VALUES (:mid, :seq, 1, :name, :len, :wid, :bm, 'NONE')
-                                """
-                            ),
-                            {
-                                "mid":  mod_id,
-                                "seq":  seq_num,
-                                "name": part_name,
-                                "len":  len_mm,
-                                "wid":  wid_mm,
-                                "bm":   bm_id,
-                            },
-                        )
+                        {
+                            "mid":  mod_id,
+                            "seq":  seq_num,
+                            "name": part_name,
+                            "len":  len_mm,
+                            "wid":  wid_mm,
+                            "bm":   bm_id,
+                        },
+                    )
 
                 # --- item_stages (5 per item) ---
                 for stage_key, due_offset, done_offset in LIFECYCLE_PROGRESS:
@@ -434,27 +428,21 @@ def main() -> None:
                 # --- item_hardware_lines (2 per item, using first 2 catalog entries) ---
                 for hw_seq, cat_id in enumerate(catalog_ids[:2]):
                     seq_num = hw_seq + 1
-                    exists = db.execute(
+                    db.execute(
                         text(
-                            "SELECT 1 FROM item_hardware_lines WHERE item_id=:iid AND seq=:seq LIMIT 1"
+                            """
+                            INSERT INTO item_hardware_lines
+                                (item_id, seq, qty, catalog_id)
+                            VALUES (:iid, :seq, 1, :cid)
+                            ON CONFLICT (item_id, seq) DO NOTHING
+                            """
                         ),
-                        {"iid": item_id, "seq": seq_num},
-                    ).scalar()
-                    if not exists:
-                        db.execute(
-                            text(
-                                """
-                                INSERT INTO item_hardware_lines
-                                    (item_id, seq, qty, catalog_id)
-                                VALUES (:iid, :seq, 1, :cid)
-                                """
-                            ),
-                            {
-                                "iid": item_id,
-                                "seq": seq_num,
-                                "cid": cat_id,
-                            },
-                        )
+                        {
+                            "iid": item_id,
+                            "seq": seq_num,
+                            "cid": cat_id,
+                        },
+                    )
 
         db.commit()
         print(
