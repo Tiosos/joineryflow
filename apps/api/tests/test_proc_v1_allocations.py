@@ -322,3 +322,27 @@ def test_cross_project_line_rejected():
         json={"item_hardware_line_id": other_line, "qty_allocated": 1},
     )
     assert r.status_code == 400, r.text
+
+
+def test_allocation_list_summary():
+    """GET /batches/{bid}/allocations returns summary qty_received/allocated_total/remaining."""
+    c, wid, uid = _login("manager")
+    s = _seed_alloc_setup(wid=wid, uid=uid)
+
+    # POST 1 allocation with qty=3
+    c.post(
+        f"/batches/{s['batch_id']}/allocations",
+        json={"item_hardware_line_id": s["line_id"], "qty_allocated": 3},
+    )
+
+    # GET the batch allocations list
+    r = c.get(f"/batches/{s['batch_id']}/allocations")
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    # Verify summary fields
+    assert float(body["qty_received"]) == 5
+    assert float(body["qty_allocated_total"]) == 3
+    assert float(body["qty_remaining"]) == 2
+    assert len(body["allocations"]) == 1
+    assert body["allocations"][0]["item_description"] == "Test item"
