@@ -90,6 +90,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-04-22-foundation.md` — 31-task implementation plan (tracks all build decisions).
 - `docs/superpowers/specs/2026-04-25-pm-workbench-design.md` — PM Workbench + Drafter Editor spec (sub-projects #2 + #3).
 - `docs/superpowers/plans/2026-04-25-pm-workbench.md` — 33-task implementation plan for sub-projects #2 + #3.
+- `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md` — Procurement Workbench v1 spec (sub-project #4).
+- `docs/superpowers/plans/2026-04-28-procurement-workbench.md` — 24-task implementation plan for sub-project #4.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -104,3 +106,37 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
 - Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
+
+## Procurement Workbench (sub-project #4)
+
+- New backend module `apps/api/app/procurement_v1/` mounted at top-level paths
+  (`/projects/{pid}/materials`, `/batches`, `/batches/{bid}/allocations`,
+  `/catalogs/{type}`, `/procurement-queue`). The legacy `/procurement/*`
+  namespace (orders, vendors, budget, approvals) is **left untouched** and is
+  not used by the v1 product surface.
+- Migration 0012 adds `procurement_batches.cancelled_at` and two indexes
+  (`idx_batches_supplier`, `idx_alloc_batch`).
+- `drafter` auth_role is **elevated to PM-parity** on the `orderbook` module
+  (read+write+approve+comment) — this widens the matrix narrowed in 0008.
+- Web routes:
+  - `/orderbook` — cross-project queue grouped by supplier.
+  - `/projects/[id]/procurement?tab=materials|batches|catalog` — project
+    Procurement page.
+  - `/tracking` adds an item-scoped `AvailabilityDrawer` triggered by
+    clicking the availability chip; URL state
+    `?drawer=item-availability&itemId=N`.
+- Soft-cancel semantics: DELETE on `/batches/{bid}` sets `cancelled_at`. A
+  batch with non-zero allocations returns 409 — the user must remove
+  allocations first.
+- Allocation over-commit: POST/PATCH on `/allocations` returns 409 when
+  `sum(allocated) > qty_received` (or `qty_ordered` if not yet received).
+- Status pill is **derived in SQL** via `CASE`; never persisted.
+- All 6 catalog tables use `description` as the readable name and `sku` as
+  the SKU (added by migration 0007). Each also has a legacy NOT NULL UNIQUE
+  column: `code` (board), `internal_ref` (custom_made), `slab_id`
+  (benchtop), `model_number` (appliance), `contract_ref` (equipment_hire).
+  `equipment_hire` PK is `hire_id`, not `material_id`, and requires a
+  `project_id` FK on insert.
+- Seed (`make seed`) inserts one delivered batch + one in-transit batch +
+  one allocation on project ALF-001 so the resolution-flow demo works
+  out of the box.
