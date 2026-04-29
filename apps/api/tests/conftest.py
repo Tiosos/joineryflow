@@ -31,6 +31,8 @@ def workspace_id(db):
 
 
 TRUNCATE_TABLES = (
+    "batch_allocations",
+    "procurement_batches",
     "project_hardware_catalog_log",
     "project_hardware_catalog",
     "item_hardware_lines",
