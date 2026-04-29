@@ -163,3 +163,97 @@ def test_no_insertable_fields_returns_422():
     r = c.post("/catalogs/hardware", json={"bogus": "x"})
     assert r.status_code == 422, r.text
     assert "no insertable fields supplied" in r.json().get("detail", "").lower()
+
+
+# ── Parametrised smoke tests for all 6 catalog types ───────────────────────────
+
+
+@pytest.mark.parametrize(
+    "type_,payload_builder",
+    [
+        (
+            "board",
+            lambda: {
+                "code": f"MDF18-{uuid.uuid4().hex[:8]}",
+                "description": "MDF 18mm",
+                "sku": f"BD-{uuid.uuid4().hex[:8]}",
+            },
+        ),
+        (
+            "hardware",
+            lambda: {
+                "sku": f"HW-{uuid.uuid4().hex[:8]}",
+                "description": "Hinge",
+            },
+        ),
+        (
+            "custom_made",
+            lambda: {
+                "internal_ref": f"CM-{uuid.uuid4().hex[:8]}",
+                "description": "Custom panel",
+                "sku": f"CM-{uuid.uuid4().hex[:8]}",
+            },
+        ),
+        (
+            "benchtop",
+            lambda: {
+                "slab_id": f"SLAB-{uuid.uuid4().hex[:8]}",
+                "description": "Caesarstone slab",
+                "sku": f"BT-{uuid.uuid4().hex[:8]}",
+            },
+        ),
+        (
+            "appliance",
+            lambda: {
+                "model_number": f"BSMS-{uuid.uuid4().hex[:8]}",
+                "description": "Bosch SMS",
+                "sku": f"AP-{uuid.uuid4().hex[:8]}",
+            },
+        ),
+        (
+            "hire",
+            lambda: {
+                "contract_ref": f"HIRE-{uuid.uuid4().hex[:8]}",
+                "description": "Scissor lift 1 day",
+                "sku": f"HR-{uuid.uuid4().hex[:8]}",
+            },
+        ),
+    ],
+)
+def test_smoke_all_catalog_types(type_: str, payload_builder):
+    """Smoke test: POST /catalogs/{type_} and GET /catalogs/{type_} for all 6 types."""
+    c, _wid, uid = _login("admin")
+    payload = payload_builder()
+
+    # For hire, we must insert a project first (equipment_hire.project_id NOT NULL FK).
+    if type_ == "hire":
+        db = SessionLocal()
+        try:
+            project_id = db.execute(
+                text(
+                    "INSERT INTO projects(project_code, name, pm_id) "
+                    "VALUES(:code, 'Smoke', :uid) RETURNING project_id"
+                ),
+                {"code": f"SMOKE-{uuid.uuid4().hex[:8]}", "uid": uid},
+            ).scalar()
+            db.commit()
+        finally:
+            db.close()
+        payload["project_id"] = project_id
+
+    # POST to create
+    r = c.post(f"/catalogs/{type_}", json=payload)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["type"] == type_
+    assert body["description"] == payload["description"]
+    mid = body.get("material_id") or body.get("hire_id")
+    assert mid is not None
+
+    # GET /catalogs/{type_} and verify our row is listed
+    r = c.get(f"/catalogs/{type_}")
+    assert r.status_code == 200, r.text
+    listing = r.json()
+    assert listing["type"] == type_
+    # Verify the description is in at least one row
+    assert any(row.get("description") == payload["description"] for row in listing["rows"])
