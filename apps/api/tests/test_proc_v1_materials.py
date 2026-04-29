@@ -267,6 +267,43 @@ def test_project_materials_404_for_unknown_project():
     assert r.status_code == 404
 
 
+def test_item_availability_includes_per_line_procurement():
+    """GET /items/{iid}/availability returns per-line procurement metadata.
+
+    Re-uses the golden project from Task 5: 1 hardware line (qty=5),
+    one delivered batch (qty_received=3), one in-transit batch (qty_ordered=4),
+    one allocation (qty_allocated=2).
+    """
+    c, wid, uid = _login("manager")
+    db = SessionLocal()
+    try:
+        pid = _seed_golden_project(db, wid=wid, uid=uid)
+        # Resolve the seeded item_id and material_id for this project.
+        item_id = db.execute(
+            text("SELECT item_id FROM items WHERE project_id = :p"),
+            {"p": pid},
+        ).scalar()
+        material_id = db.execute(
+            text("SELECT material_id FROM hardware_materials WHERE workspace_id = :w"),
+            {"w": wid},
+        ).scalar()
+    finally:
+        db.close()
+
+    r = c.get(f"/items/{item_id}/availability")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "lines" in data
+    assert len(data["lines"]) == 1
+    line = data["lines"][0]
+    assert float(line["qty_needed"])            == 5
+    assert float(line["qty_received"])          == 3
+    assert float(line["qty_on_order"])          == 4
+    assert float(line["qty_allocated_to_line"]) == 2
+    assert line["material_type"] == "HARDWARE"
+    assert line["material_id"]   == material_id
+
+
 def test_project_materials_workspace_isolated():
     """A user in workspace A cannot see a project owned by workspace B (gets 404)."""
     # Workspace A: requesting user

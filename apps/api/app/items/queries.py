@@ -229,36 +229,87 @@ def get_item_availability(
         return None
 
     # Aggregate per hardware line.
+    #
+    # Procurement Workbench v1: enrich each line with per-line procurement
+    # metadata. The base CTE preserves the original status/eta/batch_id semantics
+    # (PM Workbench contract). Additional joins/LATERAL subqueries surface:
+    #   - seq, catalog_id, qty_needed       from item_hardware_lines
+    #   - material_type, material_id        from project_hardware_catalog
+    #   - qty_on_order / qty_received       summed from procurement_batches
+    #                                       (project + material scoped, open=not received/cancelled)
+    #   - earliest_eta                      MIN(eta_date) over open batches
+    #   - qty_allocated_to_line             SUM(qty_allocated) for this specific line
     line_rows = db.execute(
         text(
             """
             WITH lines AS (
-                SELECT hl.line_id
+                SELECT hl.line_id, hl.item_id, hl.seq, hl.qty AS qty_needed,
+                       hl.catalog_id
                 FROM item_hardware_lines hl
                 WHERE hl.item_id = :iid
+            ),
+            base AS (
+                SELECT
+                    l.line_id,
+                    CASE
+                        WHEN COUNT(pb.batch_id) FILTER (
+                            WHERE pb.received_date IS NOT NULL
+                        ) > 0 THEN 'ready'
+                        WHEN COUNT(ba.allocation_id) > 0 THEN 'ordered'
+                        ELSE 'none'
+                    END                                                 AS status,
+                    MAX(pb.eta_date)                                    AS eta,
+                    (
+                        ARRAY_AGG(
+                            pb.batch_id
+                            ORDER BY pb.eta_date DESC NULLS LAST
+                        )
+                    )[1]                                                AS batch_id
+                FROM lines l
+                LEFT JOIN batch_allocations ba
+                       ON ba.item_hardware_line_id = l.line_id
+                LEFT JOIN procurement_batches pb
+                       ON pb.batch_id = ba.batch_id
+                GROUP BY l.line_id
             )
             SELECT
                 l.line_id,
-                CASE
-                    WHEN COUNT(pb.batch_id) FILTER (
-                        WHERE pb.received_date IS NOT NULL
-                    ) > 0 THEN 'ready'
-                    WHEN COUNT(ba.allocation_id) > 0 THEN 'ordered'
-                    ELSE 'none'
-                END                                                     AS status,
-                MAX(pb.eta_date)                                        AS eta,
-                (
-                    ARRAY_AGG(
-                        pb.batch_id
-                        ORDER BY pb.eta_date DESC NULLS LAST
-                    )
-                )[1]                                                    AS batch_id
+                l.seq,
+                l.catalog_id,
+                l.qty_needed,
+                phc.material_type,
+                phc.material_id,
+                b.status,
+                b.eta,
+                b.batch_id,
+                COALESCE(mat.qty_received, 0)                           AS qty_received,
+                COALESCE(mat.qty_on_order, 0)                           AS qty_on_order,
+                mat.earliest_eta                                        AS earliest_eta,
+                COALESCE(alloc.qty_allocated_to_line, 0)                AS qty_allocated_to_line
             FROM lines l
-            LEFT JOIN batch_allocations ba
-                   ON ba.item_hardware_line_id = l.line_id
-            LEFT JOIN procurement_batches pb
-                   ON pb.batch_id = ba.batch_id
-            GROUP BY l.line_id
+            JOIN base b USING (line_id)
+            JOIN items i ON i.item_id = l.item_id
+            LEFT JOIN project_hardware_catalog phc
+                   ON phc.catalog_id = l.catalog_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    SUM(pb2.qty_received)                               AS qty_received,
+                    SUM(pb2.qty_ordered)
+                      FILTER (WHERE pb2.received_date IS NULL
+                              AND pb2.cancelled_at IS NULL)             AS qty_on_order,
+                    MIN(pb2.eta_date)
+                      FILTER (WHERE pb2.received_date IS NULL
+                              AND pb2.cancelled_at IS NULL)             AS earliest_eta
+                FROM procurement_batches pb2
+                WHERE pb2.project_id    = i.project_id
+                  AND pb2.material_type = phc.material_type
+                  AND pb2.material_id   = phc.material_id
+            ) mat ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT SUM(ba2.qty_allocated)                           AS qty_allocated_to_line
+                FROM batch_allocations ba2
+                WHERE ba2.item_hardware_line_id = l.line_id
+            ) alloc ON TRUE
             ORDER BY l.line_id
             """
         ),
@@ -271,6 +322,15 @@ def get_item_availability(
             "status": r["status"],
             "eta": r["eta"],
             "batch_id": r["batch_id"],
+            "seq": r["seq"],
+            "catalog_id": r["catalog_id"],
+            "material_type": r["material_type"],
+            "material_id": r["material_id"],
+            "qty_needed": r["qty_needed"],
+            "qty_received": r["qty_received"],
+            "qty_on_order": r["qty_on_order"],
+            "qty_allocated_to_line": r["qty_allocated_to_line"],
+            "earliest_eta": r["earliest_eta"],
         }
         for r in line_rows
     ]

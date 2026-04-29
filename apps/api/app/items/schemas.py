@@ -11,6 +11,7 @@ Column aliasing note (legacy FileMaker schema -> API contract):
   items.solid_surface_req -> solid_surface_required
 """
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
@@ -109,6 +110,18 @@ class AvailabilityLine(BaseModel):
     status: Literal["ready", "ordered", "none"]
     eta: date | None
     batch_id: int | None
+    # Procurement Workbench v1 — additive per-line procurement metadata
+    seq: int | None = None
+    catalog_id: int | None = None
+    material_type: Literal[
+        "BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE"
+    ] | None = None
+    material_id: int | None = None
+    qty_needed: Decimal = Decimal("0")
+    qty_received: Decimal = Decimal("0")
+    qty_on_order: Decimal = Decimal("0")
+    qty_allocated_to_line: Decimal = Decimal("0")
+    earliest_eta: date | None = None
 
 
 class AvailabilityOut(BaseModel):
