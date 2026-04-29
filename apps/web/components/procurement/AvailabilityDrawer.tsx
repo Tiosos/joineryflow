@@ -25,9 +25,10 @@ interface AvailabilityResponse {
 interface Props {
   itemId: number | null;
   onClose: () => void;
+  projectId?: number;
 }
 
-export function AvailabilityDrawer({ itemId, onClose }: Props) {
+export function AvailabilityDrawer({ itemId, onClose, projectId }: Props) {
   const [data, setData] = useState<AvailabilityResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +159,23 @@ export function AvailabilityDrawer({ itemId, onClose }: Props) {
                     {l.earliest_eta && (
                       <div className="mt-2">
                         <EtaPill eta={l.earliest_eta} />
+                      </div>
+                    )}
+                    {projectId != null && l.material_id != null && (
+                      <div className="mt-2 flex gap-2">
+                        <a
+                          href={`/projects/${projectId}/procurement?tab=batches&action=order&material_type=${l.material_type}&material_id=${l.material_id}&line_id=${l.line_id}`}
+                          data-testid="order-more"
+                          className="rounded bg-h-accent px-2 py-1 text-xs text-white hover:opacity-90"
+                        >
+                          Order more
+                        </a>
+                        <a
+                          href={`/projects/${projectId}/procurement?tab=batches&action=allocate&material_type=${l.material_type}&material_id=${l.material_id}&line_id=${l.line_id}`}
+                          className="rounded border border-h-line px-2 py-1 text-xs text-h-ink hover:bg-h-surface"
+                        >
+                          Allocate
+                        </a>
                       </div>
                     )}
                   </li>

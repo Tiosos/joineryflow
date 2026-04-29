@@ -49,7 +49,7 @@ export function TrackingClient({ items, canEdit, projectId }: Props) {
         canEdit={canEdit}
         onOpenAvailability={openAvailability}
       />
-      <AvailabilityDrawer itemId={drawerItemId} onClose={closeDrawer} />
+      <AvailabilityDrawer itemId={drawerItemId} onClose={closeDrawer} projectId={projectId} />
     </>
   );
 }
