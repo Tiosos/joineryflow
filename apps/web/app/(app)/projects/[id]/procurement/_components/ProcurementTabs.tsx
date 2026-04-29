@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import ProjectMaterialsTable from "./ProjectMaterialsTable";
+import { ProjectMaterialsTable } from "./ProjectMaterialsTable";
 import BatchesTable from "./BatchesTable";
 import CatalogTabs from "./CatalogTabs";
 
@@ -44,7 +44,7 @@ export default function ProcurementTabs({
 
       <div className="flex-1 overflow-auto">
         {activeTab === "materials" && (
-          <ProjectMaterialsTable projectId={projectId} userRole={userRole} />
+          <ProjectMaterialsTable projectId={Number(projectId)} canWrite={userRole !== "viewer"} sp={{}} />
         )}
         {activeTab === "batches" && (
           <BatchesTable projectId={projectId} userRole={userRole} />
