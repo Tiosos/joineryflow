@@ -16,6 +16,7 @@ export const H = {
   good: "var(--color-h-good)",
   warn: "var(--color-h-warn)",
   bad: "var(--color-h-bad)",
+  mono: "h-mono",
 } as const;
 
 export type HToken = keyof typeof H;

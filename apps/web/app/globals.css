@@ -31,3 +31,11 @@ body {
   color: var(--h-ink);
   font-family: var(--font-sans);
 }
+
+@layer utilities {
+  .h-mono {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.005em;
+  }
+}
