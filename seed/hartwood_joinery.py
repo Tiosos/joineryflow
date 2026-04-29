@@ -444,6 +444,61 @@ def main() -> None:
                         },
                     )
 
+        # --- procurement_v1 demo: 1 delivered + 1 in-transit batch + 1 allocation ---
+        proj_alfred_id = db.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+
+        catalog_first = db.execute(text(
+            "SELECT phc.catalog_id, phc.material_type, phc.material_id "
+            "  FROM project_hardware_catalog phc "
+            " WHERE phc.project_id = :p ORDER BY phc.catalog_id LIMIT 1"
+        ), {"p": proj_alfred_id}).mappings().first()
+
+        if catalog_first:
+            line_first = db.execute(text(
+                "SELECT ihl.line_id, ihl.qty FROM item_hardware_lines ihl "
+                "  JOIN items i ON i.item_id = ihl.item_id "
+                " WHERE i.project_id = :p AND ihl.catalog_id = :c "
+                " ORDER BY ihl.line_id LIMIT 1"
+            ), {"p": proj_alfred_id, "c": catalog_first["catalog_id"]}).mappings().first()
+
+            if line_first:
+                delivered_id = db.execute(text(
+                    "INSERT INTO procurement_batches "
+                    "  (project_id, material_type, material_id, supplier, po_ref, "
+                    "   qty_ordered, qty_received, ordered_date, received_date) "
+                    "VALUES (:p, :mt, :mid, 'Acme Hardware', 'PO-ALF-001', "
+                    "        :qty, :qty, CURRENT_DATE - 14, CURRENT_DATE - 1) "
+                    "ON CONFLICT DO NOTHING "
+                    "RETURNING batch_id"
+                ), {
+                    "p":   proj_alfred_id,
+                    "mt":  catalog_first["material_type"],
+                    "mid": catalog_first["material_id"],
+                    "qty": int(line_first["qty"]) - 1 if int(line_first["qty"]) > 1 else int(line_first["qty"]),
+                }).scalar()
+
+                db.execute(text(
+                    "INSERT INTO procurement_batches "
+                    "  (project_id, material_type, material_id, supplier, po_ref, "
+                    "   qty_ordered, ordered_date, eta_date) "
+                    "VALUES (:p, :mt, :mid, 'Acme Hardware', 'PO-ALF-002', "
+                    "        10, CURRENT_DATE - 2, CURRENT_DATE + 7) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "p":   proj_alfred_id,
+                    "mt":  catalog_first["material_type"],
+                    "mid": catalog_first["material_id"],
+                })
+
+                if delivered_id:
+                    db.execute(text(
+                        "INSERT INTO batch_allocations(batch_id, item_hardware_line_id, qty_allocated) "
+                        "VALUES (:b, :l, 1) "
+                        "ON CONFLICT (batch_id, item_hardware_line_id) DO NOTHING"
+                    ), {"b": delivered_id, "l": line_first["line_id"]})
+
         db.commit()
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
