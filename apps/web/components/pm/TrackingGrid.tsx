@@ -9,9 +9,10 @@ import { StageDates } from "./StageDates";
 interface Props {
   items: TrackingItemRow[];
   canEdit: boolean;
+  onOpenAvailability?: (itemId: number) => void;
 }
 
-export function TrackingGrid({ items, canEdit }: Props) {
+export function TrackingGrid({ items, canEdit, onOpenAvailability }: Props) {
   return (
     <div className="overflow-x-auto rounded-lg border border-h-line bg-h-surface">
       <table className="w-full text-sm">
@@ -67,10 +68,25 @@ export function TrackingGrid({ items, canEdit }: Props) {
               </td>
               <StageDates stages={it.stages} />
               <td className="px-2 py-1.5">
-                <AvailabilityChip
-                  ready={it.availability.ready}
-                  blocked={it.availability.blocked}
-                />
+                {onOpenAvailability ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenAvailability(it.id)}
+                    data-testid="open-availability"
+                    aria-label="Open item availability"
+                    className="rounded hover:opacity-80"
+                  >
+                    <AvailabilityChip
+                      ready={it.availability.ready}
+                      blocked={it.availability.blocked}
+                    />
+                  </button>
+                ) : (
+                  <AvailabilityChip
+                    ready={it.availability.ready}
+                    blocked={it.availability.blocked}
+                  />
+                )}
               </td>
               <td className="px-2 py-1.5 text-right">
                 {canEdit ? (

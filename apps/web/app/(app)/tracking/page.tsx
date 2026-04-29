@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { TrackingGrid } from "@/components/pm/TrackingGrid";
 import { TrackingFilters } from "@/components/pm/TrackingFilters";
+import { TrackingClient } from "./_components/TrackingClient";
 import type { ProjectOut, TrackingGridOut } from "@/lib/pm-types";
 import { fetchMe } from "@/lib/session";
 
@@ -101,7 +101,11 @@ export default async function TrackingPage({
       <TrackingFilters />
 
       {grid && grid.items.length > 0 ? (
-        <TrackingGrid items={grid.items} canEdit={canEdit} />
+        <TrackingClient
+          items={grid?.items ?? []}
+          canEdit={canEdit}
+          projectId={pid}
+        />
       ) : (
         <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
           No items match your filters.
