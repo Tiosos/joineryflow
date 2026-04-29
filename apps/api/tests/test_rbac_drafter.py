@@ -65,3 +65,9 @@ def test_require_drafter_matrix(role, expected):
     tok = _seed(role)
     c = TestClient(_app())
     assert c.post("/draft", cookies={"jf_session": tok}).status_code == expected
+
+
+def test_drafter_matrix_orderbook_write_and_approve():
+    from app.auth.permissions import MATRIX
+    assert "write"   in MATRIX["drafter"]["orderbook"]
+    assert "approve" in MATRIX["drafter"]["orderbook"]
