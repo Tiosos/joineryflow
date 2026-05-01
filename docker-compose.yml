@@ -10,9 +10,15 @@ services:
   api:
     build: ./apps/api
     env_file: .env
+    environment:
+      FILE_STORE_ROOT: /uploads
     depends_on: [db]
     ports: ["8000:8000"]
-    volumes: ["./apps/api:/code", "./db:/db", "./seed:/code/seed"]
+    volumes:
+      - ./apps/api:/code
+      - ./db:/db
+      - ./seed:/code/seed
+      - uploads:/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
   web:
     build: ./apps/web
@@ -23,3 +29,4 @@ services:
     command: pnpm dev
 volumes:
   dbdata:
+  uploads:
