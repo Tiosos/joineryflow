@@ -21,7 +21,12 @@ _ALLOWED_EXTS: dict[str, set[str]] = {
 
 
 def sniff_mime(head: bytes) -> str | None:
-    """Return the canonical mime type if `head` matches a known signature."""
+    """Return the canonical mime type if ``head`` matches a known signature.
+
+    ``head`` must be at least 8 bytes (the longest signature is the 8-byte PNG
+    header); pass more (e.g. 16) for a safety margin. Returns None for
+    unrecognised, truncated, or empty input.
+    """
     for prefix, mime in _SIGNATURES:
         if head.startswith(prefix):
             return mime
@@ -29,7 +34,11 @@ def sniff_mime(head: bytes) -> str | None:
 
 
 def validate_extension_matches(filename: str, mime: str) -> bool:
-    """Return True iff filename's extension is in the allowed set for mime."""
+    """Return True iff filename's extension is in the allowed set for mime.
+
+    Returns False for unrecognised mime types (treats them as never-allowed).
+    Filename matching is case-insensitive.
+    """
     _, ext = os.path.splitext(filename.lower())
     if not ext:
         return False

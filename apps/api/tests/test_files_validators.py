@@ -1,6 +1,4 @@
 """Magic-byte mime sniff + extension cross-check."""
-import pytest
-
 from app.files.validators import (
     MAX_BYTE_SIZE,
     sniff_mime,
@@ -46,3 +44,13 @@ def test_extension_mismatch():
 
 def test_max_byte_size_is_25mb():
     assert MAX_BYTE_SIZE == 25 * 1024 * 1024
+
+
+def test_sniff_mime_empty_bytes_returns_none():
+    """Empty input is safely rejected."""
+    assert sniff_mime(b"") is None
+
+
+def test_sniff_mime_truncated_png_returns_none():
+    """Input shorter than the PNG signature (8 bytes) cannot match PNG."""
+    assert sniff_mime(b"\x89PNG") is None  # only 4 bytes; PNG needs 8
