@@ -11,6 +11,7 @@ import hashlib
 import io
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -135,3 +136,37 @@ async def upload_file(
         original_filename=file.filename or "",
         deduped=False,
     )
+
+
+@router.get("/{file_blob_id}")
+def download_file(
+    file_blob_id: int,
+    user: AuthUser = Depends(require_permission("shop_dwgs", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_get_store),
+):
+    row = db.execute(
+        text(
+            """
+            SELECT file_blob_id, workspace_id, mime, byte_size,
+                   original_filename, storage_key
+              FROM file_blob
+             WHERE file_blob_id = :id
+            """
+        ),
+        {"id": file_blob_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="file not found")
+    if row["workspace_id"] != user.workspace_id:
+        # Don't leak existence across workspaces.
+        raise HTTPException(status_code=404, detail="file not found")
+
+    fh = store.get(row["storage_key"])
+    safe_name = (row["original_filename"] or "file").replace('"', "_")
+    headers = {
+        "Content-Length": str(row["byte_size"]),
+        "Content-Disposition": f'inline; filename="{safe_name}"',
+        "Cache-Control": "private, max-age=300",
+    }
+    return StreamingResponse(fh, media_type=row["mime"], headers=headers)
