@@ -36,19 +36,28 @@ class LocalDiskStore:
             shutil.copyfileobj(byte_stream, out, length=64 * 1024)
         return self._key_for(workspace_slug, sha256)
 
+    def _safe_path(self, storage_key: str) -> Path:
+        target = (self.root / storage_key).resolve()
+        if not target.is_relative_to(self.root.resolve()):
+            raise ValueError(f"storage_key escapes store root: {storage_key!r}")
+        return target
+
     def get(self, storage_key: str) -> BinaryIO:
-        return (self.root / storage_key).open("rb")
+        return self._safe_path(storage_key).open("rb")
 
     def delete(self, storage_key: str) -> None:
-        path = self.root / storage_key
+        path = self._safe_path(storage_key)
         if path.exists():
             path.unlink()
 
     def exists(self, storage_key: str) -> bool:
-        return (self.root / storage_key).is_file()
+        try:
+            return self._safe_path(storage_key).is_file()
+        except ValueError:
+            return False
 
 
-def get_default_store() -> LocalDiskStore:
-    """Factory used by FastAPI dependency wiring."""
+def get_default_store() -> FileStore:
+    """Factory used by FastAPI dependency wiring. Returns the configured FileStore."""
     root = os.environ.get("FILE_STORE_ROOT", "/uploads")
     return LocalDiskStore(root=root)

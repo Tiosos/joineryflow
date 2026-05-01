@@ -57,3 +57,24 @@ def test_put_streams_large_payload(tmp_store: LocalDiskStore):
     tmp_store.put("hartwood", sha, io.BytesIO(payload))
     with tmp_store.get(f"hartwood/bi/{sha}") as f:
         assert len(f.read()) == 5 * 1024 * 1024
+
+
+def test_get_rejects_path_traversal(tmp_store: LocalDiskStore):
+    """A storage_key with .. segments must not escape the store root."""
+    with pytest.raises(ValueError, match="escapes store root"):
+        tmp_store.get("../../../etc/passwd")
+
+
+def test_delete_rejects_path_traversal(tmp_store: LocalDiskStore):
+    with pytest.raises(ValueError, match="escapes store root"):
+        tmp_store.delete("../../foo")
+
+
+def test_exists_returns_false_for_traversal(tmp_store: LocalDiskStore):
+    """exists() returns False for invalid keys instead of raising."""
+    assert tmp_store.exists("../../../etc/passwd") is False
+
+
+def test_delete_noop_on_missing(tmp_store: LocalDiskStore):
+    """Deleting a missing key is a no-op (orphan GC deferred per spec)."""
+    tmp_store.delete("hartwood/ab/nonexistent")  # should not raise
