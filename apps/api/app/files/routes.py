@@ -9,6 +9,7 @@ The download route is implemented in Task 6.
 """
 import hashlib
 import io
+import urllib.parse
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -163,10 +164,15 @@ def download_file(
         raise HTTPException(status_code=404, detail="file not found")
 
     fh = store.get(row["storage_key"])
-    safe_name = (row["original_filename"] or "file").replace('"', "_")
+    raw = row["original_filename"] or "file"
+    ascii_fallback = raw.encode("ascii", errors="replace").decode("ascii").replace('"', "_")
+    encoded_name = urllib.parse.quote(raw, safe="")
     headers = {
         "Content-Length": str(row["byte_size"]),
-        "Content-Disposition": f'inline; filename="{safe_name}"',
+        "Content-Disposition": (
+            f'inline; filename="{ascii_fallback}"; '
+            f"filename*=UTF-8''{encoded_name}"
+        ),
         "Cache-Control": "private, max-age=300",
     }
     return StreamingResponse(fh, media_type=row["mime"], headers=headers)

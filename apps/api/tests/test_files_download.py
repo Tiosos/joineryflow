@@ -64,6 +64,7 @@ def test_download_streams_bytes(client):
     assert r.headers["content-type"].startswith("application/pdf")
     assert "inline" in r.headers["content-disposition"]
     assert "a.pdf" in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "private, max-age=300"
 
 
 def test_download_missing_id_returns_404(client):
@@ -92,11 +93,19 @@ def test_download_unauthenticated_401(client):
     assert r.status_code == 401
 
 
-def test_download_content_disposition_filename_present(client):
+def test_download_non_ascii_filename_uses_rfc8187(client):
+    """Non-ASCII filenames must be served via filename*=UTF-8'' (RFC 8187)."""
     _seed_workspace_and_login(client, "hartwood")
-    blob_id = _upload(client)
+    files = {"file": ("Küche-plan.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
+    r = client.post("/files", files=files)
+    assert r.status_code == 201, r.text
+    blob_id = r.json()["file_blob_id"]
+
     r = client.get(f"/files/{blob_id}")
     assert r.status_code == 200
     cd = r.headers["content-disposition"]
-    assert cd.startswith("inline;")
-    assert "filename=" in cd
+    # ASCII fallback present (with replacement chars for ü) AND filename* with UTF-8 encoding present
+    assert 'filename="' in cd
+    assert "filename*=UTF-8''" in cd
+    # The percent-encoded form must contain the encoded ü (%C3%BC)
+    assert "K%C3%BCche-plan.pdf" in cd
