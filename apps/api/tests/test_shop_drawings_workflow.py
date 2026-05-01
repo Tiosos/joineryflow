@@ -181,7 +181,9 @@ def test_two_in_flight_revisions_409(client):
     assert "in-flight" in r.json()["detail"].lower()
 
 
-def test_after_withdraw_can_upload_new_revision(client):
+def test_after_withdraw_revision_is_still_in_flight_409(client):
+    """Withdraw moves pending → draft, but draft is still in-flight per the partial
+    unique index, so a new revision upload is rejected with 409."""
     ids = _seed_two_users(client)
     _login(client, "d")
     blob1 = _upload(client)
@@ -196,6 +198,28 @@ def test_after_withdraw_can_upload_new_revision(client):
     assert r.status_code == 409
 
 
+def test_after_approve_can_upload_new_revision(client):
+    """After a revision is approved (terminal), a new revision can be uploaded."""
+    ids = _seed_two_users(client)
+    _login(client, "d")
+    blob1 = _upload(client)
+    d = _create_drawing(client, ids["pid"], blob1)
+    did, rid1 = d["drawing_id"], d["revisions"][0]["revision_id"]
+    client.post(f"/shop-drawings/{did}/revisions/{rid1}/submit")
+    _login(client, "m")
+    client.post(f"/shop-drawings/{did}/revisions/{rid1}/approve")
+
+    _login(client, "d")
+    files = {"file": ("v2.pdf", io.BytesIO(PDF_BYTES + b"\nv2"), "application/pdf")}
+    blob2 = client.post("/files", files=files).json()["file_blob_id"]
+    r = client.post(f"/shop-drawings/{did}/revisions", json={"file_blob_id": blob2})
+    assert r.status_code == 201
+    detail = r.json()
+    assert len(detail["revisions"]) == 2
+    assert detail["revisions"][0]["status"] == "draft"  # latest first
+    assert detail["revisions"][0]["rev_no"] == 2
+
+
 def test_archive_blocks_no_further_revisions_via_subtab(client):
     ids = _seed_two_users(client)
     _login(client, "d")
@@ -207,6 +231,20 @@ def test_archive_blocks_no_further_revisions_via_subtab(client):
     assert r.status_code == 204
     detail = client.get(f"/shop-drawings/{did}").json()
     assert detail["archived_at"] is not None
+
+
+def test_archive_already_archived_returns_409(client):
+    ids = _seed_two_users(client)
+    _login(client, "d")
+    blob = _upload(client)
+    d = _create_drawing(client, ids["pid"], blob)
+    did = d["drawing_id"]
+    _login(client, "m")
+    r = client.post(f"/shop-drawings/{did}/archive")
+    assert r.status_code == 204
+    r = client.post(f"/shop-drawings/{did}/archive")
+    assert r.status_code == 409
+    assert "already archived" in r.json()["detail"].lower()
 
 
 def test_404_for_drawing_in_other_workspace(client):

@@ -210,7 +210,8 @@ def create_drawing(
 
 
 def patch_drawing(
-    db: Session, *, drawing_id: int, workspace_id: int, payload: PatchDrawingIn, actor_id: int
+    db: Session, *, drawing_id: int, workspace_id: int, payload: PatchDrawingIn,
+    actor_id: int, actor_role: str,
 ) -> dict | None:
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
@@ -219,6 +220,10 @@ def patch_drawing(
     drawing = get_drawing_with_revisions(db, drawing_id=drawing_id, workspace_id=workspace_id)
     if not drawing:
         return None
+
+    # Spec §6.2: only the creator OR manager/admin can edit title/room.
+    if drawing["created_by"] != actor_id and actor_role not in ("manager", "admin"):
+        raise PermissionError("only the drawing's creator or a manager/admin may edit title/room")
 
     set_clauses = ", ".join(f"{k} = :{k}" for k in fields)
     params = {**fields, "d": drawing_id}
@@ -239,6 +244,8 @@ def archive_drawing(
     drawing = get_drawing_with_revisions(db, drawing_id=drawing_id, workspace_id=workspace_id)
     if not drawing:
         return False
+    if drawing["archived_at"] is not None:
+        raise ValueError("drawing is already archived")
     db.execute(
         text("UPDATE shop_drawing SET archived_at = now(), archived_by = :u WHERE drawing_id = :d"),
         {"u": actor_id, "d": drawing_id},

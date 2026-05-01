@@ -93,10 +93,13 @@ def patch_drawing_route(
     user: AuthUser = Depends(require_permission("shop_dwgs", "write")),
     db: Session = Depends(get_db),
 ):
-    row = q.patch_drawing(
-        db, drawing_id=did, workspace_id=user.workspace_id,
-        payload=body, actor_id=user.id,
-    )
+    try:
+        row = q.patch_drawing(
+            db, drawing_id=did, workspace_id=user.workspace_id,
+            payload=body, actor_id=user.id, actor_role=user.auth_role,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     if not row:
         raise HTTPException(status_code=404, detail="drawing not found")
     db.commit()
@@ -109,7 +112,11 @@ def archive_drawing_route(
     user: AuthUser = Depends(require_permission("shop_dwgs", "approve")),
     db: Session = Depends(get_db),
 ):
-    if not q.archive_drawing(db, drawing_id=did, workspace_id=user.workspace_id, actor_id=user.id):
+    try:
+        ok = q.archive_drawing(db, drawing_id=did, workspace_id=user.workspace_id, actor_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if not ok:
         raise HTTPException(status_code=404, detail="drawing not found")
     db.commit()
     return Response(status_code=204)

@@ -116,3 +116,44 @@ def test_manager_can_archive(client):
     _login(client, "manager")
     r = client.post(f"/shop-drawings/{did}/archive")
     assert r.status_code == 204
+
+
+def test_patch_drawing_only_creator_or_manager(client):
+    """Drafter A creates a drawing. Drafter B (different drafter) cannot rename it.
+    Manager can rename it."""
+    from app.db import SessionLocal
+    from sqlalchemy import text
+    from app.auth.passwords import hash_password
+    ids = _seed(client)
+    # Add a second drafter (B).
+    s = SessionLocal()
+    try:
+        s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, 'drafter2@hw.test', 'D2', :p, 'drafter')
+        """), {"w": ids["wid"], "p": hash_password("pw")})
+        s.commit()
+    finally:
+        s.close()
+
+    # Drafter A creates a drawing.
+    _login(client, "drafter")
+    files = {"file": ("a.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
+    blob_id = client.post("/files", files=files).json()["file_blob_id"]
+    r = client.post(f"/projects/{ids['pid']}/shop-drawings", json={
+        "title": "Original", "room": "K", "file_blob_id": blob_id,
+    })
+    did = r.json()["drawing_id"]
+
+    # Drafter B tries to rename → 403.
+    client.cookies.clear()
+    r = client.post("/auth/login", json={"workspace_slug": "hw", "email": "drafter2@hw.test", "password": "pw"})
+    assert r.status_code == 200
+    r = client.patch(f"/shop-drawings/{did}", json={"title": "Stolen"})
+    assert r.status_code == 403
+
+    # Manager can rename → 200.
+    _login(client, "manager")
+    r = client.patch(f"/shop-drawings/{did}", json={"title": "Manager rename"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Manager rename"

@@ -417,7 +417,7 @@ Layout top to bottom:
 Transitions:
 - `draft → pending`: uploader clicks Submit. No other actor can submit.
 - `pending → draft`: uploader clicks Withdraw. No other actor can withdraw.
-- `pending → approved`: any user with `auth_role IN ('manager','admin')` AND user is not the uploader. Updates `shop_drawing.current_revision_id = revision_id` in the same transaction.
+- `pending → approved`: any user with `auth_role IN ('drafter','manager','admin')` AND user is not the uploader. Updates `shop_drawing.current_revision_id = revision_id` in the same transaction.
 - `pending → rejected`: same actor rule as approved. Requires `review_note` (non-empty). Drawing's `current_revision_id` is unchanged (so the previously-approved revision, if any, stays "current").
 - `approved`, `rejected`: terminal.
 
@@ -432,12 +432,14 @@ Drawing-level transition:
 | Upload new revision | `drafter`, `manager`, `admin` | No other in-flight revision (enforced by DB index + 409 from backend) |
 | Submit (draft → pending) | `drafter`, `manager`, `admin` | Caller is the uploader of that revision |
 | Withdraw (pending → draft) | `drafter`, `manager`, `admin` | Caller is the uploader |
-| Approve / reject | `manager`, `admin` | Caller is **not** the uploader |
+| Approve / reject | `drafter`, `manager`, `admin` | Caller is **not** the uploader |
 | Archive drawing | `manager`, `admin` | — |
 | Edit title/room | `drafter`, `manager`, `admin` | Caller created the drawing OR is `manager`/`admin` |
 | Read (list, detail, file) | any role with `shop_dwgs:read` | Workspace match on file fetch |
 
 `drafter` is included in writes because the elevated-drafter pattern from PM Workbench (migration 0008/0009) treats Drafter as the authoritative content creator. Same module-action gate (`require_permission("shop_dwgs", "write")`) plus the elevated rule.
+
+**Why drafter has approve.** This continues the "elevated drafter" pattern from Procurement Workbench (`orderbook` module). In Hartwood's workflow drafters review each other's drawings — the not-uploader rule prevents self-approval, but does not require a manager. If a future workspace wants stricter review (manager/admin only), the matrix can be tightened per-workspace later.
 
 ### 6.3 Permission matrix update
 
