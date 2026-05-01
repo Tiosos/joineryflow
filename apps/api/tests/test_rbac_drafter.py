@@ -71,3 +71,9 @@ def test_drafter_matrix_orderbook_write_and_approve():
     from app.auth.permissions import MATRIX
     assert "write"   in MATRIX["drafter"]["orderbook"]
     assert "approve" in MATRIX["drafter"]["orderbook"]
+
+
+def test_drafter_matrix_shop_dwgs_write_and_approve():
+    from app.auth.permissions import MATRIX
+    assert "write"   in MATRIX["drafter"]["shop_dwgs"]
+    assert "approve" in MATRIX["drafter"]["shop_dwgs"]
