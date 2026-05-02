@@ -10,6 +10,7 @@ import type { Me } from "@/lib/session";
 import DrawingCard from "./DrawingCard";
 import DrawingDrawer from "./DrawingDrawer";
 import DrawingFilters from "./DrawingFilters";
+import ReviewActions from "./ReviewActions";
 import SubtabStrip from "./SubtabStrip";
 
 interface Project {
@@ -153,7 +154,11 @@ export default function ShopDwgsClient(props: Props) {
             }
           }}
           onSelectRevision={(rev) => updateUrl({ rev: String(rev) })}
-          renderActions={() => null /* wired in Task 16 */}
+          renderActions={(detail, selectedRevId, refresh) => {
+            const rev = detail.revisions.find((r) => r.revision_id === selectedRevId);
+            if (!rev) return null;
+            return <ReviewActions detail={detail} selectedRev={rev} me={props.me} onAfter={refresh} />;
+          }}
         />
       )}
     </section>
