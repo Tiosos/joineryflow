@@ -1,8 +1,10 @@
 """SQL query functions for shop_drawings.
 
 NO db.commit() here — routes own the transaction boundary.
-Workspace-scoping clause: drawings are project-scoped; we filter via
-project_id which the route resolves from URL after a project ownership check.
+Workspace-scoping clause: drawings are project-scoped; we filter via the
+direct projects.workspace_id FK (added in migration 0014). Never reach
+through pm_id -> app_user, which read TRUE in every workspace whenever a
+project lacked a PM.
 """
 from typing import Literal
 
@@ -28,15 +30,12 @@ _LATEST_REV_CTE = """
 
 
 def _ensure_project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
-    """Returns True iff the project exists and belongs to this workspace
-    (per the projects→app_user→workspace_id chain used elsewhere)."""
+    """Returns True iff the project exists and belongs to this workspace."""
     row = db.execute(
         text(
             """
             SELECT 1 FROM projects p
-              LEFT JOIN app_user u ON u.id = p.pm_id
-             WHERE p.project_id = :p
-               AND (p.pm_id IS NULL OR u.workspace_id = :w)
+             WHERE p.project_id = :p AND p.workspace_id = :w
             """
         ),
         {"p": project_id, "w": workspace_id},
@@ -116,8 +115,8 @@ def list_drawings_by_subtab(
 def list_summary(db: Session, *, project_id: int, workspace_id: int) -> dict:
     """Header counts: total non-archived, distinct rooms, awaiting review.
 
-    Workspace-scoped via projects→app_user→workspace_id, so safe to call
-    independently of an outer _ensure_project_in_workspace check.
+    Workspace-scoped via projects.workspace_id, so safe to call independently
+    of an outer _ensure_project_in_workspace check.
     """
     row = db.execute(
         text(
@@ -130,9 +129,7 @@ def list_summary(db: Session, *, project_id: int, workspace_id: int) -> dict:
               FROM shop_drawing d
               JOIN latest l ON l.drawing_id = d.drawing_id
               JOIN projects p ON p.project_id = d.project_id
-              LEFT JOIN app_user u ON u.id = p.pm_id
-             WHERE d.project_id = :p
-               AND (p.pm_id IS NULL OR u.workspace_id = :w)
+             WHERE d.project_id = :p AND p.workspace_id = :w
             """
         ),
         {"p": project_id, "w": workspace_id},
@@ -149,9 +146,7 @@ def get_drawing_with_revisions(db: Session, *, drawing_id: int, workspace_id: in
                    d.created_by, d.created_at
               FROM shop_drawing d
               JOIN projects p ON p.project_id = d.project_id
-              LEFT JOIN app_user u ON u.id = p.pm_id
-             WHERE d.drawing_id = :d
-               AND (p.pm_id IS NULL OR u.workspace_id = :w)
+             WHERE d.drawing_id = :d AND p.workspace_id = :w
             """
         ),
         {"d": drawing_id, "w": workspace_id},
@@ -321,9 +316,8 @@ def transition_revision(
               FROM shop_drawing_revision r
               JOIN shop_drawing d ON d.drawing_id = r.drawing_id
               JOIN projects p ON p.project_id = d.project_id
-              LEFT JOIN app_user u ON u.id = p.pm_id
              WHERE r.revision_id = :r AND r.drawing_id = :d
-               AND (p.pm_id IS NULL OR u.workspace_id = :w)
+               AND p.workspace_id = :w
             """
         ),
         {"r": revision_id, "d": drawing_id, "w": workspace_id},

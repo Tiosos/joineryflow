@@ -125,12 +125,12 @@ def _seed_alloc_setup(*, wid: int, uid: int) -> dict:
         pid = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('P1', 'P', :u)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('P1', 'P', :u, :w)
                 RETURNING project_id
                 """
             ),
-            {"u": uid},
+            {"u": uid, "w": wid},
         ).scalar()
         mat_id = db.execute(
             text(
@@ -275,12 +275,12 @@ def test_cross_project_line_rejected():
         other_pid = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('P2', 'P2', :u)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('P2', 'P2', :u, :w)
                 RETURNING project_id
                 """
             ),
-            {"u": uid},
+            {"u": uid, "w": wid},
         ).scalar()
         other_cat = db.execute(
             text(

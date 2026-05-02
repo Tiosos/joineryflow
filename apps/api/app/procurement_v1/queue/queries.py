@@ -2,9 +2,9 @@
 
 Cross-project rollup of all in-flight procurement batches in the workspace.
 
-Workspace scoping mirrors the rest of procurement_v1: `projects` has no
-`workspace_id` column, so we isolate by joining
-`projects.pm_id -> app_user.id` and filtering on `app_user.workspace_id`.
+Workspace scoping uses `projects.workspace_id` directly (FK added in
+migration 0014). The legacy chain through `projects.pm_id -> app_user.id`
+was unsafe for projects with NULL pm_id and is no longer used.
 
 Material name enrichment is a second-pass per-type lookup. All six material
 catalog tables expose a `description` column; `equipment_hire` uses `hire_id`
@@ -75,8 +75,7 @@ def queue(
         f"      {_STATUS_CASE} AS status "
         "  FROM procurement_batches pb "
         "  JOIN projects p   ON p.project_id = pb.project_id "
-        "  JOIN app_user au  ON au.id        = p.pm_id "
-        " WHERE au.workspace_id = :w "
+        " WHERE p.workspace_id = :w "
     )
     params: dict[str, Any] = {"w": workspace_id}
     if status:

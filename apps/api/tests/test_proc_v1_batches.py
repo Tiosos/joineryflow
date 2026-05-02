@@ -114,12 +114,12 @@ def _seed_project_and_material(*, wid: int, uid: int) -> tuple[int, int]:
         pid = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('P1', 'P', :u)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('P1', 'P', :u, :w)
                 RETURNING project_id
                 """
             ),
-            {"u": uid},
+            {"u": uid, "w": wid},
         ).scalar()
         mat_id = db.execute(
             text(

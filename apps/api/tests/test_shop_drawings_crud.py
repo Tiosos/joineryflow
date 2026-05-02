@@ -43,8 +43,9 @@ def _setup(client, role: str = "drafter") -> dict:
             VALUES (:w, :e, 'U', :p, :r) RETURNING id
         """), {"w": wid, "e": f"{role}@hw.test", "p": hash_password("pw"), "r": role}).scalar()
         pid = s.execute(text("""
-            INSERT INTO projects(project_code, name, pm_id) VALUES('ALF-001', 'Alfred', :u) RETURNING project_id
-        """), {"u": uid}).scalar()
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES('ALF-001', 'Alfred', :u, :w) RETURNING project_id
+        """), {"u": uid, "w": wid}).scalar()
         s.commit()
     finally:
         s.close()
@@ -154,8 +155,9 @@ def test_create_drawing_cross_workspace_blob_rejected(client):
             VALUES (:w, 'b@b.test', 'B', :p, 'drafter') RETURNING id
         """), {"w": wid_b, "p": hash_password("pw")}).scalar()
         pid_b = s.execute(text("""
-            INSERT INTO projects(project_code, name, pm_id) VALUES('B-001','B', :u) RETURNING project_id
-        """), {"u": uid_b}).scalar()
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES('B-001','B', :u, :w) RETURNING project_id
+        """), {"u": uid_b, "w": wid_b}).scalar()
         s.commit()
     finally:
         s.close()

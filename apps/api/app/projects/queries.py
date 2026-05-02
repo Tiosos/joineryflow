@@ -4,7 +4,10 @@ Column name mapping (legacy FileMaker schema vs spec):
   projects.project_id         -> aliased as id
   projects.installation_start -> aliased as install_start
   projects.total_value        -> exists as numeric(15,2)
-  projects has NO workspace_id -> workspace isolation via pm_id -> app_user.workspace_id
+  projects.workspace_id       -> direct FK to workspace(id), added in 0014.
+                                 Use this for isolation; never join through
+                                 pm_id -> app_user, which read TRUE in every
+                                 workspace for unowned projects.
 
 NO db.commit() here — routes own the transaction boundary.
 """
@@ -25,13 +28,9 @@ def _assert_user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -
         raise ValueError("pm_id does not belong to this workspace")
 
 # ── Workspace-scoping clause ──────────────────────────────────────────────────
-# Projects have no workspace_id column.  We scope via: projects whose pm_id
-# belongs to the requesting workspace, OR projects with no pm_id assigned yet.
-_WORKSPACE_FILTER = """
-    (p.pm_id IS NULL OR p.pm_id IN (
-        SELECT id FROM app_user WHERE workspace_id = :wid
-    ))
-"""
+# Direct projects.workspace_id FK (migration 0014). Never reach through pm_id
+# for isolation — that path is TRUE in every workspace when pm_id IS NULL.
+_WORKSPACE_FILTER = "p.workspace_id = :wid"
 
 _SELECT_COLS = """
     p.project_id                          AS id,
@@ -117,8 +116,8 @@ def create_project(
     row = db.execute(
         text(
             """
-            INSERT INTO projects(project_code, name, pm_id, installation_start)
-            VALUES (:code, :name, :pm_id, :install_start)
+            INSERT INTO projects(project_code, name, pm_id, installation_start, workspace_id)
+            VALUES (:code, :name, :pm_id, :install_start, :wid)
             RETURNING project_id
             """
         ),
@@ -127,6 +126,7 @@ def create_project(
             "name": payload.name,
             "pm_id": payload.pm_id,
             "install_start": payload.install_start,
+            "wid": workspace_id,
         },
     ).mappings().first()
     new_id = row["project_id"]
@@ -196,7 +196,7 @@ def patch_project(
     set_clauses = ", ".join(
         f"{_PATCH_COL_MAP[k]} = :{k}" for k in fields if k in _PATCH_COL_MAP
     )
-    # CRITICAL #1: scope the UPDATE to this workspace via the pm_id subquery.
+    # CRITICAL #1: scope the UPDATE to this workspace via the direct FK.
     # If 0 rows affected the project either doesn't exist or belongs to another workspace.
     params = {**fields, "pid": project_id, "wid": workspace_id}
     result = db.execute(
@@ -205,9 +205,7 @@ def patch_project(
             UPDATE projects
                SET {set_clauses}
              WHERE project_id = :pid
-               AND pm_id IN (
-                   SELECT id FROM app_user WHERE workspace_id = :wid
-               )
+               AND workspace_id = :wid
             """
         ),
         params,

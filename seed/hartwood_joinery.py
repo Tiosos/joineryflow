@@ -277,8 +277,8 @@ def main() -> None:
                 text(
                     """
                     WITH ins AS (
-                        INSERT INTO projects (project_code, name, pm_id, installation_start, status)
-                        VALUES (:code, :name, :pm, :install, :status)
+                        INSERT INTO projects (project_code, name, pm_id, installation_start, status, workspace_id)
+                        VALUES (:code, :name, :pm, :install, :status, :wid)
                         ON CONFLICT (name) DO NOTHING
                         RETURNING project_id
                     )
@@ -294,6 +294,7 @@ def main() -> None:
                     "pm": pm_id,
                     "install": install_start,
                     "status": proj_status,
+                    "wid": wid,
                 },
             ).scalar()
 

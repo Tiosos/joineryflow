@@ -46,8 +46,9 @@ def _seed_two_users(client) -> dict:
             VALUES (:w, 'm@hw.test', 'M', :p, 'manager') RETURNING id
         """), {"w": wid, "p": hash_password("pw")}).scalar()
         pid = s.execute(text("""
-            INSERT INTO projects(project_code, name, pm_id) VALUES('ALF-001','A',:u) RETURNING project_id
-        """), {"u": m_id}).scalar()
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES('ALF-001','A',:u, :w) RETURNING project_id
+        """), {"u": m_id, "w": wid}).scalar()
         s.commit()
     finally:
         s.close()

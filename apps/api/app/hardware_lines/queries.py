@@ -38,14 +38,13 @@ _SOURCE_TABLE_MAP: dict[str, tuple[str, str]] = {
 # Maps material_type -> source_table name (reverse of above)
 _MTYPE_TO_TABLE: dict[str, str] = {v[0]: k for k, v in _SOURCE_TABLE_MAP.items()}
 
-# Workspace isolation: project_hardware_catalog -> projects -> pm_id -> app_user.workspace_id
+# Workspace isolation: project_hardware_catalog -> projects.workspace_id (direct FK, since 0014).
 _WORKSPACE_FILTER = """
     EXISTS (
         SELECT 1
         FROM projects p
-        JOIN app_user au ON au.id = p.pm_id
         WHERE p.project_id = phc.project_id
-          AND au.workspace_id = :wid
+          AND p.workspace_id = :wid
     )
 """
 
@@ -179,13 +178,12 @@ def list_catalog(
 
 
 def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
-    """Return True if project is owned by a pm in the given workspace."""
+    """Return True if project belongs to workspace_id (direct FK, since 0014)."""
     row = db.execute(
         text(
             """
             SELECT 1 FROM projects p
-            JOIN app_user au ON au.id = p.pm_id
-            WHERE p.project_id = :pid AND au.workspace_id = :wid
+            WHERE p.project_id = :pid AND p.workspace_id = :wid
             """
         ),
         {"pid": project_id, "wid": workspace_id},
@@ -203,9 +201,8 @@ def _catalog_row(db: Session, *, catalog_id: int, workspace_id: int) -> dict | N
             WHERE phc.catalog_id = :cid
               AND EXISTS (
                   SELECT 1 FROM projects p
-                  JOIN app_user au ON au.id = p.pm_id
                   WHERE p.project_id = phc.project_id
-                    AND au.workspace_id = :wid
+                    AND p.workspace_id = :wid
               )
             """
         ),
@@ -226,9 +223,8 @@ def _item_project_in_workspace(
             WHERE i.item_id = :iid
               AND EXISTS (
                   SELECT 1 FROM projects p
-                  JOIN app_user au ON au.id = p.pm_id
                   WHERE p.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p.workspace_id = :wid
               )
             """
         ),
@@ -250,9 +246,8 @@ def _line_item_in_workspace(
             WHERE ihl.line_id = :lid
               AND EXISTS (
                   SELECT 1 FROM projects p
-                  JOIN app_user au ON au.id = p.pm_id
                   WHERE p.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p.workspace_id = :wid
               )
             """
         ),
@@ -444,9 +439,8 @@ def get_hardware_line(
             WHERE ihl.line_id = :lid
               AND EXISTS (
                   SELECT 1 FROM projects p
-                  JOIN app_user au ON au.id = p.pm_id
                   WHERE p.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p.workspace_id = :wid
               )
             """
         ),

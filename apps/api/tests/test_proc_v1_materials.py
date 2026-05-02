@@ -125,12 +125,12 @@ def _seed_golden_project(db, *, wid: int, uid: int) -> int:
     pid = db.execute(
         text(
             """
-            INSERT INTO projects(project_code, name, pm_id)
-            VALUES ('HJ-001', 'Test Project', :uid)
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES ('HJ-001', 'Test Project', :uid, :w)
             RETURNING project_id
             """
         ),
-        {"uid": uid},
+        {"uid": uid, "w": wid},
     ).scalar()
 
     # Hardware material (catalog table — workspace_id is set per migration 0007).
@@ -332,12 +332,12 @@ def test_project_materials_workspace_isolated():
         pid_b = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('B-001', 'Other Workspace Project', :uid)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('B-001', 'Other Workspace Project', :uid, :w)
                 RETURNING project_id
                 """
             ),
-            {"uid": uid_b},
+            {"uid": uid_b, "w": wid_b},
         ).scalar()
         db.commit()
     finally:

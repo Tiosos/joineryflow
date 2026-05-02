@@ -75,22 +75,22 @@ def _seed_two_projects_one_material(*, wid: int, uid: int) -> tuple[int, int, in
         p1 = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('P1', 'P1', :u)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('P1', 'P1', :u, :w)
                 RETURNING project_id
                 """
             ),
-            {"u": uid},
+            {"u": uid, "w": wid},
         ).scalar()
         p2 = db.execute(
             text(
                 """
-                INSERT INTO projects(project_code, name, pm_id)
-                VALUES ('P2', 'P2', :u)
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('P2', 'P2', :u, :w)
                 RETURNING project_id
                 """
             ),
-            {"u": uid},
+            {"u": uid, "w": wid},
         ).scalar()
         # `sku` is a NOT NULL legacy column with a global UNIQUE; uuid suffix
         # avoids collisions with seed data left over from prior tests.

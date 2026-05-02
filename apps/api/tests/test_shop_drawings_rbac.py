@@ -45,8 +45,9 @@ def _seed(client) -> dict:
             """), {"w": wid, "e": f"{role}@hw.test", "r": role, "p": hash_password("pw"), "r2": role}).scalar()
             out[role] = uid
         out["pid"] = s.execute(text("""
-            INSERT INTO projects(project_code, name, pm_id) VALUES('A','A', :u) RETURNING project_id
-        """), {"u": out["manager"]}).scalar()
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES('A','A', :u, :w) RETURNING project_id
+        """), {"u": out["manager"], "w": wid}).scalar()
         s.commit()
     finally:
         s.close()

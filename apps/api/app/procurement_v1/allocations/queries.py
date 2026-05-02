@@ -1,8 +1,8 @@
 """SQL queries for /batches/{bid}/allocations endpoints (Procurement Workbench v1).
 
-Workspace scoping: `projects` has no `workspace_id` column. We isolate by joining
-`projects.pm_id -> app_user.id` and filtering by `app_user.workspace_id`,
-mirroring the pattern used in apps/api/app/procurement_v1/batches/queries.py.
+Workspace scoping uses `projects.workspace_id` directly (FK added in
+migration 0014). The legacy chain through `projects.pm_id -> app_user.id`
+was unsafe for projects with NULL pm_id and is no longer used.
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -83,10 +83,9 @@ def get_allocation(db: Session, *, allocation_id: int, workspace_id: int) -> dic
           FROM batch_allocations ba
           JOIN procurement_batches pb  ON pb.batch_id  = ba.batch_id
           JOIN projects p              ON p.project_id = pb.project_id
-          JOIN app_user au             ON au.id        = p.pm_id
           JOIN item_hardware_lines ihl ON ihl.line_id  = ba.item_hardware_line_id
           JOIN items i                 ON i.item_id    = ihl.item_id
-         WHERE ba.allocation_id = :aid AND au.workspace_id = :w
+         WHERE ba.allocation_id = :aid AND p.workspace_id = :w
         """
     )
     r = db.execute(sql, {"aid": allocation_id, "w": workspace_id}).mappings().first()

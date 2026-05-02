@@ -231,8 +231,10 @@ def test_smoke_all_catalog_types(type_: str, payload_builder):
         try:
             project_id = db.execute(
                 text(
-                    "INSERT INTO projects(project_code, name, pm_id) "
-                    "VALUES(:code, 'Smoke', :uid) RETURNING project_id"
+                    "INSERT INTO projects(project_code, name, pm_id, workspace_id) "
+                    "VALUES(:code, 'Smoke', :uid, "
+                    "       (SELECT workspace_id FROM app_user WHERE id = :uid)) "
+                    "RETURNING project_id"
                 ),
                 {"code": f"SMOKE-{uuid.uuid4().hex[:8]}", "uid": uid},
             ).scalar()

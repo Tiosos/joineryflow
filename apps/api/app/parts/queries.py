@@ -1,8 +1,8 @@
 """SQL query functions for the parts module (modules + parts CRUD).
 
 Workspace scoping chain:
-  modules -> items.project_id -> projects.pm_id -> app_user.workspace_id
-  parts   -> modules.item_id  -> items.project_id -> projects.pm_id -> app_user.workspace_id
+  modules -> items.project_id -> projects.workspace_id  (direct FK, since 0014)
+  parts   -> modules.item_id  -> items.project_id -> projects.workspace_id
 
 All mutations write to both audit_log and item_edit_log.
 item_edit_log.item_id is always the parent item_id (resolved via JOIN).
@@ -35,9 +35,8 @@ def _item_id_for_module(db: Session, *, module_id: int, workspace_id: int) -> in
             WHERE m.module_id = :mid
               AND EXISTS (
                   SELECT 1 FROM projects p2
-                  JOIN app_user au ON au.id = p2.pm_id
                   WHERE p2.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p2.workspace_id = :wid
               )
             """
         ),
@@ -58,9 +57,8 @@ def _item_id_for_part(db: Session, *, part_id: int, workspace_id: int) -> int | 
             WHERE p.part_id = :pid
               AND EXISTS (
                   SELECT 1 FROM projects p2
-                  JOIN app_user au ON au.id = p2.pm_id
                   WHERE p2.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p2.workspace_id = :wid
               )
             """
         ),
@@ -79,9 +77,8 @@ def _item_in_workspace(db: Session, *, item_id: int, workspace_id: int) -> bool:
             WHERE i.item_id = :iid
               AND EXISTS (
                   SELECT 1 FROM projects p2
-                  JOIN app_user au ON au.id = p2.pm_id
                   WHERE p2.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p2.workspace_id = :wid
               )
             """
         ),
@@ -104,9 +101,8 @@ def get_module(db: Session, *, module_id: int, workspace_id: int) -> dict | None
             WHERE m.module_id = :mid
               AND EXISTS (
                   SELECT 1 FROM projects p2
-                  JOIN app_user au ON au.id = p2.pm_id
                   WHERE p2.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p2.workspace_id = :wid
               )
             """
         ),
@@ -301,9 +297,8 @@ def get_part(db: Session, *, part_id: int, workspace_id: int) -> dict | None:
             WHERE p.part_id = :pid
               AND EXISTS (
                   SELECT 1 FROM projects p2
-                  JOIN app_user au ON au.id = p2.pm_id
                   WHERE p2.project_id = i.project_id
-                    AND au.workspace_id = :wid
+                    AND p2.workspace_id = :wid
               )
             """
         ),

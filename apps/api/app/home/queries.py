@@ -2,8 +2,7 @@
 
 Schema drift notes verified against live DB:
   - procurement_batches has NO workspace_id column. Workspace scoping goes via
-    project_id -> projects.pm_id -> app_user.workspace_id (same EXISTS pattern
-    as items/queries.py _WORKSPACE_FILTER).
+    project_id -> projects.workspace_id (direct FK, added in migration 0014).
   - items has NO 'value' column. value_in_progress metric always returns 0.0.
     TODO: add items.value column in a future migration when cost tracking lands.
   - purchase_orders.status valid values: Draft, Pending, Approved, Rejected,
@@ -29,25 +28,21 @@ from .schemas import (
     TeamActivityRow,
 )
 
-# Workspace filter for items (no workspace_id on items table).
-# items -> projects -> pm_id -> app_user.workspace_id
+# Workspace filter for items (items has no workspace_id; projects does, since 0014).
 _ITEM_WORKSPACE_EXISTS = """
     EXISTS (
         SELECT 1 FROM projects p2
-        JOIN app_user au ON au.id = p2.pm_id
         WHERE p2.project_id = i.project_id
-          AND au.workspace_id = :wid
+          AND p2.workspace_id = :wid
     )
 """
 
-# Workspace filter for procurement_batches (no workspace_id on batches table).
-# batches -> projects -> pm_id -> app_user.workspace_id
+# Workspace filter for procurement_batches (batches has no workspace_id; projects does, since 0014).
 _BATCH_WORKSPACE_EXISTS = """
     EXISTS (
         SELECT 1 FROM projects p2
-        JOIN app_user au ON au.id = p2.pm_id
         WHERE p2.project_id = b.project_id
-          AND au.workspace_id = :wid
+          AND p2.workspace_id = :wid
     )
 """
 
@@ -435,9 +430,7 @@ def _all_projects_count(db: Session, *, user: AuthUser) -> int:
             """
             SELECT COUNT(*) AS cnt
             FROM projects p
-            WHERE (p.pm_id IS NULL OR p.pm_id IN (
-                SELECT id FROM app_user WHERE workspace_id = :wid
-            ))
+            WHERE p.workspace_id = :wid
             """
         ),
         {"wid": user.workspace_id},

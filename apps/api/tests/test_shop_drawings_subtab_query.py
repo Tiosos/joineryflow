@@ -14,8 +14,9 @@ def _seed_minimal(db, workspace_id: int) -> dict:
         VALUES (:w, 'sd@test', 'SD', 'x', 'drafter') RETURNING id
     """), {"w": workspace_id}).scalar()
     pid = db.execute(text("""
-        INSERT INTO projects(project_code, name, pm_id) VALUES ('ALF-001', 'Alfred', :u) RETURNING project_id
-    """), {"u": uid}).scalar()
+        INSERT INTO projects(project_code, name, pm_id, workspace_id)
+        VALUES ('ALF-001', 'Alfred', :u, :w) RETURNING project_id
+    """), {"u": uid, "w": workspace_id}).scalar()
     blobs = []
     for i, sha in enumerate(["aa" * 32, "bb" * 32, "cc" * 32]):
         bid = db.execute(text("""

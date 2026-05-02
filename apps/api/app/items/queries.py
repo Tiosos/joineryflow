@@ -33,13 +33,12 @@ from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
 
-# Workspace isolation clause (items -> projects -> pm_id -> app_user.workspace_id).
+# Workspace isolation clause (items -> projects.workspace_id direct FK, since 0014).
 _WORKSPACE_FILTER = """
     EXISTS (
         SELECT 1 FROM projects p2
-        JOIN app_user au ON au.id = p2.pm_id
         WHERE p2.project_id = i.project_id
-          AND au.workspace_id = :wid
+          AND p2.workspace_id = :wid
     )
 """
 
@@ -629,13 +628,12 @@ def get_item_detail(
 
 
 def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
-    """Return True if the project's pm_id belongs to workspace_id."""
+    """Return True if the project belongs to workspace_id (direct FK, since 0014)."""
     row = db.execute(
         text(
             """
             SELECT 1 FROM projects p
-            JOIN app_user au ON au.id = p.pm_id
-            WHERE p.project_id = :pid AND au.workspace_id = :wid
+            WHERE p.project_id = :pid AND p.workspace_id = :wid
             """
         ),
         {"pid": project_id, "wid": workspace_id},

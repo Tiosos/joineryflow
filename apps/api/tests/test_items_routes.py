@@ -120,16 +120,16 @@ def _login(role: str = "manager"):
 
 
 def _create_project(db, *, wid: int, uid: int, code: str = "HJ-001") -> int:
-    """Insert a project scoped to the given workspace via pm_id and return project_id."""
+    """Insert a project scoped to the given workspace via projects.workspace_id and return project_id."""
     pid = db.execute(
         text(
             """
-            INSERT INTO projects(project_code, name, pm_id)
-            VALUES (:code, 'Test Project', :uid)
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES (:code, 'Test Project', :uid, :wid)
             RETURNING project_id
             """
         ),
-        {"code": code, "uid": uid},
+        {"code": code, "uid": uid, "wid": wid},
     ).scalar()
     db.commit()
     return pid

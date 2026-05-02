@@ -1,9 +1,9 @@
 """SQL queries for /batches endpoints (Procurement Workbench v1).
 
-Workspace scoping: `projects` has no `workspace_id` column. We isolate by
-joining `projects.pm_id -> app_user.id` and filtering by
-`app_user.workspace_id`, mirroring the pattern used elsewhere
-(see apps/api/app/items/queries.py and apps/api/app/projects/queries.py).
+Workspace scoping: `projects.workspace_id` is the direct FK (added in
+migration 0014). Older revisions of this file routed through
+`projects.pm_id -> app_user.workspace_id`; that path was unsafe for projects
+with NULL pm_id and is no longer used.
 """
 from typing import Any
 
@@ -44,8 +44,7 @@ def list_batches(
     sql = (
         f"SELECT {_BATCH_COLS} FROM procurement_batches pb "
         "JOIN projects p   ON p.project_id = pb.project_id "
-        "JOIN app_user au  ON au.id        = p.pm_id "
-        "WHERE au.workspace_id = :w "
+        "WHERE p.workspace_id = :w "
     )
     params: dict[str, Any] = {"w": workspace_id}
     if project_id is not None:
@@ -69,8 +68,7 @@ def get_batch(db: Session, *, batch_id: int, workspace_id: int) -> dict | None:
     sql = text(
         f"SELECT {_BATCH_COLS} FROM procurement_batches pb "
         "JOIN projects p   ON p.project_id = pb.project_id "
-        "JOIN app_user au  ON au.id        = p.pm_id "
-        "WHERE pb.batch_id = :bid AND au.workspace_id = :w"
+        "WHERE pb.batch_id = :bid AND p.workspace_id = :w"
     )
     row = db.execute(sql, {"bid": batch_id, "w": workspace_id}).mappings().first()
     return dict(row) if row else None

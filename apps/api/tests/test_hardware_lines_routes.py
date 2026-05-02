@@ -89,12 +89,16 @@ def _login(role: str = "manager"):
 
 
 def _create_project(db, *, uid: int, code: str = "HJ-001") -> int:
-    """Insert a project owned by uid and return project_id. Name is derived from code to stay unique."""
+    """Insert a project owned by uid and return project_id.
+
+    workspace_id is derived inline from the uid's app_user row, mirroring
+    create_project_route's default of using the caller's workspace.
+    """
     pid = db.execute(
         text(
             """
-            INSERT INTO projects(project_code, name, pm_id)
-            VALUES (:code, :name, :uid)
+            INSERT INTO projects(project_code, name, pm_id, workspace_id)
+            VALUES (:code, :name, :uid, (SELECT workspace_id FROM app_user WHERE id = :uid))
             RETURNING project_id
             """
         ),

@@ -133,10 +133,10 @@ def _setup_workspace_and_project(role_a: str = "drafter") -> dict:
         )
         pid = db.execute(
             text(
-                "INSERT INTO projects(project_code, name, pm_id)"
-                " VALUES(:code, 'Lock Project', :uid) RETURNING project_id"
+                "INSERT INTO projects(project_code, name, pm_id, workspace_id)"
+                " VALUES(:code, 'Lock Project', :uid, :wid) RETURNING project_id"
             ),
-            {"code": f"LP-{suffix}", "uid": uid_a},
+            {"code": f"LP-{suffix}", "uid": uid_a, "wid": wid},
         ).scalar()
         db.commit()
     finally:
