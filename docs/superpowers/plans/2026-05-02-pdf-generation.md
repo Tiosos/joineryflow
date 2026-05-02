@@ -6,7 +6,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-02-pdf-generation-design.md`. Read before starting; this plan only sequences the implementation. The spec resolves all open product/engine/RBAC questions including the WeasyPrint + pypdf engine choice, three-named-slots-per-item attachment model, sync rendering, no caching, material-type hardware grouping, and the lister-blank em-dash fallback.
 
-**Architecture:** No new infrastructure other than 3 new Python deps (`weasyprint`, `pypdf`, `jinja2`) + ~25 MB of pango runtime libs in the api Dockerfile. One small migration (0014) adds `item_attachment` with `UNIQUE (item_id, kind)` slot constraint. New backend modules `apps/api/app/item_attachments/` (CRUD) and `apps/api/app/printing/` (engine + context + routes). Five Jinja2 templates + one `print.css` + four `.woff2` font files committed under `seed/fonts/`. Web side adds an "Attachments" tab to the item editor and turns the 3 disabled Print buttons in `EditorFooter.tsx` into live `<a target="_blank">` download links. State management is raw `fetch()` + URL search params + controlled inputs — **no TanStack Query / React Hook Form / Zustand**, matching prior sub-projects.
+**Architecture:** No new infrastructure other than 3 new Python deps (`weasyprint`, `pypdf`, `jinja2`) + ~25 MB of pango runtime libs in the api Dockerfile. One small migration (0015) adds `item_attachment` with `UNIQUE (item_id, kind)` slot constraint. Migration 0014 was consumed by the workspace-isolation hardening that landed in commit `cc7ea11`; this sub-project's migration is therefore numbered 0015. New backend modules `apps/api/app/item_attachments/` (CRUD) and `apps/api/app/printing/` (engine + context + routes). Five Jinja2 templates + one `print.css` + four `.woff2` font files committed under `seed/fonts/`. Web side adds an "Attachments" tab to the item editor and turns the 3 disabled Print buttons in `EditorFooter.tsx` into live `<a target="_blank">` download links. State management is raw `fetch()` + URL search params + controlled inputs — **no TanStack Query / React Hook Form / Zustand**, matching prior sub-projects.
 
 **Tech Stack:** FastAPI + SQLAlchemy Core `text()` + Pydantic v2 + WeasyPrint 63+ + pypdf 5+ + Jinja2 3.1+; Next.js 16 App Router + Tailwind v4; pytest + Playwright. Font assets: Inter + JetBrains Mono (.woff2, OFL-licensed).
 
@@ -124,7 +124,7 @@ def upgrade():
 
 
 def downgrade():
-    op.execute("-- intentionally not reversible; pre-item-attachment schema is recoverable from migrations 0001-0013 only")
+    op.execute("-- intentionally not reversible; pre-item-attachment schema is recoverable from migrations 0001-0014 only")
 ```
 
 - [ ] **Step 2: Apply the migration**
@@ -133,7 +133,7 @@ def downgrade():
 docker compose exec -T api sh -c "cd /db && alembic upgrade head"
 ```
 
-Expected output ends with `INFO  [alembic.runtime.migration] Running upgrade 0013 -> 0014`.
+Expected output ends with `INFO  [alembic.runtime.migration] Running upgrade 0014 -> 0015`.
 
 - [ ] **Step 3: Verify table + index + constraints**
 
