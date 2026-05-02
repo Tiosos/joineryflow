@@ -146,3 +146,4 @@ def test_item_delete_cascades_attachments(db, workspace_id):
         "SELECT count(*) FROM item_attachment WHERE item_id = :i"
     ), {"i": seed["iid"]}).scalar()
     assert count == 0
+
