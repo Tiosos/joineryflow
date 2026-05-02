@@ -83,7 +83,7 @@ CLAUDE.md                               # PDF Generation dev notes appended
 
 ## Phase 1 — Schema + dependencies (2 tasks)
 
-### Task 1: Migration 0014 — `item_attachment` table
+### Task 1: Migration 0015 — `item_attachment` table
 
 **Files:**
 - Create: `db/alembic/versions/0014_item_attachments.py`
@@ -101,8 +101,8 @@ Create Date: 2026-05-02
 """
 from alembic import op
 
-revision = "0014"
-down_revision = "0013"
+revision = "0015"
+down_revision = "0014"
 branch_labels = None
 depends_on = None
 
@@ -178,13 +178,13 @@ Expected: the second INSERT fails with `ERROR: duplicate key value violates uniq
 docker compose exec api pytest -q
 ```
 
-Expected: 215 passed (sub-project #5a final-fix-up baseline). Record the actual count.
+Expected: 221 passed (post-workspace-isolation-hardening baseline; commit `cc7ea11`). Record the actual count.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add db/alembic/versions/0014_item_attachments.py
-git commit -m "feat(db): migration 0014 — item_attachment three-slot table"
+git commit -m "feat(db): migration 0015 — item_attachment three-slot table"
 ```
 
 ---
@@ -302,7 +302,7 @@ Expected: merged bytes > sum of input lengths, page count = 2.
 docker compose exec api pytest -q
 ```
 
-Expected: 215 passed (no test changes in this task).
+Expected: 221 passed (no test changes in this task).
 
 - [ ] **Step 9: Commit**
 
@@ -3121,7 +3121,7 @@ Spec coverage:
 - §1 Audit hooks → wired in queries (Task 3) + routes (Tasks 4, 8). ✅
 - §1 Seed update → Task 13. ✅
 - §2 architecture (backend + web layout) → Tasks 3-12. ✅
-- §3 migration 0014 → Task 1. ✅
+- §3 migration 0015 → Task 1. ✅
 - §3 PDF-only mime gate at route layer → Task 3 (queries.py raises ValueError) + Task 4 (route maps to 415). ✅
 - §4 WeasyPrint engine + font loading + page layout → Tasks 5 + 6. ✅
 - §5 print routes (each handler with audit) → Task 8. ✅
