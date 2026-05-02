@@ -106,7 +106,7 @@ export default function ShopDwgsClient(props: Props) {
         searchValue={q ?? ""}
         rooms={rooms}
         onProjectChange={(id) =>
-          updateUrl({ project: String(id), drawing: null, rev: null })
+          updateUrl({ project: String(id), drawing: null, rev: null, room: null })
         }
         onRoomChange={(r) => updateUrl({ room: r })}
         onSearchChange={(s) => updateUrl({ q: s || null })}

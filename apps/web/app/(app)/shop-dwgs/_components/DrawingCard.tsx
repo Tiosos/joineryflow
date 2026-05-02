@@ -24,6 +24,7 @@ export default function DrawingCard({ card, onClick }: Props) {
   return (
     <button
       onClick={onClick}
+      aria-label={`Drawing ${card.title}`}
       className="group block w-full overflow-hidden rounded-lg border border-h-line bg-h-surface text-left transition hover:border-h-accent/60 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-h-accent"
     >
       <div className="relative aspect-[16/10] border-b border-h-line">

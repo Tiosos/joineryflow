@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Project {
   id: number;
@@ -21,6 +21,9 @@ interface Props {
 
 export default function DrawingFilters(p: Props) {
   const [search, setSearch] = useState(p.searchValue);
+  useEffect(() => {
+    setSearch(p.searchValue);
+  }, [p.searchValue]);
 
   return (
     <div className="flex flex-wrap items-center gap-3 py-3">
@@ -33,12 +36,12 @@ export default function DrawingFilters(p: Props) {
         onKeyDown={(e) => {
           if (e.key === "Enter") p.onSearchChange(search);
         }}
-        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink placeholder:text-h-muted"
+        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink placeholder:text-h-muted focus:outline-none focus:ring-2 focus:ring-h-accent"
       />
       <select
         value={p.selectedProjectId ?? ""}
         onChange={(e) => p.onProjectChange(Number(e.target.value))}
-        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink"
+        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink focus:outline-none focus:ring-2 focus:ring-h-accent"
       >
         {p.projects.map((proj) => (
           <option key={proj.id} value={proj.id}>
@@ -49,7 +52,7 @@ export default function DrawingFilters(p: Props) {
       <select
         value={p.selectedRoom ?? ""}
         onChange={(e) => p.onRoomChange(e.target.value || null)}
-        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink"
+        className="rounded-md border border-h-line bg-h-surface px-2.5 py-1.5 text-sm text-h-ink focus:outline-none focus:ring-2 focus:ring-h-accent"
       >
         <option value="">All rooms</option>
         {p.rooms.map((r) => (

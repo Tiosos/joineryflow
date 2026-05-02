@@ -81,15 +81,36 @@ export async function addRevision(drawingId: number, fileBlobId: number): Promis
 export async function transitionRevision(
   drawingId: number,
   revisionId: number,
+  action: "submit" | "withdraw" | "approve",
+): Promise<{ revision_id: number; status: RevisionStatus }>;
+export async function transitionRevision(
+  drawingId: number,
+  revisionId: number,
+  action: "reject",
+  reviewNote: string,
+): Promise<{ revision_id: number; status: RevisionStatus }>;
+export async function transitionRevision(
+  drawingId: number,
+  revisionId: number,
   action: "submit" | "withdraw" | "approve" | "reject",
-  reviewNote?: string
+  reviewNote?: string,
 ): Promise<{ revision_id: number; status: RevisionStatus }> {
   const init: RequestInit = { method: "POST" };
   if (action === "reject") {
+    if (!reviewNote || reviewNote.trim() === "") {
+      throw new Error("review_note is required for reject");
+    }
     init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify({ review_note: reviewNote ?? "" });
+    init.body = JSON.stringify({ review_note: reviewNote });
   }
   const r = await fetch(`/api/shop-drawings/${drawingId}/revisions/${revisionId}/${action}`, init);
-  if (!r.ok) throw new Error((await r.json())?.detail ?? `${action} failed: ${r.status}`);
+  if (!r.ok) {
+    let msg = `${action} failed: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.detail === "string") msg = body.detail;
+    } catch {}
+    throw new Error(msg);
+  }
   return r.json();
 }

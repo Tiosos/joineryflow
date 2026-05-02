@@ -30,7 +30,7 @@ export default function SubtabStrip({ current, onChange, counts }: Props) {
             key={t.key}
             type="button"
             onClick={() => onChange(t.key)}
-            className={`relative px-3 py-1.5 text-sm transition ${
+            className={`relative rounded px-3 py-1.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-h-accent ${
               active ? "text-h-ink" : "text-h-muted hover:text-h-ink"
             }`}
           >
