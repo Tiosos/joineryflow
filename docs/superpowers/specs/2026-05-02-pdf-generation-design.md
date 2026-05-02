@@ -163,7 +163,7 @@ Two functions, ~30 lines. The route handlers compose them.
 All four dynamic templates extend a shared `_base.html` skeleton that loads `print.css`. Per-template structure:
 
 - **`cutlist.html`** — Item header block (Item description / Project code + name / Room as `rm_no · rm_desc` / Stage / Lister free-text / Date), then a parts table: Qty · Part name · Len mm · Wid mm · Material (resolved from `board_material_id` join) · Edge · Colour · Edging spec · Paint instruction. Mono numeric columns. Page break after the table; `@page { size: A4; margin: 12mm 10mm }`.
-- **`hardware.html`** — Same item header block, then groups of hardware lines by supplier. Per group: supplier letter tile + name + line count + subtotal. Per row: Qty · Type · Description · Brand · Notes. Mono qty + brand columns.
+- **`hardware.html`** — Same item header block, then groups of hardware lines by **material type** (BOARD / HARDWARE / CUSTOM / BENCHTOP / APPLIANCE / HIRE — the 6 catalog tables). Per group: type label + line count + subtotal qty. Per row: Qty · SKU · Description · Note. Mono qty + SKU columns. Material type matches the natural data model partition; supplier-grouping (the legacy hi-fi target) is deferred until the catalog enrichment helper exposes per-table supplier columns — see §13 resolved decisions.
 - **`cover_combined.html`** — Item metadata + a "Slot manifest" table listing the three attachment kinds and which are populated/missing. Page break before the next section.
 - **`painting.html`** — Subset of `parts[]` where `paint_instruction != 'NONE'`, rendered as a single column-grouped checklist with the paint instruction (`DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`) as a column. Only included in Combined when at least one such part exists.
 - **`missing_attachment.html`** — One-page placeholder reading `[Floor Plan: not uploaded]` (parameterized per kind), in muted color. Used only by the Combined assembly when a slot is empty.
@@ -421,7 +421,7 @@ def build_context(item_id: int, db: Session, store: FileStore, *, workspace_id: 
     return {
         "item": dict(item),
         "parts": [dict(p) for p in parts],
-        "hardware": enriched_hw,                                    # grouped by supplier in the template
+        "hardware": enriched_hw,                                    # grouped by material_type in the template (see §2.5)
         "attachments": attachments_by_kind,
         "has_painting": any(p["paint_instruction"] != "NONE" for p in parts),
         "rendered_at": datetime.now(timezone.utc),
@@ -429,7 +429,7 @@ def build_context(item_id: int, db: Session, store: FileStore, *, workspace_id: 
 ```
 
 **Schema notes:**
-- `items.lister` is `varchar(128)` free-text (legacy field), not an FK to `app_user`. Templates display the string directly.
+- `items.lister` is `varchar(128)` free-text (legacy field), not an FK to `app_user`. Templates display the string directly; render `—` (em-dash) when blank or NULL.
 - `items.description` is the item's display name; there's no `items.title`.
 - `items.rm_no` + `items.rm_desc` together represent the room (`1.01 · Kitchen`); render combined.
 - `parts.paint_instruction` is an enum (`NONE / DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`) introduced in migration 0001 with a CHECK constraint. The painting trigger = "any part has `paint_instruction != 'NONE'`".
@@ -740,6 +740,9 @@ These are deliberately deferred:
 - **Combined order.** Cover · Cutlist · Hardware · CV drawing · Floor plan · Site measure · Painting (conditional).
 - **Painting auto-include.** Only when at least one part has `paint_instruction != 'NONE'`. The enum was introduced in migration 0001 with values `NONE / DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`.
 - **Print template look.** Matches legacy "HARDWARE LIST sample PDF" and "CV export sample PDF" — Inter for body, JetBrains Mono for tabular columns + IDs.
+- **Hardware grouping.** Group by **material type** (BOARD / HARDWARE / CUSTOM / BENCHTOP / APPLIANCE / HIRE — the 6 catalog tables), not by supplier. The procurement_v1 catalog enrichment helper exposes only `description` + `sku` per material; supplier-grouping (the legacy hi-fi target) requires extending each catalog table's enrichment to surface per-table supplier columns, deferred until shop floor specifically asks.
+- **Combined PDF download UX.** Plain `<a href="..." target="_blank">` opens the PDF in a new browser tab. The 3–5s Combined render leaves the tab blank during the wait — accepted as a recognizable browser convention. Async fetch + Blob + loading indicator deferred until users complain.
+- **Lister blank handling.** `items.lister` is a free-text `varchar(128)`; render `—` (em-dash) when blank or NULL in cover/cutlist headers.
 - **RBAC.** Print = `list:read`. Attachment mutations = `list:write` (drafter+).
 - **Attachment UI placement.** New tab in the item editor, alongside Cutlist / Hardware / Board / Log.
 - **PDF storage.** Generated PDFs not persisted; uploaded attachments live in `file_blob` (#5a's table).
