@@ -7,6 +7,7 @@ import type { DrawingList, Subtab } from "@/lib/shop-drawings-types";
 import { listDrawings } from "@/lib/shop-drawings-fetch";
 import type { Me } from "@/lib/session";
 
+import DrawingCard from "./DrawingCard";
 import DrawingFilters from "./DrawingFilters";
 import SubtabStrip from "./SubtabStrip";
 
@@ -123,7 +124,17 @@ export default function ShopDwgsClient(props: Props) {
       {loading && <p className="text-sm text-h-muted">Loading…</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* DrawingCard grid mounted in Task 14 */}
+      {list && list.drawings.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {list.drawings.map((d) => (
+            <DrawingCard
+              key={d.drawing_id}
+              card={d}
+              onClick={() => updateUrl({ drawing: String(d.drawing_id), rev: null })}
+            />
+          ))}
+        </div>
+      )}
       {list && list.drawings.length === 0 && (
         <p className="py-12 text-center text-sm text-h-muted">
           No drawings here yet.
