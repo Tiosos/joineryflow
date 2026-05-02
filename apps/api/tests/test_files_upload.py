@@ -30,9 +30,9 @@ def client():
 def _login(client, role: str = "editor") -> tuple[int, int]:
     """Create workspace+user, log in via API, return (workspace_id, user_id).
 
-    NOTE: default role is `editor` (not `drafter`) because Task 7 has not yet
-    elevated drafter on the shop_dwgs module. editor has read+write+comment
-    on shop_dwgs in the current matrix.
+    Default role is `editor`: editor has read+write on shop_dwgs in the matrix
+    but lacks `approve`, which is the right baseline for testing upload-only
+    paths. Tests that need a no-write role (e.g. 403 cases) pass role='viewer'.
     """
     from app.db import SessionLocal
     from sqlalchemy import text

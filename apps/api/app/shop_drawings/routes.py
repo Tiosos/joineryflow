@@ -47,7 +47,7 @@ def list_drawings(
         db, project_id=pid, subtab=subtab, room=room,
         reviewer_id=reviewer_id, q=q_search,
     )
-    summary = q.list_summary(db, project_id=pid)
+    summary = q.list_summary(db, project_id=pid, workspace_id=user.workspace_id)
     return DrawingListOut(
         drawings=rows,
         total=summary.get("total", 0),
@@ -129,6 +129,8 @@ def add_revision_route(
     user: AuthUser = Depends(require_permission("shop_dwgs", "write")),
     db: Session = Depends(get_db),
 ):
+    if user.auth_role not in ("drafter", "manager", "admin"):
+        raise HTTPException(status_code=403, detail="only drafters, managers, or admins can upload new revisions")
     try:
         q.add_revision(
             db, drawing_id=did, workspace_id=user.workspace_id,

@@ -53,6 +53,14 @@ def list_drawings_by_subtab(
     reviewer_id: int | None = None,
     q: str | None = None,
 ) -> list[dict]:
+    """List drawings for a project filtered by subtab + optional facets.
+
+    Note on `reviewer_id`: filters on the **latest** revision's reviewer (via
+    the _LATEST_REV_CTE), not the approved revision's reviewer. For the
+    `archive` subtab this means a reviewer filter excludes archived drawings
+    whose latest revision is unreviewed (e.g. archived-while-pending). The
+    UI uses this filter primarily on Current/In-review subtabs.
+    """
     extra_where: list[str] = []
     params: dict = {"p": project_id}
     if room:
@@ -105,8 +113,12 @@ def list_drawings_by_subtab(
     return [dict(r) for r in rows]
 
 
-def list_summary(db: Session, *, project_id: int) -> dict:
-    """Header counts: total non-archived, distinct rooms, awaiting review."""
+def list_summary(db: Session, *, project_id: int, workspace_id: int) -> dict:
+    """Header counts: total non-archived, distinct rooms, awaiting review.
+
+    Workspace-scoped via projects→app_user→workspace_id, so safe to call
+    independently of an outer _ensure_project_in_workspace check.
+    """
     row = db.execute(
         text(
             f"""
@@ -117,10 +129,13 @@ def list_summary(db: Session, *, project_id: int) -> dict:
               COUNT(*) FILTER (WHERE d.archived_at IS NULL AND l.status = 'pending') AS awaiting_review
               FROM shop_drawing d
               JOIN latest l ON l.drawing_id = d.drawing_id
+              JOIN projects p ON p.project_id = d.project_id
+              LEFT JOIN app_user u ON u.id = p.pm_id
              WHERE d.project_id = :p
+               AND (p.pm_id IS NULL OR u.workspace_id = :w)
             """
         ),
-        {"p": project_id},
+        {"p": project_id, "w": workspace_id},
     ).mappings().first()
     return dict(row) if row else {"total": 0, "distinct_rooms": 0, "awaiting_review": 0}
 

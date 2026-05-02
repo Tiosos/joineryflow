@@ -273,3 +273,39 @@ def test_404_for_drawing_in_other_workspace(client):
     client.post("/auth/login", json={"workspace_slug": "wsb", "email": "b@b.test", "password": "pw"})
     r = client.get(f"/shop-drawings/{did}")
     assert r.status_code == 404
+
+
+def test_editor_cannot_add_revision(client):
+    """Spec §6.2: editor lacks 'Upload new revision' authority even though
+    they hold the write action on shop_dwgs."""
+    ids = _seed_two_users(client)
+    # Promote a third user to editor and have them try to add a revision.
+    from app.db import SessionLocal
+    from sqlalchemy import text
+    from app.auth.passwords import hash_password
+    s = SessionLocal()
+    try:
+        s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, 'e@hw.test', 'E', :p, 'editor')
+        """), {"w": ids["wid"], "p": hash_password("pw")})
+        s.commit()
+    finally:
+        s.close()
+
+    # Drafter creates the drawing.
+    _login(client, "d")
+    blob_id = _upload(client)
+    drawing = _create_drawing(client, ids["pid"], blob_id)
+    did = drawing["drawing_id"]
+
+    # Editor logs in and tries to add a revision.
+    client.cookies.clear()
+    r = client.post("/auth/login",
+                    json={"workspace_slug": "hw", "email": "e@hw.test", "password": "pw"})
+    assert r.status_code == 200, r.text
+    files = {"file": ("c.pdf", io.BytesIO(PDF_BYTES + b"\nx"), "application/pdf")}
+    blob2 = client.post("/files", files=files).json()["file_blob_id"]
+    r = client.post(f"/shop-drawings/{did}/revisions", json={"file_blob_id": blob2})
+    assert r.status_code == 403
+    assert "drafters, managers, or admins" in r.json()["detail"].lower()
