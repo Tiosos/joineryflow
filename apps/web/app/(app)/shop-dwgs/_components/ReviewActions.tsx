@@ -8,6 +8,8 @@ import {
   transitionRevision,
 } from "@/lib/shop-drawings-fetch";
 
+import NewRevisionDialog from "./NewRevisionDialog";
+
 interface Me { id: number; auth_role: string; }
 
 interface Props {
@@ -25,6 +27,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
   const [err, setErr] = useState<string | null>(null);
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  const [newRevOpen, setNewRevOpen] = useState(false);
 
   if (detail.archived_at) {
     return <span className="text-sm text-h-muted">This drawing is archived.</span>;
@@ -101,6 +104,12 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
       {canWrite && !detail.archived_at && (
         <span className="ml-auto" />
       )}
+      {canWrite && !detail.archived_at && (
+        <button disabled={busy} onClick={() => setNewRevOpen(true)}
+                className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-ink disabled:opacity-50">
+          Upload new revision
+        </button>
+      )}
       {canArchive && (
         <button disabled={busy}
                 onClick={() => {
@@ -113,6 +122,14 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
       )}
 
       {err && <p className="w-full text-xs text-rose-700">{err}</p>}
+
+      {newRevOpen && (
+        <NewRevisionDialog
+          drawingId={detail.drawing_id}
+          onClose={() => setNewRevOpen(false)}
+          onAdded={onAfter}
+        />
+      )}
     </div>
   );
 }

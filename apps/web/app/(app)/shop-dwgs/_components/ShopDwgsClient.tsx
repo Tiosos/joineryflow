@@ -12,6 +12,7 @@ import DrawingDrawer from "./DrawingDrawer";
 import DrawingFilters from "./DrawingFilters";
 import ReviewActions from "./ReviewActions";
 import SubtabStrip from "./SubtabStrip";
+import UploadDialog from "./UploadDialog";
 
 interface Project {
   id: number;
@@ -37,6 +38,7 @@ export default function ShopDwgsClient(props: Props) {
   const [list, setList] = useState<DrawingList | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const projectId = props.initialProjectId;
   const subtab = props.initialSubtab;
@@ -93,7 +95,12 @@ export default function ShopDwgsClient(props: Props) {
           <h1 className="text-2xl font-semibold text-h-ink">Shop Drawings</h1>
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
-        {/* Upload button mounted in Task 17 */}
+        {projectId != null && (
+          <button onClick={() => setUploadOpen(true)}
+                  className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
+            Upload drawing
+          </button>
+        )}
       </header>
 
       <DrawingFilters
@@ -158,6 +165,17 @@ export default function ShopDwgsClient(props: Props) {
             const rev = detail.revisions.find((r) => r.revision_id === selectedRevId);
             if (!rev) return null;
             return <ReviewActions detail={detail} selectedRev={rev} me={props.me} onAfter={refresh} />;
+          }}
+        />
+      )}
+
+      {uploadOpen && projectId != null && (
+        <UploadDialog
+          projectId={projectId}
+          onClose={() => setUploadOpen(false)}
+          onCreated={(drawingId) => {
+            setUploadOpen(false);
+            updateUrl({ drawing: String(drawingId), rev: null, subtab: "in_review" });
           }}
         />
       )}
