@@ -499,7 +499,157 @@ def main() -> None:
                         "ON CONFLICT (batch_id, item_hardware_line_id) DO NOTHING"
                     ), {"b": delivered_id, "l": line_first["line_id"]})
 
+        # ── Shop Drawings demo (sub-project #5a) ─────────────────────────────
+        from app.files.seed_helper import put_seed_file
+
+        workspace_slug = "hartwood-joinery"
+        s = db
+        workspace_id = wid
+
+        _kitchen_pdf = "/code/seed/hartwood_joinery/sample_drawings/kitchen-base-run.pdf"
+        _bath_pdf = "/code/seed/hartwood_joinery/sample_drawings/bathroom-vanity.pdf"
+
+        # Resolve seeded ALF-001 project + a drafter + manager from the workspace.
+        _alf_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        _drafter_id = s.execute(
+            text(
+                "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'drafter' "
+                "ORDER BY id LIMIT 1"
+            ),
+            {"w": workspace_id},
+        ).scalar()
+        _manager_id = s.execute(
+            text(
+                "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'manager' "
+                "ORDER BY id LIMIT 1"
+            ),
+            {"w": workspace_id},
+        ).scalar()
+
+        # Re-run safety: clear out any existing demo drawings on ALF-001 so
+        # the script remains idempotent (revisions cascade via FK).
+        s.execute(
+            text("DELETE FROM shop_drawing WHERE project_id = :p"),
+            {"p": _alf_pid},
+        )
+
+        _blob_kitchen = put_seed_file(
+            s,
+            workspace_id=workspace_id,
+            workspace_slug=workspace_slug,
+            app_user_id=_drafter_id,
+            path=_kitchen_pdf,
+        )
+        _blob_bath = put_seed_file(
+            s,
+            workspace_id=workspace_id,
+            workspace_slug=workspace_slug,
+            app_user_id=_drafter_id,
+            path=_bath_pdf,
+        )
+
+        def _make_drawing(*, title, room, archived=False, archived_by=None):
+            did = s.execute(
+                text(
+                    """
+                    INSERT INTO shop_drawing(project_id, title, room, created_by)
+                    VALUES (:p, :t, :r, :u) RETURNING drawing_id
+                    """
+                ),
+                {"p": _alf_pid, "t": title, "r": room, "u": _drafter_id},
+            ).scalar()
+            if archived:
+                s.execute(
+                    text(
+                        "UPDATE shop_drawing SET archived_at = now(), archived_by = :u "
+                        "WHERE drawing_id = :d"
+                    ),
+                    {"u": archived_by, "d": did},
+                )
+            return did
+
+        def _add_rev(did, *, rev_no, blob_id, status, uploaded_by, reviewed_by=None, note=None):
+            rid = s.execute(
+                text(
+                    """
+                    INSERT INTO shop_drawing_revision(drawing_id, rev_no, file_blob_id, status,
+                                                      uploaded_by, reviewed_by, reviewed_at, review_note)
+                    VALUES (:d, :n, :b, :s, :u, CAST(:rv AS bigint),
+                            CASE WHEN CAST(:rv AS bigint) IS NULL THEN NULL ELSE now() END,
+                            CAST(:note AS text))
+                    RETURNING revision_id
+                    """
+                ),
+                {
+                    "d": did,
+                    "n": rev_no,
+                    "b": blob_id,
+                    "s": status,
+                    "u": uploaded_by,
+                    "rv": reviewed_by,
+                    "note": note,
+                },
+            ).scalar()
+            return rid
+
+        # D1: Kitchen base run — rev1 approved, rev2 approved (current), rev3 pending
+        d1 = _make_drawing(title="Kitchen base run", room="Kitchen")
+        _add_rev(d1, rev_no=1, blob_id=_blob_kitchen, status="approved",
+                 uploaded_by=_drafter_id, reviewed_by=_manager_id)
+        r1_2 = _add_rev(d1, rev_no=2, blob_id=_blob_kitchen, status="approved",
+                        uploaded_by=_drafter_id, reviewed_by=_manager_id)
+        s.execute(
+            text("UPDATE shop_drawing SET current_revision_id = :r WHERE drawing_id = :d"),
+            {"r": r1_2, "d": d1},
+        )
+        _add_rev(d1, rev_no=3, blob_id=_blob_kitchen, status="pending",
+                 uploaded_by=_drafter_id)
+
+        # D2: Bathroom vanity — rev1 rejected (note), rev2 approved (current)
+        d2 = _make_drawing(title="Bathroom vanity", room="Bathroom")
+        _add_rev(d2, rev_no=1, blob_id=_blob_bath, status="rejected",
+                 uploaded_by=_drafter_id, reviewed_by=_manager_id,
+                 note="Need finished dimensions")
+        r2_2 = _add_rev(d2, rev_no=2, blob_id=_blob_bath, status="approved",
+                        uploaded_by=_drafter_id, reviewed_by=_manager_id)
+        s.execute(
+            text("UPDATE shop_drawing SET current_revision_id = :r WHERE drawing_id = :d"),
+            {"r": r2_2, "d": d2},
+        )
+
+        # D3: Kitchen island — single draft revision
+        d3 = _make_drawing(title="Kitchen island", room="Kitchen")
+        _add_rev(d3, rev_no=1, blob_id=_blob_kitchen, status="draft",
+                 uploaded_by=_drafter_id)
+
+        # D4: Walk-in robe — single pending revision
+        d4 = _make_drawing(title="Walk-in robe", room="Bedroom")
+        _add_rev(d4, rev_no=1, blob_id=_blob_bath, status="pending",
+                 uploaded_by=_drafter_id)
+
+        # D5: Pantry — approved + archived
+        d5 = _make_drawing(title="Pantry", room="Kitchen", archived=True,
+                           archived_by=_manager_id)
+        r5_1 = _add_rev(d5, rev_no=1, blob_id=_blob_kitchen, status="approved",
+                        uploaded_by=_drafter_id, reviewed_by=_manager_id)
+        s.execute(
+            text("UPDATE shop_drawing SET current_revision_id = :r WHERE drawing_id = :d"),
+            {"r": r5_1, "d": d5},
+        )
+
+        # D6: Hallway storage — single approved revision
+        d6 = _make_drawing(title="Hallway storage", room="Hallway")
+        r6_1 = _add_rev(d6, rev_no=1, blob_id=_blob_bath, status="approved",
+                        uploaded_by=_drafter_id, reviewed_by=_manager_id)
+        s.execute(
+            text("UPDATE shop_drawing SET current_revision_id = :r WHERE drawing_id = :d"),
+            {"r": r6_1, "d": d6},
+        )
+
         db.commit()
+        print(f"seeded shop drawings: d1={d1}, d2={d2}, d3={d3}, d4={d4}, d5={d5}, d6={d6}")
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"
