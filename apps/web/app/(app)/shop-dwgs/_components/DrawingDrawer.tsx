@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { DrawingDetail } from "@/lib/shop-drawings-types";
 import { getDrawing } from "@/lib/shop-drawings-fetch";
+import type { Me } from "@/lib/session";
 
 import RevisionHistoryStrip from "./RevisionHistoryStrip";
 import StatusPill from "./StatusPill";
-
-interface Me {
-  id: number;
-  auth_role: string;
-}
 
 interface Props {
   drawingId: number;
@@ -30,31 +26,28 @@ interface Props {
 export default function DrawingDrawer(props: Props) {
   const [detail, setDetail] = useState<DrawingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedRevId, setSelectedRevId] = useState<number>(props.initialRevId ?? 0);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const d = await getDrawing(props.drawingId);
       setDetail(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  };
+  }, [props.drawingId]);
 
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.drawingId]);
+  }, [refresh]);
 
-  const selectedRevId = useMemo(() => {
-    if (!detail) return 0;
-    if (
-      props.initialRevId &&
-      detail.revisions.some((r) => r.revision_id === props.initialRevId)
-    ) {
-      return props.initialRevId;
-    }
-    return detail.revisions[0]?.revision_id ?? 0;
-  }, [detail, props.initialRevId]);
+  // When detail loads, snap selectedRevId to a valid revision if the current one doesn't match.
+  useEffect(() => {
+    if (!detail) return;
+    if (selectedRevId && detail.revisions.some((r) => r.revision_id === selectedRevId)) return;
+    const fallback = detail.revisions[0]?.revision_id ?? 0;
+    if (fallback) setSelectedRevId(fallback);
+  }, [detail, selectedRevId]);
 
   const selectedRev = detail?.revisions.find((r) => r.revision_id === selectedRevId);
 
@@ -123,7 +116,7 @@ export default function DrawingDrawer(props: Props) {
             <RevisionHistoryStrip
               revisions={detail.revisions}
               selectedId={selectedRevId}
-              onSelect={props.onSelectRevision}
+              onSelect={(rev) => { setSelectedRevId(rev); props.onSelectRevision(rev); }}
             />
           )}
 

@@ -7,10 +7,9 @@ import {
   archiveDrawing,
   transitionRevision,
 } from "@/lib/shop-drawings-fetch";
+import type { Me } from "@/lib/session";
 
 import NewRevisionDialog from "./NewRevisionDialog";
-
-interface Me { id: number; auth_role: string; }
 
 interface Props {
   detail: DrawingDetail;
