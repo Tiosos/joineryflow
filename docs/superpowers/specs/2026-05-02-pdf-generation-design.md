@@ -9,7 +9,7 @@
 
 ## 0. Goal
 
-A Drafter clicks **Print Cutlist**, **Print Hardware**, or **Print Combined PDF** in the item editor footer and gets a PDF download. The Combined PDF merges the rendered cutlist + hardware list with three uploaded reference files (CV production drawing, floor plan, site-measure PDF) plus an auto-generated painting parts list when any part has `paint_required=true`. Drafters manage the three attachment slots from a new **Attachments** tab on the item editor, reusing the file-upload subsystem from #5a.
+A Drafter clicks **Print Cutlist**, **Print Hardware**, or **Print Combined PDF** in the item editor footer and gets a PDF download. The Combined PDF merges the rendered cutlist + hardware list with three uploaded reference files (CV production drawing, floor plan, site-measure PDF) plus an auto-generated painting parts list when any part has `paint_instruction != 'NONE'`. Drafters manage the three attachment slots from a new **Attachments** tab on the item editor, reusing the file-upload subsystem from #5a.
 
 This sub-project also retires the three "PDF generation ships in sub-project #5" disabled buttons currently in `apps/web/app/(app)/items/[id]/_components/EditorFooter.tsx`.
 
@@ -22,9 +22,9 @@ This sub-project also retires the three "PDF generation ships in sub-project #5"
 1. **Item attachments subsystem** — `item_attachment` table with `UNIQUE (item_id, kind)` slot constraint. Three kinds: `cv_drawing`, `floor_plan`, `site_measure`. Replace-on-upload semantics; audit row per swap.
 2. **Attachments tab** in the item editor — three slot cards (one per kind), each showing the current file (viewer link), Replace button, Delete button.
 3. **PDF engine** — WeasyPrint for HTML-to-PDF rendering of dynamic templates + pypdf for merging generated and uploaded PDFs into the Combined output.
-4. **Print Cutlist endpoint** — renders `parts[]` for the item via the `cutlist.html` template.
-5. **Print Hardware endpoint** — renders `item_hardware_lines[]` for the item via the `hardware.html` template.
-6. **Print Combined PDF endpoint** — assembles cover + cutlist + hardware + attachments + (optional) painting parts list into a single PDF.
+4. **Print Cutlist endpoint** — renders `parts[]` for the item via the `cutlist.html` template (joined to `board_materials` for material name).
+5. **Print Hardware endpoint** — renders `item_hardware_lines[]` for the item via the `hardware.html` template (resolved through `project_hardware_catalog` to the 6 catalog tables).
+6. **Print Combined PDF endpoint** — assembles cover + cutlist + hardware + attachments + (optional) painting parts list into a single PDF. Painting page is included when any part has `paint_instruction != 'NONE'`.
 7. **Print templates** — `cutlist.html`, `hardware.html`, `cover_combined.html`, `painting.html`, `missing_attachment.html`, plus `print.css` for paged-media controls.
 8. **Embedded fonts** — Inter (Regular + Bold) and JetBrains Mono (Regular + Bold) committed as `.woff2` under `seed/fonts/` (~250 KB total). Referenced by `print.css` `@font-face`.
 9. **Footer wiring** — the three disabled `<button>` elements in `EditorFooter.tsx` become `<a>` download links pointing at the new endpoints.
@@ -162,10 +162,10 @@ Two functions, ~30 lines. The route handlers compose them.
 
 All four dynamic templates extend a shared `_base.html` skeleton that loads `print.css`. Per-template structure:
 
-- **`cutlist.html`** — Item header block (Item / Project / Room / Stage / Lister / Date), then a parts table: Qty · Part name · Length · Width · Material · Edge · Colour · Comment. Mono numeric columns. Page break after the table; `@page { size: A4; margin: 12mm 10mm }`.
+- **`cutlist.html`** — Item header block (Item description / Project code + name / Room as `rm_no · rm_desc` / Stage / Lister free-text / Date), then a parts table: Qty · Part name · Len mm · Wid mm · Material (resolved from `board_material_id` join) · Edge · Colour · Edging spec · Paint instruction. Mono numeric columns. Page break after the table; `@page { size: A4; margin: 12mm 10mm }`.
 - **`hardware.html`** — Same item header block, then groups of hardware lines by supplier. Per group: supplier letter tile + name + line count + subtotal. Per row: Qty · Type · Description · Brand · Notes. Mono qty + brand columns.
 - **`cover_combined.html`** — Item metadata + a "Slot manifest" table listing the three attachment kinds and which are populated/missing. Page break before the next section.
-- **`painting.html`** — Subset of `parts[]` where `paint_required=true`, rendered as a single column-grouped checklist. Only included in Combined when at least one such part exists.
+- **`painting.html`** — Subset of `parts[]` where `paint_instruction != 'NONE'`, rendered as a single column-grouped checklist with the paint instruction (`DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`) as a column. Only included in Combined when at least one such part exists.
 - **`missing_attachment.html`** — One-page placeholder reading `[Floor Plan: not uploaded]` (parameterized per kind), in muted color. Used only by the Combined assembly when a slot is empty.
 
 ### 2.6 Combined PDF assembly
@@ -375,12 +375,12 @@ The web frontend uses `<a href="..." target="_blank">` for the print buttons (no
 ```python
 def build_context(item_id: int, db: Session, store: FileStore, *, workspace_id: int) -> dict | None:
     item = db.execute(text("""
-        SELECT i.item_id, i.title, i.room, i.stage, i.lister_id,
-               i.project_id, p.project_code, p.name AS project_name,
-               u.full_name AS lister_name
+        SELECT i.item_id, i.num, i.description, i.code, i.item_code,
+               i.rm_no, i.rm_desc, i.stage, i.zone, i.level,
+               i.lister, i.assembler,
+               i.project_id, p.project_code, p.name AS project_name
           FROM items i
           JOIN projects p ON p.project_id = i.project_id
-          LEFT JOIN app_user u ON u.id = i.lister_id
           LEFT JOIN app_user pm ON pm.id = p.pm_id
          WHERE i.item_id = :i
            AND (p.pm_id IS NULL OR pm.workspace_id = :w)
@@ -389,24 +389,26 @@ def build_context(item_id: int, db: Session, store: FileStore, *, workspace_id: 
         return None
 
     parts = db.execute(text("""
-        SELECT p.qty, p.part_name, p.length_mm, p.width_mm, p.material_code,
-               p.edge_code, p.colour, p.comment, COALESCE(p.paint_required, false) AS paint_required
+        SELECT p.qty, p.part_name, p.len_mm, p.wid_mm,
+               p.board_material_id, bm.description AS material_description, bm.code AS material_code,
+               p.edge, p.colour, p.edging_spec,
+               p.paint_instruction
           FROM parts p
           JOIN modules m ON m.module_id = p.module_id
+          LEFT JOIN board_materials bm ON bm.material_id = p.board_material_id
          WHERE m.item_id = :i
-         ORDER BY m.module_id, p.part_id
+         ORDER BY m.module_id, p.seq, p.part_id
     """), {"i": item_id}).mappings().all()
 
     hardware = db.execute(text("""
         SELECT ihl.qty, ihl.note,
-               phc.material_type, phc.material_id,
-               phc.catalog_id
+               phc.material_type, phc.material_id, phc.catalog_id
           FROM item_hardware_lines ihl
           JOIN project_hardware_catalog phc ON phc.catalog_id = ihl.catalog_id
          WHERE ihl.item_id = :i
          ORDER BY ihl.id
     """), {"i": item_id}).mappings().all()
-    enriched_hw = enrich_hardware_with_catalog(db, hardware)  # one extra SELECT per material_type
+    enriched_hw = enrich_hardware_with_catalog(db, hardware)  # one extra SELECT per material_type → name + supplier
 
     attachments = db.execute(text("""
         SELECT ia.kind, ia.file_blob_id, fb.original_filename, fb.byte_size, fb.storage_key
@@ -419,12 +421,19 @@ def build_context(item_id: int, db: Session, store: FileStore, *, workspace_id: 
     return {
         "item": dict(item),
         "parts": [dict(p) for p in parts],
-        "hardware": enriched_hw,  # grouped by supplier in the template
+        "hardware": enriched_hw,                                    # grouped by supplier in the template
         "attachments": attachments_by_kind,
-        "has_painting": any(p["paint_required"] for p in parts),
+        "has_painting": any(p["paint_instruction"] != "NONE" for p in parts),
         "rendered_at": datetime.now(timezone.utc),
     }
 ```
+
+**Schema notes:**
+- `items.lister` is `varchar(128)` free-text (legacy field), not an FK to `app_user`. Templates display the string directly.
+- `items.description` is the item's display name; there's no `items.title`.
+- `items.rm_no` + `items.rm_desc` together represent the room (`1.01 · Kitchen`); render combined.
+- `parts.paint_instruction` is an enum (`NONE / DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`) introduced in migration 0001 with a CHECK constraint. The painting trigger = "any part has `paint_instruction != 'NONE'`".
+- `parts.board_material_id` is an FK to `board_materials(material_id)`. The context builder LEFT JOINs to fetch `description` and `code` for the parts table column. Hardware items go through the existing `enrich_hardware_with_catalog` helper (already used by the procurement workbench) to map `(material_type, material_id)` to a supplier-grouped name.
 
 ### 5.6 Caching headers
 
@@ -729,7 +738,7 @@ These are deliberately deferred:
 - **Caching.** None. Re-render every click.
 - **Missing-attachment behavior in Combined.** Render placeholder page; cover manifest indicates missing slots.
 - **Combined order.** Cover · Cutlist · Hardware · CV drawing · Floor plan · Site measure · Painting (conditional).
-- **Painting auto-include.** Only when at least one part has `paint_required=true`.
+- **Painting auto-include.** Only when at least one part has `paint_instruction != 'NONE'`. The enum was introduced in migration 0001 with values `NONE / DOUBLE_SIDE / SINGLE_SIDE / EDGE_ONLY`.
 - **Print template look.** Matches legacy "HARDWARE LIST sample PDF" and "CV export sample PDF" — Inter for body, JetBrains Mono for tabular columns + IDs.
 - **RBAC.** Print = `list:read`. Attachment mutations = `list:write` (drafter+).
 - **Attachment UI placement.** New tab in the item editor, alongside Cutlist / Hardware / Board / Log.
