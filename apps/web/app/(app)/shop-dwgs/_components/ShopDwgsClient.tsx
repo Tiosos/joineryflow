@@ -8,6 +8,7 @@ import { listDrawings } from "@/lib/shop-drawings-fetch";
 import type { Me } from "@/lib/session";
 
 import DrawingCard from "./DrawingCard";
+import DrawingDrawer from "./DrawingDrawer";
 import DrawingFilters from "./DrawingFilters";
 import SubtabStrip from "./SubtabStrip";
 
@@ -84,11 +85,6 @@ export default function ShopDwgsClient(props: Props) {
     ? `${headerCounts.total} drawings across ${headerCounts.distinct_rooms} rooms · ${headerCounts.awaiting_review} awaiting review`
     : "Pick a project to view drawings.";
 
-  // me/initialDrawingId/initialRevId are wired in subsequent tasks (drawer + permissions).
-  void props.me;
-  void props.initialDrawingId;
-  void props.initialRevId;
-
   return (
     <section className="space-y-4">
       <header className="flex items-baseline justify-between">
@@ -139,6 +135,26 @@ export default function ShopDwgsClient(props: Props) {
         <p className="py-12 text-center text-sm text-h-muted">
           No drawings here yet.
         </p>
+      )}
+
+      {props.initialDrawingId != null && (
+        <DrawingDrawer
+          drawingId={props.initialDrawingId}
+          initialRevId={props.initialRevId}
+          me={props.me}
+          onClose={() => updateUrl({ drawing: null, rev: null })}
+          onChanged={() => {
+            if (projectId != null) {
+              listDrawings({ projectId, subtab, room, q })
+                .then(setList)
+                .catch((e: unknown) =>
+                  setError(e instanceof Error ? e.message : String(e))
+                );
+            }
+          }}
+          onSelectRevision={(rev) => updateUrl({ rev: String(rev) })}
+          renderActions={() => null /* wired in Task 16 */}
+        />
       )}
     </section>
   );
