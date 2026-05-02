@@ -92,6 +92,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-04-25-pm-workbench.md` — 33-task implementation plan for sub-projects #2 + #3.
 - `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md` — Procurement Workbench v1 spec (sub-project #4).
 - `docs/superpowers/plans/2026-04-28-procurement-workbench.md` — 24-task implementation plan for sub-project #4.
+- `docs/superpowers/specs/2026-05-01-shop-drawings-design.md` — Shop Drawings + file-upload subsystem v1 spec (sub-project #5a).
+- `docs/superpowers/plans/2026-05-01-shop-drawings.md` — 21-task implementation plan for sub-project #5a.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -140,3 +142,48 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Seed (`make seed`) inserts one delivered batch + one in-transit batch +
   one allocation on project ALF-001 so the resolution-flow demo works
   out of the box.
+
+## Shop Drawings + File-Upload Subsystem (sub-project #5a)
+
+- New backend modules `apps/api/app/files/` (generic upload subsystem) and
+  `apps/api/app/shop_drawings/`. Mounted at top-level paths from `main.py`.
+- Migration 0013 adds three tables: `file_blob` (workspace-scoped, sha256-deduped),
+  `shop_drawing` (project-scoped, room as free-text tag, points at
+  `current_revision_id`), `shop_drawing_revision` (per-upload row, status state
+  machine). Partial unique index `uniq_drawing_inflight` enforces "at most one
+  draft/pending revision per drawing".
+- `drafter` auth_role is **elevated to PM-parity** on the `shop_dwgs` module
+  (read+write+approve+comment), continuing the elevated-drafter pattern from
+  Procurement Workbench.
+- File storage: `LocalDiskStore` behind a `FileStore` Protocol. Default root
+  `/uploads`, set via `FILE_STORE_ROOT` env. Layout
+  `<root>/<workspace_slug>/<sha256[0:2]>/<sha256>` (content-addressable,
+  sharded). `docker-compose.yml` mounts a named `uploads` volume on the api
+  service.
+- Upload route `POST /files` does magic-byte mime sniff + extension
+  cross-check + 25 MB cap + sha256 dedup. Download route `GET /files/{id}` is
+  workspace-isolated (404 on cross-workspace) and streams via
+  `StreamingResponse` with `Content-Disposition: inline` (RFC 8187 dual
+  filename for non-ASCII names).
+- Web routes:
+  - `/shop-dwgs?project=…&subtab=current|in_review|archive&room=…&q=…` —
+    list page with subtabs + filter strip + 3-col card grid.
+  - `?drawing=N&rev=M` opens a right-side drawer with PDF/image viewer +
+    revision history strip + contextual review actions.
+- Workflow: `draft → pending → approved | rejected`. The not-uploader rule on
+  approve/reject is enforced in the route handler; the partial unique index
+  enforces the in-flight invariant. Approve updates
+  `shop_drawing.current_revision_id` atomically. Archive 409s on already-
+  archived (no silent re-archive); patch enforces creator-or-manager rule.
+- Allowed file types: PDF / PNG / JPEG only (validated by magic bytes).
+  SVG, DWG, etc. rejected with 415.
+- Thumbnails are deterministic SVG placeholders seeded from `drawing_id`
+  (no PDF rendering pipeline in v1).
+- Seed (`make seed`) inserts 2 fixture PDFs + 6 demo drawings on ALF-001
+  spanning Current / In review / Archive. Re-runnable: the seed block does
+  `DELETE FROM shop_drawing WHERE project_id = ALF-001` before inserts so
+  it's idempotent.
+- Out of scope (deferred to #5b/#5c): item attachments (CV drawing, floor
+  plan, site-measure PDF), Combined PDF generation, real PDF thumbnails,
+  Templates subtab, iSample tab, orphan blob GC, cloud storage backend,
+  unarchive button.
