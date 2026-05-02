@@ -33,6 +33,7 @@ def workspace_id(db):
 TRUNCATE_TABLES = (
     "shop_drawing_revision",
     "shop_drawing",
+    "item_attachment",
     "file_blob",
     "batch_allocations",
     "procurement_batches",
