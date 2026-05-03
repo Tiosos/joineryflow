@@ -1,0 +1,38 @@
+{% extends "_base.html" %}
+{% set title = "Painting parts — " + (item.description or "item " ~ item.item_id) %}
+{% block body %}
+  <h1>Painting parts · {{ item.description or item.code or 'Item ' ~ item.item_id }}</h1>
+
+  <div class="item-header">
+    <div class="label">Item #</div><div class="value mono">{{ item.num }}</div>
+    <div class="label">Project</div><div class="value mono">{{ item.project_code }} · {{ item.project_name }}</div>
+    <div class="label">Date</div><div class="value mono">{{ rendered_at.strftime('%d/%m/%Y') }}</div>
+  </div>
+
+  <table class="painting">
+    <thead>
+      <tr>
+        <th style="width:6%">Qty</th>
+        <th style="width:30%">Part</th>
+        <th style="width:8%">Len mm</th>
+        <th style="width:8%">Wid mm</th>
+        <th style="width:24%">Material</th>
+        <th style="width:14%">Colour</th>
+        <th style="width:10%">Instruction</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in parts if p.paint_instruction != 'NONE' %}
+      <tr>
+        <td class="mono">{{ p.qty }}</td>
+        <td>{{ p.part_name or '' }}</td>
+        <td class="mono">{{ p.len_mm or '' }}</td>
+        <td class="mono">{{ p.wid_mm or '' }}</td>
+        <td>{{ p.material_description or p.material_code or '' }}</td>
+        <td>{{ p.colour or '' }}</td>
+        <td class="mono">{{ p.paint_instruction }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

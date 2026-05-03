@@ -1,0 +1,113 @@
+/* JoineryFlow print stylesheet — paged-media controls for WeasyPrint */
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-style: normal;
+  src: url('../../../../seed/fonts/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-weight: 700;
+  font-style: normal;
+  src: url('../../../../seed/fonts/Inter-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 400;
+  font-style: normal;
+  src: url('../../../../seed/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 700;
+  font-style: normal;
+  src: url('../../../../seed/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+}
+
+@page {
+  size: A4;
+  margin: 14mm 12mm 18mm 12mm;
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9pt;
+    color: #5a574f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  font-size: 10pt;
+  color: #1b1a17;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 { font-size: 18pt; margin: 0 0 4mm 0; font-weight: 700; }
+h2 { font-size: 13pt; margin: 6mm 0 3mm 0; font-weight: 700; border-bottom: 1px solid #e4e0d8; padding-bottom: 1mm; }
+h3 { font-size: 11pt; margin: 4mm 0 2mm 0; font-weight: 700; }
+
+.mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+.muted { color: #5a574f; }
+
+.item-header {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content 1fr;
+  gap: 1mm 4mm;
+  font-size: 9pt;
+  border: 1px solid #e4e0d8;
+  padding: 3mm 4mm;
+  margin-bottom: 4mm;
+}
+.item-header .label { color: #5a574f; }
+.item-header .value { color: #1b1a17; }
+
+table.parts, table.hw, table.painting {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+table.parts th, table.parts td,
+table.hw th, table.hw td,
+table.painting th, table.painting td {
+  border-bottom: 1px solid #e4e0d8;
+  padding: 1.5mm 2mm;
+  text-align: left;
+  vertical-align: top;
+}
+table.parts thead, table.hw thead, table.painting thead {
+  background: #f4f2ed;
+}
+table.parts thead th, table.hw thead th, table.painting thead th {
+  font-weight: 700;
+  font-size: 8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5a574f;
+}
+
+.hw-group { margin: 4mm 0 6mm 0; page-break-inside: avoid; }
+.hw-group .hw-group-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.5mm; }
+.hw-group .hw-group-header .qty-total { font-family: 'JetBrains Mono', monospace; color: #5a574f; }
+
+.slot-manifest { width: 100%; border-collapse: collapse; font-size: 10pt; margin-top: 4mm; }
+.slot-manifest td { padding: 2mm 3mm; border-bottom: 1px solid #e4e0d8; }
+.slot-manifest .present { color: #1b1a17; }
+.slot-manifest .missing { color: #b5b1a6; font-style: italic; }
+
+.placeholder-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 240mm;
+  color: #b5b1a6;
+  font-size: 16pt;
+  text-align: center;
+}
+.placeholder-page .kind { font-weight: 700; color: #8f8b80; margin-bottom: 4mm; }
+
+.page-break { page-break-after: always; }

@@ -1,0 +1,50 @@
+{% extends "_base.html" %}
+{% set title = "Cutlist — " + (item.description or item.code or "item " ~ item.item_id) %}
+{% block body %}
+  <h1>Cutlist · {{ item.description or item.code or 'Item ' ~ item.item_id }}</h1>
+
+  <div class="item-header">
+    <div class="label">Item #</div><div class="value mono">{{ item.num }}</div>
+    <div class="label">Project</div><div class="value mono">{{ item.project_code }} · {{ item.project_name }}</div>
+    <div class="label">Room</div><div class="value">{{ item.rm_no or '' }}{% if item.rm_no and item.rm_desc %} · {% endif %}{{ item.rm_desc or '' }}</div>
+    <div class="label">Stage</div><div class="value">{{ item.stage or '—' }}</div>
+    <div class="label">Lister</div><div class="value">{{ item.lister or '—' }}</div>
+    <div class="label">Date</div><div class="value mono">{{ rendered_at.strftime('%d/%m/%Y') }}</div>
+  </div>
+
+  <h2>Parts</h2>
+  {% if parts|length == 0 %}
+    <p class="muted">No parts on this item.</p>
+  {% else %}
+  <table class="parts">
+    <thead>
+      <tr>
+        <th style="width:6%">Qty</th>
+        <th style="width:24%">Part</th>
+        <th style="width:8%">Len mm</th>
+        <th style="width:8%">Wid mm</th>
+        <th style="width:18%">Material</th>
+        <th style="width:8%">Edge</th>
+        <th style="width:10%">Colour</th>
+        <th style="width:8%">Edging</th>
+        <th style="width:10%">Paint</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in parts %}
+      <tr>
+        <td class="mono">{{ p.qty }}</td>
+        <td>{{ p.part_name or '' }}</td>
+        <td class="mono">{{ p.len_mm or '' }}</td>
+        <td class="mono">{{ p.wid_mm or '' }}</td>
+        <td>{{ p.material_description or p.material_code or '' }}</td>
+        <td>{{ p.edge or '' }}</td>
+        <td>{{ p.colour or '' }}</td>
+        <td>{{ p.edging_spec or '' }}</td>
+        <td class="mono">{{ p.paint_instruction }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endblock %}

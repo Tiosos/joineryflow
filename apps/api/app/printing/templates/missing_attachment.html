@@ -1,0 +1,9 @@
+{% extends "_base.html" %}
+{% set _kind_labels = {'cv_drawing': 'CV Production Drawing', 'floor_plan': 'Floor Plan', 'site_measure': 'Site Measure'} %}
+{% block body %}
+  <div class="placeholder-page">
+    <div class="kind">{{ _kind_labels.get(kind, kind) }}</div>
+    <div>not uploaded</div>
+    <div class="muted" style="margin-top:6mm; font-size:10pt">Item {{ item.num }} · {{ item.description or item.code or '' }}</div>
+  </div>
+{% endblock %}

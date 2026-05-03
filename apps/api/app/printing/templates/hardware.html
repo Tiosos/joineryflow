@@ -1,0 +1,47 @@
+{% extends "_base.html" %}
+{% set title = "Hardware — " + (item.description or "item " ~ item.item_id) %}
+{% block body %}
+  <h1>Hardware · {{ item.description or item.code or 'Item ' ~ item.item_id }}</h1>
+
+  <div class="item-header">
+    <div class="label">Item #</div><div class="value mono">{{ item.num }}</div>
+    <div class="label">Project</div><div class="value mono">{{ item.project_code }} · {{ item.project_name }}</div>
+    <div class="label">Room</div><div class="value">{{ item.rm_no or '' }}{% if item.rm_no and item.rm_desc %} · {% endif %}{{ item.rm_desc or '' }}</div>
+    <div class="label">Stage</div><div class="value">{{ item.stage or '—' }}</div>
+    <div class="label">Lister</div><div class="value">{{ item.lister or '—' }}</div>
+    <div class="label">Date</div><div class="value mono">{{ rendered_at.strftime('%d/%m/%Y') }}</div>
+  </div>
+
+  {% if hardware|length == 0 %}
+    <p class="muted">No hardware lines on this item.</p>
+  {% else %}
+    {% for group in hardware %}
+    <div class="hw-group">
+      <div class="hw-group-header">
+        <h3>{{ group.material_type }}</h3>
+        <span class="qty-total">{{ group.lines|length }} line{% if group.lines|length != 1 %}s{% endif %} · qty {{ group.qty_total }}</span>
+      </div>
+      <table class="hw">
+        <thead>
+          <tr>
+            <th style="width:8%">Qty</th>
+            <th style="width:18%">SKU</th>
+            <th style="width:44%">Description</th>
+            <th style="width:30%">Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in group.lines %}
+          <tr>
+            <td class="mono">{{ line.qty }}</td>
+            <td class="mono">{{ line.sku or '' }}</td>
+            <td>{{ line.description or '' }}</td>
+            <td>{{ line.note or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

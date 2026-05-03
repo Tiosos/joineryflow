@@ -1,0 +1,41 @@
+{% extends "_base.html" %}
+{% set title = "Combined PDF — " + (item.description or "item " ~ item.item_id) %}
+{% block body %}
+  <h1>{{ item.description or item.code or 'Item ' ~ item.item_id }}</h1>
+  <p class="muted">Combined production PDF · {{ rendered_at.strftime('%d/%m/%Y %H:%M') }} UTC</p>
+
+  <div class="item-header">
+    <div class="label">Item #</div><div class="value mono">{{ item.num }}</div>
+    <div class="label">Project</div><div class="value mono">{{ item.project_code }} · {{ item.project_name }}</div>
+    <div class="label">Room</div><div class="value">{{ item.rm_no or '' }}{% if item.rm_no and item.rm_desc %} · {% endif %}{{ item.rm_desc or '' }}</div>
+    <div class="label">Stage</div><div class="value">{{ item.stage or '—' }}</div>
+    <div class="label">Lister</div><div class="value">{{ item.lister or '—' }}</div>
+    <div class="label">Assembler</div><div class="value">{{ item.assembler or '—' }}</div>
+  </div>
+
+  <h2>Slot manifest</h2>
+  <table class="slot-manifest">
+    <tr>
+      <td style="width:30%">CV production drawing</td>
+      <td class="{{ 'present' if attachments.cv_drawing else 'missing' }}">
+        {{ attachments.cv_drawing.original_filename if attachments.cv_drawing else 'not uploaded' }}
+      </td>
+    </tr>
+    <tr>
+      <td>Floor plan</td>
+      <td class="{{ 'present' if attachments.floor_plan else 'missing' }}">
+        {{ attachments.floor_plan.original_filename if attachments.floor_plan else 'not uploaded' }}
+      </td>
+    </tr>
+    <tr>
+      <td>Site measure</td>
+      <td class="{{ 'present' if attachments.site_measure else 'missing' }}">
+        {{ attachments.site_measure.original_filename if attachments.site_measure else 'not uploaded' }}
+      </td>
+    </tr>
+  </table>
+
+  {% if has_painting %}
+    <p class="muted" style="margin-top:6mm">Includes painting parts list.</p>
+  {% endif %}
+{% endblock %}
