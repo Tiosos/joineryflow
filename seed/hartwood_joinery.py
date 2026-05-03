@@ -529,6 +529,44 @@ def main() -> None:
             {"w": workspace_id},
         ).scalar()
 
+        # ── Item Attachments demo (sub-project #5b) ───────────────────────────────────
+        from app.files.seed_helper import put_seed_file as _put_attachment
+
+        _blob_kit = _put_attachment(s, workspace_id=workspace_id, workspace_slug=workspace_slug,
+                                    app_user_id=_drafter_id, path=_kitchen_pdf)
+        _blob_bat = _put_attachment(s, workspace_id=workspace_id, workspace_slug=workspace_slug,
+                                    app_user_id=_drafter_id, path=_bath_pdf)
+
+        # Pick the first two ALF-001 items (in stable insertion order).
+        _attach_items = s.execute(text("""
+            SELECT item_id FROM items WHERE project_id = :p ORDER BY item_id LIMIT 2
+        """), {"p": _alf_pid}).scalars().all()
+
+        if len(_attach_items) >= 2:
+            _full_item, _partial_item = _attach_items[0], _attach_items[1]
+
+            # Item 1: all 3 slots populated (cv_drawing + floor_plan + site_measure)
+            for kind in ("cv_drawing", "floor_plan", "site_measure"):
+                s.execute(text("""
+                    INSERT INTO item_attachment(item_id, kind, file_blob_id, uploaded_by)
+                    VALUES (:i, :k, :b, :u)
+                    ON CONFLICT (item_id, kind) DO UPDATE
+                      SET file_blob_id = EXCLUDED.file_blob_id, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()
+                """), {"i": _full_item, "k": kind, "b": _blob_kit, "u": _drafter_id})
+
+            # Item 2: only cv_drawing (Combined will render placeholder pages for the missing two)
+            s.execute(text("""
+                INSERT INTO item_attachment(item_id, kind, file_blob_id, uploaded_by)
+                VALUES (:i, 'cv_drawing', :b, :u)
+                ON CONFLICT (item_id, kind) DO UPDATE
+                  SET file_blob_id = EXCLUDED.file_blob_id, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()
+            """), {"i": _partial_item, "b": _blob_bat, "u": _drafter_id})
+
+            s.commit()
+            print(f"seeded item attachments: full_item={_full_item} (3/3), partial_item={_partial_item} (1/3)")
+        else:
+            print("skipping item attachments seed: ALF-001 has fewer than 2 items")
+
         # Re-run safety: clear out any existing demo drawings on ALF-001 so
         # the script remains idempotent (revisions cascade via FK).
         s.execute(
