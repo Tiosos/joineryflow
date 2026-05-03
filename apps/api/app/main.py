@@ -7,6 +7,7 @@ from .parts.routes import router as parts_router
 from .home.routes import router as home_router
 from .item_attachments.routes import router as item_attachments_router
 from .items.routes import router as items_router
+from .printing.routes import router as printing_router
 from .procurement.routes import router as proc_router
 from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
 from .procurement_v1.batches.routes import router as proc_v1_batches_router
@@ -22,6 +23,7 @@ app = FastAPI(title="JoineryFlow API")
 app.include_router(auth_router)
 app.include_router(files_router)
 app.include_router(item_attachments_router)
+app.include_router(printing_router)
 app.include_router(shop_dwgs_router)
 app.include_router(ws_router)
 app.include_router(users_router)
