@@ -94,6 +94,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-04-28-procurement-workbench.md` — 24-task implementation plan for sub-project #4.
 - `docs/superpowers/specs/2026-05-01-shop-drawings-design.md` — Shop Drawings + file-upload subsystem v1 spec (sub-project #5a).
 - `docs/superpowers/plans/2026-05-01-shop-drawings.md` — 21-task implementation plan for sub-project #5a.
+- `docs/superpowers/specs/2026-05-02-pdf-generation-design.md` — PDF generation + item attachments v1 spec (sub-project #5b).
+- `docs/superpowers/plans/2026-05-02-pdf-generation.md` — 15-task implementation plan for sub-project #5b.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -187,3 +189,72 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   plan, site-measure PDF), Combined PDF generation, real PDF thumbnails,
   Templates subtab, iSample tab, orphan blob GC, cloud storage backend,
   unarchive button.
+
+## PDF Generation + Item Attachments (sub-project #5b)
+
+- New backend modules `apps/api/app/item_attachments/` (3-slot CRUD over file_blob)
+  and `apps/api/app/printing/` (WeasyPrint engine + Jinja2 templates +
+  `cutlist.pdf` / `hardware.pdf` / `combined.pdf` routes). Both mounted at
+  top-level paths from `main.py`.
+- Migration 0015 adds `item_attachment(item_id, kind, file_blob_id, ...)` with
+  `UNIQUE (item_id, kind)` slot constraint and `ON DELETE CASCADE` from items.
+  Three legal kinds: `cv_drawing`, `floor_plan`, `site_measure`. (Migration
+  0014 was the workspace-isolation hardening that landed alongside this
+  sub-project — `projects.workspace_id` direct FK + the `(p.pm_id IS NULL OR
+  …)` predicate retired.)
+- PDF engine: WeasyPrint 63+ (HTML→PDF render) + pypdf 5+ (merge generated
+  + uploaded sources). Pango runtime libs added to the api Dockerfile
+  (~25 MB). No new container.
+- Print templates live at `apps/api/app/printing/templates/{cutlist,hardware,
+  cover_combined,painting,missing_attachment}.html` + `print.css`. Inter +
+  JetBrains Mono `.woff2` fonts committed under `seed/fonts/` (~400 KB).
+- Print routes:
+  - `GET /items/{iid}/cutlist.pdf` — render parts table.
+  - `GET /items/{iid}/hardware.pdf` — render hardware grouped by **material
+    type** (BOARD / HARDWARE / CUSTOM / BENCHTOP / APPLIANCE / HIRE; not by
+    supplier — supplier-grouping deferred until catalog enrichment exposes
+    per-table supplier columns).
+  - `GET /items/{iid}/combined.pdf` — assembles cover + cutlist + hardware +
+    3 attachments (or placeholder pages when missing or unparseable) +
+    painting page (only when at least one part has `paint_instruction != 'NONE'`).
+  - All return `inline; filename=...` Content-Disposition with
+    `Cache-Control: no-store`. Browser opens in a new tab via
+    `<a target="_blank">`.
+- Item attachment routes:
+  - `GET /items/{iid}/attachments` — bundle of 3 slots, populated or null.
+  - `POST /items/{iid}/attachments/{kind}` — bind/replace via
+    `{file_blob_id}` body. PDF-only mime gate (415 on PNG/JPEG; the
+    file_blob table itself remains generic).
+  - `DELETE /items/{iid}/attachments/{kind}` — clear slot.
+- RBAC: print routes use `("list", "read")` (any reader can print);
+  attachment mutations use `("list", "write")` (drafter+, since drafter is
+  PM-parity on `list`). The PDF-only gate is enforced in the route handler;
+  `bind_attachment` returns `ValueError` which the route maps to 415.
+- Workspace isolation: print + attachment routes scope through
+  `projects.workspace_id = :w` directly (the workspace-isolation hardening
+  in commit `cc7ea11` retired the legacy pm_id chain).
+- Audit hooks: `item.print.{cutlist|hardware|combined}` per render;
+  `item_attachment.{bind|clear}` per mutation. The bind audit payload includes
+  `replaced_file_blob_id` when overwriting an existing slot.
+- Web side:
+  - New "Attachments" tab in the item editor at
+    `apps/web/app/(app)/items/[id]/_components/AttachmentsTab.tsx` with three
+    slot cards (one per kind). Each card supports Open / Replace / Delete
+    (Replace + Delete gated on drafter+). Wired into `EditorTabs.tsx` via the
+    `TABS` const + `TAB_LABELS` map; page.tsx threads `me?.auth_role` through
+    as a new prop.
+  - The 3 disabled "Print …" buttons in `EditorFooter.tsx` are now live
+    `<a href="/api/items/{id}/{kind}.pdf" target="_blank">` download links.
+    The Combined button shows a tooltip listing which slots are populated /
+    missing (read from a prefetched attachments bundle).
+- Seed: first 2 ALF-001 items get attachments on `make seed` — item 1 has
+  3/3 slots populated (Combined shows all real PDFs), item 2 has 1/3
+  (Combined shows 2 placeholder pages).
+- Defensive PDF-merge fallback: `routes.py` validates each attachment's
+  bytes via `pypdf.PdfReader` before merging. Unparseable PDFs (corrupt or
+  fixture stubs) substitute the `missing_attachment.html` placeholder so the
+  Combined render never crashes. Test fixtures benefit from this.
+- Out of scope (deferred): iSample (sub-project #5c), async/queued render,
+  PDF caching, real attachment thumbnails, PNG/JPEG attachments, supplier
+  grouping in Hardware print, custom print templates, async fetch+Blob loading
+  indicator (current Combined uses plain `target="_blank"`).
