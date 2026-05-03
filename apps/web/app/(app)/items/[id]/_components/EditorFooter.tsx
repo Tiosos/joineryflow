@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type { ItemOut } from "@/lib/pm-types";
+import type { AttachmentsBundle } from "@/lib/attachments-types";
+import { getAttachments } from "@/lib/attachments-fetch";
+import { combinedTooltip, printUrl } from "@/lib/print";
 
 interface EditorFooterProps {
   item: ItemOut;
@@ -19,6 +22,11 @@ export function EditorFooter({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bundle, setBundle] = useState<AttachmentsBundle | null>(null);
+
+  useEffect(() => {
+    getAttachments(item.id).then(setBundle).catch(() => setBundle(null));
+  }, [item.id]);
 
   const isOwner =
     currentUserId !== null && item.cutlist_owner_id === currentUserId;
@@ -49,35 +57,34 @@ export function EditorFooter({
     }
   }
 
-  const printTitle = "PDF generation ships in sub-project #5";
-
   return (
     <footer className="flex items-center justify-between rounded-lg border border-h-line bg-h-surface px-4 py-3">
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled
-          title={printTitle}
-          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-muted opacity-50 cursor-not-allowed"
+        <a
+          href={printUrl(item.id, "cutlist")}
+          target="_blank"
+          rel="noopener"
+          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-ink hover:bg-h-line/40"
         >
           Print Cutlist
-        </button>
-        <button
-          type="button"
-          disabled
-          title={printTitle}
-          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-muted opacity-50 cursor-not-allowed"
+        </a>
+        <a
+          href={printUrl(item.id, "hardware")}
+          target="_blank"
+          rel="noopener"
+          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-ink hover:bg-h-line/40"
         >
           Print Hardware
-        </button>
-        <button
-          type="button"
-          disabled
-          title={printTitle}
-          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-muted opacity-50 cursor-not-allowed"
+        </a>
+        <a
+          href={printUrl(item.id, "combined")}
+          target="_blank"
+          rel="noopener"
+          title={combinedTooltip(bundle)}
+          className="rounded bg-h-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
         >
           Print Combined PDF
-        </button>
+        </a>
       </div>
 
       <div className="flex items-center gap-3">
