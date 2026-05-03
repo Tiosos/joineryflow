@@ -50,7 +50,7 @@ export default async function ItemEditorPage({
       )}
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <ItemMetadataPanel item={item} />
-        <EditorTabs item={item} active={tab} />
+        <EditorTabs item={item} active={tab} currentUserRole={me?.auth_role ?? null} />
       </div>
       <EditorFooter
         item={item}

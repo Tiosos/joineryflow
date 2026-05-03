@@ -5,23 +5,26 @@ import type { ItemOut } from "@/lib/pm-types";
 import { CutlistTab } from "./cutlist/CutlistTab";
 import { HardwareTab } from "./hardware/HardwareTab";
 import { LogTab } from "./LogTab";
+import AttachmentsTab from "./AttachmentsTab";
 
 interface EditorTabsProps {
   item: ItemOut;
   active: string;
+  currentUserRole: string | null;
 }
 
-const TABS = ["cutlist", "hardware", "board", "log"] as const;
+const TABS = ["cutlist", "hardware", "board", "attachments", "log"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   cutlist: "Cutlist",
   hardware: "Hardware",
   board: "Board",
+  attachments: "Attachments",
   log: "Log",
 };
 
-export function EditorTabs({ item, active }: EditorTabsProps) {
+export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -59,6 +62,9 @@ export function EditorTabs({ item, active }: EditorTabsProps) {
           <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
             Board view ships in v2 with Cabinet Vision integration.
           </div>
+        )}
+        {current === "attachments" && (
+          <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
         {current === "log" && <LogTab rows={item.edit_log} />}
       </div>
