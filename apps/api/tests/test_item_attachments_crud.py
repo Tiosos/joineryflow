@@ -127,7 +127,7 @@ def test_get_bundle_returns_three_slots_with_populated_and_null(db, workspace_id
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
                     file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
-    bundle = get_bundle(db, item_id=seed["iid"])
+    bundle = get_bundle(db, item_id=seed["iid"], workspace_id=workspace_id)
     assert bundle["item_id"] == seed["iid"]
     assert len(bundle["slots"]) == 3
     by_kind = {s["kind"]: s for s in bundle["slots"]}

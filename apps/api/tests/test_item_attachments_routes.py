@@ -144,3 +144,104 @@ def test_route_viewer_can_get_bundle(client, truncate_all):
     ids = _route_seed(client, truncate_all, role="viewer")
     r = client.get(f"/items/{ids['iid']}/attachments")
     assert r.status_code == 200
+
+
+def test_route_get_bundle_cross_workspace_returns_404(client, truncate_all):
+    """Workspace B cannot fetch attachments bundle for an item in workspace A."""
+    ids_a = _route_seed(client, truncate_all)
+    iid_a = ids_a["iid"]
+
+    # Switch to a different workspace
+    from app.db import SessionLocal
+    from app.auth.passwords import hash_password
+    s = SessionLocal()
+    try:
+        wid_b = s.execute(text("INSERT INTO workspace(slug,name) VALUES('rt-b','RT-B') RETURNING id")).scalar()
+        s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, 'b@rt.test', 'B', :p, 'drafter')
+        """), {"w": wid_b, "p": hash_password("pw")})
+        s.commit()
+    finally:
+        s.close()
+    client.cookies.clear()
+    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
+    assert r.status_code == 200, r.text
+
+    r = client.get(f"/items/{iid_a}/attachments")
+    assert r.status_code == 404
+
+
+def test_route_clear_cross_workspace_returns_404(client, truncate_all):
+    """Workspace B cannot delete an attachment slot on an item in workspace A."""
+    ids_a = _route_seed(client, truncate_all)
+    iid_a = ids_a["iid"]
+    bid_a = ids_a["bid"]
+    # Bind a slot in workspace A so there's something to attempt deleting.
+    r = client.post(f"/items/{iid_a}/attachments/cv_drawing", json={"file_blob_id": bid_a})
+    assert r.status_code == 201, r.text
+
+    # Switch to workspace B
+    from app.db import SessionLocal
+    from app.auth.passwords import hash_password
+    s = SessionLocal()
+    try:
+        wid_b = s.execute(text("INSERT INTO workspace(slug,name) VALUES('rt-b','RT-B') RETURNING id")).scalar()
+        s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, 'b@rt.test', 'B', :p, 'drafter')
+        """), {"w": wid_b, "p": hash_password("pw")})
+        s.commit()
+    finally:
+        s.close()
+    client.cookies.clear()
+    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
+    assert r.status_code == 200, r.text
+
+    r = client.delete(f"/items/{iid_a}/attachments/cv_drawing")
+    assert r.status_code == 404
+
+    # Verify the slot in workspace A is still present.
+    s = SessionLocal()
+    try:
+        count = s.execute(text(
+            "SELECT count(*) FROM item_attachment WHERE item_id = :i AND kind = 'cv_drawing'"
+        ), {"i": iid_a}).scalar()
+        assert count == 1
+    finally:
+        s.close()
+
+
+def test_route_bind_cross_workspace_returns_422(client, truncate_all):
+    """Workspace B cannot bind a slot on an item in workspace A.
+
+    The file_blob workspace check would fail anyway, but the item-workspace
+    check provides defense-in-depth and should fire first.
+    """
+    ids_a = _route_seed(client, truncate_all)
+    iid_a = ids_a["iid"]
+
+    # Switch to workspace B + upload our own blob there
+    from app.db import SessionLocal
+    from app.auth.passwords import hash_password
+    s = SessionLocal()
+    try:
+        wid_b = s.execute(text("INSERT INTO workspace(slug,name) VALUES('rt-b','RT-B') RETURNING id")).scalar()
+        s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, 'b@rt.test', 'B', :p, 'drafter')
+        """), {"w": wid_b, "p": hash_password("pw")})
+        s.commit()
+    finally:
+        s.close()
+    client.cookies.clear()
+    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
+    assert r.status_code == 200, r.text
+    files = {"file": ("b.pdf", io.BytesIO(PDF_BYTES + b"\nB"), "application/pdf")}
+    bid_b = client.post("/files", files=files).json()["file_blob_id"]
+
+    # Try to bind the workspace-B blob onto a workspace-A item
+    r = client.post(f"/items/{iid_a}/attachments/cv_drawing", json={"file_blob_id": bid_b})
+    # The route maps "item not found in this workspace" ValueError to 404 (per existing routes.py logic
+    # which checks for "not found" substring). Either 404 or 422 is acceptable as long as the bind fails.
+    assert r.status_code in (404, 422)

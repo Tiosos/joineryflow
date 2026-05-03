@@ -25,6 +25,19 @@ def bind_attachment(
     actor_id: int,
 ) -> dict:
     """UPSERT a slot. Validates blob is PDF + workspace-match. Writes audit."""
+    owns = db.execute(
+        text(
+            """
+            SELECT 1 FROM items i
+              JOIN projects p ON p.project_id = i.project_id
+             WHERE i.item_id = :i AND p.workspace_id = :w
+            """
+        ),
+        {"i": item_id, "w": workspace_id},
+    ).first()
+    if not owns:
+        raise ValueError("item not found in this workspace")
+
     blob = db.execute(
         text("SELECT mime FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
         {"b": file_blob_id, "w": workspace_id},
@@ -74,10 +87,22 @@ def clear_attachment(
     workspace_id: int,
     actor_id: int,
 ) -> bool:
-    """Remove a slot. Returns True if removed, False if not present."""
+    """Remove a slot. Returns True if removed, False if not present OR cross-workspace."""
     row = db.execute(
-        text("DELETE FROM item_attachment WHERE item_id = :i AND kind = :k RETURNING file_blob_id"),
-        {"i": item_id, "k": kind},
+        text(
+            """
+            DELETE FROM item_attachment
+             WHERE item_id = :i AND kind = :k
+               AND item_id IN (
+                 SELECT i.item_id
+                   FROM items i
+                   JOIN projects p ON p.project_id = i.project_id
+                  WHERE p.workspace_id = :w
+               )
+             RETURNING file_blob_id
+            """
+        ),
+        {"i": item_id, "k": kind, "w": workspace_id},
     ).first()
     if not row:
         return False
@@ -90,8 +115,27 @@ def clear_attachment(
     return True
 
 
-def get_bundle(db: Session, *, item_id: int) -> dict:
-    """Return all 3 slots in canonical order, populated or null."""
+def get_bundle(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
+    """Return all 3 slots in canonical order, populated or null.
+
+    Returns None if the item doesn't exist or belongs to a different workspace
+    (so the route can return 404 — don't leak existence).
+    """
+    # Workspace ownership check first
+    owns = db.execute(
+        text(
+            """
+            SELECT 1
+              FROM items i
+              JOIN projects p ON p.project_id = i.project_id
+             WHERE i.item_id = :i AND p.workspace_id = :w
+            """
+        ),
+        {"i": item_id, "w": workspace_id},
+    ).first()
+    if not owns:
+        return None
+
     rows = db.execute(
         text(
             """

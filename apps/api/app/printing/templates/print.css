@@ -4,25 +4,25 @@
   font-family: 'Inter';
   font-weight: 400;
   font-style: normal;
-  src: url('../../../../seed/fonts/Inter-Regular.woff2') format('woff2');
+  src: url('../../../seed/fonts/Inter-Regular.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Inter';
   font-weight: 700;
   font-style: normal;
-  src: url('../../../../seed/fonts/Inter-Bold.woff2') format('woff2');
+  src: url('../../../seed/fonts/Inter-Bold.woff2') format('woff2');
 }
 @font-face {
   font-family: 'JetBrains Mono';
   font-weight: 400;
   font-style: normal;
-  src: url('../../../../seed/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  src: url('../../../seed/fonts/JetBrainsMono-Regular.woff2') format('woff2');
 }
 @font-face {
   font-family: 'JetBrains Mono';
   font-weight: 700;
   font-style: normal;
-  src: url('../../../../seed/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  src: url('../../../seed/fonts/JetBrainsMono-Bold.woff2') format('woff2');
 }
 
 @page {

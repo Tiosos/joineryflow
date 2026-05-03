@@ -19,7 +19,10 @@ def get_attachments_route(
     user: AuthUser = Depends(require_permission("list", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.get_bundle(db, item_id=iid)
+    bundle = q.get_bundle(db, item_id=iid, workspace_id=user.workspace_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    return bundle
 
 
 @router.post(
