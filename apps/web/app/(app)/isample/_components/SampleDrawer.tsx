@@ -45,6 +45,8 @@ export default function SampleDrawer(props: Props) {
 
   const handleClearPhoto = async () => {
     await clearSamplePhoto(props.sampleId);
+    await refresh();
+    props.onChanged();
   };
 
   return (

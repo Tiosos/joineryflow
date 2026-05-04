@@ -24,8 +24,7 @@ from .schemas import (
 
 router = APIRouter(tags=["samples"])
 
-WRITER_ROLES = ("drafter", "manager", "admin")
-APPROVER_ROLES = ("drafter", "manager", "admin")
+MANAGER_ROLES = ("manager", "admin")
 
 
 @router.get("/projects/{pid}/samples", response_model=SampleListOut)
@@ -105,7 +104,7 @@ def patch_sample_route(
     cur = q.get_sample(db, sample_id=sid, workspace_id=user.workspace_id)
     if not cur:
         raise HTTPException(status_code=404, detail="sample not found")
-    if cur["created_by"] != user.id and user.auth_role not in ("manager", "admin"):
+    if cur["created_by"] != user.id and user.auth_role not in MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="only the creator or a manager can edit")
     row = q.patch_sample(db, sample_id=sid, workspace_id=user.workspace_id, payload=body, actor_id=user.id)
     db.commit()
@@ -170,7 +169,7 @@ def archive_route(
     cur = q.get_sample(db, sample_id=sid, workspace_id=user.workspace_id)
     if not cur:
         raise HTTPException(status_code=404, detail="sample not found")
-    if cur["created_by"] != user.id and user.auth_role not in ("manager", "admin"):
+    if cur["created_by"] != user.id and user.auth_role not in MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="only creator or manager+ can archive")
     if not q.archive_sample(db, sample_id=sid, workspace_id=user.workspace_id, actor_id=user.id):
         raise HTTPException(status_code=409, detail="sample already archived")
@@ -188,7 +187,7 @@ def bind_photo_route(
     cur = q.get_sample(db, sample_id=sid, workspace_id=user.workspace_id)
     if not cur:
         raise HTTPException(status_code=404, detail="sample not found")
-    if cur["created_by"] != user.id and user.auth_role not in ("manager", "admin"):
+    if cur["created_by"] != user.id and user.auth_role not in MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="only creator or manager+ can edit photo")
     try:
         ok = q.bind_photo(db, sample_id=sid, workspace_id=user.workspace_id,
@@ -213,7 +212,7 @@ def clear_photo_route(
     cur = q.get_sample(db, sample_id=sid, workspace_id=user.workspace_id)
     if not cur:
         raise HTTPException(status_code=404, detail="sample not found")
-    if cur["created_by"] != user.id and user.auth_role not in ("manager", "admin"):
+    if cur["created_by"] != user.id and user.auth_role not in MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="only creator or manager+ can edit photo")
     if not q.clear_photo(db, sample_id=sid, workspace_id=user.workspace_id, actor_id=user.id):
         raise HTTPException(status_code=404, detail="no photo to clear")

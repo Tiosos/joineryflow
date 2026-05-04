@@ -81,13 +81,15 @@ def list_samples(
 
     counts_row = db.execute(text("""
         SELECT
-          COUNT(*) FILTER (WHERE status='pending'  AND archived_at IS NULL) AS pending,
-          COUNT(*) FILTER (WHERE status='approved' AND archived_at IS NULL) AS approved,
-          COUNT(*) FILTER (WHERE status='rejected' OR  archived_at IS NOT NULL) AS rejected_or_archived,
+          COUNT(*) FILTER (WHERE s.status='pending'  AND s.archived_at IS NULL) AS pending,
+          COUNT(*) FILTER (WHERE s.status='approved' AND s.archived_at IS NULL) AS approved,
+          COUNT(*) FILTER (WHERE s.status='rejected' OR  s.archived_at IS NOT NULL) AS rejected_or_archived,
           COUNT(*) AS total
-          FROM sample
-         WHERE project_id = :p
-    """), {"p": project_id}).mappings().first()
+          FROM sample s
+          JOIN projects p ON p.project_id = s.project_id
+         WHERE s.project_id = :p
+           AND p.workspace_id = :w
+    """), {"p": project_id, "w": workspace_id}).mappings().first()
 
     return {
         "samples": [dict(r) for r in rows],
