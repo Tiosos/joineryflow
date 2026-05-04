@@ -65,3 +65,31 @@ def test_editor_shop_dwgs_can_read_and_write_but_not_approve():
 def test_viewer_shop_dwgs_read_only():
     from app.auth.permissions import MATRIX
     assert MATRIX["viewer"]["shop_dwgs"] == {"read"}
+
+
+def test_drafter_isample_full_access():
+    """Drafter is elevated to PM-parity on isample (sub-project #5c)."""
+    from app.auth.permissions import MATRIX
+    assert MATRIX["drafter"]["isample"] == {"read", "write", "approve", "comment"}
+
+
+def test_editor_isample_can_read_and_write_but_not_approve():
+    """Editor can create/edit samples but cannot approve them."""
+    from app.auth.permissions import MATRIX
+    assert "write" in MATRIX["editor"]["isample"]
+    assert "approve" not in MATRIX["editor"]["isample"]
+
+
+def test_manager_isample_full_access():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["manager"]["isample"] == {"read", "write", "approve", "comment"}
+
+
+def test_viewer_isample_read_only():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["viewer"]["isample"] == {"read"}
+
+
+def test_purchase_officer_isample_read_only():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["purchase_officer"]["isample"] == {"read"}

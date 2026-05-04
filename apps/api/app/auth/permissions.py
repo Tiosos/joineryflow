@@ -46,7 +46,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "tracking":      {"read", "write", "approve", "comment"},
         "list":          {"read", "write", "approve", "comment"},
         "shop_dwgs":     {"read", "write", "approve", "comment"},
-        "isample":       {"read"},
+        "isample":       {"read", "write", "approve", "comment"},
         "orderbook":     {"read", "write", "approve", "comment"},
         "it_management": set(),
     },
