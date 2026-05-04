@@ -96,6 +96,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-01-shop-drawings.md` — 21-task implementation plan for sub-project #5a.
 - `docs/superpowers/specs/2026-05-02-pdf-generation-design.md` — PDF generation + item attachments v1 spec (sub-project #5b).
 - `docs/superpowers/plans/2026-05-02-pdf-generation.md` — 15-task implementation plan for sub-project #5b.
+- `docs/superpowers/specs/2026-05-02-isample-design.md` — iSample (sample wall) v1 spec (sub-project #5c).
+- `docs/superpowers/plans/2026-05-02-isample.md` — 14-task implementation plan for sub-project #5c.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -258,3 +260,55 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   PDF caching, real attachment thumbnails, PNG/JPEG attachments, supplier
   grouping in Hardware print, custom print templates, async fetch+Blob loading
   indicator (current Combined uses plain `target="_blank"`).
+
+## iSample — Sample Wall (sub-project #5c)
+
+- New backend module `apps/api/app/samples/` (CRUD + workflow + photo bind/clear
+  + ledger). Mounted at top-level paths from `main.py`.
+- Migration 0016 adds `sample(sample_id, project_id, title, room, hex_swatch,
+  supplier, status, review_note, reviewed_by/at, photo_file_blob_id,
+  archived_at/by, created_by/at, updated_at)` with hex regex CHECK
+  (`^#[0-9A-Fa-f]{6}$`), 3-value status CHECK, and 3 indexes
+  (project, project+status composite, partial WHERE archived_at IS NULL).
+- RBAC: `isample` row in the matrix gives drafter/manager/admin
+  `{read, write, approve, comment}` (PM-parity elevation pattern).
+  Editor gets `{read, write}` (no approve). Viewer/purchase_officer get `{read}`.
+- Workflow: `pending → approved | rejected`. Reject requires `review_note`.
+  Reviewer cannot be the creator (in-handler check). Archive transition
+  (creator on own OR manager+) sets `archived_at`. Rejected samples
+  auto-show in Archive subtab.
+- Subtabs:
+  - **Board** = `archived_at IS NULL AND status IN ('pending','approved')`
+  - **Approval ledger** = `audit_log` filtered to `event LIKE 'sample.%'`
+    for samples in this project, paginated (50/page)
+  - **Archive** = `archived_at IS NOT NULL OR status = 'rejected'`
+- API endpoints (10):
+  - `GET /projects/{pid}/samples?subtab=board|archive&q=&status=&supplier=`
+  - `GET /projects/{pid}/samples/ledger?limit=50&offset=0`
+  - `GET /samples/{sid}`
+  - `POST /projects/{pid}/samples`
+  - `PATCH /samples/{sid}` (creator-or-manager+)
+  - `POST /samples/{sid}/approve`, `.../reject`, `.../archive`
+  - `POST /samples/{sid}/photo`, `DELETE /samples/{sid}/photo`
+- Photo handling: optional, single `file_blob_id` (PNG/JPEG only — PDF blobs
+  rejected at the route layer with 415). Reuses #5a's `POST /files` upload
+  endpoint and `GET /files/{id}` streaming download. Photo-as-background on
+  card swatch when present, with hex chip overlay in bottom-right corner.
+- Sample IDs displayed as `#SAM-{padded id}` matching #5a's `#SD-{padded}`
+  convention. No alpha-prefix scheme.
+- Web routes:
+  - `/isample?project=…&subtab=board|ledger|archive&q=&status=&supplier=&sample=N&new=1`
+  - 5-column responsive grid (drops to 4/3/2/1 columns at smaller widths)
+  - Drawer opens on `?sample=N`, deep-linkable
+  - "+ New sample" dialog with color picker + optional photo
+- Workspace isolation: all queries gate via `projects.workspace_id = :w`
+  (post-hardening pattern from `cc7ea11`). Cross-workspace returns 404.
+- Audit hooks: `sample.{create|update|approve|reject|archive|upload_photo|clear_photo}`.
+  The Approval ledger view IS this audit_log filtered.
+- Seed: `make seed` adds 6 demo samples on ALF-001 — 2 approved + 2 pending
+  (one with photo) + 1 rejected + 1 archived. Header reads
+  `6 samples · 2 awaiting client · 3 approved · 1 rejected`.
+- Out of scope (deferred): Suppliers as a real registry (free-text only),
+  Clients tab (no client-facing surface), sample revisions (rejected =
+  create new), Print Sample Board to PDF, real-time client signoff via link,
+  bulk actions, sample categories, item linking, unarchive UI.
