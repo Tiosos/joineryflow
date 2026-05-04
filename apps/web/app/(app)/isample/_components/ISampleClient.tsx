@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listSamples } from "@/lib/samples-fetch";
 import type { SampleListResp, SampleStatus } from "@/lib/samples-types";
 
+import NewSampleDialog from "./NewSampleDialog";
+import PhotoUploadDialog from "./PhotoUploadDialog";
 import SampleCard from "./SampleCard";
 import SampleDrawer from "./SampleDrawer";
 import SampleFilters from "./SampleFilters";
@@ -33,6 +35,8 @@ export default function ISampleClient(props: Props) {
   const [list, setList] = useState<SampleListResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState<boolean>(props.initialNewOpen);
+  const [photoForSampleId, setPhotoForSampleId] = useState<number | null>(null);
 
   const projectId = props.initialProjectId;
   const subtab = props.initialSubtab;
@@ -79,7 +83,12 @@ export default function ISampleClient(props: Props) {
           <h1 className="text-2xl font-semibold text-h-ink">iSample</h1>
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
-        {/* "+ New sample" button mounted in Task 10 */}
+        {projectId != null && (
+          <button onClick={() => setNewOpen(true)}
+                  className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
+            + New sample
+          </button>
+        )}
       </header>
 
       <SampleFilters
@@ -134,7 +143,28 @@ export default function ISampleClient(props: Props) {
               }).then(setList).catch((e) => setError(String(e)));
             }
           }}
-          onUploadPhotoClick={() => { /* wired in Task 10 */ }}
+          onUploadPhotoClick={() => setPhotoForSampleId(props.initialSampleId)}
+        />
+      )}
+
+      {newOpen && (
+        <NewSampleDialog
+          projects={props.projects}
+          defaultProjectId={projectId}
+          onClose={() => { setNewOpen(false); updateUrl({ new: null }); }}
+          onCreated={(sampleId) => {
+            setNewOpen(false);
+            updateUrl({ new: null, sample: String(sampleId), subtab: "board" });
+          }}
+        />
+      )}
+      {photoForSampleId != null && (
+        <PhotoUploadDialog
+          sampleId={photoForSampleId}
+          onClose={() => setPhotoForSampleId(null)}
+          onAdded={async () => {
+            // refresh handled by drawer's onAfter
+          }}
         />
       )}
     </section>
