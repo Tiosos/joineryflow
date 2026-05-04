@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listSamples } from "@/lib/samples-fetch";
 import type { SampleListResp, SampleStatus } from "@/lib/samples-types";
 
+import ApprovalLedger from "./ApprovalLedger";
 import NewSampleDialog from "./NewSampleDialog";
 import PhotoUploadDialog from "./PhotoUploadDialog";
 import SampleCard from "./SampleCard";
@@ -128,6 +129,16 @@ export default function ISampleClient(props: Props) {
       )}
       {subtab !== "ledger" && list && list.samples.length === 0 && (
         <p className="py-12 text-center text-sm text-h-muted">No samples here yet.</p>
+      )}
+
+      {subtab === "ledger" && projectId != null && (
+        <ApprovalLedger
+          projectId={projectId}
+          onSampleClick={(sid) => updateUrl({ sample: String(sid) })}
+        />
+      )}
+      {subtab === "ledger" && projectId == null && (
+        <p className="py-12 text-center text-sm text-h-muted">Pick a project to view its ledger.</p>
       )}
 
       {props.initialSampleId != null && (
