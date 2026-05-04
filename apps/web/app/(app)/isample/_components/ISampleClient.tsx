@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listSamples } from "@/lib/samples-fetch";
 import type { SampleListResp, SampleStatus } from "@/lib/samples-types";
 
+import SampleCard from "./SampleCard";
 import SampleFilters from "./SampleFilters";
 import SubtabStrip from "./SubtabStrip";
 
@@ -104,6 +105,17 @@ export default function ISampleClient(props: Props) {
       {error && <p className="text-sm text-rose-700">{error}</p>}
 
       {/* SampleCard grid mounted in Task 8; ApprovalLedger in Task 11 */}
+      {subtab !== "ledger" && list && list.samples.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {list.samples.map((s) => (
+            <SampleCard
+              key={s.sample_id}
+              sample={s}
+              onClick={() => updateUrl({ sample: String(s.sample_id) })}
+            />
+          ))}
+        </div>
+      )}
       {subtab !== "ledger" && list && list.samples.length === 0 && (
         <p className="py-12 text-center text-sm text-h-muted">No samples here yet.</p>
       )}
