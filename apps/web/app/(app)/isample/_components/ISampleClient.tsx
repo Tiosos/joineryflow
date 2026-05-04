@@ -7,6 +7,7 @@ import { listSamples } from "@/lib/samples-fetch";
 import type { SampleListResp, SampleStatus } from "@/lib/samples-types";
 
 import SampleCard from "./SampleCard";
+import SampleDrawer from "./SampleDrawer";
 import SampleFilters from "./SampleFilters";
 import SubtabStrip from "./SubtabStrip";
 
@@ -118,6 +119,23 @@ export default function ISampleClient(props: Props) {
       )}
       {subtab !== "ledger" && list && list.samples.length === 0 && (
         <p className="py-12 text-center text-sm text-h-muted">No samples here yet.</p>
+      )}
+
+      {props.initialSampleId != null && (
+        <SampleDrawer
+          sampleId={props.initialSampleId}
+          me={props.me}
+          onClose={() => updateUrl({ sample: null })}
+          onChanged={() => {
+            if (projectId != null && subtab !== "ledger") {
+              listSamples({
+                projectId, subtab: subtab as "board" | "archive",
+                q, status, supplier,
+              }).then(setList).catch((e) => setError(String(e)));
+            }
+          }}
+          onUploadPhotoClick={() => { /* wired in Task 10 */ }}
+        />
       )}
     </section>
   );
