@@ -689,6 +689,72 @@ def main() -> None:
 
         db.commit()
         print(f"seeded shop drawings: d1={d1}, d2={d2}, d3={d3}, d4={d4}, d5={d5}, d6={d6}")
+
+        # ── iSample demo (sub-project #5c) ────────────────────────────────────
+        from app.files.seed_helper import put_seed_file as _put_sample_photo
+
+        _stone_png = "/code/seed/hartwood_joinery/sample_photos/stone-corian.png"
+
+        # Resolve drafter + manager users (drafter creator, manager reviewer).
+        _sample_drafter = s.execute(text("""
+            SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'drafter' ORDER BY id LIMIT 1
+        """), {"w": workspace_id}).scalar()
+        _sample_manager = s.execute(text("""
+            SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'manager' ORDER BY id LIMIT 1
+        """), {"w": workspace_id}).scalar()
+
+        # Idempotent insert helper
+        def _seed_sample(*, title, room, hex_swatch, supplier, status, reviewer_id=None,
+                         review_note=None, photo_blob_id=None, archived=False):
+            existing = s.execute(text("""
+                SELECT sample_id FROM sample WHERE project_id = :p AND title = :t LIMIT 1
+            """), {"p": _alf_pid, "t": title}).scalar()
+            if existing:
+                return existing
+            sid = s.execute(text("""
+                INSERT INTO sample(project_id, title, room, hex_swatch, supplier, status,
+                                   review_note, reviewed_by, reviewed_at,
+                                   photo_file_blob_id, created_by)
+                VALUES (:p, :t, :r, :h, :sup, :st,
+                        :note, CAST(:rid AS bigint),
+                        CASE WHEN CAST(:rid AS bigint) IS NULL THEN NULL ELSE now() END,
+                        CAST(:ph AS bigint), :u)
+                RETURNING sample_id
+            """), {
+                "p": _alf_pid, "t": title, "r": room, "h": hex_swatch, "sup": supplier,
+                "st": status, "note": review_note, "rid": reviewer_id,
+                "ph": photo_blob_id, "u": _sample_drafter,
+            }).scalar()
+            if archived:
+                s.execute(text("UPDATE sample SET archived_at = now(), archived_by = :u WHERE sample_id = :s"),
+                          {"u": _sample_manager, "s": sid})
+            return sid
+
+        # Stone Corian gets a photo
+        _blob_stone = _put_sample_photo(s, workspace_id=workspace_id, workspace_slug=workspace_slug,
+                                        app_user_id=_sample_drafter, path=_stone_png)
+
+        _seed_sample(title="Oak veneer — Briggs 0412", room="L3 / Reception",
+                     hex_swatch="#c29075", supplier="Briggs", status="approved",
+                     reviewer_id=_sample_manager, review_note="Signed")
+        _seed_sample(title="Walnut banding", room="L3 / Reception",
+                     hex_swatch="#6b6256", supplier="Briggs", status="approved",
+                     reviewer_id=_sample_manager)
+        _seed_sample(title="Laminate — Polytec Oxide", room="L3 / Meeting Rm",
+                     hex_swatch="#8a4434", supplier="Polytec", status="pending")
+        _seed_sample(title="Stone — Corian Deep Black", room="L3 / Kitchen",
+                     hex_swatch="#2d2b27", supplier="Corian", status="pending",
+                     photo_blob_id=_blob_stone)
+        _seed_sample(title="Timber edge 3mm walnut", room="L3 / Kitchen",
+                     hex_swatch="#3c3028", supplier="Briggs", status="rejected",
+                     reviewer_id=_sample_manager, review_note="Too dark for finish spec")
+        _seed_sample(title="Acoustic panel grey", room="L3 / Workzone",
+                     hex_swatch="#7a7366", supplier=None, status="approved",
+                     reviewer_id=_sample_manager, archived=True)
+
+        s.commit()
+        print("seeded 6 iSample samples on ALF-001 (Board=4, Archive=2, 1 with photo)")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"
