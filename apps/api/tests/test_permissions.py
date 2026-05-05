@@ -93,3 +93,36 @@ def test_viewer_isample_read_only():
 def test_purchase_officer_isample_read_only():
     from app.auth.permissions import MATRIX
     assert MATRIX["purchase_officer"]["isample"] == {"read"}
+
+
+# --- Catalog module (sub-project #7a) ----------------------------------------
+
+def test_drafter_catalog_full_access():
+    """Drafter is elevated to admin/manager parity on catalog (#7a)."""
+    from app.auth.permissions import MATRIX
+    assert MATRIX["drafter"]["catalog"] == {"read", "write", "approve", "comment"}
+
+
+def test_editor_catalog_can_read_write_comment_no_approve():
+    """Foreman/Machine team (editor) can propose catalog edits but cannot
+    approve — final curation belongs to drafter+/manager+."""
+    from app.auth.permissions import MATRIX
+    assert MATRIX["editor"]["catalog"] == {"read", "write", "comment"}
+
+
+def test_purchase_officer_catalog_read_and_comment():
+    """Procurement reads + comments on catalog (e.g. flagging wrong supplier)
+    but does not curate."""
+    from app.auth.permissions import MATRIX
+    assert MATRIX["purchase_officer"]["catalog"] == {"read", "comment"}
+
+
+def test_viewer_catalog_read_only():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["viewer"]["catalog"] == {"read"}
+
+
+def test_manager_admin_catalog_full_access():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["manager"]["catalog"] == {"read", "write", "approve", "comment"}
+    assert MATRIX["admin"]["catalog"] == {"read", "write", "approve", "comment"}
