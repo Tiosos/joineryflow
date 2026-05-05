@@ -49,6 +49,7 @@ TRUNCATE_TABLES = (
     "items",
     "project_favourites",
     "projects",
+    "cv_material_mapping",
     "audit_log",
     "session",
     "app_user",
