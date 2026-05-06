@@ -38,7 +38,9 @@ export default function NewMappingDialog(p: Props) {
   }, [table, search]);
 
   const onPick = (r: CatalogRow) => {
-    setPickedId((r.material_id ?? r.hire_id) as number);
+    const id = r.material_id ?? r.hire_id;
+    if (id == null) return;
+    setPickedId(id);
     setPickedLabel(`${r.description} · ${r.sku}`);
   };
 
@@ -97,7 +99,8 @@ export default function NewMappingDialog(p: Props) {
               <p className="px-3 py-2 text-xs text-h-muted">No matches.</p>
             )}
             {results.slice(0, 20).map((r) => {
-              const id = (r.material_id ?? r.hire_id) as number;
+              const id = r.material_id ?? r.hire_id;
+              if (id == null) return null;
               return (
                 <button
                   key={id}

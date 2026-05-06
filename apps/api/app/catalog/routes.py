@@ -104,6 +104,8 @@ def patch_cv_mapping_route(
     if q.get_cv_mapping(db, mid=mid, workspace_id=user.workspace_id) is None:
         raise HTTPException(404, "Mapping not found")
     fields = body.model_dump(exclude_none=True)
+    if not fields:
+        return q.get_cv_mapping(db, mid=mid, workspace_id=user.workspace_id)
     try:
         q.patch_cv_mapping(db, mid=mid, fields=fields, workspace_id=user.workspace_id)
     except IntegrityError as e:

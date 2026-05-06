@@ -27,8 +27,9 @@ const LEGACY_FIELD: Record<Exclude<CatalogTab, "cv-mappings">, { key: string; la
 };
 
 export default function NewCatalogRowDialog(p: Props) {
-  if (p.tab === "cv-mappings") return null;
-  const legacy = LEGACY_FIELD[p.tab];
+  // Parent (CatalogClient) gates rendering on tab !== "cv-mappings".
+  // We assert the narrowed type here; LEGACY_FIELD has no entry for "cv-mappings".
+  const legacy = p.tab === "cv-mappings" ? null : LEGACY_FIELD[p.tab];
 
   const [description, setDescription] = useState("");
   const [sku, setSku] = useState("");

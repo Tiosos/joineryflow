@@ -58,7 +58,13 @@ class CreateEquipmentHireIn(_EnrichmentFields):
     project_id: int
 
 
-class PatchBaseIn(_EnrichmentFields):
+class PatchBaseIn(BaseModel):
+    """All fields optional on PATCH. `synonyms` is nullable here (unlike on
+    Create where it defaults to `[]`) so `model_dump(exclude_none=True)` does
+    not silently zero the existing array when the client omits it."""
+    synonyms: list[str] | None = None
+    default_supplier: str | None = Field(default=None, max_length=128)
+    default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)
 

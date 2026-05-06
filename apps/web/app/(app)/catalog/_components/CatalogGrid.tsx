@@ -45,16 +45,20 @@ export default function CatalogGrid(p: Props) {
           {p.rows.length === 0 && (
             <tr><td colSpan={8} className="px-3 py-6 text-center text-h-muted">No rows.</td></tr>
           )}
-          {p.rows.map((r) => (
-            <CatalogRow
-              key={(r.material_id ?? r.hire_id) as number}
-              tab={p.tab}
-              slug={p.slug}
-              row={r}
-              canWrite={p.canWrite}
-              onChanged={p.onChanged}
-            />
-          ))}
+          {p.rows.map((r) => {
+            const key = r.material_id ?? r.hire_id;
+            if (key == null) return null;
+            return (
+              <CatalogRow
+                key={key}
+                tab={p.tab}
+                slug={p.slug}
+                row={r}
+                canWrite={p.canWrite}
+                onChanged={p.onChanged}
+              />
+            );
+          })}
         </tbody>
       </table>
     </div>

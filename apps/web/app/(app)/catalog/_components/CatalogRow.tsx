@@ -52,7 +52,12 @@ function Cell({
 }
 
 export default function CatalogRow({ tab, slug, row, canWrite, onChanged }: Props) {
-  const mid = (row.material_id ?? row.hire_id) as number;
+  const mid = row.material_id ?? row.hire_id;
+  if (mid == null) {
+    // Defensive: shouldn't happen — every catalog row has either material_id (5 tables)
+    // or hire_id (equipment_hire). Render an empty row rather than crashing.
+    return null;
+  }
   const legacyKey = tab === "cv-mappings" ? null : LEGACY_COL_KEY[tab];
   const legacyVal = legacyKey ? (row[legacyKey] as string | null | undefined) ?? "" : "—";
   const [busy, setBusy] = useState(false);
