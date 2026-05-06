@@ -755,6 +755,82 @@ def main() -> None:
         s.commit()
         print("seeded 6 iSample samples on ALF-001 (Board=4, Archive=2, 1 with photo)")
 
+        # ── Catalog enrichment + CV mappings (sub-project #7a) ────────────────
+        # Enrich existing 2 board_materials (BM-001, BM-002) with synonyms +
+        # default supplier + lead time. Idempotent.
+        s.execute(text("""
+            UPDATE board_materials
+               SET synonyms = ARRAY['BM-001','18-WHITE-MDF','18mm white mdf'],
+                   default_supplier = 'Laminex Australia',
+                   default_lead_time_days = 5
+             WHERE workspace_id = :w AND code = 'BM-001'
+        """), {"w": workspace_id})
+        s.execute(text("""
+            UPDATE board_materials
+               SET synonyms = ARRAY['BM-002','18-BIRCH-PLY','18mm birch ply'],
+                   default_supplier = 'Plyco',
+                   default_lead_time_days = 10
+             WHERE workspace_id = :w AND code = 'BM-002'
+        """), {"w": workspace_id})
+
+        # Enrich the 4 existing hardware_materials. SKUs are workspace-prefixed
+        # by the seed (`hartwood-HM-001` etc.).
+        for sku, syns, supp, lt in [
+            ("hartwood-HM-001", ["HM-001","quadro-500","drawer-slide-500"], "Hettich Australia", 14),
+            ("hartwood-HM-002", ["HM-002","blum-110","hinge-110"],          "Blum Australia",    14),
+            ("hartwood-HM-003", ["HM-003","brass-pull-200","handle-200"],   "House of Brass",    21),
+            ("hartwood-HM-004", ["HM-004","soft-close","damper"],           "Hettich Australia",  7),
+        ]:
+            s.execute(text("""
+                UPDATE hardware_materials
+                   SET synonyms = :syn,
+                       default_supplier = :sup,
+                       default_lead_time_days = :lt
+                 WHERE workspace_id = :w AND sku = :sku
+            """), {"w": workspace_id, "sku": sku, "syn": syns, "sup": supp, "lt": lt})
+
+        # 4 new board_materials demo rows (codes globally unique → namespace BM-1xx).
+        for code, sku, desc, syns, supp, lt in [
+            ("BM-101", "MEL-19-WH",  "19mm Melamine White",  ["19-WH-MEL","Melamine 19 White"], "Laminex Australia",  5),
+            ("BM-102", "MEL-16-BK",  "16mm Melamine Black",  ["16-BK","Black 16"],              "Laminex Australia",  5),
+            ("BM-103", "VEN-19-WAL", "19mm Walnut Veneer",   ["19-WAL","Walnut Veneer"],        "Briggs Veneers",    21),
+            ("BM-104", "PLY-12-BIR", "12mm Birch Plywood",   ["12-PLY-BIR","Birch 12"],         "Plyco",             10),
+        ]:
+            s.execute(text("""
+                INSERT INTO board_materials
+                  (workspace_id, code, sku, description,
+                   synonyms, default_supplier, default_lead_time_days)
+                VALUES (:w, :code, :sku, :desc, :syn, :sup, :lt)
+                ON CONFLICT (workspace_id, sku) DO NOTHING
+            """), {"w": workspace_id, "code": code, "sku": sku, "desc": desc,
+                   "syn": syns, "sup": supp, "lt": lt})
+
+        # 2 cv_material_mapping demo rows (drafter creator).
+        _drafter_id = s.execute(text(
+            "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'drafter' LIMIT 1"
+        ), {"w": workspace_id}).scalar()
+        _bm_001_mid = s.execute(text(
+            "SELECT material_id FROM board_materials WHERE workspace_id = :w AND code = 'BM-001'"
+        ), {"w": workspace_id}).scalar()
+        _hm_002_mid = s.execute(text(
+            "SELECT material_id FROM hardware_materials WHERE workspace_id = :w AND sku = 'hartwood-HM-002'"
+        ), {"w": workspace_id}).scalar()
+        s.execute(text("""
+            INSERT INTO cv_material_mapping
+              (workspace_id, cv_code, target_material_table, target_material_id, created_by)
+            VALUES (:w, '18-PB', 'board_materials', :tid, :u)
+            ON CONFLICT (workspace_id, cv_code) DO NOTHING
+        """), {"w": workspace_id, "tid": _bm_001_mid, "u": _drafter_id})
+        s.execute(text("""
+            INSERT INTO cv_material_mapping
+              (workspace_id, cv_code, target_material_table, target_material_id, created_by)
+            VALUES (:w, '700.0KC2.054.00', 'hardware_materials', :tid, :u)
+            ON CONFLICT (workspace_id, cv_code) DO NOTHING
+        """), {"w": workspace_id, "tid": _hm_002_mid, "u": _drafter_id})
+
+        s.commit()
+        print("seeded #7a catalog enrichment: 6 board (2 enriched + 4 new) · 4 hardware enriched · 2 cv mappings")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

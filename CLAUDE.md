@@ -98,6 +98,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-02-pdf-generation.md` — 15-task implementation plan for sub-project #5b.
 - `docs/superpowers/specs/2026-05-02-isample-design.md` — iSample (sample wall) v1 spec (sub-project #5c).
 - `docs/superpowers/plans/2026-05-02-isample.md` — 14-task implementation plan for sub-project #5c.
+- `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — Cabinet Vision Integration spec (sub-projects #7a + #7b + #7c).
+- `docs/superpowers/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -312,3 +314,48 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   Clients tab (no client-facing surface), sample revisions (rejected =
   create new), Print Sample Board to PDF, real-time client signoff via link,
   bulk actions, sample categories, item linking, unarchive UI.
+
+## Catalog enrichment + CV Mappings (sub-project #7a)
+
+- New backend module `apps/api/app/catalog/` mounted at `/catalog/*` (singular,
+  not the existing procurement-side `/catalogs/*`). 7 sub-routers: 6 per
+  material type (`board-materials`, `hardware-materials`, `custom-made`,
+  `benchtop-materials`, `appliances`, `equipment-hire`) plus
+  `/catalog/cv-mappings`. RBAC gate `("catalog", action)`.
+- Migration 0017 adds 5 enrichment columns (`synonyms text[]`,
+  `default_supplier`, `default_lead_time_days`, `archived_at`, `archived_by`)
+  to all 6 catalog tables, plus a GIN index on `synonyms` and a partial
+  active-row index. Also CREATEs `cv_material_mapping` (workspace-scoped
+  UNIQUE on `(workspace_id, cv_code)`).
+- New `catalog` row in the RBAC matrix. Drafter/manager/admin
+  `{read,write,approve,comment}`; editor `{read,write,comment}`;
+  purchase_officer `{read,comment}`; viewer `{read}`. Editor gets `write` so
+  Foreman/Machine team can propose catalog edits.
+- Soft-archive only — POST `/catalog/{slug}/{mid}/archive` sets
+  `archived_at`+`archived_by`; 409 on already-archived. Hard delete is
+  reserved for `cv_material_mapping`.
+- Bulk import is all-or-nothing. POST `/catalog/{slug}/bulk` validates every
+  row first; if any row fails Pydantic, returns `{created: 0, errors: [...]}`
+  without inserting. Audit: one `catalog.{table}.csv_import` row per import
+  (not per row).
+- Web routes:
+  - `/catalog?tab=board|hardware|custom_made|benchtop|appliance|hire|cv-mappings`
+  - SideBar entry visible to all roles with `catalog.read`.
+- Workspace isolation enforced on every read + write via `workspace_id`
+  column (already on the 6 catalog tables from migration 0007;
+  added to `cv_material_mapping` by 0017). Cross-workspace returns 404.
+- Route ordering caveat: cv-mapping routes (`/catalog/cv-mappings*`) are
+  declared BEFORE the parameterised `/catalog/{slug}` routes in
+  `apps/api/app/catalog/routes.py` so the literal path wins.
+- The procurement-side `/catalogs/*` (plural) module at
+  `apps/api/app/procurement_v1/catalogs/` is NOT retired by #7a — it
+  remains the auth path the procurement queue depends on. The two surfaces
+  will converge in a future cleanup.
+- Seed (`make seed`) enriches the existing 2 board_materials + 4
+  hardware_materials with synonyms/supplier/lead-time, adds 4 new demo
+  boards (BM-101..BM-104), and inserts 2 demo cv_material_mapping rows
+  (`'18-PB' → board_materials.BM-001`, `'700.0KC2.054.00' →
+  hardware_materials.HM-002`). Idempotent.
+- Out of scope (deferred to #7b): `cv_import_run`, the Cutlist tab CV
+  import wizard, the synonym-fuzzy resolver. (Deferred to #7c): Board tab,
+  `/cut-floor` page, CutPlan, CutSchedule.
