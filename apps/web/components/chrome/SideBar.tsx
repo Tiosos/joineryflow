@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { ProjectSidebar } from "./ProjectSidebar";
 import type { ProjectListOut } from "@/lib/pm-types";
 
@@ -26,5 +27,17 @@ export async function SideBar() {
     fetchProjects(tok, true).catch(() => ({ projects: [] })),
   ]);
 
-  return <ProjectSidebar all={all.projects} favourites={favs.projects} />;
+  return (
+    <div className="flex flex-col">
+      <div className="border-b border-h-line bg-h-surface px-3 py-2">
+        <Link
+          href="/catalog"
+          className="block text-xs font-medium uppercase tracking-wide text-h-muted hover:text-h-ink"
+        >
+          Catalog
+        </Link>
+      </div>
+      <ProjectSidebar all={all.projects} favourites={favs.projects} />
+    </div>
+  );
 }
