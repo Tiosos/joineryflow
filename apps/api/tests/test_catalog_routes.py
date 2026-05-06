@@ -353,7 +353,7 @@ def test_patch_writes_catalog_table_update_audit_with_payload():
         row = db.execute(text("""
             SELECT payload FROM audit_log
             WHERE workspace_id = :w AND event = 'catalog.board.update'
-            ORDER BY audit_id DESC LIMIT 1
+            ORDER BY id DESC LIMIT 1
         """), {"w": wid}).mappings().first()
         assert row is not None
         assert row["payload"]["description"] == "Y"

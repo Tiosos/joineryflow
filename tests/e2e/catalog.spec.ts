@@ -29,22 +29,27 @@ test.describe("catalog (#7a)", () => {
     for (const label of ["Board", "Hardware", "Custom", "Benchtop", "Appliances", "Equipment Hire", "CV Mappings"]) {
       await expect(page.getByRole("button", { name: label })).toBeVisible();
     }
-    await expect(page.getByText("18mm White MDF").first()).toBeVisible({ timeout: 10_000 });
+    // Seeded board rows render in inline-edit <input value="..."> cells, so
+    // assert via getByDisplayValue rather than text content.
+    await expect(page.getByDisplayValue("18mm White MDF").first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("creates a new board material and sees it in the grid", async ({ page }) => {
-    const code = `E2E-${Date.now()}`;
-    const sku = `e2e-${Date.now()}`;
+    const ts = Date.now();
+    const code = `E2E-${ts}`;
+    const sku = `e2e-${ts}`;
+    const desc = `E2E test board ${ts}`;
     await page.goto("/catalog?tab=board");
     await page.getByRole("button", { name: "+ New" }).click();
     await expect(page.getByRole("heading", { name: /\+ New board/ })).toBeVisible();
 
-    await page.getByLabel("Description").fill("E2E test board");
+    await page.getByLabel("Description").fill(desc);
     await page.getByLabel("SKU").fill(sku);
     await page.getByLabel("Code").fill(code);
     await page.getByRole("button", { name: "Create" }).click();
 
-    await expect(page.getByText("E2E test board").first()).toBeVisible({ timeout: 15_000 });
+    // Newly-created row appears as an input value in the grid (inline-edit).
+    await expect(page.getByDisplayValue(desc).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("CV Mappings tab renders the seeded mappings", async ({ page }) => {
