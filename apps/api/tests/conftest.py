@@ -47,6 +47,7 @@ TRUNCATE_TABLES = (
     "item_edit_log",
     "item_stages",
     "items",
+    "cv_import_run",
     "project_favourites",
     "projects",
     "cv_material_mapping",
