@@ -831,6 +831,43 @@ def main() -> None:
         s.commit()
         print("seeded #7a catalog enrichment: 6 board (2 enriched + 4 new) · 4 hardware enriched · 2 cv mappings")
 
+        # === CV Import demo (#7b) =========================================
+        # 1 committed cv_import_run on the first ALF-001 item.
+        # Idempotent: delete then re-insert.
+        _alf_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if _alf_pid is not None:
+            _alf_iid = s.execute(text(
+                "SELECT item_id FROM items WHERE project_id = :p ORDER BY item_id LIMIT 1"
+            ), {"p": _alf_pid}).scalar()
+            if _alf_iid is not None:
+                s.execute(
+                    text("DELETE FROM cv_import_run WHERE item_id = :iid"),
+                    {"iid": _alf_iid},
+                )
+                s.execute(text("""
+                    INSERT INTO cv_import_run(
+                        project_id, item_id, source_filename, sha256,
+                        row_count, status, started_at, completed_at,
+                        error_log, created_by
+                    )
+                    VALUES (
+                        :pid, :iid, 'demo-cv-import.csv', :sha,
+                        9, 'committed',
+                        now() - interval '1 day',
+                        now() - interval '1 day' + interval '5 second',
+                        '[]'::jsonb, :uid
+                    )
+                """), {
+                    "pid": _alf_pid,
+                    "iid": _alf_iid,
+                    "sha": "a" * 64,
+                    "uid": _drafter_id,
+                })
+                s.commit()
+                print("seeded #7b cv_import_run: 1 committed run on ALF-001 item 1")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"
