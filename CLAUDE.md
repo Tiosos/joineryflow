@@ -2,6 +2,70 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
 ## Repository Nature
 
 **JoineryFlow** monorepo — a web replacement for a FileMaker-based joinery production system. Built across 7 sub-projects; **Foundation** (this branch) ships the auth shell, schema, and 6-tab IA. Subsequent sub-projects (PM Workbench, Procurement Workbench, Shop Floor, etc.) extend onto this base.
@@ -100,6 +164,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-02-isample.md` — 14-task implementation plan for sub-project #5c.
 - `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — Cabinet Vision Integration spec (sub-projects #7a + #7b + #7c).
 - `docs/superpowers/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
+- `docs/superpowers/plans/2026-05-05-cabinet-vision-7b-cv-import.md` — 19-task implementation plan for sub-project #7b.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -359,3 +424,78 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Out of scope (deferred to #7b): `cv_import_run`, the Cutlist tab CV
   import wizard, the synonym-fuzzy resolver. (Deferred to #7c): Board tab,
   `/cut-floor` page, CutPlan, CutSchedule.
+
+## CV Import wizard (sub-project #7b)
+
+- New backend module `apps/api/app/cv/` — `parser.py` (CSV header
+  normalisation + row coercion), `resolver.py` (mapping → synonyms[] →
+  exact-sku → unknown), `queries.py` (run lifecycle + commit transaction),
+  `routes.py` (4 routes mounted at top-level paths).
+- Migration 0018 adds `cv_import_run(cv_import_run_id, project_id, item_id,
+  source_filename, sha256, row_count, status, started_at, completed_at,
+  error_log jsonb, created_by)` with status CHECK
+  ('preview','committed','failed') and 2 indexes
+  (`idx_cv_import_run_item`, `idx_cv_import_run_status`).
+- New `cut_floor` row in the RBAC matrix (sits between `catalog` and
+  `it_management` in `_ALL_MODULES`). Drafter/manager/admin
+  `{read,write,approve,comment}`; editor `{read,write,comment}`;
+  purchase_officer/viewer `{read}`. The full `/cut-floor` page + CutPlan +
+  Board tab arrive in #7c — #7b only consumes the row from the CV import
+  routes here.
+- 4 routes:
+  - `POST /items/{iid}/cv-imports/preview` — multipart `file` OR form
+    field `body`. Parses, resolves, persists `cv_import_run` with
+    `status='preview'` and the full snapshot in `error_log`.
+  - `POST /items/{iid}/cv-imports/{run_id}/commit` — body `CvCommitIn`,
+    optional `?mode=replace`. Single transaction inserts modules + parts +
+    catalog rows + mappings + audit/edit log; flips run to `committed`.
+  - `GET /items/{iid}/cv-imports` — history (newest first).
+  - `GET /cv-imports/{run_id}` — single run + cached preview snapshot.
+- 3-phase wizard mounted in the Drafter Editor Cutlist tab via
+  `?tab=cutlist&import=cv`. Phase A (paste/upload), Phase B (resolve
+  unknown codes inline — `Use existing` is disabled in v1; `Create new`
+  ships for the 5 simple catalog tables; `Skip` always available),
+  Phase C (confirm + optional **Replace existing modules** checkbox when
+  the item already has modules).
+- File caps enforced server-side: 1 MB hard cap (`MAX_CSV_BYTES`),
+  10 000 logical rows (`MAX_LOGICAL_ROWS`). 415 with
+  `code='FILE_TOO_LARGE'` or `code='TOO_MANY_ROWS'` if exceeded.
+- Resolver order (per spec §6.2): `cv_material_mapping` → catalog
+  `synonyms[]` (single-table hit) → catalog `sku` exact match → unknown.
+  Multiple-table hit returns `unknown` with hint
+  `multiple_synonym_matches`. Workspace-isolated everywhere via
+  `WHERE workspace_id = :w`.
+- Re-import: default 409 with `code='ITEM_NOT_EMPTY'` if the item already
+  has modules. `?mode=replace` (or `body.replace=true`) wipes via
+  DELETE-CASCADE and re-imports; audit emits `cv.import.replace_wipe`
+  with `deleted_module_ids`.
+- Commit transaction (per spec §6.6): inserts new catalog rows from
+  `create_new` resolutions (legacy NOT NULL UNIQUE column derived from
+  `sku`), writes `cv_material_mapping` for `use_existing`/`create_new`
+  resolutions without a prior mapping, inserts modules + parts (parts
+  with `paint_instruction='NONE'`), writes audit (`cv.import.commit` +
+  per-part `part.create` + per-module `module.create`) and item_edit_log
+  (per module `_create_module`, per part `_create_part`, one summary
+  `_cv_import` row). Rollback on error sets `status='failed'` and emits
+  `cv.import.fail`.
+- **Schema constraint**: `parts` only has `board_material_id` (not a
+  generic material FK), so non-board CV codes persist with
+  `board_material_id=NULL`; the resolution trace is preserved in the
+  `cv.import.commit` audit payload + `cv_import_run.error_log` snapshot
+  + the part's `comment` field (`[material: {table}#{id}]`).
+- Preview snapshot: full `CvPreviewOut` is stored in
+  `cv_import_run.error_log` under key `_preview_snapshot`. The commit
+  endpoint also reads `_parsed_parts` and `_resolutions` from the same
+  jsonb column to rehydrate without re-parsing.
+- "Create new" mini-form ships for the 5 simple catalog tables
+  (board / hardware / custom_made / benchtop / appliances). Equipment
+  Hire is disabled with a tooltip linking to `/catalog?tab=hire` (it
+  requires a project_id FK on insert).
+- Seed (`make seed`) writes 1 committed `cv_import_run` row on ALF-001
+  item 1 (no real modules/parts inserted — they already exist from the
+  PM Workbench seed). Idempotent: deletes existing rows for the item
+  before inserting.
+- Out of scope (deferred to #7c): CutPlan / CutSchedule / Board tab /
+  `/cut-floor` page, Phase B `Use existing` typeahead. (Indefinite):
+  bin-packing optimiser, three-way merge re-import UI, Cabinet Vision
+  API integration.
