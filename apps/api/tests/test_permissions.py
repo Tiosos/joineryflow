@@ -126,3 +126,38 @@ def test_manager_admin_catalog_full_access():
     from app.auth.permissions import MATRIX
     assert MATRIX["manager"]["catalog"] == {"read", "write", "approve", "comment"}
     assert MATRIX["admin"]["catalog"] == {"read", "write", "approve", "comment"}
+
+
+# --- Cut Floor module (sub-project #7b) --------------------------------------
+
+def test_drafter_cut_floor_full_access():
+    """Drafter is elevated to admin/manager parity on cut_floor (#7b).
+
+    Module landed in #7b so the CV import routes can gate on it; #7c will
+    extend its consumers (CutPlan + CutSchedule + /cut-floor page).
+    """
+    from app.auth.permissions import MATRIX
+    assert MATRIX["drafter"]["cut_floor"] == {"read", "write", "approve", "comment"}
+
+
+def test_editor_cut_floor_can_read_write_comment_no_approve():
+    """Foreman/Machine team (editor) can drive cut imports + edit schedule
+    but cannot approve."""
+    from app.auth.permissions import MATRIX
+    assert MATRIX["editor"]["cut_floor"] == {"read", "write", "comment"}
+
+
+def test_purchase_officer_cut_floor_read_only():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["purchase_officer"]["cut_floor"] == {"read"}
+
+
+def test_viewer_cut_floor_read_only():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["viewer"]["cut_floor"] == {"read"}
+
+
+def test_manager_admin_cut_floor_full_access():
+    from app.auth.permissions import MATRIX
+    assert MATRIX["manager"]["cut_floor"] == {"read", "write", "approve", "comment"}
+    assert MATRIX["admin"]["cut_floor"] == {"read", "write", "approve", "comment"}

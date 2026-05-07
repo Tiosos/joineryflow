@@ -15,6 +15,7 @@ Module = Literal[
     "isample",
     "orderbook",
     "catalog",
+    "cut_floor",
     "it_management",
 ]
 Action = Literal["read", "write", "approve", "comment"]
@@ -27,6 +28,7 @@ _ALL_MODULES: tuple[str, ...] = (
     "isample",
     "orderbook",
     "catalog",
+    "cut_floor",
     "it_management",
 )
 
@@ -40,7 +42,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
     | {"it_management": {"read"}},
     "editor": {
         m: {"read", "write", "comment"}
-        for m in ("dashboard", "tracking", "list", "shop_dwgs", "isample")
+        for m in ("dashboard", "tracking", "list", "shop_dwgs", "isample", "cut_floor")
     }
     | {
         "orderbook":     {"read", "comment"},
@@ -55,6 +57,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "isample":       {"read", "write", "approve", "comment"},
         "orderbook":     {"read", "write", "approve", "comment"},
         "catalog":       {"read", "write", "approve", "comment"},
+        "cut_floor":     {"read", "write", "approve", "comment"},
         "it_management": set(),
     },
     "purchase_officer": {
@@ -65,6 +68,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "isample": {"read"},
         "orderbook": {"read", "write", "approve", "comment"},
         "catalog":   {"read", "comment"},
+        "cut_floor": {"read"},
         "it_management": set(),
     },
     "viewer": {m: {"read"} for m in _ALL_MODULES if m != "it_management"}
