@@ -165,6 +165,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — Cabinet Vision Integration spec (sub-projects #7a + #7b + #7c).
 - `docs/superpowers/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
 - `docs/superpowers/plans/2026-05-05-cabinet-vision-7b-cv-import.md` — 19-task implementation plan for sub-project #7b.
+- `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -499,3 +500,75 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   `/cut-floor` page, Phase B `Use existing` typeahead. (Indefinite):
   bin-packing optimiser, three-way merge re-import UI, Cabinet Vision
   API integration.
+
+## Cut Floor — CutPlan + CutSchedule + Board tab (sub-project #7c)
+
+- New backend module `apps/api/app/cut_floor/` (schemas / queries /
+  routes). All routes gated by `("cut_floor", action)`. The RBAC row
+  itself was added in #7b — drafter/manager/admin
+  `{read,write,approve,comment}`; editor `{read,write,comment}`
+  (Machine team can mutate but not approve); purchase_officer / viewer
+  `{read}` only.
+- Migration 0019 adds `part_slot.part_id` (nullable FK →
+  `parts(part_id)` ON DELETE SET NULL), `cut_schedule.{priority,
+  assigned_to, created_at, created_by, updated_at}`, and
+  `cut_plan.{created_by, notes}`. Two new indexes: `idx_part_slot_part`
+  + `idx_cut_schedule_date_priority`.
+- Note: existing `cut_plan` / `cut_sheet` / `part_slot` /
+  `cut_schedule` PKs are named `id`, not `cut_plan_id` etc. Code
+  follows the actual column names.
+- Routes:
+  - **CutPlan**: `POST /projects/{pid}/cut-plans` (single transaction
+    creates plan + sheets + slots), `GET /projects/{pid}/cut-plans`
+    (newest first), `GET /cut-plans/{plan_id}` (full nested),
+    `GET /items/{iid}/cut-plan` (latest plan filtered to sheets that
+    contain ≥1 slot for this item; foreign slots flagged `is_foreign`),
+    `DELETE /cut-plans/{plan_id}` (409 with code `PLAN_HAS_SCHEDULES`
+    when any non-cancelled `cut_schedule` references it; else hard
+    delete + CASCADE).
+  - **CutSchedule**: `GET /cut-schedules?date=&project_id=&status=`,
+    `GET /cut-schedules/{sid}`, `POST /cut-schedules` (auto
+    `priority = MAX + 100` for the day, or `100`),
+    `PATCH /cut-schedules/{sid}` (transitions enforced — see below),
+    `POST /cut-schedules/reorder` (rewrites priorities densely as
+    `100, 200, 300 …` for an ordered id list of one date),
+    `DELETE /cut-schedules/{sid}` (soft-cancel; second cancel is 409).
+- Status transition matrix (binding):
+  `planned → running → done`, plus `planned/running → cancelled`. Any
+  other transition (e.g. `done → running`, `cancelled → *`) returns
+  409 `{code: "BAD_TRANSITION", from, to}`.
+- Workspace isolation everywhere via `cut_plan.workspace_id`. Cut
+  schedules join through cut_plan; cut sheets and part slots join
+  through cut_plan. Cross-workspace reads return 404.
+- Foreign-slot rule: `GET /items/{iid}/cut-plan` returns only sheets
+  that contain ≥1 slot for the item (or its modules' parts). Slots
+  whose `part_id` is null or belongs to *other* items in the project
+  carry `is_foreign=true`. Slot label fallback order: `slot.label` →
+  joined `parts.part_name` → `"slot {id}"`.
+- Web routes:
+  - **`/cut-floor?date=YYYY-MM-DD&project=`** — Machine team daily
+    list. Date picker + back/forward arrows + project filter chip
+    (defaults to "All projects"). `mutator` roles drag-reorder rows
+    via HTML5 DnD. Each row: status pill + priority + plan name +
+    assignee + Start / Mark done / Cancel.
+  - **Item editor `/items/{id}?tab=board`** — `BoardTab.tsx` fetches
+    `/api/items/{id}/cut-plan` and renders one SVG per sheet at
+    800-px viewport, scaled to sheet dimensions. This-item slots fill
+    `--h-accent` 60%; foreign slots fill `--h-line` 30%. Tooltip on
+    hover. Empty state: "No CutPlan yet for this project."
+  - SideBar's secondary section gets a `Cut Floor` link below
+    `Catalog` (visible to all readers).
+- Audit events: `cut_plan.{create,delete}`,
+  `cut_schedule.{create,update,status_change,reorder,cancel}`. All
+  routed through `apps/api/app/auth/audit.py::write_audit`.
+- Seed (`make seed`) on ALF-001: 1 cut_plan "ALF-001 v1 nest", 1
+  sheet (18-PB), 5 part_slots (3 own + 2 foreign for the Board-tab
+  demo), and 2 cut_schedule rows (`running` today + `planned`
+  tomorrow). Idempotent — `DELETE FROM cut_plan WHERE project_id =
+  ALF-001` runs first.
+- Out of scope (indefinite): bin-packing optimiser (separate
+  `POST /projects/{pid}/optimise` endpoint reserved), CutPlan edit
+  UI (v1 = create + delete + replace by creating a new plan),
+  WebSocket schedule updates, `@dnd-kit/core`, mobile UI for
+  `/cut-floor`, `cut_plan.is_current` flag (Board tab uses
+  `MAX(id)`), CutSchedule export to PDF.
