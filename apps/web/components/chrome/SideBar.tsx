@@ -42,6 +42,12 @@ export async function SideBar() {
         >
           Cut Floor
         </Link>
+        <Link
+          href="/shop-floor"
+          className="mt-1 block text-xs font-medium uppercase tracking-wide text-h-muted hover:text-h-ink"
+        >
+          Shop Floor
+        </Link>
       </div>
       <ProjectSidebar all={all.projects} favourites={favs.projects} />
     </div>
