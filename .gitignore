@@ -26,3 +26,4 @@ build/
 # Playwright
 test-results/
 playwright-report/
+.superpowers/
