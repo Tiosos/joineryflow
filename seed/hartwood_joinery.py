@@ -34,7 +34,19 @@ USERS: list[tuple[str, str, str, str]] = [
     ("kai.matthews@hartwood.test", "Kai Matthews", "editor", "Machine"),
     ("mina.klee@hartwood.test", "Mina Klee", "purchase_officer", "Procurement"),
     ("sam.ito@hartwood.test", "Sam Ito", "viewer", "Observer"),
+    # Shop-floor workers (#8). Promoted to is_shop_worker=true after insert.
+    ("sam.lee@hartwood.test", "Sam Lee", "editor", "Joiner"),
+    ("priya.dhar@hartwood.test", "Priya Dhar", "editor", "CNC operator"),
+    ("marko.vil@hartwood.test", "Marko Villas", "editor", "Edge bander"),
+    ("kira.osei@hartwood.test", "Kira Osei", "editor", "All-rounder"),
 ]
+
+SHOP_WORKER_EMAILS: tuple[str, ...] = (
+    "sam.lee@hartwood.test",
+    "priya.dhar@hartwood.test",
+    "marko.vil@hartwood.test",
+    "kira.osei@hartwood.test",
+)
 
 # (stage_key, label, sort_order)
 STAGES: list[tuple[str, str, int]] = [
@@ -982,6 +994,171 @@ def main() -> None:
             print(
                 f"seeded #7c cut_floor: 1 cut_plan + 1 sheet + "
                 f"{len(_slot_rows)} slots + 2 schedules on ALF-001"
+            )
+
+        # === Shop Floor Ops (#8) =========================================
+        # Promote 4 demo workers + insert 6 demo assignments + 1 completion
+        # on ALF-001. Idempotent: assignments scoped per (item, stage) so
+        # the partial unique index protects re-seeds; explicit DELETE for
+        # the completion log row + matching done assignment.
+        s.execute(
+            text(
+                """
+                UPDATE app_user SET is_shop_worker = true
+                WHERE workspace_id = :w AND email = ANY(:emails)
+                """
+            ),
+            {"w": workspace_id, "emails": list(SHOP_WORKER_EMAILS)},
+        )
+
+        _alf_pid_8 = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if _alf_pid_8 is not None:
+            _worker_ids = {
+                row[0]: row[1]
+                for row in s.execute(
+                    text(
+                        """
+                        SELECT email, id FROM app_user
+                        WHERE workspace_id = :w AND email = ANY(:emails)
+                        """
+                    ),
+                    {"w": workspace_id, "emails": list(SHOP_WORKER_EMAILS)},
+                ).all()
+            }
+            _alf_items = [
+                row[0]
+                for row in s.execute(
+                    text(
+                        """
+                        SELECT item_id FROM items
+                        WHERE project_id = :p ORDER BY item_id LIMIT 6
+                        """
+                    ),
+                    {"p": _alf_pid_8},
+                ).all()
+            ]
+            sam = _worker_ids.get("sam.lee@hartwood.test")
+            priya = _worker_ids.get("priya.dhar@hartwood.test")
+            marko = _worker_ids.get("marko.vil@hartwood.test")
+            kira = _worker_ids.get("kira.osei@hartwood.test")
+            foreman_id = s.execute(
+                text(
+                    """
+                    SELECT id FROM app_user
+                    WHERE workspace_id = :w AND email = 'juno.okafor@hartwood.test'
+                    """
+                ),
+                {"w": workspace_id},
+            ).scalar() or _drafter_id
+
+            # Wipe shop-floor demo state for the ALF-001 items so re-runs
+            # are idempotent.
+            if _alf_items:
+                s.execute(
+                    text(
+                        """
+                        DELETE FROM stage_completion_log
+                        WHERE item_id = ANY(:items)
+                        """
+                    ),
+                    {"items": _alf_items},
+                )
+                s.execute(
+                    text(
+                        """
+                        DELETE FROM worker_assignment
+                        WHERE item_id = ANY(:items)
+                        """
+                    ),
+                    {"items": _alf_items},
+                )
+
+            _assignments: list[tuple[int, str, int | None, str]] = []
+            if len(_alf_items) >= 1 and sam is not None:
+                _assignments.append((_alf_items[0], "DOWN", sam, "in_progress"))
+            if len(_alf_items) >= 2 and sam is not None:
+                _assignments.append((_alf_items[1], "DOWN", sam, "assigned"))
+            if len(_alf_items) >= 3 and priya is not None:
+                _assignments.append((_alf_items[2], "DOWN", priya, "done"))
+            if len(_alf_items) >= 4 and priya is not None:
+                _assignments.append((_alf_items[3], "CNC", priya, "assigned"))
+            if len(_alf_items) >= 5 and marko is not None:
+                _assignments.append((_alf_items[4], "DOWN", marko, "assigned"))
+            if len(_alf_items) >= 6 and kira is not None:
+                _assignments.append((_alf_items[5], "EDGED", kira, "assigned"))
+
+            for iid, stage, wkr, status in _assignments:
+                if wkr is None:
+                    continue
+                if status == "done":
+                    aid = s.execute(
+                        text(
+                            """
+                            INSERT INTO worker_assignment(
+                                item_id, stage_key, worker_id, status,
+                                assigned_by, started_at, ended_at
+                            )
+                            VALUES (:i, :s, :w, 'done', :a,
+                                    now() - interval '1 day',
+                                    now() - interval '1 day' + interval '2 hours')
+                            RETURNING assignment_id
+                            """
+                        ),
+                        {"i": iid, "s": stage, "w": wkr, "a": foreman_id},
+                    ).scalar()
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO stage_completion_log(
+                                item_id, stage_key, assignment_id, worker_id,
+                                completed_at, note
+                            )
+                            VALUES (:i, :s, :a, :w,
+                                    now() - interval '1 day' + interval '2 hours',
+                                    'auto-seeded done')
+                            """
+                        ),
+                        {"i": iid, "s": stage, "a": aid, "w": wkr},
+                    )
+                    # Mark the matching item_stages.done_date so PM
+                    # dashboards reflect the completion.
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO item_stages(item_id, stage_key, done_date)
+                            VALUES (:i, :s, CURRENT_DATE - 1)
+                            ON CONFLICT (item_id, stage_key)
+                            DO UPDATE SET done_date = CURRENT_DATE - 1
+                            """
+                        ),
+                        {"i": iid, "s": stage},
+                    )
+                else:
+                    started = (
+                        "now() - interval '30 minutes'"
+                        if status == "in_progress"
+                        else "NULL"
+                    )
+                    s.execute(
+                        text(
+                            f"""
+                            INSERT INTO worker_assignment(
+                                item_id, stage_key, worker_id, status,
+                                assigned_by, started_at
+                            )
+                            VALUES (:i, :s, :w, :st, :a, {started})
+                            """
+                        ),
+                        {"i": iid, "s": stage, "w": wkr,
+                         "st": status, "a": foreman_id},
+                    )
+
+            s.commit()
+            print(
+                f"seeded #8 shop_floor: 4 workers promoted + "
+                f"{len(_assignments)} assignments on ALF-001"
             )
 
         print(
