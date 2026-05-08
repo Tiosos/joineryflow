@@ -868,6 +868,122 @@ def main() -> None:
                 s.commit()
                 print("seeded #7b cv_import_run: 1 committed run on ALF-001 item 1")
 
+        # === Cut Floor demo (#7c) =========================================
+        # 1 cut_plan with 1 sheet + 8 part_slots on ALF-001, plus 2
+        # cut_schedule rows (one running today, one planned tomorrow).
+        # Idempotent: wipe ALF-001 cut_plan rows before inserting.
+        _alf_pid_7c = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if _alf_pid_7c is not None:
+            s.execute(
+                text("DELETE FROM cut_plan WHERE project_id = :p"),
+                {"p": _alf_pid_7c},
+            )
+            _plan_id = s.execute(text("""
+                INSERT INTO cut_plan(workspace_id, project_id, name, notes,
+                                     created_by)
+                VALUES (:w, :p, 'ALF-001 v1 nest',
+                        'Auto-seeded demo plan', :u)
+                RETURNING id
+            """), {"w": workspace_id, "p": _alf_pid_7c,
+                   "u": _drafter_id}).scalar()
+            _sheet_id = s.execute(text("""
+                INSERT INTO cut_sheet(cut_plan_id, sheet_no, material_sku)
+                VALUES (:cp, 1, '18-PB')
+                RETURNING id
+            """), {"cp": _plan_id}).scalar()
+
+            # Pull up to 6 parts from ALF-001 item 1 (the CV-imported parts)
+            # plus any other parts to highlight foreign-slot rendering.
+            _alf_iid_7c = s.execute(text(
+                "SELECT item_id FROM items WHERE project_id = :p ORDER BY item_id LIMIT 1"
+            ), {"p": _alf_pid_7c}).scalar()
+            _own_parts: list[int] = []
+            if _alf_iid_7c is not None:
+                _own_parts = [
+                    r[0] for r in s.execute(text("""
+                        SELECT p.part_id
+                        FROM parts p
+                        JOIN modules m ON m.module_id = p.module_id
+                        WHERE m.item_id = :iid
+                        ORDER BY p.part_id
+                        LIMIT 6
+                    """), {"iid": _alf_iid_7c}).all()
+                ]
+            _foreign_parts = [
+                r[0] for r in s.execute(text("""
+                    SELECT p.part_id
+                    FROM parts p
+                    JOIN modules m ON m.module_id = p.module_id
+                    JOIN items   i ON i.item_id   = m.item_id
+                    WHERE i.project_id = :p
+                      AND (:owniid IS NULL OR i.item_id <> :owniid)
+                    ORDER BY p.part_id
+                    LIMIT 2
+                """), {"p": _alf_pid_7c, "owniid": _alf_iid_7c}).all()
+            ]
+
+            # Layout: 6 own slots in 2 rows + 2 foreign slots on right edge.
+            _slot_rows: list[dict] = []
+            _x = 0
+            _y = 0
+            for idx, pid in enumerate(_own_parts):
+                _slot_rows.append({
+                    "x": _x, "y": _y, "w": 720, "h": 580,
+                    "label": f"P{idx + 1}",
+                    "part_id": pid,
+                })
+                _x += 730
+                if (idx + 1) % 3 == 0:
+                    _x = 0
+                    _y += 590
+            _fx = 2200
+            _fy = 0
+            for idx, pid in enumerate(_foreign_parts):
+                _slot_rows.append({
+                    "x": _fx, "y": _fy, "w": 200, "h": 200,
+                    "label": f"foreign-{idx + 1}",
+                    "part_id": pid,
+                })
+                _fy += 220
+
+            for row in _slot_rows:
+                s.execute(text("""
+                    INSERT INTO part_slot(cut_sheet_id, x, y, w, h, label, part_id)
+                    VALUES (:cs, :x, :y, :w, :h, :lbl, :pid)
+                """), {
+                    "cs": _sheet_id,
+                    "x": row["x"], "y": row["y"],
+                    "w": row["w"], "h": row["h"],
+                    "lbl": row["label"],
+                    "pid": row["part_id"],
+                })
+
+            # 2 cut_schedule rows: one running today (priority 100),
+            # one planned tomorrow (priority 100).
+            s.execute(text("""
+                INSERT INTO cut_schedule(
+                    cut_plan_id, scheduled_for, status,
+                    priority, assigned_to, created_by
+                )
+                VALUES (:cp, CURRENT_DATE, 'running', 100, :u, :u)
+            """), {"cp": _plan_id, "u": _drafter_id})
+            s.execute(text("""
+                INSERT INTO cut_schedule(
+                    cut_plan_id, scheduled_for, status,
+                    priority, assigned_to, created_by
+                )
+                VALUES (:cp, CURRENT_DATE + INTERVAL '1 day',
+                        'planned', 100, :u, :u)
+            """), {"cp": _plan_id, "u": _drafter_id})
+
+            s.commit()
+            print(
+                f"seeded #7c cut_floor: 1 cut_plan + 1 sheet + "
+                f"{len(_slot_rows)} slots + 2 schedules on ALF-001"
+            )
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"
