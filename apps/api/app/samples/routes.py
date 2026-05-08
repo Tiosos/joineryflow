@@ -6,7 +6,6 @@ through projects.workspace_id direct join (post-hardening).
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
@@ -101,6 +100,8 @@ def patch_sample_route(
     user: AuthUser = Depends(require_permission("isample", "write")),
     db: Session = Depends(get_db),
 ):
+    if not body.model_dump(exclude_unset=True):
+        raise HTTPException(status_code=422, detail="empty patch")
     cur = q.get_sample(db, sample_id=sid, workspace_id=user.workspace_id)
     if not cur:
         raise HTTPException(status_code=404, detail="sample not found")

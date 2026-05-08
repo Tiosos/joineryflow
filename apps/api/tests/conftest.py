@@ -4,6 +4,26 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pool_per_test():
+    """Dispose the API's SQLAlchemy connection pool around every test.
+
+    Symptom this prevents: cross-file pytest deadlocks. Test A's
+    TestClient calls leave pooled connections that hold row locks
+    from rolled-back partial transactions. Test B then TRUNCATEs the
+    shared `app_user` / `audit_log` tables in teardown and deadlocks
+    against those stale locks.
+
+    Disposing the engine before AND after each test forces the pool
+    to close every existing connection (releasing held locks) so each
+    test starts and ends with a clean pool. Cost is ~ms per test for
+    fresh connection setup.
+    """
+    from app.db import engine
+    engine.dispose()
+    yield
+
+
 @pytest.fixture
 def db():
     """Transaction-rollback fixture: every test runs inside a transaction that
@@ -62,12 +82,23 @@ TRUNCATE_TABLES = (
 
 @pytest.fixture
 def truncate_all():
-    """Use in autouse cleanup fixtures in route tests that need full TRUNCATE."""
-    from app.db import SessionLocal
+    """Use in autouse cleanup fixtures in route tests that need full TRUNCATE.
+
+    Sets a per-statement lock_timeout so any residual cross-test
+    deadlock (which `_fresh_pool_per_test` may not have fully prevented)
+    fails fast at 5 seconds instead of cascading into the next file.
+    """
+    from app.db import SessionLocal, engine
 
     def _do():
+        # Dispose the pool right before TRUNCATE so any FastAPI route
+        # connections from prior tests (which may hold idle row locks)
+        # are forcibly closed, freeing the AccessExclusiveLock TRUNCATE
+        # needs.
+        engine.dispose()
         s = SessionLocal()
         try:
+            s.execute(text("SET LOCAL lock_timeout = '5s'"))
             s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
             s.commit()
         finally:
