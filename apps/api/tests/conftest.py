@@ -31,6 +31,8 @@ def workspace_id(db):
 
 
 TRUNCATE_TABLES = (
+    "stage_completion_log",
+    "worker_assignment",
     "shop_drawing_revision",
     "shop_drawing",
     "sample",
