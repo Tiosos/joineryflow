@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from .auth.routes import router as auth_router
 from .catalog.routes import router as catalog_router
+from .cut_floor.routes import router as cut_floor_router
 from .cv.routes import router as cv_router
 from .files.routes import router as files_router
 from .hardware_lines.routes import router as hardware_lines_router
@@ -25,6 +26,7 @@ from .workspaces.routes import router as ws_router
 app = FastAPI(title="JoineryFlow API")
 app.include_router(auth_router)
 app.include_router(catalog_router)
+app.include_router(cut_floor_router)
 app.include_router(cv_router)
 app.include_router(files_router)
 app.include_router(item_attachments_router)
