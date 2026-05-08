@@ -166,6 +166,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
 - `docs/superpowers/plans/2026-05-05-cabinet-vision-7b-cv-import.md` — 19-task implementation plan for sub-project #7b.
 - `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
+- `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
+- `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -572,3 +574,85 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   WebSocket schedule updates, `@dnd-kit/core`, mobile UI for
   `/cut-floor`, `cut_plan.is_current` flag (Board tab uses
   `MAX(id)`), CutSchedule export to PDF.
+
+## Shop Floor Ops (sub-project #8)
+
+- Migration 0020 adds `app_user.is_shop_worker` (bool default false),
+  `items.paint_after_assembly` (bool default false; when true the
+  lifecycle order becomes DOWN → CNC → EDGED → MADE → PAINTED),
+  `worker_assignment` (mutable assignment state with the partial
+  unique index `uniq_active_assignment` on `(item_id, stage_key)
+  WHERE status IN ('assigned','in_progress')`), and
+  `stage_completion_log` (append-only history with `undone_at` soft-
+  undo marker).
+- New 10th IA module **`shop_floor`**. Foreman + Machine team both
+  map to `editor` (`{read, write, comment}`); admin/manager get
+  approve too; drafter `{read, comment}`; viewer / purchase_officer
+  `{read}` only. Restrictions on who can override an in-progress
+  assignment held by another worker are enforced in route handlers,
+  not the matrix.
+- Backend module `apps/api/app/shop_floor/` — `schemas.py`,
+  `lifecycle.py` (pure helpers — `shop_floor_order`,
+  `prior_stages`, `is_within_undo_window`), `queries.py`
+  (workspace-isolated text() SQL, FOR UPDATE on mark-done +
+  undo paths), `routes.py` mounting 10 endpoints:
+  - `GET /projects/{pid}/shop-floor/board`
+  - `GET /projects/{pid}/shop-floor/workers`
+  - `GET /workers/{wid}/queue`
+  - `GET /workers/{wid}/recent-completions`
+  - `POST /projects/{pid}/items/{iid}/assignments`
+  - `PATCH /assignments/{aid}` (reassign clears `started_at` and
+    resets status to `assigned` per user decision)
+  - `DELETE /assignments/{aid}` (soft-cancel)
+  - `POST /assignments/{aid}/start` (idempotent)
+  - `POST /assignments/{aid}/complete` (single transaction:
+    `stage_completion_log` + `item_stages.done_date` +
+    `worker_assignment.status='done'` + audit)
+  - `POST /completions/{log_id}/undo` (worker <5 min via
+    `is_within_undo_window`; supervisor any time)
+- Status machine binding: `assigned → in_progress → done`, plus
+  `assigned/in_progress → cancelled`. `done → in_progress` only via
+  the undo path. `done → cancelled` is rejected at both DELETE and
+  PATCH layers.
+- Duplicate-active-assignment 409 surfaces the existing
+  `assignment_id`, `worker_id`, `worker_name`, `status` so the UI
+  can redirect to reassign instead of pleading retry (per user
+  decision).
+- Stage ordering enforced by `prior_stages_done()` reading
+  `items.painting_req` AND `items.paint_after_assembly`. Mark-done
+  for `CNC` before `DOWN` returns `409 STAGE_OUT_OF_ORDER` with the
+  `missing` list. PAINTED is skipped from the order entirely when
+  `painting_req = false`.
+- Workspace isolation: every read/write joins `items.project_id ->
+  projects.workspace_id`. Cross-workspace GETs and POSTs return 404.
+- Worker-toggle endpoint at `PATCH /users/{uid}/shop-worker` (gated
+  `("it_management", "write")` — admin-only). Audit event
+  `it.worker_toggle`.
+- Web routes:
+  - **`/shop-floor?project=…`** — Foreman office board. 5-column
+    kanban DOWN | CNC | EDGED | PAINTED | MADE. Per-card status
+    pill + worker chip + reassign select + cancel button. Inline
+    `AssignDialog`. 15-second polling.
+  - **`/shop-floor/station/[worker_id]`** — kiosk display. Active
+    card prominent (~70% viewport), big emerald Mark-done button on
+    the in-progress card; the worker's own browser session sees the
+    `UndoBannerStack` for completions in the last 5 minutes.
+  - `/it` — admin-only `WorkerRosterPanel` listing every workspace
+    user with a checkbox to toggle `is_shop_worker`. Optimistic
+    update with revert on failure.
+  - SideBar gets a `Shop Floor` link below `Cut Floor`.
+- Audit hooks: `shop_floor.{assign|reassign|unassign|stage_start|
+  stage_complete|stage_undo}` plus `shop_floor.assign_note_update`
+  for note-only PATCH and `it.worker_toggle` for the admin roster
+  panel.
+- Seed (`make seed`) grows the staff roster from 8 → 12 and inserts
+  5 demo assignments on ALF-001 (one in_progress + three assigned +
+  one done with matching `stage_completion_log` and yesterday's
+  `item_stages.done_date`). Idempotent — wipes the ALF-001
+  shop-floor demo state before re-seeding.
+- Out of scope (deferred): mobile-first responsive UI, real-time
+  pub/sub (15-s poll instead), efficiency analytics dashboards,
+  per-part painting tracking, `time_record` table for payroll,
+  worker self-assignment, quality / rework loop, cross-project
+  worker view, per-worker login (kiosk URL = pseudo-auth), PM
+  "today's completions" widget on `/tracking`.
