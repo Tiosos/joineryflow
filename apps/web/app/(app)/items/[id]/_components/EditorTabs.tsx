@@ -6,6 +6,7 @@ import { CutlistTab } from "./cutlist/CutlistTab";
 import { HardwareTab } from "./hardware/HardwareTab";
 import { LogTab } from "./LogTab";
 import AttachmentsTab from "./AttachmentsTab";
+import { BoardTab } from "./BoardTab";
 
 interface EditorTabsProps {
   item: ItemOut;
@@ -58,11 +59,7 @@ export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
       <div className="pt-4">
         {current === "cutlist" && <CutlistTab item={item} />}
         {current === "hardware" && <HardwareTab item={item} />}
-        {current === "board" && (
-          <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
-            Board view ships in v2 with Cabinet Vision integration.
-          </div>
-        )}
+        {current === "board" && <BoardTab itemId={item.id} />}
         {current === "attachments" && (
           <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
