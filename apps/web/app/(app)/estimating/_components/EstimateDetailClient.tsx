@@ -188,6 +188,16 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     if (r.ok) await refresh();
   }
 
+  async function expire() {
+    if (!currentRev) return;
+    const reason = window.prompt("Reason for expiry? (optional)");
+    if (reason === null) return;
+    const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/expire`, {
+      lost_reason: reason || null,
+    });
+    if (r.ok) await refresh();
+  }
+
   async function revise() {
     const r = await callApi("POST", `/api/estimates/${estimate.estimate_id}/revise`);
     if (r.ok) await refresh();
@@ -415,6 +425,15 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
             className="rounded border border-h-line bg-white px-3 py-1.5 font-medium hover:bg-gray-100 disabled:opacity-50"
           >
             Withdraw
+          </button>
+          <button
+            type="button"
+            onClick={expire}
+            disabled={busy}
+            className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            data-testid="expire-btn"
+          >
+            Expire
           </button>
           <button
             type="button"

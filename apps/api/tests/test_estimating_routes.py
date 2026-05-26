@@ -531,3 +531,111 @@ def test_quote_pdf_on_draft_renders_with_watermark():
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF")
+
+
+# Revision transitions — reject / expire / withdraw ----------------
+
+def _send_revision(c: TestClient, board_id: int) -> int:
+    """Create estimate, add a line+part, send it. Returns rid."""
+    rid = _make_estimate(c)["current_revision_id"]
+    lid = c.post(
+        f"/revisions/{rid}/lines",
+        json={"description": "Cabinet", "qty": 1},
+    ).json()["line_id"]
+    c.post(
+        f"/lines/{lid}/parts",
+        json={"material_type": "BOARD", "material_id": board_id, "qty": 1},
+    )
+    r = c.post(f"/revisions/{rid}/send")
+    assert r.status_code == 200, r.text
+    return rid
+
+
+def test_reject_revision_sets_status_and_stores_reason():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _send_revision(c, board_id)
+    r = c.post(f"/revisions/{rid}/reject", json={"lost_reason": "Too expensive"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "rejected"
+    assert body["lost_reason"] == "Too expensive"
+
+
+def test_reject_requires_lost_reason():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _send_revision(c, board_id)
+    r = c.post(f"/revisions/{rid}/reject", json={})
+    assert r.status_code == 422
+
+
+def test_expire_revision_sets_status():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _send_revision(c, board_id)
+    r = c.post(f"/revisions/{rid}/expire", json={"lost_reason": "Quote lapsed"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "expired"
+
+
+def test_withdraw_revision_sets_status():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _send_revision(c, board_id)
+    r = c.post(f"/revisions/{rid}/withdraw", json={"lost_reason": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "withdrawn"
+
+
+# Remove operations — part / hardware / line -----------------------
+
+def test_remove_part_from_line():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    _lid, pid = _seed_line_with_part(c, board_id)
+    r = c.delete(f"/estimate-parts/{pid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True
+    r2 = c.patch(f"/estimate-parts/{pid}", json={"qty": "1"})
+    assert r2.status_code == 404
+
+
+def test_remove_hardware_from_line():
+    c, _wid, _uid, _board, hw_id = _bootstrap()
+    _lid, hid = _seed_line_with_hardware(c, hw_id)
+    r = c.delete(f"/hardware/{hid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True
+    r2 = c.patch(f"/hardware/{hid}", json={"qty": "1"})
+    assert r2.status_code == 404
+
+
+def test_delete_line_removes_it():
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _make_estimate(c)["current_revision_id"]
+    lid = c.post(
+        f"/revisions/{rid}/lines",
+        json={"description": "To delete", "qty": 1},
+    ).json()["line_id"]
+    r = c.delete(f"/lines/{lid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True
+    est_id = c.get("/estimates").json()["estimates"][0]["estimate_id"]
+    detail = c.get(f"/estimates/{est_id}").json()
+    line_ids = [ln["line_id"] for ln in detail["revisions"][0]["lines"]]
+    assert lid not in line_ids
+
+
+# Labour upsert ---------------------------------------------------
+
+def test_upsert_labour_adds_then_removes():
+    c, _wid, _uid, _board, _hw = _bootstrap()
+    rid = _make_estimate(c)["current_revision_id"]
+    lid = c.post(
+        f"/revisions/{rid}/lines",
+        json={"description": "Cabinet", "qty": 1},
+    ).json()["line_id"]
+
+    r = c.post(f"/lines/{lid}/labour", json={"stage_key": "CNC", "hours": 3.5})
+    assert r.status_code == 200, r.text
+    assert any(l["stage_key"] == "CNC" for l in r.json()["labour"])
+
+    r2 = c.post(f"/lines/{lid}/labour", json={"stage_key": "CNC", "hours": 0})
+    assert r2.status_code == 200, r2.text
+    assert not any(l["stage_key"] == "CNC" for l in r2.json()["labour"])

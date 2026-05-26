@@ -1,12 +1,10 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
-import { fetchMe } from "@/lib/session";
+import { fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
 import type { Customer, EstimateSummary } from "@/lib/estimating-types";
 
 import CustomerDetailClient from "./_components/CustomerDetailClient";
-
-const COOKIE_NAME = "jf_session";
 const API = process.env.API_URL ?? "http://api:8000";
 
 interface PageProps {
