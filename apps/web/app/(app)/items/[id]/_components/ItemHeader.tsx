@@ -13,7 +13,7 @@ export function ItemHeader({ item }: Props) {
   function close() {
     window.close();
     // If window.close() was a no-op (browser blocked it), fall back.
-    if (!window.closed) router.push("/home");
+    if (!window.closed) router.push("/dashboard");
   }
 
   return (

@@ -6,7 +6,15 @@ truth for what each role can do per IA module; it is consulted by the
 """
 from typing import Literal
 
-Role = Literal["admin", "manager", "editor", "drafter", "purchase_officer", "viewer"]
+Role = Literal[
+    "admin",
+    "manager",
+    "editor",
+    "drafter",
+    "estimator",
+    "purchase_officer",
+    "viewer",
+]
 Module = Literal[
     "dashboard",
     "tracking",
@@ -17,6 +25,7 @@ Module = Literal[
     "catalog",
     "cut_floor",
     "shop_floor",
+    "estimating",
     "it_management",
 ]
 Action = Literal["read", "write", "approve", "comment"]
@@ -31,6 +40,7 @@ _ALL_MODULES: tuple[str, ...] = (
     "catalog",
     "cut_floor",
     "shop_floor",
+    "estimating",
     "it_management",
 )
 
@@ -50,6 +60,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
     | {
         "orderbook":     {"read", "comment"},
         "catalog":       {"read", "write", "comment"},
+        "estimating":    {"read"},
         "it_management": set(),
     },
     "drafter": {
@@ -62,6 +73,20 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "catalog":       {"read", "write", "approve", "comment"},
         "cut_floor":     {"read", "write", "approve", "comment"},
         "shop_floor":    {"read", "comment"},
+        "estimating":    {"read", "comment"},
+        "it_management": set(),
+    },
+    "estimator": {
+        "dashboard":     {"read"},
+        "tracking":      {"read", "comment"},
+        "list":          {"read", "comment"},
+        "shop_dwgs":     {"read", "comment"},
+        "isample":       {"read", "comment"},
+        "orderbook":     {"read"},
+        "catalog":       {"read", "comment"},
+        "cut_floor":     {"read"},
+        "shop_floor":    {"read"},
+        "estimating":    {"read", "write", "approve", "comment"},
         "it_management": set(),
     },
     "purchase_officer": {
@@ -74,6 +99,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "catalog":   {"read", "comment"},
         "cut_floor": {"read"},
         "shop_floor": {"read"},
+        "estimating": {"read"},
         "it_management": set(),
     },
     "viewer": {m: {"read"} for m in _ALL_MODULES if m != "it_management"}

@@ -1,27 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  --h-bg: oklch(98% 0.005 95);
+  /* H palette — canonical hi-fi tokens (mirror of legacy/home.html). */
+  --h-bg: #fbfaf7;
   --h-surface: #ffffff;
-  --h-ink: oklch(22% 0.02 95);
-  --h-muted: oklch(55% 0.02 95);
-  --h-line: oklch(90% 0.005 95);
-  --h-accent: oklch(56% 0.15 150);
-  --h-good: oklch(64% 0.18 145);
-  --h-warn: oklch(75% 0.18 80);
-  --h-bad: oklch(58% 0.20 25);
+  --h-surface-alt: #f4f2ed;
+  --h-line: #e4e0d8;
+  --h-ink: #1b1a17;
+  --h-ink2: #5a574f;
+  --h-ink3: #8f8b80;
+  --h-ink4: #c1beb4;
+  --h-muted: var(--h-ink2);
+  --h-accent: #c96442;
+  --h-accent-soft: #f3e0d6;
+  --h-good: #3f7d48;
+  --h-warn: #c48a2e;
+  --h-bad: #b4443d;
+  --h-info: #3d6b8a;
 }
 
 @theme inline {
   --color-h-bg: var(--h-bg);
   --color-h-surface: var(--h-surface);
+  --color-h-surface-alt: var(--h-surface-alt);
   --color-h-ink: var(--h-ink);
+  --color-h-ink2: var(--h-ink2);
+  --color-h-ink3: var(--h-ink3);
+  --color-h-ink4: var(--h-ink4);
   --color-h-muted: var(--h-muted);
   --color-h-line: var(--h-line);
   --color-h-accent: var(--h-accent);
+  --color-h-accent-soft: var(--h-accent-soft);
   --color-h-good: var(--h-good);
   --color-h-warn: var(--h-warn);
   --color-h-bad: var(--h-bad);
+  --color-h-info: var(--h-info);
   --font-sans: var(--font-geist-sans, system-ui, sans-serif);
   --font-mono: var(--font-geist-mono, ui-monospace, monospace);
 }

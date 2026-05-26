@@ -1,44 +1,24 @@
 import { cookies } from "next/headers";
-import { TrackingFilters } from "@/components/pm/TrackingFilters";
 import { TrackingClient } from "./_components/TrackingClient";
-import type { ProjectOut, TrackingGridOut } from "@/lib/pm-types";
-import { fetchMe } from "@/lib/session";
-
-const COOKIE_NAME = "jf_session";
+import type {
+  ProjectListOut,
+  ProjectOut,
+  TrackingGridOut,
+} from "@/lib/pm-types";
+import { fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
 
 interface SearchParams {
   project_id?: string;
-  status?: string;
-  stage?: string;
-  q?: string;
 }
 
-async function fetchProject(
-  pid: number,
-  cookieHeader: string,
-): Promise<ProjectOut | null> {
+async function apiGet<T>(path: string, cookieHeader: string): Promise<T | null> {
   const apiUrl = process.env.API_URL ?? "http://api:8000";
-  const r = await fetch(`${apiUrl}/projects/${pid}`, {
+  const r = await fetch(`${apiUrl}${path}`, {
     headers: { cookie: cookieHeader },
     cache: "no-store",
   }).catch(() => null);
   if (!r || !r.ok) return null;
-  return (await r.json()) as ProjectOut;
-}
-
-async function fetchGrid(
-  pid: number,
-  qs: URLSearchParams,
-  cookieHeader: string,
-): Promise<TrackingGridOut | null> {
-  const apiUrl = process.env.API_URL ?? "http://api:8000";
-  const url = `${apiUrl}/projects/${pid}/items${qs.toString() ? `?${qs}` : ""}`;
-  const r = await fetch(url, {
-    headers: { cookie: cookieHeader },
-    cache: "no-store",
-  }).catch(() => null);
-  if (!r || !r.ok) return null;
-  return (await r.json()) as TrackingGridOut;
+  return (await r.json()) as T;
 }
 
 export default async function TrackingPage({
@@ -47,29 +27,33 @@ export default async function TrackingPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
-  const pid = sp.project_id ? Number(sp.project_id) : null;
-
-  if (!pid) {
-    return (
-      <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
-        Pick a project from the sidebar to view its tracking grid.
-      </div>
-    );
-  }
-
   const c = await cookies();
   const tok = c.get(COOKIE_NAME)?.value ?? "";
   const cookieHeader = `${COOKIE_NAME}=${tok}`;
 
-  const qs = new URLSearchParams();
-  if (sp.status) qs.set("status", sp.status);
-  if (sp.stage) qs.set("stage", sp.stage);
-  if (sp.q) qs.set("q", sp.q);
+  const [me, projectList] = await Promise.all([
+    fetchMe(),
+    apiGet<ProjectListOut>("/projects", cookieHeader),
+  ]);
 
-  const me = await fetchMe();
+  const projects = projectList?.projects ?? [];
+
+  const pid =
+    sp.project_id != null && sp.project_id !== ""
+      ? Number(sp.project_id)
+      : projects[0]?.id ?? null;
+
+  if (pid == null || Number.isNaN(pid)) {
+    return (
+      <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
+        No projects available in this workspace yet.
+      </div>
+    );
+  }
+
   const [project, grid] = await Promise.all([
-    fetchProject(pid, cookieHeader),
-    fetchGrid(pid, qs, cookieHeader),
+    apiGet<ProjectOut>(`/projects/${pid}`, cookieHeader),
+    apiGet<TrackingGridOut>(`/projects/${pid}/items`, cookieHeader),
   ]);
 
   if (!project) {
@@ -80,37 +64,17 @@ export default async function TrackingPage({
     me?.auth_role === "drafter" ||
     me?.auth_role === "manager" ||
     me?.auth_role === "admin";
+  const procurementReady =
+    process.env.NEXT_PUBLIC_PROCUREMENT_UI_READY === "1";
 
   return (
-    <div className="grid gap-4">
-      <header className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-h-ink">{project.name}</h1>
-          <p className="font-mono text-xs text-h-muted">{project.project_code}</p>
-        </div>
-        {process.env.NEXT_PUBLIC_PROCUREMENT_UI_READY === "1" && (
-          <button
-            type="button"
-            className="rounded border border-h-line px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
-          >
-            Open Procurement
-          </button>
-        )}
-      </header>
-
-      <TrackingFilters />
-
-      {grid && grid.items.length > 0 ? (
-        <TrackingClient
-          items={grid?.items ?? []}
-          canEdit={canEdit}
-          projectId={pid}
-        />
-      ) : (
-        <div className="rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
-          No items match your filters.
-        </div>
-      )}
-    </div>
+    <TrackingClient
+      project={project}
+      projects={projects}
+      items={grid?.items ?? []}
+      me={me}
+      canEdit={canEdit}
+      procurementReady={procurementReady}
+    />
   );
 }

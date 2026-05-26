@@ -34,6 +34,8 @@ USERS: list[tuple[str, str, str, str]] = [
     ("kai.matthews@hartwood.test", "Kai Matthews", "editor", "Machine"),
     ("mina.klee@hartwood.test", "Mina Klee", "purchase_officer", "Procurement"),
     ("sam.ito@hartwood.test", "Sam Ito", "viewer", "Observer"),
+    # Estimator (#9a). New auth_role 'estimator' allowed by migration 0021.
+    ("kai.ngata@hartwood.test", "Kai Ngata", "estimator", "Estimator"),
     # Shop-floor workers (#8). Promoted to is_shop_worker=true after insert.
     ("sam.lee@hartwood.test", "Sam Lee", "editor", "Joiner"),
     ("priya.dhar@hartwood.test", "Priya Dhar", "editor", "CNC operator"),
@@ -1160,6 +1162,951 @@ def main() -> None:
                 f"seeded #8 shop_floor: 4 workers promoted + "
                 f"{len(_assignments)} assignments on ALF-001"
             )
+
+        # === Estimating Core (#9a) =======================================
+        # workspace_labour_rate (10 stages) + 2 customers + 3 demo estimates
+        # (one draft, one sent, one accepted-and-ready-to-convert).
+        # Idempotent: wipes EST-2026-* for this workspace before reinserting.
+        _labour_rates = [
+            ("REQ", 0.00), ("SM", 0.00), ("LISTED", 0.00),
+            ("DOWN", 85.00), ("CNC", 95.00), ("EDGED", 80.00),
+            ("PAINTED", 90.00), ("MADE", 95.00),
+            ("DEL", 70.00), ("INST", 110.00),
+        ]
+        for sk, rate in _labour_rates:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO workspace_labour_rate
+                        (workspace_id, stage_key, hourly_rate, updated_by)
+                    VALUES (:w, :s, :r, :a)
+                    ON CONFLICT (workspace_id, stage_key) DO UPDATE
+                      SET hourly_rate = EXCLUDED.hourly_rate,
+                          updated_at = now()
+                    """
+                ),
+                {"w": workspace_id, "s": sk, "r": rate, "a": _drafter_id},
+            )
+
+        _estimator_id = s.execute(
+            text(
+                """
+                SELECT id FROM app_user
+                WHERE workspace_id = :w AND email = 'kai.ngata@hartwood.test'
+                """
+            ),
+            {"w": workspace_id},
+        ).scalar() or _drafter_id
+
+        # Customers — case-insensitive UNIQUE name so we use ON CONFLICT.
+        _customers = [
+            ("ACME Property Group", "ops@acme.test", "0400 100 100",
+             "12 Industrial Way, Sydney NSW 2000", "12 345 678 901"),
+            ("Bayside Joinery Clients", "hello@bayside.test", "0400 200 200",
+             "88 Foreshore Rd, Brighton VIC 3186", None),
+        ]
+        _customer_id_by_name: dict[str, int] = {}
+        for cname, cemail, cphone, caddr, abn in _customers:
+            cid = s.execute(
+                text(
+                    """
+                    INSERT INTO customer
+                        (workspace_id, name, email, phone,
+                         billing_address, abn, created_by)
+                    VALUES (:w, :n, :e, :p, :a, :abn, :cb)
+                    ON CONFLICT (workspace_id, name) DO UPDATE
+                      SET email = EXCLUDED.email,
+                          phone = EXCLUDED.phone,
+                          billing_address = EXCLUDED.billing_address,
+                          abn = EXCLUDED.abn,
+                          updated_at = now()
+                    RETURNING customer_id
+                    """
+                ),
+                {"w": workspace_id, "n": cname, "e": cemail,
+                 "p": cphone, "a": caddr, "abn": abn, "cb": _estimator_id},
+            ).scalar()
+            _customer_id_by_name[cname] = int(cid)
+
+        # Idempotency: wipe any prior EST-2026-* estimates for this workspace.
+        s.execute(
+            text(
+                """
+                DELETE FROM estimate
+                WHERE workspace_id = :w AND estimate_no LIKE 'EST-2026-%'
+                """
+            ),
+            {"w": workspace_id},
+        )
+
+        _bm_001 = s.execute(
+            text(
+                """
+                SELECT material_id, cost_per_sheet, description, sku, default_supplier
+                  FROM board_materials
+                 WHERE workspace_id = :w
+                   AND (sku = 'BM-001' OR code = 'BM-001')
+                 ORDER BY material_id LIMIT 1
+                """
+            ),
+            {"w": workspace_id},
+        ).mappings().first()
+        _hm_001 = s.execute(
+            text(
+                """
+                SELECT material_id, cost_per_unit, description, sku, default_supplier
+                  FROM hardware_materials
+                 WHERE workspace_id = :w
+                   AND (sku = 'HM-001' OR sku LIKE '%HM-001')
+                 ORDER BY material_id LIMIT 1
+                """
+            ),
+            {"w": workspace_id},
+        ).mappings().first()
+
+        def _insert_estimate(
+            *, est_no: str, customer_name: str, title: str,
+            site_address: str | None,
+            status: str, markup_pct: float,
+            line_specs: list[dict],
+        ) -> int:
+            cid = _customer_id_by_name[customer_name]
+            eid = s.execute(
+                text(
+                    """
+                    INSERT INTO estimate
+                        (workspace_id, customer_id, estimate_no, title,
+                         site_address, created_by)
+                    VALUES (:w, :c, :no, :t, :sa, :cb)
+                    RETURNING estimate_id
+                    """
+                ),
+                {"w": workspace_id, "c": cid, "no": est_no,
+                 "t": title, "sa": site_address, "cb": _estimator_id},
+            ).scalar()
+            rid = s.execute(
+                text(
+                    """
+                    INSERT INTO estimate_revision
+                        (estimate_id, rev_no, status, markup_pct, gst_pct,
+                         terms_text, created_by)
+                    VALUES (:e, 1, :st, :mu, 10.00,
+                            'Payment terms 30 days from invoice. Quote valid 30 days.',
+                            :cb)
+                    RETURNING revision_id
+                    """
+                ),
+                {"e": eid, "st": status if status == "draft" else "draft",
+                 "mu": markup_pct, "cb": _estimator_id},
+            ).scalar()
+            for seq, spec in enumerate(line_specs, start=1):
+                lid = s.execute(
+                    text(
+                        """
+                        INSERT INTO estimate_line
+                            (revision_id, seq, description, qty, unit,
+                             has_breakdown)
+                        VALUES (:r, :s, :d, :q, 'EA', :hb)
+                        RETURNING line_id
+                        """
+                    ),
+                    {"r": rid, "s": seq,
+                     "d": spec["description"], "q": spec["qty"],
+                     "hb": bool(spec.get("parts") or spec.get("hardware"))},
+                ).scalar()
+                for p in spec.get("parts", []):
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO estimate_line_part
+                                (line_id, material_type, material_id,
+                                 sku_snapshot, description_snapshot,
+                                 supplier_snapshot, qty, len_mm, wid_mm,
+                                 cost_per_unit_snapshot, paint_instruction)
+                            VALUES (:l, :mt, :mid, :sku, :desc, :sup,
+                                    :q, :lmm, :wmm, :c, 'NONE')
+                            """
+                        ),
+                        {"l": lid, **p},
+                    )
+                for h in spec.get("hardware", []):
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO estimate_line_hardware
+                                (line_id, material_type, material_id,
+                                 sku_snapshot, description_snapshot,
+                                 supplier_snapshot, qty,
+                                 cost_per_unit_snapshot)
+                            VALUES (:l, :mt, :mid, :sku, :desc, :sup, :q, :c)
+                            """
+                        ),
+                        {"l": lid, **h},
+                    )
+                for lab in spec.get("labour", []):
+                    rate = next(
+                        (r for (k, r) in _labour_rates if k == lab["stage_key"]),
+                        0.0,
+                    )
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO estimate_line_labour
+                                (line_id, stage_key, hours, rate_snapshot)
+                            VALUES (:l, :s, :h, :r)
+                            """
+                        ),
+                        {"l": lid, "s": lab["stage_key"],
+                         "h": lab["hours"], "r": rate},
+                    )
+            # Roll up cached totals so the list page shows correct sums.
+            s.execute(
+                text(
+                    """
+                    UPDATE estimate_line l
+                       SET material_cost = COALESCE((
+                               SELECT SUM(cost_extended)::numeric(12,2)
+                                 FROM estimate_line_part WHERE line_id = l.line_id
+                           ), 0) + COALESCE((
+                               SELECT SUM(cost_extended)::numeric(12,2)
+                                 FROM estimate_line_hardware WHERE line_id = l.line_id
+                           ), 0),
+                           labour_cost = COALESCE((
+                               SELECT SUM(cost_extended)::numeric(12,2)
+                                 FROM estimate_line_labour WHERE line_id = l.line_id
+                           ), 0)
+                     WHERE l.revision_id = :r
+                    """
+                ),
+                {"r": rid},
+            )
+            s.execute(
+                text(
+                    """
+                    UPDATE estimate_revision r
+                       SET subtotal_cost = COALESCE((
+                               SELECT SUM(total_cost * qty)::numeric(14,2)
+                                 FROM estimate_line WHERE revision_id = r.revision_id
+                           ), 0),
+                           subtotal_sell = COALESCE((
+                               SELECT SUM(
+                                 CASE
+                                   WHEN l.unit_sell_override IS NOT NULL THEN l.unit_sell_override * l.qty
+                                   ELSE l.total_cost * l.qty * (1 + r.markup_pct / 100.0)
+                                 END
+                               )::numeric(14,2)
+                                 FROM estimate_line l
+                                WHERE l.revision_id = r.revision_id
+                           ), 0),
+                           total_inc_gst = COALESCE((
+                               SELECT (SUM(
+                                 CASE
+                                   WHEN l.unit_sell_override IS NOT NULL THEN l.unit_sell_override * l.qty
+                                   ELSE l.total_cost * l.qty * (1 + r.markup_pct / 100.0)
+                                 END
+                               ) * (1 + r.gst_pct / 100.0))::numeric(14,2)
+                                 FROM estimate_line l
+                                WHERE l.revision_id = r.revision_id
+                           ), 0)
+                     WHERE r.revision_id = :r
+                    """
+                ),
+                {"r": rid},
+            )
+            # Apply final status (skip draft).
+            if status == "sent":
+                s.execute(
+                    text(
+                        """
+                        UPDATE estimate_revision
+                           SET status = 'sent',
+                               sent_at = now(), sent_by = :a,
+                               locked_at = now(), locked_by = :a
+                         WHERE revision_id = :r
+                        """
+                    ),
+                    {"a": _estimator_id, "r": rid},
+                )
+            elif status == "accepted":
+                s.execute(
+                    text(
+                        """
+                        UPDATE estimate_revision
+                           SET status = 'accepted',
+                               sent_at = now() - interval '1 day',
+                               sent_by = :a,
+                               locked_at = now() - interval '1 day',
+                               locked_by = :a,
+                               accepted_at = now()
+                         WHERE revision_id = :r
+                        """
+                    ),
+                    {"a": _estimator_id, "r": rid},
+                )
+            # Stamp the estimate's current_revision_id pointer.
+            s.execute(
+                text(
+                    """
+                    UPDATE estimate
+                       SET current_revision_id = :r
+                     WHERE estimate_id = :e
+                    """
+                ),
+                {"r": rid, "e": eid},
+            )
+            return int(eid)
+
+        # Demo estimate #1: draft, 3 lines (1 stub + 2 broken-down).
+        if _bm_001 is not None and _hm_001 is not None:
+            _bm_cost = float(_bm_001["cost_per_sheet"])
+            _hm_cost = float(_hm_001["cost_per_unit"])
+            _insert_estimate(
+                est_no="EST-2026-0001",
+                customer_name="ACME Property Group",
+                title="Kitchen + butler's pantry refit",
+                site_address="22 Hill Ave, Mosman NSW 2088",
+                status="draft", markup_pct=35.00,
+                line_specs=[
+                    {"description": "Kitchen island 2400×900 (allow for waterfall ends)",
+                     "qty": 1, "parts": [], "hardware": [], "labour": []},
+                    {"description": "Pantry tower 600×900×2400",
+                     "qty": 2,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 3, "lmm": 2400, "wmm": 900, "c": _bm_cost,
+                     }],
+                     "hardware": [{
+                         "mt": "HARDWARE", "mid": int(_hm_001["material_id"]),
+                         "sku": _hm_001["sku"], "desc": _hm_001["description"],
+                         "sup": _hm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 8, "c": _hm_cost,
+                     }],
+                     "labour": [
+                         {"stage_key": "DOWN", "hours": 2},
+                         {"stage_key": "CNC", "hours": 4},
+                         {"stage_key": "EDGED", "hours": 2},
+                         {"stage_key": "MADE", "hours": 6},
+                     ]},
+                    {"description": "Walk-in pantry shelving (10 shelves)",
+                     "qty": 1,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 4, "lmm": 1800, "wmm": 350, "c": _bm_cost,
+                     }],
+                     "hardware": [],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 3},
+                         {"stage_key": "EDGED", "hours": 2},
+                         {"stage_key": "INST", "hours": 4},
+                     ]},
+                ],
+            )
+
+            # Demo estimate #2: sent, 4 lines fully broken down.
+            _insert_estimate(
+                est_no="EST-2026-0002",
+                customer_name="Bayside Joinery Clients",
+                title="Library + study fit-out",
+                site_address="14 Esplanade, Brighton VIC 3186",
+                status="sent", markup_pct=40.00,
+                line_specs=[
+                    {"description": "Library bookcase 3600×2400 (built-in)",
+                     "qty": 1,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 6, "lmm": 3600, "wmm": 350, "c": _bm_cost,
+                     }],
+                     "hardware": [{
+                         "mt": "HARDWARE", "mid": int(_hm_001["material_id"]),
+                         "sku": _hm_001["sku"], "desc": _hm_001["description"],
+                         "sup": _hm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 14, "c": _hm_cost,
+                     }],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 6},
+                         {"stage_key": "EDGED", "hours": 4},
+                         {"stage_key": "MADE", "hours": 10},
+                         {"stage_key": "INST", "hours": 8},
+                     ]},
+                    {"description": "Study desk 1800×750",
+                     "qty": 1,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 2, "lmm": 1800, "wmm": 750, "c": _bm_cost,
+                     }],
+                     "hardware": [],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 2},
+                         {"stage_key": "EDGED", "hours": 1},
+                         {"stage_key": "MADE", "hours": 3},
+                     ]},
+                    {"description": "Window seat with storage 1600×450",
+                     "qty": 1,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 2, "lmm": 1600, "wmm": 450, "c": _bm_cost,
+                     }],
+                     "hardware": [{
+                         "mt": "HARDWARE", "mid": int(_hm_001["material_id"]),
+                         "sku": _hm_001["sku"], "desc": _hm_001["description"],
+                         "sup": _hm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 4, "c": _hm_cost,
+                     }],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 2},
+                         {"stage_key": "MADE", "hours": 4},
+                         {"stage_key": "INST", "hours": 2},
+                     ]},
+                    {"description": "Hidden drawer file unit (3 drawers)",
+                     "qty": 2,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 2, "lmm": 700, "wmm": 500, "c": _bm_cost,
+                     }],
+                     "hardware": [{
+                         "mt": "HARDWARE", "mid": int(_hm_001["material_id"]),
+                         "sku": _hm_001["sku"], "desc": _hm_001["description"],
+                         "sup": _hm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 6, "c": _hm_cost,
+                     }],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 3},
+                         {"stage_key": "EDGED", "hours": 2},
+                         {"stage_key": "MADE", "hours": 4},
+                     ]},
+                ],
+            )
+
+            # Demo estimate #3: accepted, 2 lines — ready for Convert demo.
+            _insert_estimate(
+                est_no="EST-2026-0003",
+                customer_name="ACME Property Group",
+                title="Bathroom vanity replacement",
+                site_address="22 Hill Ave, Mosman NSW 2088",
+                status="accepted", markup_pct=38.00,
+                line_specs=[
+                    {"description": "Vanity 1500×550 wall-hung",
+                     "qty": 1,
+                     "parts": [{
+                         "mt": "BOARD", "mid": int(_bm_001["material_id"]),
+                         "sku": _bm_001["sku"], "desc": _bm_001["description"],
+                         "sup": _bm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 2, "lmm": 1500, "wmm": 550, "c": _bm_cost,
+                     }],
+                     "hardware": [{
+                         "mt": "HARDWARE", "mid": int(_hm_001["material_id"]),
+                         "sku": _hm_001["sku"], "desc": _hm_001["description"],
+                         "sup": _hm_001.get("default_supplier") or "Hartwood Supplies",
+                         "q": 6, "c": _hm_cost,
+                     }],
+                     "labour": [
+                         {"stage_key": "CNC", "hours": 2},
+                         {"stage_key": "EDGED", "hours": 1},
+                         {"stage_key": "MADE", "hours": 3},
+                         {"stage_key": "INST", "hours": 2},
+                     ]},
+                    {"description": "Tall mirror cabinet 600×1800",
+                     "qty": 1, "parts": [], "hardware": [],
+                     "labour": [{"stage_key": "INST", "hours": 2}]},
+                ],
+            )
+
+        s.commit()
+        print("seeded #9a estimating_core: 1 estimator + 2 customers + 3 estimates")
+
+        # ==================================================================
+        # === Legacy mocks import =========================================
+        # Extracts demo content from legacy/{home,tracking_dashboard,
+        # drafter_item_editor,procurement_orderbook_dashboard}.html into
+        # the live data model so the post-login surfaces render rich for
+        # rin.park@hartwood.test. Idempotent within its own scope.
+        # ==================================================================
+        rin_id = get_user_id("rin.park@hartwood.test")
+        theo_id = get_user_id("theo.blake@hartwood.test")
+        alf_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        trt_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'TRT-014'")
+        ).scalar()
+
+        # --- Page 2a: 3 extra projects (sidebar fodder, all-projects count)
+        legacy_projects = [
+            ("MON-2347", "Monash FFT",       rin_id,  "2026-09-01", "Current"),
+            ("VSB-2351", "VSBA Mickleham",   theo_id, "2026-10-15", "Current"),
+            ("FLW-2318", "7ss Flinder West", theo_id, "2026-11-30", "Hold"),
+        ]
+        for code, name, pm_id, install, pstatus in legacy_projects:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO projects
+                        (project_code, name, pm_id, installation_start,
+                         status, workspace_id)
+                    VALUES (:c, :n, :pm, :i, :s, :w)
+                    ON CONFLICT (name) DO NOTHING
+                    """
+                ),
+                {"c": code, "n": name, "pm": pm_id, "i": install,
+                 "s": pstatus, "w": workspace_id},
+            )
+        mon_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'MON-2347'")
+        ).scalar()
+
+        # --- Page 2b: 3 favourites for rin.park (sidebar Fav scope)
+        for pid in (alf_pid, trt_pid, mon_pid):
+            if pid is not None:
+                s.execute(
+                    text(
+                        """
+                        INSERT INTO project_favourites(user_id, project_id)
+                        VALUES (:u, :p)
+                        ON CONFLICT (user_id, project_id) DO NOTHING
+                        """
+                    ),
+                    {"u": rin_id, "p": pid},
+                )
+
+        # --- Page 2c: shape KPI metrics for the PM dashboard
+        # In-Optimisation requires DOWN done AND CNC not done. Mark DOWN
+        # done on the first 2 ALF-001 items so the count is > 0.
+        # Awaiting-Install requires DEL done AND INST not done. Insert
+        # DEL done_date for 1 ALF-001 item.
+        kpi_items = [
+            row[0]
+            for row in s.execute(
+                text(
+                    """
+                    SELECT item_id FROM items
+                    WHERE project_id = :p ORDER BY item_id LIMIT 3
+                    """
+                ),
+                {"p": alf_pid},
+            ).all()
+        ]
+        for iid in kpi_items[:2]:
+            s.execute(
+                text(
+                    """
+                    UPDATE item_stages
+                       SET done_date = CURRENT_DATE - 1
+                     WHERE item_id = :i AND stage_key = 'DOWN'
+                       AND done_date IS NULL
+                    """
+                ),
+                {"i": iid},
+            )
+        if kpi_items:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO item_stages(item_id, stage_key, due_date, done_date)
+                    VALUES (:i, 'DEL', CURRENT_DATE - 2, CURRENT_DATE - 2)
+                    ON CONFLICT (item_id, stage_key) DO UPDATE
+                      SET done_date = EXCLUDED.done_date,
+                          due_date  = EXCLUDED.due_date
+                    """
+                ),
+                {"i": kpi_items[0]},
+            )
+
+        # --- Page 2d: 4 deliveries-today batches (matches mock list)
+        # Use the first hardware material as a stand-in receiver and the
+        # ALF-001 project. Distinct po_refs so re-runs collide on UNIQUE.
+        first_hw_mid = s.execute(
+            text(
+                """
+                SELECT material_id FROM hardware_materials
+                WHERE workspace_id = :w ORDER BY material_id LIMIT 1
+                """
+            ),
+            {"w": workspace_id},
+        ).scalar()
+        deliveries_today = [
+            ("Briggs Veneer", "PO-LEG-001", 20),
+            ("Hafele",        "PO-LEG-002", 60),
+            ("Polytec",       "PO-LEG-003",  4),
+            ("Laminex",       "PO-LEG-004",  2),
+        ]
+        s.execute(
+            text(
+                """
+                DELETE FROM procurement_batches
+                WHERE po_ref = ANY(:refs)
+                """
+            ),
+            {"refs": [r[1] for r in deliveries_today]},
+        )
+        for supplier, po, qty in deliveries_today:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO procurement_batches
+                        (project_id, material_type, material_id,
+                         supplier, po_ref, qty_ordered,
+                         ordered_date, eta_date)
+                    VALUES (:p, 'HARDWARE', :m, :sup, :po, :q,
+                            CURRENT_DATE - 7, CURRENT_DATE)
+                    """
+                ),
+                {"p": alf_pid, "m": first_hw_mid,
+                 "sup": supplier, "po": po, "q": qty},
+            )
+
+        s.commit()
+        print(
+            "seeded legacy/home: 3 extra projects + 3 favourites + "
+            "KPI shaping + 4 deliveries-today batches"
+        )
+
+        # ==================================================================
+        # === Page 3: tracking_dashboard.html — 7 more ALF-001 items =====
+        # Mock has 12 items (codes JO-SS01..JO-TP01) spanning
+        # Joinery General / Joinery Lab / PC2 / Stone stages. Live ALF-001
+        # already has 5 items. Append 7 more matching the mock's item codes
+        # so /tracking shows a populated grid. Append-only (existing
+        # subproject seeds use ORDER BY item_id LIMIT N — appending is safe).
+        # Idempotent: ON CONFLICT (num) DO NOTHING.
+        # ==================================================================
+        legacy_items = [
+            # (num, code, description, level, rm_no, rm_desc, stage, zone, qty, status)
+            (297830, "JO-SS01",  "SS Bench",                "03", "057", "Dirty Utilities", "Joinery General", "03", 1, "LIVE"),
+            (297871, "JO-SS02",  "SS Bench + OH Cupboard",  "03", "057", "Dirty Utilities", "Joinery General", "03", 1, "LIVE"),
+            (297910, "JL-BE01a", "Lab Bench",               "03", "068", "Bacterial Room",  "Joinery Lab",     "03", 1, "CLEAR"),
+            (297956, "JL-SB01a", "SS Lab Bench",            "03", "068", "Bacterial Room",  "Joinery Lab",     "03", 1, "LIVE"),
+            (297961, "JL-PC201", "PC2 Containment Bench",   "03", "102", "PC2 Holding",     "PC2",             "04", 1, "NOTE!"),
+            (297975, "ST-CT01",  "Reception Counter Top",   "03", "104", "Reception",       "Stone",           "04", 1, "LIVE"),
+            (297988, "JO-TP01",  "Tea Point Joinery",       "03", "201", "Tea Point",       "Joinery General", "05", 1, "CLEAR"),
+        ]
+        for num, code, desc, level, rm_no, rm_desc, stage, zone, qty, ist in legacy_items:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO items
+                        (num, project_id, code, description, level,
+                         rm_no, rm_desc, stage, zone, qty, status,
+                         cutlist_owner_id, item_locked)
+                    VALUES (:num, :pid, :code, :desc, :level,
+                            :rm_no, :rm_desc, :stage, :zone, :qty, :st,
+                            :owner, false)
+                    ON CONFLICT (num) DO NOTHING
+                    """
+                ),
+                {"num": num, "pid": alf_pid, "code": code, "desc": desc,
+                 "level": level, "rm_no": rm_no, "rm_desc": rm_desc,
+                 "stage": stage, "zone": zone, "qty": qty, "st": ist,
+                 "owner": rin_id},
+            )
+            # Seed 3 lifecycle stages per item (REQ done, SM done, LISTED open)
+            iid = s.execute(
+                text("SELECT item_id FROM items WHERE num = :n"),
+                {"n": num},
+            ).scalar()
+            if iid is not None:
+                for sk, due_off, done_off in [
+                    ("REQ",    -25, -20),
+                    ("SM",     -15, -12),
+                    ("LISTED",  -2, None),
+                ]:
+                    s.execute(
+                        text(
+                            """
+                            INSERT INTO item_stages
+                                (item_id, stage_key, due_date, done_date)
+                            VALUES (:i, :sk,
+                                    CURRENT_DATE + CAST(:due AS integer),
+                                    CASE WHEN CAST(:done AS integer) IS NULL THEN NULL
+                                         ELSE CURRENT_DATE + CAST(:done AS integer) END)
+                            ON CONFLICT (item_id, stage_key) DO NOTHING
+                            """
+                        ),
+                        {"i": iid, "sk": sk, "due": due_off, "done": done_off},
+                    )
+
+        s.commit()
+        print(f"seeded legacy/tracking: {len(legacy_items)} extra items on ALF-001")
+
+        # ==================================================================
+        # === Page 4a: drafter_item_editor.html — catalog extensions =====
+        # Mock has 5 boards, 5 hardware (already in seed), 1 custom_made,
+        # 1 benchtop, 1 appliance, 1 equipment_hire. Live already has
+        # 6 boards (2 base + 4 from #7a) and 4 hardware. Add the 4 missing
+        # boards (32-MDF / 16-BLACK / 19-A-WALNUT / 25-SS304), 1 custom,
+        # 1 benchtop, 1 appliance, 1 equipment_hire. Idempotent via UNIQUE.
+        # ==================================================================
+        legacy_boards = [
+            ("BM-200", "32-MDF",      "32mm MDF",                            "Laminex Australia",  5,  60.00),
+            ("BM-201", "16-BLACK",    "16mm Black Melamine",                 "Laminex Australia",  5,  40.00),
+            ("BM-202", "19-A-WALNUT", "19mm A-Grade Walnut Veneer / BAM X",  "Briggs Veneers",    21, 180.00),
+            ("BM-203", "25-SS304",    "25mm Stainless 304 Sheet",            "CDK Stone",         28, 320.00),
+        ]
+        for code, sku, desc, sup, lt, cost in legacy_boards:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO board_materials
+                        (workspace_id, code, sku, description,
+                         synonyms, default_supplier, default_lead_time_days,
+                         cost_per_sheet, unit_cost)
+                    VALUES (:w, :c, :sku, :d, :syn,
+                            :sup, :lt, :cost, :cost)
+                    ON CONFLICT (workspace_id, sku) DO NOTHING
+                    """
+                ),
+                {"w": workspace_id, "c": code, "sku": sku, "d": desc,
+                 "syn": [code, sku],
+                 "sup": sup, "lt": lt, "cost": cost},
+            )
+
+        # custom_made.internal_ref is globally UNIQUE → prefix with workspace.
+        s.execute(
+            text(
+                """
+                INSERT INTO custom_made
+                    (internal_ref, description, vendor, cost, lead_time_days)
+                VALUES ('hartwood-CM-SIGNBOX-01',
+                        'Bespoke signage box (reception)',
+                        'Metalform', 1250.00, 14)
+                ON CONFLICT (internal_ref) DO NOTHING
+                """
+            )
+        )
+        # benchtop_materials.slab_id is globally UNIQUE → prefix.
+        s.execute(
+            text(
+                """
+                INSERT INTO benchtop_materials
+                    (slab_id, description, material_type, thickness_mm,
+                     supplier, cost_per_slab, lead_time_days)
+                VALUES ('hartwood-CST-2297-A',
+                        'Caesarstone 6131 Bianco Drift 20mm',
+                        'stone', 20.00, 'CDK Stone', 1450.00, 21)
+                ON CONFLICT (slab_id) DO NOTHING
+                """
+            )
+        )
+        # appliances.model_number is globally UNIQUE → prefix.
+        s.execute(
+            text(
+                """
+                INSERT INTO appliances
+                    (model_number, description, manufacturer, supplier,
+                     cost_per_unit, lead_time_days)
+                VALUES ('hartwood-MIELE-H7164BP',
+                        'Miele 60cm Oven H7164BP', 'Miele',
+                        'Winning Appliances', 3450.00, 14)
+                ON CONFLICT (model_number) DO NOTHING
+                """
+            )
+        )
+        # equipment_hire requires project_id FK; scope to ALF-001.
+        if alf_pid is not None:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO equipment_hire
+                        (contract_ref, project_id, description, supplier,
+                         rate, rate_unit, hire_start, hire_end, total_cost)
+                    VALUES ('hartwood-KENNARDS-0423-881', :p,
+                            'Kennards scissor lift — Alfred site',
+                            'Kennards', 285.00, 'DAY',
+                            CURRENT_DATE - 7, CURRENT_DATE + 21, 8000.00)
+                    ON CONFLICT (contract_ref) DO NOTHING
+                    """
+                ),
+                {"p": alf_pid},
+            )
+
+        # ==================================================================
+        # === Page 4b: drafter_item_editor.html — enrich JO-SS02 ==========
+        # Mock's flagship item is JO-SS02 (num=297871) with 2 modules
+        # (Bench Carcass / OH Cupboard), 7 parts, 4 hardware lines.
+        # Idempotent: DELETE modules for this item before re-inserting
+        # (cascades to parts via FK).
+        # ==================================================================
+        jo_ss02_iid = s.execute(
+            text("SELECT item_id FROM items WHERE num = 297871"),
+        ).scalar()
+        if jo_ss02_iid is not None:
+            s.execute(
+                text("DELETE FROM modules WHERE item_id = :i"),
+                {"i": jo_ss02_iid},
+            )
+            board_id_by_sku: dict[str, int] = {
+                row[0]: row[1]
+                for row in s.execute(
+                    text(
+                        """
+                        SELECT sku, material_id FROM board_materials
+                        WHERE workspace_id = :w
+                        """
+                    ),
+                    {"w": workspace_id},
+                ).all()
+            }
+            mod_specs = [
+                ("MOD 1", "Bench Carcass"),
+                ("MOD 2", "OH Cupboard"),
+            ]
+            mod_ids: list[int] = []
+            for mod_no, mod_name in mod_specs:
+                mid = s.execute(
+                    text(
+                        """
+                        INSERT INTO modules (item_id, module_no, name)
+                        VALUES (:i, :mn, :name)
+                        RETURNING module_id
+                        """
+                    ),
+                    {"i": jo_ss02_iid, "mn": mod_no, "name": mod_name},
+                ).scalar()
+                mod_ids.append(int(mid))
+
+            # 7 parts: (mod_id, seq, qty, part_name, len, wid, board_sku, paint)
+            mod1, mod2 = mod_ids
+            parts_specs = [
+                (mod1, 1, 2, "Side Panel", 720,  580, "BM-001",   "NONE"),
+                (mod1, 2, 1, "Top",        1500, 600, "25-SS304", "NONE"),
+                (mod1, 3, 1, "Bottom",     1460, 580, "BM-001",   "NONE"),
+                (mod1, 4, 1, "Back",       1460, 700, "BM-001",   "SINGLE_SIDE"),
+                (mod2, 1, 2, "OH Side",    700,  320, "BM-001",   "DOUBLE_SIDE"),
+                (mod2, 2, 1, "OH Top",     1500, 320, "BM-001",   "SINGLE_SIDE"),
+                (mod2, 3, 2, "OH Door",    695,  745, "BM-001",   "EDGE_ONLY"),
+            ]
+            for mid, seq, qty, pname, lmm, wmm, bsku, paint in parts_specs:
+                bid = board_id_by_sku.get(bsku)
+                if bid is None:
+                    continue
+                s.execute(
+                    text(
+                        """
+                        INSERT INTO parts
+                            (module_id, seq, qty, part_name,
+                             len_mm, wid_mm, board_material_id,
+                             paint_instruction)
+                        VALUES (:m, :s, :q, :n, :l, :w, :b, :p)
+                        """
+                    ),
+                    {"m": mid, "s": seq, "q": qty, "n": pname,
+                     "l": lmm, "w": wmm, "b": bid, "p": paint},
+                )
+
+            # 4 hardware lines on JO-SS02 using existing ALF-001 catalog.
+            s.execute(
+                text(
+                    "DELETE FROM item_hardware_lines WHERE item_id = :i"
+                ),
+                {"i": jo_ss02_iid},
+            )
+            alf_catalog = [
+                row[0]
+                for row in s.execute(
+                    text(
+                        """
+                        SELECT catalog_id FROM project_hardware_catalog
+                        WHERE project_id = :p
+                        ORDER BY catalog_id LIMIT 4
+                        """
+                    ),
+                    {"p": alf_pid},
+                ).all()
+            ]
+            hw_specs = [
+                (6, "OH cupboard doors"),
+                (2, "OH cupboard handles"),
+                (8, "Adjustable shelves"),
+                (2, "Not yet on-site"),
+            ]
+            for seq, (cat_id, (qty, note)) in enumerate(zip(alf_catalog, hw_specs), start=1):
+                s.execute(
+                    text(
+                        """
+                        INSERT INTO item_hardware_lines
+                            (item_id, seq, qty, catalog_id, note)
+                        VALUES (:i, :s, :q, :c, :n)
+                        ON CONFLICT (item_id, seq) DO UPDATE
+                          SET qty = EXCLUDED.qty,
+                              catalog_id = EXCLUDED.catalog_id,
+                              note = EXCLUDED.note
+                        """
+                    ),
+                    {"i": jo_ss02_iid, "s": seq, "q": qty,
+                     "c": cat_id, "n": note},
+                )
+
+        s.commit()
+        print(
+            "seeded legacy/drafter: catalog extensions + JO-SS02 enrichment "
+            "(2 modules / 7 parts / up to 4 hardware lines)"
+        )
+
+        # ==================================================================
+        # === Page 5: procurement_orderbook_dashboard.html — 2 batches ====
+        # Mock has 12 POs; 10 are generic IT/office (skip). Extract the 2
+        # joinery rows: PO-2024-009 Schiavello SS benchtop, PO-2024-011
+        # Mitchell Laminates Echopanel. Translate to procurement_batches
+        # on ALF-001 with the materials they map to. Idempotent by po_ref.
+        # ==================================================================
+        legacy_orderbook = [
+            # (supplier, po_ref, material_type, lookup, qty, cost, eta_offset, ord_offset)
+            ("Schiavello Manufacturing", "PO-2273-LEG-009", "BENCHTOP",
+             ("benchtop_materials", "slab_id", "hartwood-CST-2297-A"),
+             2, 3551.00,  14,  -10),
+            ("Mitchell Laminates Pty Ltd", "PO-2273-LEG-011", "BOARD",
+             ("board_materials", "sku", "16-BLACK"),
+             2,  920.00, None, -5),
+        ]
+        s.execute(
+            text(
+                """
+                DELETE FROM procurement_batches
+                WHERE po_ref = ANY(:refs)
+                """
+            ),
+            {"refs": [r[1] for r in legacy_orderbook]},
+        )
+        for supplier, po, mtype, (table, key_col, key_val), qty, cost, eta_off, ord_off in legacy_orderbook:
+            mid = s.execute(
+                text(f"SELECT material_id FROM {table} WHERE {key_col} = :v"),
+                {"v": key_val},
+            ).scalar()
+            if mid is None:
+                continue
+            s.execute(
+                text(
+                    """
+                    INSERT INTO procurement_batches
+                        (project_id, material_type, material_id, supplier,
+                         po_ref, qty_ordered, cost_per_unit,
+                         ordered_date, eta_date)
+                    VALUES (:p, :mt, :mid, :sup, :po, :q, :c,
+                            CURRENT_DATE + CAST(:ord AS integer),
+                            CASE WHEN CAST(:eta AS integer) IS NULL THEN NULL
+                                 ELSE CURRENT_DATE + CAST(:eta AS integer) END)
+                    """
+                ),
+                {"p": alf_pid, "mt": mtype, "mid": mid, "sup": supplier,
+                 "po": po, "q": qty, "c": cost, "ord": ord_off, "eta": eta_off},
+            )
+
+        s.commit()
+        print(
+            f"seeded legacy/orderbook: {len(legacy_orderbook)} joinery batches "
+            "(Schiavello + Mitchell Laminates)"
+        )
 
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "

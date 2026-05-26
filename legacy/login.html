@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JoineryFlow — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* H palette — from wireframes-hifi.jsx (mirror of legacy/home.html) */
+:root{
+  --h-bg:#fbfaf7;
+  --h-surface:#ffffff;
+  --h-surface-alt:#f4f2ed;
+  --h-line:#e4e0d8;
+  --h-ink:#1b1a17;
+  --h-ink2:#5a574f;
+  --h-ink3:#8f8b80;
+  --h-ink4:#c1beb4;
+  --h-accent:#c96442;
+  --h-accent-soft:#f3e0d6;
+  --h-good:#3f7d48;
+  --h-warn:#c48a2e;
+  --h-bad:#b4443d;
+  --h-info:#3d6b8a;
+  --h-radius:8px;
+  --h-radius-sm:5px;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  font-family:var(--font-sans);
+  font-feature-settings:"cv11","ss01","tnum";
+  font-size:13px;
+  color:var(--h-ink);
+  background:var(--h-bg);
+  -webkit-font-smoothing:antialiased;
+}
+
+/* layout */
+.login-root{display:flex;height:100vh;}
+.brand-panel{
+  flex:1;
+  background:var(--h-ink);
+  color:var(--h-bg);
+  padding:40px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  position:relative;
+  overflow:hidden;
+}
+.brand-grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size:28px 28px;
+  pointer-events:none;
+}
+.brand-logo{display:flex;align-items:center;gap:10px;position:relative;z-index:2;}
+.brand-mark{
+  width:28px;height:28px;border-radius:7px;
+  background:var(--h-accent);
+  color:var(--h-bg);
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:700;
+}
+.brand-word{font-size:16px;font-weight:600;letter-spacing:-0.2px;}
+.brand-word .accent{color:var(--h-accent);}
+
+.brand-pitch{position:relative;z-index:2;}
+.brand-pitch h1{
+  font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-0.5px;
+  max-width:420px;margin:0 0 14px;
+}
+.brand-pitch p{
+  font-size:13px;color:#a8a49a;max-width:380px;line-height:1.55;margin:0;
+}
+
+.brand-stats{display:flex;gap:28px;font-size:11px;color:#8f8b80;position:relative;z-index:2;}
+.brand-stats div{line-height:1.4;}
+.brand-stats div b{display:block;color:var(--h-bg);font-weight:600;font-size:13px;}
+
+/* form panel */
+.form-panel{
+  width:420px;
+  background:var(--h-surface);
+  padding:48px 44px;
+  display:flex;
+  flex-direction:column;
+}
+.form-title{font-size:20px;font-weight:600;letter-spacing:-0.3px;}
+.form-sub{font-size:13px;color:var(--h-ink2);margin-top:4px;margin-bottom:28px;}
+
+.field-label{
+  font-size:11px;font-weight:600;color:var(--h-ink2);
+  letter-spacing:0.04em;text-transform:uppercase;
+}
+.field-row{display:flex;justify-content:space-between;align-items:baseline;}
+.h-input{
+  width:100%;
+  margin-top:4px;margin-bottom:14px;padding:8px;
+  border:1px solid var(--h-line);
+  border-radius:var(--h-radius-sm);
+  background:var(--h-surface);
+  font-family:inherit;font-size:13px;color:var(--h-ink);
+  outline:none;
+}
+.h-input:focus{border-color:var(--h-accent);box-shadow:0 0 0 3px var(--h-accent-soft);}
+
+.workspace-display{
+  display:flex;align-items:center;
+  border:1px solid var(--h-line);
+  border-radius:var(--h-radius-sm);
+  margin-top:4px;margin-bottom:22px;
+  background:var(--h-surface-alt);
+}
+.workspace-display .slug{padding:8px 10px;font-size:12px;flex:1;color:var(--h-ink);}
+.workspace-display .chev{padding:0 10px 0 4px;color:var(--h-ink3);}
+
+.forgot-link{font-size:11px;color:var(--h-accent);text-decoration:none;cursor:pointer;}
+.forgot-link:hover{text-decoration:underline;}
+
+.h-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 12px;font-size:13px;
+  border:1px solid var(--h-line);
+  border-radius:var(--h-radius-sm);
+  background:var(--h-surface);color:var(--h-ink);
+  cursor:pointer;font-family:inherit;font-weight:500;
+  width:100%;
+}
+.h-btn:hover{background:var(--h-surface-alt);}
+.h-btn-primary{
+  background:var(--h-accent);color:#fff;border-color:var(--h-accent);
+}
+.h-btn-primary:hover{background:#b4583a;border-color:#b4583a;}
+
+.divider{
+  display:flex;align-items:center;gap:10px;
+  margin:22px 0 14px;color:var(--h-ink3);font-size:11px;
+}
+.divider .line{height:1px;background:var(--h-line);flex:1;}
+
+.foot{flex:1;display:flex;flex-direction:column;justify-content:flex-end;}
+.foot-text{font-size:11px;color:var(--h-ink3);text-align:center;margin-top:22px;}
+.foot-text a{color:var(--h-ink);font-weight:500;cursor:pointer;text-decoration:none;}
+.foot-text a:hover{text-decoration:underline;}
+
+@media (max-width: 760px){
+  .brand-panel{display:none;}
+  .form-panel{width:100%;}
+}
+</style>
+</head>
+<body>
+<div class="login-root">
+  <!-- Left — brand -->
+  <section class="brand-panel" aria-label="JoineryFlow">
+    <div class="brand-grid" aria-hidden="true"></div>
+
+    <div class="brand-logo">
+      <div class="brand-mark">◴</div>
+      <div class="brand-word">Joinery<span class="accent">Flow</span></div>
+    </div>
+
+    <div class="brand-pitch">
+      <h1>Every joint, every delivery, every drawing — in one place.</h1>
+      <p>Built for custom joinery shops. Cutlists, hardware, samples, shop drawings, and orderbooks move together — not in separate spreadsheets.</p>
+    </div>
+
+    <div class="brand-stats">
+      <div><b>14</b>projects live</div>
+      <div><b>2,391</b>parts tracked</div>
+      <div><b>38</b>suppliers</div>
+    </div>
+  </section>
+
+  <!-- Right — form -->
+  <section class="form-panel" aria-label="Sign in">
+    <div class="form-title">Welcome back</div>
+    <div class="form-sub">Sign in to continue to your workshop.</div>
+
+    <form id="login-form" novalidate onsubmit="event.preventDefault();">
+      <label class="field-label" for="email">EMAIL</label>
+      <input id="email" name="email" type="email" class="h-input"
+             value="rin.park@hartwood.test" autocomplete="username" autofocus required>
+
+      <div class="field-row">
+        <label class="field-label" for="password">PASSWORD</label>
+        <a class="forgot-link" href="#" onclick="event.preventDefault();">Forgot?</a>
+      </div>
+      <input id="password" name="password" type="password" class="h-input"
+             value="hartwood-dev" autocomplete="current-password" required>
+
+      <label class="field-label">WORKSPACE</label>
+      <div class="workspace-display" aria-readonly="true" title="Single-tenant — fixed for now">
+        <div class="slug">hartwood-joinery</div>
+        <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+
+      <button type="submit" class="h-btn h-btn-primary">Sign in</button>
+    </form>
+
+    <div class="divider"><div class="line"></div>or<div class="line"></div></div>
+
+    <button class="h-btn" onclick="event.preventDefault();" type="button">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      Continue with SSO
+    </button>
+
+    <div class="foot">
+      <div class="foot-text">
+        New shop? <a href="#" onclick="event.preventDefault();">Request access</a>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

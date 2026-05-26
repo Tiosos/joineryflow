@@ -228,6 +228,7 @@ def patch_status_route(
         item_id=id,
         workspace_id=user.workspace_id,
         status=payload.status,
+        note=payload.note,
         actor_id=user.id,
     )
     if not ok:

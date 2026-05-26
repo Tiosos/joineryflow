@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
-const COOKIE_NAME = "jf_session";
+export const SESSION_COOKIE_NAME = "jf_session";
+const COOKIE_NAME = SESSION_COOKIE_NAME;
 const API = process.env.API_URL ?? "http://api:8000";
 
 export type Me = {
@@ -8,7 +9,14 @@ export type Me = {
   workspace_id: number;
   email: string;
   full_name: string;
-  auth_role: "admin" | "manager" | "editor" | "drafter" | "purchase_officer" | "viewer";
+  auth_role:
+    | "admin"
+    | "manager"
+    | "editor"
+    | "drafter"
+    | "estimator"
+    | "purchase_officer"
+    | "viewer";
 };
 
 export async function getSessionCookie(): Promise<string | null> {

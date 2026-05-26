@@ -5,7 +5,7 @@ export function LogoutButton() {
   const r = useRouter();
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    r.replace("/login");
+    r.replace("/login?reason=signed_out");
     r.refresh();
   }
   return (

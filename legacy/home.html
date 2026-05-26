@@ -192,13 +192,20 @@ body{
       <div class="h-logomark">&#9716;</div>
       <div class="h-wordmark">JoineryFlow<sub>Hartwood</sub></div>
     </div>
+    <!-- 6-tab IA, canonical order from apps/web/components/chrome/TabStrip.tsx -->
     <div class="h-tabs">
       <div class="h-tab active">Dashboard</div>
       <div class="h-tab" onclick="go('tracking_dashboard.html')">Tracking</div>
       <div class="h-tab" onclick="go('drafter_item_editor.html')">List</div>
-      <div class="h-tab" onclick="go('procurement_orderbook_dashboard.html')">Orderbook</div>
       <div class="h-tab">Shop Dwgs</div>
       <div class="h-tab">iSample</div>
+      <div class="h-tab" onclick="go('procurement_orderbook_dashboard.html')">Orderbook</div>
+    </div>
+    <!-- Secondary surfaces (mirrors apps/web/components/chrome/SideBar.tsx) -->
+    <div class="h-tabs" style="border-left:1px solid var(--h-line);padding-left:10px;margin-left:6px;">
+      <div class="h-tab" title="Material catalog (#7a)">Catalog</div>
+      <div class="h-tab" title="CutPlan + CutSchedule (#7c)">Cut Floor</div>
+      <div class="h-tab" title="Shop Floor Ops (#8)">Shop Floor</div>
     </div>
     <div class="h-search">
       <span>&#9906;</span>
@@ -381,19 +388,24 @@ const ACTIVITY = [
   { initial:'BM', color:'var(--h-accent)', name:'You', verb:'set sample A-23 to NOTE!', sub:'Alfred L3 · Meeting Rm',      when:'2h',     tag:'samples'  },
 ];
 
-/* Role surfaces — trackingv2.md §4 #29 */
+/* Role surfaces — sub-project parity with apps/web/app/(app)/* (Foundation … #8 Shop Floor).
+   `href` points at sibling legacy mocks; live counterpart lives at /<href without .html>. */
 const TILES = [
-  { key:'workbench', name:'PM Project Workbench', desc:'Grid of items across a project — progress, dates, status.', href:'tracking_dashboard.html',            roles:['CEO','PM','DRAFTER','FOREMAN'] },
-  { key:'editor',    name:'Drafter Item Editor',  desc:'Item-centric editor with Cutlist / Hardware / Board tabs.', href:'drafter_item_editor.html',           roles:['CEO','PM','DRAFTER'], primaryFor:['DRAFTER'] },
-  { key:'procure',   name:'Procurement Orderbook',desc:'Independent window — batches, allocations, ETAs.',         href:'procurement_orderbook_dashboard.html', roles:['CEO','PM','DRAFTER','MACHINE','PROCUREMENT'], primaryFor:['PROCUREMENT'] },
-  { key:'exec',      name:'Exec Dashboard',       desc:'Cross-project KPIs + weekly auto-report.',                  href:'#', roles:['CEO'], primaryFor:['CEO'], disabled:true },
-  { key:'shopfloor', name:'Shop Floor Today',     desc:'Foreman today board — worker assignment, done logging.',   href:'#', roles:['FOREMAN','MACHINE'], primaryFor:['FOREMAN'], disabled:true },
-  { key:'cutsched',  name:'Machine Cut Schedule', desc:"Today's cut queue across projects.",                        href:'#', roles:['MACHINE'], primaryFor:['MACHINE'], disabled:true },
+  { key:'workbench', name:'PM Project Workbench', desc:'Grid of items across a project — progress, dates, status. (live: /tracking)',                href:'tracking_dashboard.html',              roles:['CEO','PM','DRAFTER','FOREMAN'],                       primaryFor:['PM']          },
+  { key:'editor',    name:'Drafter Item Editor',  desc:'Item-centric editor: Cutlist / Hardware / Board / Attachments / Log. (live: /items/[id])',     href:'drafter_item_editor.html',             roles:['CEO','PM','DRAFTER'],                                 primaryFor:['DRAFTER']     },
+  { key:'procure',   name:'Procurement Orderbook',desc:'Cross-project queue — batches, allocations, ETAs. (live: /orderbook + /projects/[id]/procurement)', href:'procurement_orderbook_dashboard.html', roles:['CEO','PM','DRAFTER','MACHINE','PROCUREMENT'],         primaryFor:['PROCUREMENT'] },
+  { key:'shopdwgs',  name:'Shop Drawings (#5a)',  desc:'Approval workflow + revisions; PDF / PNG / JPEG. (live: /shop-dwgs)',                            href:'#',                                    roles:['CEO','PM','DRAFTER','FOREMAN','MACHINE','PROCUREMENT'] },
+  { key:'isample',   name:'iSample (#5c)',        desc:'Sample wall — colour swatches + photos, approve/reject. (live: /isample)',                       href:'#',                                    roles:['CEO','PM','DRAFTER'] },
+  { key:'catalog',   name:'Material Catalog (#7a)',desc:'6 catalog tables + CV mappings + synonyms. (live: /catalog)',                                   href:'#',                                    roles:['CEO','PM','DRAFTER','FOREMAN','MACHINE','PROCUREMENT'] },
+  { key:'cutfloor',  name:'Cut Floor (#7c)',      desc:"CutPlan + Machine team's daily CutSchedule. (live: /cut-floor)",                                  href:'#',                                    roles:['CEO','PM','DRAFTER','MACHINE'],                       primaryFor:['MACHINE']     },
+  { key:'shopfloor', name:'Shop Floor Ops (#8)',  desc:'Foreman board + worker kiosk: assign / start / mark done. (live: /shop-floor)',                  href:'#',                                    roles:['CEO','PM','FOREMAN','MACHINE'],                       primaryFor:['FOREMAN']     },
+  { key:'exec',      name:'Exec Dashboard',       desc:'Cross-project KPIs + weekly auto-report.',                                                       href:'#',                                    roles:['CEO'],                                                primaryFor:['CEO'], disabled:true },
 ];
 
 const ROLE_LABEL = { CEO:'CEO', PM:'Project Manager', DRAFTER:'Drafter', FOREMAN:'Foreman', MACHINE:'Machine Team', PROCUREMENT:'Procurement' };
-/* §1.5.6 role reconciliation */
-const AUTH_ROLE = { CEO:'Admin', PM:'Manager', DRAFTER:'Editor', PROCUREMENT:'Editor', FOREMAN:'Viewer', MACHINE:'Viewer' };
+/* JTBD-role -> auth_role mapping (CLAUDE.md §"Role model"; matches apps/api/app/auth/permissions.py).
+   Drafter is auth_role=editor with PM-parity grants on orderbook/shop_dwgs/isample/catalog. */
+const AUTH_ROLE = { CEO:'admin', PM:'manager', DRAFTER:'editor', FOREMAN:'editor', MACHINE:'editor', PROCUREMENT:'purchase_officer' };
 
 const STATUS_CLASS = {
   ARRIVED:'good', APPROVED:'good', CLEAR:'good',

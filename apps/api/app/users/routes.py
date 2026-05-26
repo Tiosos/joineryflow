@@ -3,14 +3,23 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..auth.rbac import require_permission
+from ..auth.rbac import current_user, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
-from .schemas import UserOut, UserPatch, UserShopWorkerPatch
+from .schemas import (
+    MyStatusPatch,
+    TeamMemberOut,
+    TeamOut,
+    UserOut,
+    UserPatch,
+    UserShopWorkerPatch,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
+me_router = APIRouter(prefix="/me", tags=["me"])
+team_router = APIRouter(prefix="/workspace", tags=["workspace"])
 
-_VALID_ROLES = {"admin", "manager", "editor", "drafter", "purchase_officer", "viewer"}
+_VALID_ROLES = {"admin", "manager", "editor", "drafter", "estimator", "purchase_officer", "viewer"}
 _PATCHABLE = ("full_name", "auth_role", "jtbd_role", "is_active")
 
 
@@ -83,6 +92,92 @@ def patch_user(
     ).first()
     row_dict["is_shop_worker"] = bool(extra[0]) if extra else False
     return row_dict
+
+
+@team_router.get("/team", response_model=TeamOut)
+def get_workspace_team(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """List all workspace members with their current work_status + location.
+    Any authenticated user can read. is_self=true on the row matching the caller.
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT id, full_name, auth_role, jtbd_role,
+                   work_status, location_label
+              FROM app_user
+             WHERE workspace_id = :w AND is_active = true
+             ORDER BY full_name
+            """
+        ),
+        {"w": user.workspace_id},
+    ).mappings().all()
+    members = [
+        TeamMemberOut(
+            id=r["id"],
+            full_name=r["full_name"],
+            auth_role=r["auth_role"],
+            jtbd_role=r["jtbd_role"],
+            work_status=r["work_status"],
+            location_label=r["location_label"],
+            is_self=(r["id"] == user.id),
+        )
+        for r in rows
+    ]
+    return TeamOut(members=members)
+
+
+@me_router.patch("/status", response_model=TeamMemberOut)
+def patch_my_status(
+    body: MyStatusPatch,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Update caller's own work_status + location_label. Authenticated-only
+    (no module gate — every user can publish their own status)."""
+    row = db.execute(
+        text(
+            """
+            UPDATE app_user
+               SET work_status    = :ws,
+                   location_label = :loc
+             WHERE id = :i AND workspace_id = :w
+             RETURNING id, full_name, auth_role, jtbd_role,
+                       work_status, location_label
+            """
+        ),
+        {
+            "ws": body.work_status,
+            "loc": body.location_label,
+            "i": user.id,
+            "w": user.workspace_id,
+        },
+    ).mappings().first()
+    if not row:
+        raise HTTPException(404, "user not found")
+    write_audit(
+        db,
+        workspace_id=user.workspace_id,
+        actor_id=user.id,
+        event="user.status",
+        target=str(user.id),
+        payload={
+            "work_status": body.work_status,
+            "location_label": body.location_label,
+        },
+    )
+    db.commit()
+    return TeamMemberOut(
+        id=row["id"],
+        full_name=row["full_name"],
+        auth_role=row["auth_role"],
+        jtbd_role=row["jtbd_role"],
+        work_status=row["work_status"],
+        location_label=row["location_label"],
+        is_self=True,
+    )
 
 
 @router.patch("/{uid}/shop-worker", response_model=UserOut)

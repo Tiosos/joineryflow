@@ -12,8 +12,8 @@ export function TopBar({ user, editorMode }: TopBarProps) {
     <header className="flex items-center justify-between px-4 h-14 border-b border-h-line bg-h-surface">
       <div>
         {editorMode ? (
-          <Link href="/home" className="text-sm text-h-muted hover:text-h-ink">
-            ← Return to home
+          <Link href="/dashboard" className="text-sm text-h-muted hover:text-h-ink">
+            ← Return to dashboard
           </Link>
         ) : (
           <div className="font-semibold text-h-ink">JoineryFlow</div>

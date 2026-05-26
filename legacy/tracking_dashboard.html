@@ -61,14 +61,20 @@
 body{font-family:var(--font-sans);color:var(--h-ink);background:var(--h-bg);margin:0;padding:0;font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;}
 .mono,.h-mono{font-family:var(--font-mono);font-feature-settings:"tnum";}
 
-/* ───── Top chrome (hi-fi) ───── */
-.h-topbar{display:flex;align-items:center;gap:12px;padding:8px 20px;background:var(--h-surface);border-bottom:1px solid var(--h-line);height:48px;position:sticky;top:0;z-index:50;}
-.h-brand{display:flex;align-items:center;gap:8px;margin-right:4px;}
-.h-brand-mark{width:24px;height:24px;border-radius:6px;background:var(--h-ink);display:flex;align-items:center;justify-content:center;color:var(--h-bg);font-size:13px;font-weight:700;}
-.h-brand-wm{font-size:14px;font-weight:600;letter-spacing:-.2px;}
-.h-brand-wm span{color:var(--h-accent);}
-.h-topbar-spacer{flex:1;}
-.h-search{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--h-line);border-radius:6px;background:var(--h-bg);font-size:12px;color:var(--h-ink3);min-width:240px;}
+/* ───── Global top bar (mirrors home.html) ───── */
+.h-topbar{display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--h-surface);border-bottom:1px solid var(--h-line);height:48px;position:sticky;top:0;z-index:50;}
+.h-logo{display:flex;align-items:center;gap:8px;width:204px;padding-right:14px;border-right:1px solid var(--h-line);height:100%;}
+.h-logomark{width:26px;height:26px;border-radius:7px;background:var(--h-ink);color:var(--h-bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+.h-wordmark{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+.h-wordmark sub{font-size:10px;color:var(--h-ink3);font-weight:400;margin-left:6px;letter-spacing:.04em;text-transform:uppercase;vertical-align:baseline;}
+.h-tabs{display:flex;gap:2px;}
+.h-tab{padding:8px 12px;font-size:12.5px;color:var(--h-ink2);border-radius:6px;cursor:pointer;font-weight:500;}
+.h-tab:hover{background:var(--h-surface-alt);color:var(--h-ink);}
+.h-tab.active{background:var(--h-ink);color:var(--h-bg);}
+.h-search{margin-left:auto;display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--h-surface-alt);border:none;border-radius:20px;font-size:12px;color:var(--h-ink3);width:260px;min-width:0;}
+.h-search input{flex:1;border:none;background:transparent;outline:none;font-family:inherit;font-size:12px;color:var(--h-ink);}
+.h-who{display:flex;align-items:center;gap:10px;padding-left:10px;border-left:1px solid var(--h-line);}
+.h-who select{padding:4px 8px;border:1px solid var(--h-line);border-radius:6px;font-family:inherit;font-size:11.5px;background:var(--h-surface);color:var(--h-ink);}
 .h-avatar{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--h-accent);color:#fff;font-size:11px;font-weight:600;flex-shrink:0;}
 .h-wrap{padding:14px 20px 20px;}
 
@@ -437,32 +443,21 @@ th .sort-arrow{display:inline-block;margin-left:3px;font-size:9px;color:var(--h-
 </head>
 <body>
 
-<div class="h-topbar">
-  <div class="h-brand">
-    <div class="h-brand-mark">◴</div>
-    <div class="h-brand-wm">Joinery<span>Flow</span></div>
-  </div>
-  <div class="h-topbar-spacer"></div>
-  <div class="h-search">🔍 <span>Search · ⌘K</span></div>
-  <div class="h-avatar">BM</div>
-</div>
-
-<div class="tabs">
-  <button class="tab" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
-  <button class="tab" data-tab="cutlist" onclick="switchTab('cutlist')">Cutlist</button>
-  <button class="tab" data-tab="orderbook" onclick="switchTab('orderbook')">Orderbook</button>
-  <button class="tab active" data-tab="tracking" onclick="switchTab('tracking')">Tracking</button>
-  <button class="tab" data-tab="ivariations" onclick="switchTab('ivariations')">iVariations</button>
-  <button class="tab" data-tab="shopdwgs" onclick="switchTab('shopdwgs')">Shop Dwgs</button>
-  <button class="tab" data-tab="isample" onclick="switchTab('isample')">iSample</button>
-</div>
+<!-- Topbar chrome — see legacy/_chrome.js (single source-of-truth for 6-tab IA + secondary nav + role mapping). -->
+<div id="h-chrome"></div>
+<script src="_chrome.js"></script>
+<script>renderChrome('tracking');</script>
 
 <div class="h-wrap">
 
 <div class="panel active" id="panel-tracking">
 
+  <!-- Reference: live counterpart at apps/web/app/(app)/tracking/page.tsx (route /tracking?project_id=N).
+       API: GET /projects/{pid}/items returns TrackingGridOut (apps/api/app/items/schemas.py).
+       Sub-projects layered onto this view: #4 Procurement (AvailabilityDrawer), #7c Cut Floor (Board tab), #8 Shop Floor. -->
   <div class="job-hd">
     <span class="job-code" id="proj-code">2273</span>
+    <span class="h-mono" title="Schema synced to migration 0020 (head)" style="font-size:10px;color:var(--h-ink3);padding:2px 8px;border:1px solid var(--h-line);border-radius:10px;background:var(--h-surface-alt);">Synced · schema 0020 · live: /tracking</span>
     <div class="proj-sel">
       <button class="proj-trigger" id="proj-trigger" onclick="toggleProjMenu(event)">
         <span id="proj-current">Alfred Level 3 Fitout</span>
@@ -999,6 +994,9 @@ function availSummary(num){
   });
   return { worst: worstKey, ready, blocked, total: a.lines.length };
 }
+/* Live counterpart: AvailabilityDrawer — apps/web/app/(app)/tracking/_components/AvailabilityDrawer.tsx
+   Opened in live UI via URL state ?drawer=item-availability&itemId=N (sub-project #4 Procurement Workbench).
+   Backed by GET /items/{iid}/availability (apps/api/app/items/schemas.py :: AvailabilityOut). */
 function availMarkup(num){
   const s = availSummary(num);
   if (s.total === 0) return `<span class="avail-strip" title="No hardware lines recorded"><span class="avail-dot none"></span></span>`;
@@ -1700,6 +1698,9 @@ function renderItemLog(it){
     </div>`;
   }).join('');
 }
+/* Live counterpart: full Drafter Item Editor at /items/[id]?tab=cutlist|hardware|board|attachments|log
+   (apps/web/app/(app)/items/[id]/page.tsx — sub-projects #2 PM Workbench, #3 Drafter Editor, #5b PDF + Attachments, #7c Cut Floor Board tab).
+   This in-page modal is the legacy demo equivalent. */
 function openItemModal(num){
   const it = ITEMS.find(i=>i.num===num);
   if(!it) return;

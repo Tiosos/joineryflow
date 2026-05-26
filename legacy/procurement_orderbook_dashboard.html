@@ -1,6 +1,43 @@
 
-<h2 class="sr-only">Procurement Orderbook System — interactive dashboard with purchase orders, vendor management, approval workflows, inventory tracking, and budget monitoring</h2>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* ───── Global top bar (mirrors home.html) ───── */
+.h-topbar{
+  --h-bg:#fbfaf7;--h-surface:#ffffff;--h-surface-alt:#f4f2ed;
+  --h-line:#e4e0d8;--h-ink:#1b1a17;--h-ink2:#5a574f;--h-ink3:#8f8b80;--h-ink4:#c1beb4;--h-accent:#c96442;
+  display:flex;align-items:center;gap:14px;
+  padding:0 16px;height:48px;
+  background:var(--h-surface);border-bottom:1px solid var(--h-line);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:13px;color:var(--h-ink);
+  position:sticky;top:0;z-index:50;
+  font-feature-settings:"cv11","ss01","tnum";
+  margin:0 -1.5rem 1rem;
+}
+.h-topbar *{box-sizing:border-box;}
+.h-topbar .h-logo{display:flex;align-items:center;gap:8px;width:204px;padding-right:14px;border-right:1px solid var(--h-line);height:100%;}
+.h-topbar .h-logomark{width:26px;height:26px;border-radius:7px;background:var(--h-ink);color:var(--h-bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+.h-topbar .h-wordmark{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+.h-topbar .h-wordmark sub{font-size:10px;color:var(--h-ink3);font-weight:400;margin-left:6px;letter-spacing:.04em;text-transform:uppercase;vertical-align:baseline;}
+.h-topbar .h-tabs{display:flex;gap:2px;}
+.h-topbar .h-tab{padding:8px 12px;font-size:12.5px;color:var(--h-ink2);border-radius:6px;cursor:pointer;font-weight:500;}
+.h-topbar .h-tab:hover{background:var(--h-surface-alt);color:var(--h-ink);}
+.h-topbar .h-tab.active{background:var(--h-ink);color:var(--h-bg);}
+.h-topbar .h-search{margin-left:auto;display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--h-surface-alt);border-radius:20px;font-size:12px;color:var(--h-ink3);width:260px;}
+.h-topbar .h-search input{flex:1;border:none;background:transparent;outline:none;font-family:inherit;font-size:12px;color:var(--h-ink);}
+.h-topbar .h-mono{font-family:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;}
+.h-topbar .h-who{display:flex;align-items:center;gap:10px;padding-left:10px;border-left:1px solid var(--h-line);}
+.h-topbar .h-who select{padding:4px 8px;border:1px solid var(--h-line);border-radius:6px;font-family:inherit;font-size:11.5px;background:var(--h-surface);color:var(--h-ink);}
+.h-topbar .h-avatar{width:28px;height:28px;border-radius:50%;background:var(--h-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;}
+</style>
+<style>
+:root{
+  --font-sans: 'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+  --font-mono: 'JetBrains Mono',"SF Mono",Menlo,Monaco,Consolas,monospace;
+}
+body{font-family:var(--font-sans);font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;}
 .tabs{display:flex;border-bottom:0.5px solid var(--color-border-tertiary);margin-bottom:1.5rem;overflow-x:auto;}
 .tab{padding:8px 14px;font-size:13px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--color-text-secondary);font-family:var(--font-sans);white-space:nowrap;flex-shrink:0;}
 .tab.active{border-bottom-color:var(--color-text-primary);color:var(--color-text-primary);font-weight:500;}
@@ -160,6 +197,38 @@ tr:hover td{background:var(--color-background-secondary);}
 </style>
 
 <div style="padding-top:1rem;">
+
+<!-- Topbar chrome — see legacy/_chrome.js (single source-of-truth for 6-tab IA + secondary nav + role mapping). -->
+<div id="h-chrome"></div>
+<script src="_chrome.js"></script>
+<script>renderChrome('orderbook', { defaultRole: 'PROCUREMENT' });</script>
+
+<!-- ====================================================================================================
+     Legacy procurement model — superseded by sub-project #4 Procurement Workbench v1.
+     Live counterparts (apps/web/app/(app)/...):
+       /orderbook                                            — cross-project queue grouped by supplier (QueueClient).
+       /projects/[id]/procurement?tab=materials|batches|catalog  — project-scoped procurement page.
+       /tracking ?drawer=item-availability&itemId=N          — item-scoped AvailabilityDrawer.
+     Live API surface (apps/api/app/procurement_v1/):
+       GET  /procurement-queue                               — cross-project queue.
+       GET/POST /projects/{pid}/materials                    — project materials list.
+       GET/POST/DELETE /batches  · /batches/{bid}            — soft-cancel via cancelled_at (migration 0012).
+       GET/POST/PATCH /allocations                           — 409 on sum(allocated) > qty_received over-commit.
+       GET/POST /catalogs/{type}                             — 6 catalog tables (board / hardware / custom_made /
+                                                               benchtop / appliance / equipment_hire).
+     Status pill is **derived in SQL** via CASE; never persisted. Drafter auth_role is elevated to
+     PM-parity {read, write, approve, comment} on the orderbook module (CLAUDE.md §Procurement Workbench).
+     The 6 legacy tabs below (Dashboard / Purchase orders / Vendors / Approvals / Inventory / Budget) do
+     NOT match the live shape. Treat as a historical reference; do not port labels verbatim.
+==================================================================================================== -->
+<div style="margin:0 1.25rem 1rem;padding:10px 14px;border:1px solid rgba(196,138,46,.4);background:#f4e7cf;color:#8a5f1e;border-radius:6px;font-size:12px;display:flex;gap:10px;align-items:flex-start;">
+  <span style="font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:10px;padding:2px 7px;border-radius:10px;background:#c48a2e;color:#fff;flex-shrink:0;">Legacy</span>
+  <span>
+    Pre-Procurement-Workbench-v1 prototype (no <code>cancelled_at</code> · no allocations · no over-commit · no SQL-derived status pill).
+    Live model lives at <code>/orderbook</code> and <code>/projects/[id]/procurement</code> (sub-project #4). Schema head: <strong>0020</strong>.
+    Use this file as a UI reference for the older procurement layout only.
+  </span>
+</div>
 <div class="tabs">
   <button class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
   <button class="tab" data-tab="orders" onclick="switchTab('orders')">Purchase orders</button>

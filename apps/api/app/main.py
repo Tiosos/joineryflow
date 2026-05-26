@@ -4,7 +4,9 @@ from .auth.routes import router as auth_router
 from .catalog.routes import router as catalog_router
 from .cut_floor.routes import router as cut_floor_router
 from .cv.routes import router as cv_router
+from .estimating.routes import router as estimating_router
 from .files.routes import router as files_router
+from .public.routes import router as public_router
 from .hardware_lines.routes import router as hardware_lines_router
 from .parts.routes import router as parts_router
 from .home.routes import router as home_router
@@ -21,10 +23,15 @@ from .projects.routes import router as projects_router
 from .samples.routes import router as samples_router
 from .shop_drawings.routes import router as shop_dwgs_router
 from .shop_floor.routes import router as shop_floor_router
-from .users.routes import router as users_router
+from .users.routes import (
+    router as users_router,
+    me_router as me_router,
+    team_router as team_router,
+)
 from .workspaces.routes import router as ws_router
 
 app = FastAPI(title="JoineryFlow API")
+app.include_router(public_router)
 app.include_router(auth_router)
 app.include_router(catalog_router)
 app.include_router(cut_floor_router)
@@ -37,6 +44,8 @@ app.include_router(shop_dwgs_router)
 app.include_router(shop_floor_router)
 app.include_router(ws_router)
 app.include_router(users_router)
+app.include_router(me_router)
+app.include_router(team_router)
 app.include_router(proc_router)
 app.include_router(proc_v1_materials_router)
 app.include_router(proc_v1_batches_router)
@@ -48,6 +57,7 @@ app.include_router(items_router)
 app.include_router(hardware_lines_router)
 app.include_router(parts_router)
 app.include_router(home_router)
+app.include_router(estimating_router)
 
 
 @app.get("/health")

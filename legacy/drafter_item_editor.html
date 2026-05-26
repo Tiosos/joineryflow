@@ -3,10 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <title>Drafter Item Editor — Joinery Production</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* ───── Global top bar (mirrors home.html) ───── */
+.h-topbar{
+  --h-bg:#fbfaf7;--h-surface:#ffffff;--h-surface-alt:#f4f2ed;
+  --h-line:#e4e0d8;--h-ink:#1b1a17;--h-ink2:#5a574f;--h-ink3:#8f8b80;--h-ink4:#c1beb4;--h-accent:#c96442;
+  display:flex;align-items:center;gap:14px;
+  padding:0 16px;height:48px;
+  background:var(--h-surface);border-bottom:1px solid var(--h-line);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:13px;color:var(--h-ink);
+  position:sticky;top:0;z-index:50;
+  font-feature-settings:"cv11","ss01","tnum";
+}
+.h-topbar *{box-sizing:border-box;}
+.h-topbar .h-logo{display:flex;align-items:center;gap:8px;width:204px;padding-right:14px;border-right:1px solid var(--h-line);height:100%;}
+.h-topbar .h-logomark{width:26px;height:26px;border-radius:7px;background:var(--h-ink);color:var(--h-bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+.h-topbar .h-wordmark{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+.h-topbar .h-wordmark sub{font-size:10px;color:var(--h-ink3);font-weight:400;margin-left:6px;letter-spacing:.04em;text-transform:uppercase;vertical-align:baseline;}
+.h-topbar .h-tabs{display:flex;gap:2px;}
+.h-topbar .h-tab{padding:8px 12px;font-size:12.5px;color:var(--h-ink2);border-radius:6px;cursor:pointer;font-weight:500;}
+.h-topbar .h-tab:hover{background:var(--h-surface-alt);color:var(--h-ink);}
+.h-topbar .h-tab.active{background:var(--h-ink);color:var(--h-bg);}
+.h-topbar .h-search{margin-left:auto;display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--h-surface-alt);border-radius:20px;font-size:12px;color:var(--h-ink3);width:260px;}
+.h-topbar .h-search input{flex:1;border:none;background:transparent;outline:none;font-family:inherit;font-size:12px;color:var(--h-ink);}
+.h-topbar .h-mono{font-family:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;}
+.h-topbar .h-who{display:flex;align-items:center;gap:10px;padding-left:10px;border-left:1px solid var(--h-line);}
+.h-topbar .h-who select{padding:4px 8px;border:1px solid var(--h-line);border-radius:6px;font-family:inherit;font-size:11.5px;background:var(--h-surface);color:var(--h-ink);}
+.h-topbar .h-avatar{width:28px;height:28px;border-radius:50%;background:var(--h-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;}
+
 :root{
-  --font-sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
-  --font-mono: "SF Mono",Menlo,Monaco,Consolas,monospace;
+  --font-sans: 'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+  --font-mono: 'JetBrains Mono',"SF Mono",Menlo,Monaco,Consolas,monospace;
   --color-background-primary:#ffffff;
   --color-background-secondary:#f9fafb;
   --color-background-tertiary:#f3f4f6;
@@ -142,6 +173,11 @@ textarea.finp{resize:vertical;min-height:54px;}
 </head>
 <body>
 
+<!-- Topbar chrome — see legacy/_chrome.js (single source-of-truth for 6-tab IA + secondary nav + role mapping). -->
+<div id="h-chrome"></div>
+<script src="_chrome.js"></script>
+<script>renderChrome('list');</script>
+
 <div class="page">
 
   <!-- ── Header ──────────────────────────────────────────────── -->
@@ -212,11 +248,13 @@ textarea.finp{resize:vertical;min-height:54px;}
 
     <!-- Right tabs -->
     <div class="ed-right">
+      <!-- Editor tabs — parity with apps/web/app/(app)/items/[id]/_components/EditorTabs.tsx -->
       <div class="ed-tabs">
-        <button class="ed-tab active" data-tab="cutlist"  onclick="switchEdTab('cutlist')">Cutlist</button>
-        <button class="ed-tab"        data-tab="hardware" onclick="switchEdTab('hardware')">Hardware</button>
-        <button class="ed-tab"        data-tab="board"    onclick="switchEdTab('board')">Board</button>
-        <button class="ed-tab"        data-tab="log"      onclick="switchEdTab('log')">Log</button>
+        <button class="ed-tab active" data-tab="cutlist"     onclick="switchEdTab('cutlist')">Cutlist</button>
+        <button class="ed-tab"        data-tab="hardware"    onclick="switchEdTab('hardware')">Hardware</button>
+        <button class="ed-tab"        data-tab="board"       onclick="switchEdTab('board')">Board</button>
+        <button class="ed-tab"        data-tab="attachments" onclick="switchEdTab('attachments')">Attachments</button>
+        <button class="ed-tab"        data-tab="log"         onclick="switchEdTab('log')">Log</button>
       </div>
 
       <!-- Cutlist tab -->
@@ -302,7 +340,32 @@ textarea.finp{resize:vertical;min-height:54px;}
         <div class="board-placeholder">
           <div style="font-weight:500;margin-bottom:6px;">Board Optimisation (project-level)</div>
           <div>View of the project's CutPlan scoped to this item's parts.<br>Editable only by the project's Optimisation Drafter.</div>
-          <div style="margin-top:12px;font-size:11px;">v1: view-only. v2: wires to the Machine team's Cut Schedule.</div>
+          <div style="margin-top:12px;font-size:11px;">v1: view-only. Live: <code>/items/{id}?tab=board</code> renders the CutPlan SVG (sub-project #7c).</div>
+        </div>
+      </div>
+
+      <!-- Attachments tab — parity with apps/web/app/(app)/items/[id]/_components/AttachmentsTab.tsx (sub-project #5b) -->
+      <div class="ed-panel" id="panel-attachments">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+          <div class="board-placeholder" style="padding:1rem;text-align:left;">
+            <div style="font-weight:600;margin-bottom:4px;">CV Drawing</div>
+            <div style="font-size:11px;color:var(--color-text-secondary);">Cabinet Vision drawing PDF. <br><code>kind = cv_drawing</code></div>
+            <div style="margin-top:10px;font-size:10px;color:var(--color-text-tertiary);">Open · Replace · Delete (drafter+)</div>
+          </div>
+          <div class="board-placeholder" style="padding:1rem;text-align:left;">
+            <div style="font-weight:600;margin-bottom:4px;">Floor Plan</div>
+            <div style="font-size:11px;color:var(--color-text-secondary);">Site floor-plan PDF. <br><code>kind = floor_plan</code></div>
+            <div style="margin-top:10px;font-size:10px;color:var(--color-text-tertiary);">Open · Replace · Delete (drafter+)</div>
+          </div>
+          <div class="board-placeholder" style="padding:1rem;text-align:left;">
+            <div style="font-weight:600;margin-bottom:4px;">Site Measure</div>
+            <div style="font-size:11px;color:var(--color-text-secondary);">Site-measure PDF. <br><code>kind = site_measure</code></div>
+            <div style="margin-top:10px;font-size:10px;color:var(--color-text-tertiary);">Open · Replace · Delete (drafter+)</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;font-size:11px;color:var(--color-text-secondary);">
+          PDF-only mime gate (415 on PNG/JPEG). The Combined PDF render assembles cover + cutlist + hardware + these 3 attachments
+          + painting page (when any part has <code>paint_instruction != 'NONE'</code>). Live API: <code>POST/DELETE /items/{iid}/attachments/{kind}</code> · <code>GET /items/{iid}/combined.pdf</code>.
         </div>
       </div>
 

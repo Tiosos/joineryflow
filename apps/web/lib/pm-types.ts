@@ -216,6 +216,7 @@ export type ItemStatus = "CLEAR" | "VOID" | "NOTE!" | "LIVE" | "APPROVED" | "HOL
 
 export interface PatchItemStatusIn {
   status: ItemStatus;
+  note?: string | null;
 }
 
 export interface PatchLifecycleIn {
@@ -362,4 +363,30 @@ export interface HomeDashboardOut {
   team_activity: TeamActivityRow[];
   favourite_projects: FavouriteProject[];
   all_projects_count: number;
+}
+
+// =============================================================================
+// Team status (legacy/home.html parity)
+// Source: apps/api/app/users/schemas.py
+// =============================================================================
+
+export type WorkStatus = "IN" | "ON_SITE" | "SHOP" | "WFH" | "OFF";
+
+export interface TeamMemberOut {
+  id: number;
+  full_name: string;
+  auth_role: string;
+  jtbd_role: string | null;
+  work_status: WorkStatus | null;
+  location_label: string | null;
+  is_self: boolean;
+}
+
+export interface TeamOut {
+  members: TeamMemberOut[];
+}
+
+export interface MyStatusPatch {
+  work_status?: WorkStatus | null;
+  location_label?: string | null;
 }

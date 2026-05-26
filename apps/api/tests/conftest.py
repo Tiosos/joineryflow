@@ -51,6 +51,14 @@ def workspace_id(db):
 
 
 TRUNCATE_TABLES = (
+    "estimate_line_labour",
+    "estimate_line_hardware",
+    "estimate_line_part",
+    "estimate_line",
+    "estimate_revision",
+    "estimate",
+    "customer",
+    "workspace_labour_rate",
     "stage_completion_log",
     "worker_assignment",
     "shop_drawing_revision",

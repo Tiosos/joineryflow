@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Quote {{ estimate.estimate_no }} r{{ revision.rev_no }}</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm 22mm 16mm; }
+    body { font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+           color: #1a1a1a; font-size: 10pt; line-height: 1.45; }
+    h1 { font-size: 22pt; margin: 0 0 6pt 0; letter-spacing: -0.3pt; }
+    h2 { font-size: 12pt; margin: 16pt 0 6pt 0; letter-spacing: 0.4pt;
+         text-transform: uppercase; color: #555; font-weight: 600; }
+    .cover { page-break-after: always; }
+    .header-row { display: flex; justify-content: space-between; align-items: flex-start;
+                  border-bottom: 1px solid #d4d4d4; padding-bottom: 10pt; }
+    .logo-block { width: 60%; }
+    .meta-block { width: 38%; text-align: right; font-size: 9pt; color: #555; }
+    .meta-block .label { color: #888; margin-right: 6pt; }
+    .meta-block .value { color: #1a1a1a; font-weight: 500; }
+    .customer-block { margin-top: 14pt; font-size: 10pt; line-height: 1.5; }
+    .customer-block .name { font-weight: 600; font-size: 11pt; }
+    table.lines { width: 100%; border-collapse: collapse; margin-top: 12pt; }
+    table.lines thead th { font-size: 8pt; text-transform: uppercase;
+                            letter-spacing: 0.6pt; color: #888;
+                            border-bottom: 1px solid #d4d4d4; padding: 6pt 4pt;
+                            text-align: left; font-weight: 600; }
+    table.lines tbody td { padding: 7pt 4pt; vertical-align: top;
+                            border-bottom: 1px solid #ececec; }
+    table.lines tbody td.num { font-family: "JetBrains Mono", "SF Mono", monospace;
+                                font-variant-numeric: tabular-nums;
+                                text-align: right; white-space: nowrap; }
+    table.lines tbody td.seq { color: #888; width: 6%; }
+    table.lines tbody td.desc { width: 50%; }
+    table.lines tbody td.qty { width: 10%; text-align: right; }
+    table.lines tbody td.unit-sell { width: 17%; text-align: right; }
+    table.lines tbody td.total { width: 17%; text-align: right; font-weight: 600; }
+    table.totals-table { width: 50%; margin-top: 12pt; margin-left: auto;
+                         border-collapse: collapse;
+                         font-variant-numeric: tabular-nums; }
+    table.totals-table td { padding: 5pt 6pt; }
+    table.totals-table td.label { color: #555; text-align: right; }
+    table.totals-table td.value { text-align: right;
+                                   font-family: "JetBrains Mono", "SF Mono", monospace; }
+    table.totals-table tr.total td { border-top: 1.5pt solid #1a1a1a;
+                                      padding-top: 8pt; font-size: 12pt;
+                                      font-weight: 700; }
+    .status-pill { display: inline-block; padding: 2pt 8pt; border-radius: 99px;
+                   font-size: 8pt; text-transform: uppercase;
+                   letter-spacing: 0.5pt; font-weight: 600; }
+    .status-sent { background: #dbeafe; color: #1e3a8a; }
+    .status-accepted { background: #d1fae5; color: #065f46; }
+    .status-rejected { background: #fee2e2; color: #991b1b; }
+    .status-expired { background: #fef3c7; color: #92400e; }
+    .status-withdrawn { background: #e5e7eb; color: #374151; }
+    .footer-note { margin-top: 24pt; color: #666; font-size: 9pt;
+                   border-top: 1px solid #d4d4d4; padding-top: 10pt; }
+    .terms-block { white-space: pre-wrap; }
+    .draft-watermark {
+      position: fixed; top: 38%; left: -10%; width: 120%;
+      text-align: center; transform: rotate(-25deg);
+      font-size: 110pt; font-weight: 800; letter-spacing: 3pt;
+      color: rgba(220, 38, 38, 0.16);
+      pointer-events: none; z-index: 9999;
+    }
+    .draft-subtext {
+      position: fixed; top: 52%; left: 0; right: 0;
+      text-align: center; transform: rotate(-25deg);
+      font-size: 18pt; font-weight: 600; letter-spacing: 2pt;
+      color: rgba(220, 38, 38, 0.16);
+      pointer-events: none; z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+{% if is_draft %}
+<div class="draft-watermark">DRAFT</div>
+<div class="draft-subtext">NOT FOR CLIENT</div>
+{% endif %}
+  <section class="cover">
+    <div class="header-row">
+      <div class="logo-block">
+        <h1>Quote</h1>
+        <div style="color:#666;font-size:10pt;">{{ estimate.title }}</div>
+      </div>
+      <div class="meta-block">
+        <div><span class="label">Estimate</span><span class="value">{{ estimate.estimate_no }}</span></div>
+        <div><span class="label">Revision</span><span class="value">v{{ revision.rev_no }}</span></div>
+        <div><span class="label">Date</span><span class="value">{{ today }}</span></div>
+        <div><span class="label">Status</span>
+          <span class="status-pill status-{{ revision.status }}">{{ revision.status }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="customer-block">
+      <h2>Prepared for</h2>
+      <div class="name">{{ customer.name }}</div>
+      {% if customer.email %}<div>{{ customer.email }}</div>{% endif %}
+      {% if customer.phone %}<div>{{ customer.phone }}</div>{% endif %}
+      {% if customer.billing_address %}<div>{{ customer.billing_address }}</div>{% endif %}
+      {% if customer.abn %}<div style="color:#666;font-size:9pt;margin-top:4pt;">ABN {{ customer.abn }}</div>{% endif %}
+    </div>
+
+    {% if estimate.site_address %}
+    <div class="customer-block">
+      <h2>Site</h2>
+      <div>{{ estimate.site_address }}</div>
+    </div>
+    {% endif %}
+
+    <table class="totals-table" style="margin-top: 28pt;">
+      <tr>
+        <td class="label">Subtotal</td>
+        <td class="value">{{ revision.subtotal_sell | money }}</td>
+      </tr>
+      <tr>
+        <td class="label">GST ({{ revision.gst_pct }}%)</td>
+        <td class="value">{{ revision.gst_amount | money }}</td>
+      </tr>
+      <tr class="total">
+        <td class="label">Total (inc. GST)</td>
+        <td class="value">{{ revision.total_inc_gst | money }}</td>
+      </tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Itemised quote</h2>
+    <table class="lines">
+      <thead>
+        <tr>
+          <th class="seq">#</th>
+          <th class="desc">Description</th>
+          <th class="qty" style="text-align:right;">Qty</th>
+          <th class="unit-sell" style="text-align:right;">Unit price</th>
+          <th class="total" style="text-align:right;">Line total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in revision.lines %}
+        <tr>
+          <td class="seq">{{ line.seq }}</td>
+          <td class="desc">
+            <div>{{ line.description }}</div>
+            {% if line.notes %}<div style="color:#888;font-size:9pt;margin-top:2pt;">{{ line.notes }}</div>{% endif %}
+          </td>
+          <td class="num qty">{{ line.qty }} {{ line.unit }}</td>
+          <td class="num unit-sell">{{ line.unit_sell | money }}</td>
+          <td class="num total">{{ line.total_sell | money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <table class="totals-table">
+      <tr>
+        <td class="label">Subtotal</td>
+        <td class="value">{{ revision.subtotal_sell | money }}</td>
+      </tr>
+      <tr>
+        <td class="label">GST ({{ revision.gst_pct }}%)</td>
+        <td class="value">{{ revision.gst_amount | money }}</td>
+      </tr>
+      <tr class="total">
+        <td class="label">Total (inc. GST)</td>
+        <td class="value">{{ revision.total_inc_gst | money }}</td>
+      </tr>
+    </table>
+
+    {% if revision.terms_text %}
+    <h2 style="margin-top: 22pt;">Terms &amp; conditions</h2>
+    <div class="terms-block">{{ revision.terms_text }}</div>
+    {% endif %}
+
+    <div class="footer-note">
+      Prices valid for 30 days from {{ today }} unless otherwise noted. Quote
+      acceptance creates a binding contract. Please reference {{ estimate.estimate_no }}
+      revision v{{ revision.rev_no }} on all correspondence.
+    </div>
+  </section>
+</body>
+</html>

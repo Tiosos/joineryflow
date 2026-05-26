@@ -1,6 +1,7 @@
 import { fetchMe } from "@/lib/session";
 import { redirect } from "next/navigation";
 
+import { LabourRatesPanel } from "./_components/LabourRatesPanel";
 import { WorkerRosterPanel } from "./_components/WorkerRosterPanel";
 
 export default async function ITPage() {
@@ -13,6 +14,7 @@ export default async function ITPage() {
         <p className="text-sm text-h-muted">Admin-only.</p>
       </header>
       <WorkerRosterPanel />
+      <LabourRatesPanel />
     </section>
   );
 }

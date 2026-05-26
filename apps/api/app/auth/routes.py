@@ -44,7 +44,7 @@ def login(body: LoginIn, resp: Response, db: Session = Depends(get_db)):
         token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.cookie_secure,
         path="/",
         max_age=settings.session_sliding_days * 86400,
     )

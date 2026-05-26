@@ -28,7 +28,7 @@ export default async function ItemEditorPage({
 }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  if (isNaN(id)) redirect("/home");
+  if (isNaN(id)) redirect("/dashboard");
 
   const sp = await searchParams;
   const tab = sp.tab ?? "cutlist";

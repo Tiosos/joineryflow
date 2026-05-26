@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JoineryFlow — Legacy Reference Mocks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --h-bg:#fbfaf7; --h-surface:#ffffff; --h-surface-alt:#f4f2ed; --h-line:#e4e0d8;
+  --h-ink:#1b1a17; --h-ink2:#5a574f; --h-ink3:#8f8b80; --h-ink4:#c1beb4;
+  --h-accent:#c96442; --h-accent-soft:#f3e0d6; --h-accent-deep:#a84f31;
+  --h-good:#3f7d48; --h-good-soft:#e2efdf;
+  --h-warn:#c48a2e; --h-warn-soft:#f4e7cf;
+  --h-bad:#b4443d; --h-bad-soft:#f2dcd9;
+  --h-info:#3d6b8a;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--font-sans);background:var(--h-bg);color:var(--h-ink);font-size:13px;line-height:1.5;font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;}
+.h-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 24px 48px;}
+
+/* Header */
+.hd{display:flex;align-items:flex-end;gap:14px;padding-bottom:18px;border-bottom:1px solid var(--h-line);margin-bottom:22px;}
+.hd-mark{width:38px;height:38px;border-radius:9px;background:var(--h-ink);color:var(--h-bg);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;flex-shrink:0;}
+.hd h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.3px;}
+.hd .sub{font-size:12px;color:var(--h-ink2);margin-top:3px;}
+.hd .grow{flex:1;}
+.hd-stamp{font-family:var(--font-mono);font-size:10px;color:var(--h-ink3);padding:4px 10px;border:1px solid var(--h-line);border-radius:14px;background:var(--h-surface-alt);}
+
+/* Read-only banner */
+.banner{padding:11px 14px;border:1px solid rgba(196,138,46,.4);background:var(--h-warn-soft);color:#8a5f1e;border-radius:6px;font-size:12px;margin-bottom:22px;display:flex;gap:10px;align-items:flex-start;}
+.banner-tag{font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:10px;padding:2px 7px;border-radius:10px;background:#c48a2e;color:#fff;flex-shrink:0;}
+
+/* Sections */
+section{margin-bottom:32px;}
+section > h2{font-size:11px;font-weight:600;color:var(--h-ink3);text-transform:uppercase;letter-spacing:.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--h-line);}
+
+/* Card grid */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+@media(max-width:760px){.grid{grid-template-columns:1fr;}}
+.card{background:var(--h-surface);border:1px solid var(--h-line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;text-decoration:none;color:inherit;transition:border-color .15s,box-shadow .15s,transform .15s;}
+.card:hover{border-color:var(--h-ink4);box-shadow:0 2px 10px rgba(27,26,23,.06);transform:translateY(-1px);}
+.card-hd{display:flex;align-items:center;gap:8px;}
+.card-name{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--h-ink);}
+.card-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.04em;}
+.tag-refined{background:var(--h-good-soft);color:var(--h-good);}
+.tag-master{background:var(--h-accent-soft);color:var(--h-accent-deep);}
+.tag-pre{background:var(--h-warn-soft);color:#8a5f1e;}
+.card-title{font-size:14px;font-weight:600;letter-spacing:-.1px;color:var(--h-ink);margin-top:2px;}
+.card-desc{font-size:12px;color:var(--h-ink2);}
+.card-meta{margin-top:6px;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:11px;}
+.card-meta dt{color:var(--h-ink3);text-transform:uppercase;font-weight:600;letter-spacing:.04em;font-size:10px;}
+.card-meta dd{margin:0;color:var(--h-ink);}
+.card-meta dd code{font-family:var(--font-mono);font-size:11px;background:var(--h-surface-alt);padding:1px 6px;border-radius:3px;border:1px solid var(--h-line);}
+.card-foot{font-size:11px;color:var(--h-accent);margin-top:6px;}
+
+/* Reference list */
+.reflist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;}
+@media(max-width:760px){.reflist{grid-template-columns:1fr;}}
+.reflist a{display:flex;justify-content:space-between;gap:10px;padding:7px 11px;background:var(--h-surface);border:1px solid var(--h-line);border-radius:5px;font-family:var(--font-mono);font-size:12px;color:var(--h-ink);text-decoration:none;}
+.reflist a:hover{border-color:var(--h-ink4);background:var(--h-surface-alt);}
+.reflist span{color:var(--h-ink3);font-family:var(--font-sans);font-size:11px;}
+
+/* Footer */
+footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--h-line);font-size:11px;color:var(--h-ink3);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+footer code{font-family:var(--font-mono);background:var(--h-surface-alt);padding:1px 5px;border-radius:3px;border:1px solid var(--h-line);color:var(--h-ink2);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="hd">
+    <div class="hd-mark">&#9716;</div>
+    <div>
+      <h1>JoineryFlow — Legacy Reference Mocks</h1>
+      <div class="sub">Read-only quarantine of original FileMaker-era prototypes. Use as visual / structural reference; the live system is in <code>apps/</code>.</div>
+    </div>
+    <div class="grow"></div>
+    <div class="hd-stamp">schema 0020 · 2026-05-10</div>
+  </header>
+
+  <div class="banner">
+    <span class="banner-tag">Read-only</span>
+    <span>
+      Per <code>CLAUDE.md</code>, files in <code>legacy/</code> are reference-only. Recent <em>refinement edits</em> sync the topbar IA, auth_role mapping, and sub-project cross-links to the live system without altering core demos. The live counterparts in <code>apps/web</code> are the source of truth.
+    </span>
+  </div>
+
+  <section>
+    <h2>Refined HTML mockups</h2>
+    <div class="grid">
+
+      <a class="card" href="login.html">
+        <div class="card-hd">
+          <div class="card-name">login.html</div>
+          <span class="card-tag tag-refined">Refined</span>
+        </div>
+        <div class="card-title">Login screen</div>
+        <div class="card-desc">Single-form session login mirroring the live public route. Argon2id password verification + opaque <code>jf_session</code> cookie (sliding 14d / hard-cap 30d).</div>
+        <dl class="card-meta">
+          <dt>Live</dt><dd><code>/login</code> · <code>apps/web/app/(public)/login/page.tsx</code></dd>
+          <dt>API</dt><dd><code>POST /auth/login</code> · <code>apps/api/app/auth/routes.py</code></dd>
+          <dt>Roles</dt><dd>any of 5 auth_roles</dd>
+        </dl>
+        <div class="card-foot">Open mock →</div>
+      </a>
+
+      <a class="card" href="home.html">
+        <div class="card-hd">
+          <div class="card-name">home.html</div>
+          <span class="card-tag tag-refined">Refined</span>
+        </div>
+        <div class="card-title">Home dashboard</div>
+        <div class="card-desc">Personal landing — KPIs, My Day, Deliveries today, Team activity, role-surface tiles. Tile grid now reflects 9 shipped sub-projects (#5a / #5c / #7a / #7c / #8 included).</div>
+        <dl class="card-meta">
+          <dt>Live</dt><dd><code>/home</code> · <code>apps/web/app/(app)/home/page.tsx</code></dd>
+          <dt>API</dt><dd><code>GET /home/dashboard</code> → <code>HomeDashboardOut</code></dd>
+          <dt>Roles</dt><dd>any reader (role-tinted tiles)</dd>
+        </dl>
+        <div class="card-foot">Open mock →</div>
+      </a>
+
+      <a class="card" href="tracking_dashboard.html">
+        <div class="card-hd">
+          <div class="card-name">tracking_dashboard.html</div>
+          <span class="card-tag tag-refined">Refined</span>
+        </div>
+        <div class="card-title">Project tracking grid</div>
+        <div class="card-desc">Items × 10 lifecycle stages (REQ → INST), with availability strip, status pill (CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD), and item-detail modal.</div>
+        <dl class="card-meta">
+          <dt>Live</dt><dd><code>/tracking?project_id=N</code> · <code>apps/web/app/(app)/tracking/page.tsx</code></dd>
+          <dt>API</dt><dd><code>GET /projects/{pid}/items</code> → <code>TrackingGridOut</code></dd>
+          <dt>Drawer</dt><dd><code>?drawer=item-availability&itemId=N</code> (#4)</dd>
+        </dl>
+        <div class="card-foot">Open mock →</div>
+      </a>
+
+      <a class="card" href="drafter_item_editor.html">
+        <div class="card-hd">
+          <div class="card-name">drafter_item_editor.html</div>
+          <span class="card-tag tag-refined">Refined</span>
+        </div>
+        <div class="card-title">Drafter item editor</div>
+        <div class="card-desc">Item-centric editor — Cutlist · Hardware · Board · Attachments · Log. CV import widget (#7b), 3-slot attachments (#5b), Board CutPlan view (#7c).</div>
+        <dl class="card-meta">
+          <dt>Live</dt><dd><code>/items/[id]?tab=…</code> · <code>apps/web/app/(app)/items/[id]/page.tsx</code></dd>
+          <dt>API</dt><dd><code>GET /items/{iid}</code> → <code>ItemOut</code></dd>
+          <dt>Lock</dt><dd>soft-lock; non-owner saves write <code>item.lock_overridden</code> audit row</dd>
+        </dl>
+        <div class="card-foot">Open mock →</div>
+      </a>
+
+      <a class="card" href="procurement_orderbook_dashboard.html">
+        <div class="card-hd">
+          <div class="card-name">procurement_orderbook_dashboard.html</div>
+          <span class="card-tag tag-pre">Pre-#4</span>
+        </div>
+        <div class="card-title">Procurement orderbook (legacy model)</div>
+        <div class="card-desc">Pre-Procurement-Workbench-v1 prototype. <strong>Different shape</strong> from live: no <code>cancelled_at</code>, no allocations, no over-commit, no SQL-derived status pill.</div>
+        <dl class="card-meta">
+          <dt>Live</dt><dd><code>/orderbook</code> + <code>/projects/[id]/procurement</code> (sub-project #4)</dd>
+          <dt>API</dt><dd><code>/procurement-queue · /batches · /allocations · /catalogs/{type}</code></dd>
+          <dt>Drafter</dt><dd>elevated to PM-parity on orderbook</dd>
+        </dl>
+        <div class="card-foot">Open mock →</div>
+      </a>
+
+      <a class="card" href="Joinery Workflow Hi-fi.html">
+        <div class="card-hd">
+          <div class="card-name">Joinery Workflow Hi-fi.html</div>
+          <span class="card-tag tag-master">Master</span>
+        </div>
+        <div class="card-title">Hi-fi master reference</div>
+        <div class="card-desc">Source-of-truth visual hi-fi (rich palette, multi-screen composite). <strong>Not refined</strong> — it's the design baseline. Tokens flow downstream into <code>apps/web/app/globals.css</code>.</div>
+        <dl class="card-meta">
+          <dt>Status</dt><dd>untouched by refinement passes</dd>
+          <dt>Use as</dt><dd>palette / typography / motion reference</dd>
+        </dl>
+        <div class="card-foot">Open master →</div>
+      </a>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Other reference docs in this folder</h2>
+    <div class="reflist">
+      <a href="product_spec.md">product_spec.md <span>v1 product overview · JTBD roles · invariants</span></a>
+      <a href="trackingv2.md">trackingv2.md <span>v1 build plan for Project Information Mgmt</span></a>
+      <a href="procurement_api.py">procurement_api.py <span>FileMaker-era MySQL FastAPI source</span></a>
+      <a href="trackingv2_schema.sql">trackingv2_schema.sql <span>FileMaker-era SQL schema</span></a>
+      <a href="procurement_schema.sql">procurement_schema.sql <span>FileMaker-era procurement SQL</span></a>
+      <a href="filemaker.md">filemaker.md <span>FileMaker UI conventions reference</span></a>
+    </div>
+  </section>
+
+  <footer>
+    <span>Refined by alignment pass · 2026-05-10 · synced to migration head <code>0020</code>.</span>
+    <span>Live system entry: <code>http://localhost:3000/login</code></span>
+  </footer>
+
+</div>
+
+</body>
+</html>

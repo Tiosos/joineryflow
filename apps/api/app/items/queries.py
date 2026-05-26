@@ -894,6 +894,7 @@ def patch_item_status(
     item_id: int,
     workspace_id: int,
     status: str,
+    note: str | None = None,
     actor_id: int,
 ) -> bool:
     """Update items.status.  Returns True if updated, False if item not found.
@@ -923,10 +924,10 @@ def patch_item_status(
         text(
             """
             INSERT INTO item_status_log(item_id, status, note, changed_by)
-            VALUES (:iid, :s, '', :cb)
+            VALUES (:iid, :s, :n, :cb)
             """
         ),
-        {"iid": item_id, "s": status, "cb": str(actor_id)},
+        {"iid": item_id, "s": status, "n": note or "", "cb": str(actor_id)},
     )
     db.flush()
 
@@ -936,7 +937,7 @@ def patch_item_status(
         actor_id=actor_id,
         event="item.status",
         target=str(item_id),
-        payload={"old": prev_status, "new": status},
+        payload={"old": prev_status, "new": status, "note": note},
     )
     write_edit_log(
         db,

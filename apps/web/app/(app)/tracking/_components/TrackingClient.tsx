@@ -1,55 +1,255 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TrackingGrid } from "@/components/pm/TrackingGrid";
+import type { ProjectOut, TrackingItemRow } from "@/lib/pm-types";
+import type { Me } from "@/lib/session";
 import { AvailabilityDrawer } from "@/components/procurement/AvailabilityDrawer";
-import type { TrackingItemRow } from "@/lib/pm-types";
+import { TrackingMetrics } from "./TrackingMetrics";
+import { ProjectInfoBar } from "./ProjectInfoBar";
+import { ItemsTable, SUB_TABS, type SubTab } from "./ItemsTable";
+import { ItemDetailModal } from "./ItemDetailModal";
+import { ProjectDetailModal } from "./ProjectDetailModal";
+import { StatusPopup } from "./StatusPopup";
 
 interface Props {
+  project: ProjectOut;
+  projects: ProjectOut[];
   items: TrackingItemRow[];
+  me: Me | null;
   canEdit: boolean;
-  projectId: number;
+  procurementReady: boolean;
 }
 
-export function TrackingClient({ items, canEdit, projectId }: Props) {
+type QuickFilter = "my" | "deleted" | "void" | "tgsolid" | "orders" | "overdue" | "installed" | null;
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function TrackingClient({
+  project,
+  projects,
+  items,
+  me,
+  canEdit,
+  procurementReady,
+}: Props) {
   const router = useRouter();
   const sp = useSearchParams();
 
-  const drawer = sp.get("drawer");
-  const itemIdParam = sp.get("itemId");
+  const [subTab, setSubTab] = useState<SubTab>("DATE");
+  const [quick, setQuick] = useState<QuickFilter>(null);
+  const [cutlistQuery, setCutlistQuery] = useState("");
+  const [freeQuery, setFreeQuery] = useState("");
+  const [showRowCount, setShowRowCount] = useState(true);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [itemModalId, setItemModalId] = useState<number | null>(null);
+  const [statusPopupId, setStatusPopupId] = useState<number | null>(null);
+
+  const drawerKind = sp.get("drawer");
+  const drawerItemIdRaw = sp.get("itemId");
   const drawerItemId =
-    drawer === "item-availability" && itemIdParam
-      ? Number(itemIdParam)
+    drawerKind === "item-availability" && drawerItemIdRaw
+      ? Number(drawerItemIdRaw)
       : null;
 
-  function buildUrl(next: URLSearchParams): string {
+  function setDrawerItemId(id: number | null) {
+    const next = new URLSearchParams(sp.toString());
+    next.set("project_id", String(project.id));
+    if (id == null) {
+      next.delete("drawer");
+      next.delete("itemId");
+    } else {
+      next.set("drawer", "item-availability");
+      next.set("itemId", String(id));
+    }
     const qs = next.toString();
-    return qs ? `/tracking?${qs}` : "/tracking";
+    router.push(qs ? `/tracking?${qs}` : "/tracking");
   }
 
-  function openAvailability(itemId: number) {
-    const next = new URLSearchParams(sp.toString());
-    next.set("project_id", String(projectId));
-    next.set("drawer", "item-availability");
-    next.set("itemId", String(itemId));
-    router.push(buildUrl(next));
-  }
+  const today = todayISO();
 
-  function closeDrawer() {
-    const next = new URLSearchParams(sp.toString());
-    next.delete("drawer");
-    next.delete("itemId");
-    router.push(buildUrl(next));
+  const visibleItems = useMemo(() => {
+    if (!quick) return items;
+    return items.filter((it) => {
+      switch (quick) {
+        case "my":
+          return me ? it.cutlist_owner_id === me.id : false;
+        case "void":
+          return it.status === "VOID";
+        case "overdue":
+          return Object.values(it.stages).some(
+            (s) => s.due_date && !s.done_date && s.due_date < today,
+          );
+        case "installed":
+          return Boolean(it.stages.INST?.done_date);
+        case "deleted":
+        case "tgsolid":
+        case "orders":
+          return false;
+      }
+    });
+  }, [items, quick, me, today]);
+
+  function refresh() {
+    router.refresh();
   }
 
   return (
-    <>
-      <TrackingGrid
-        items={items}
+    <div className="grid gap-3">
+      <ProjectInfoBar
+        project={project}
+        projects={projects}
+        onOpenInfo={() => setProjectModalOpen(true)}
+        onOpenProcurement={() => router.push(`/projects/${project.id}/procurement`)}
         canEdit={canEdit}
-        onOpenAvailability={openAvailability}
+        procurementReady={procurementReady}
       />
-      <AvailabilityDrawer itemId={drawerItemId} onClose={closeDrawer} projectId={projectId} />
-    </>
+
+      <TrackingMetrics items={items} />
+
+      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-h-line bg-h-surface p-2">
+        <Chip label="My Entries" active={quick === "my"} onClick={() => setQuick(quick === "my" ? null : "my")} disabled={!me} />
+        <Chip label="Deleted" active={quick === "deleted"} onClick={() => setQuick(quick === "deleted" ? null : "deleted")} disabled title="Backend field not exposed" />
+        <Chip label="Void" active={quick === "void"} onClick={() => setQuick(quick === "void" ? null : "void")} />
+        <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} disabled title="Backend field not exposed" />
+        <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} disabled title="Backend wiring pending" />
+        <span className="mx-1 h-4 w-px bg-h-line" />
+        <Chip label="Overdue" tone="bad" active={quick === "overdue"} onClick={() => setQuick(quick === "overdue" ? null : "overdue")} />
+        <Chip label="Installed" tone="good" active={quick === "installed"} onClick={() => setQuick(quick === "installed" ? null : "installed")} />
+        <button
+          type="button"
+          onClick={refresh}
+          className="ml-1 rounded border border-h-line bg-h-surface px-2 py-1 text-xs text-h-muted hover:text-h-ink"
+          title="Refresh data from server"
+        >
+          ↻
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface p-2">
+        <input
+          type="search"
+          placeholder="Cutlist #"
+          value={cutlistQuery}
+          onChange={(e) => setCutlistQuery(e.target.value)}
+          className="w-28 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
+        />
+        <input
+          type="search"
+          placeholder="Search items, rooms, codes…"
+          value={freeQuery}
+          onChange={(e) => setFreeQuery(e.target.value)}
+          className="min-w-[200px] flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 border-b border-h-line">
+        {SUB_TABS.map((st) => (
+          <button
+            key={st}
+            type="button"
+            onClick={() => setSubTab(st)}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition ${
+              st === subTab
+                ? "border-h-accent text-h-ink"
+                : "border-transparent text-h-muted hover:text-h-ink"
+            }`}
+          >
+            {st}
+          </button>
+        ))}
+      </div>
+
+      <ItemsTable
+        items={visibleItems}
+        subTab={subTab}
+        cutlistQuery={cutlistQuery}
+        freeQuery={freeQuery}
+        onOpenItem={(id) => setItemModalId(id)}
+        onOpenStatus={(id) => setStatusPopupId(id)}
+      />
+
+      <div className="flex items-center gap-2 text-xs text-h-muted">
+        <button
+          type="button"
+          onClick={() => setShowRowCount(true)}
+          className={`rounded border border-h-line px-2 py-0.5 ${showRowCount ? "bg-h-bg text-h-ink" : "bg-h-surface"}`}
+        >
+          Show
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowRowCount(false)}
+          className={`rounded border border-h-line px-2 py-0.5 ${!showRowCount ? "bg-h-bg text-h-ink" : "bg-h-surface"}`}
+        >
+          Hide
+        </button>
+        {showRowCount ? (
+          <span className="font-mono">Total rows: {visibleItems.length}</span>
+        ) : null}
+        <span className="ml-auto opacity-70">
+          Click a CUTLIST number for a read-only modal, or open the full editor at <code>/items/[id]</code>.
+        </span>
+      </div>
+
+      <AvailabilityDrawer
+        itemId={drawerItemId}
+        onClose={() => setDrawerItemId(null)}
+        projectId={project.id}
+      />
+
+      <ItemDetailModal
+        itemId={itemModalId}
+        items={visibleItems}
+        onClose={() => setItemModalId(null)}
+        onNavigate={(id) => setItemModalId(id)}
+      />
+      <ProjectDetailModal
+        project={projectModalOpen ? project : null}
+        onClose={() => setProjectModalOpen(false)}
+      />
+      <StatusPopup
+        itemId={statusPopupId}
+        onClose={() => setStatusPopupId(null)}
+        onUpdated={refresh}
+      />
+    </div>
+  );
+}
+
+interface ChipProps {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "bad" | "good";
+  title?: string;
+}
+
+function Chip({ label, active, onClick, disabled, tone, title }: ChipProps) {
+  const toneClass =
+    tone === "bad"
+      ? active
+        ? "bg-[#f2dcd9] text-[#b4443d] border-[#b4443d]"
+        : "border-h-line text-[#b4443d] hover:bg-[#f2dcd9]/30"
+      : tone === "good"
+      ? active
+        ? "bg-[#e4efe5] text-[#3f7d48] border-[#3f7d48]"
+        : "border-h-line text-[#3f7d48] hover:bg-[#e4efe5]/30"
+      : active
+      ? "bg-h-ink text-white border-h-ink"
+      : "border-h-line text-h-muted hover:text-h-ink";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${toneClass}`}
+    >
+      {label}
+    </button>
   );
 }

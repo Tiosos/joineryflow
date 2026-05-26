@@ -205,6 +205,7 @@ class PatchItemStatusIn(BaseModel):
     No transition graph is enforced (spec §6.2 v1).
     """
     status: Literal["CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"]
+    note: str | None = None
 
 
 class PatchLifecycleIn(BaseModel):
