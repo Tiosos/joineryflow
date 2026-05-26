@@ -7,7 +7,7 @@ import type { Me } from "@/lib/session";
 import { AvailabilityDrawer } from "@/components/procurement/AvailabilityDrawer";
 import { TrackingMetrics } from "./TrackingMetrics";
 import { ProjectInfoBar } from "./ProjectInfoBar";
-import { ItemsTable, SUB_TABS, type SubTab } from "./ItemsTable";
+import { ItemsTable } from "./ItemsTable";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { ProjectDetailModal } from "./ProjectDetailModal";
 import { StatusPopup } from "./StatusPopup";
@@ -38,7 +38,6 @@ export function TrackingClient({
   const router = useRouter();
   const sp = useSearchParams();
 
-  const [subTab, setSubTab] = useState<SubTab>("DATE");
   const [quick, setQuick] = useState<QuickFilter>(null);
   const [cutlistQuery, setCutlistQuery] = useState("");
   const [freeQuery, setFreeQuery] = useState("");
@@ -145,26 +144,8 @@ export function TrackingClient({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 border-b border-h-line">
-        {SUB_TABS.map((st) => (
-          <button
-            key={st}
-            type="button"
-            onClick={() => setSubTab(st)}
-            className={`-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition ${
-              st === subTab
-                ? "border-h-accent text-h-ink"
-                : "border-transparent text-h-muted hover:text-h-ink"
-            }`}
-          >
-            {st}
-          </button>
-        ))}
-      </div>
-
       <ItemsTable
         items={visibleItems}
-        subTab={subTab}
         cutlistQuery={cutlistQuery}
         freeQuery={freeQuery}
         onOpenItem={(id) => setItemModalId(id)}
@@ -190,7 +171,7 @@ export function TrackingClient({
           <span className="font-mono">Total rows: {visibleItems.length}</span>
         ) : null}
         <span className="ml-auto opacity-70">
-          Click a CUTLIST number for a read-only modal, or open the full editor at <code>/items/[id]</code>.
+          Click a CUTLIST number to open the full item editor. Click ▶ for a quick preview modal.
         </span>
       </div>
 

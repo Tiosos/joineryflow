@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
 
 export type SubTab = "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC";
@@ -70,7 +71,6 @@ const EMPTY_FILTERS: FilterState = {
 
 interface Props {
   items: TrackingItemRow[];
-  subTab: SubTab;
   cutlistQuery: string;
   freeQuery: string;
   onOpenItem: (id: number) => void;
@@ -106,10 +106,19 @@ function dateCellColor(dueIso: string | null, doneIso: string | null, todayIso: 
   return "text-h-muted";
 }
 
-export function ItemsTable({ items, subTab, cutlistQuery, freeQuery, onOpenItem, onOpenStatus }: Props) {
+export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenStatus }: Props) {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
   const [sortAsc, setSortAsc] = useState(true);
+  const [subTab, setSubTab] = useState<SubTab>("DATE");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const savedScrollLeft = useRef(0);
+
+  useLayoutEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = savedScrollLeft.current;
+    }
+  }, [subTab]);
 
   const levels  = useMemo(() => uniqStrings(items.map((i) => i.level)), [items]);
   const rooms   = useMemo(() => uniqStrings(items.map((i) => i.room_no)), [items]);
@@ -167,9 +176,35 @@ export function ItemsTable({ items, subTab, cutlistQuery, freeQuery, onOpenItem,
   const today = todayISO();
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-h-line bg-h-surface">
+    <div
+      ref={containerRef}
+      className="overflow-x-auto rounded-lg border border-h-line bg-h-surface"
+      onScroll={() => { savedScrollLeft.current = containerRef.current?.scrollLeft ?? 0; }}
+    >
       <table className="w-full text-xs">
         <thead className="bg-h-bg text-h-muted">
+          <tr>
+            <td colSpan={15} />
+            <th
+              colSpan={(isDate ? 10 : subCols!.length) + 1}
+              className="px-2 py-1 text-right"
+            >
+              {SUB_TABS.map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setSubTab(st)}
+                  className={`mx-0.5 rounded px-2.5 py-1 text-[11px] font-medium transition ${
+                    st === subTab
+                      ? "bg-h-accent text-white"
+                      : "text-h-muted hover:text-h-ink"
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </th>
+          </tr>
           <tr>
             <Th className="w-6" />
             <Th className="w-6" />
@@ -313,13 +348,9 @@ function Row({
         </button>
       </td>
       <td className="px-2 py-1 font-mono text-h-ink">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="hover:text-h-accent hover:underline"
-        >
+        <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
           {row.item_number ?? row.id}
-        </button>
+        </Link>
       </td>
       <td className="px-2 py-1 text-h-ink">{row.stage ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.zone ?? "—"}</td>
