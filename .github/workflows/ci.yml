@@ -31,6 +31,13 @@ jobs:
       - name: Apply migrations (alembic upgrade head)
         run: docker compose exec -T -w /db api alembic upgrade head
 
+      - name: Seed reference + demo data
+        # Populates the global lookup tables (stages, status_options,
+        # status_symbols) that the suite's item inserts FK against. Tests only
+        # truncate workspace-scoped tables, so these survive the run. Mirrors
+        # the documented dev loop: migrate -> seed -> test.
+        run: docker compose exec -T api python -m seed.hartwood_joinery
+
       - name: Run pytest
         run: docker compose exec -T api pytest -q
 
