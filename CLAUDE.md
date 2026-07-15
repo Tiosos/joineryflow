@@ -168,6 +168,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
+- `docs/superpowers/plans/2026-05-09-cutplan-optimiser-stub.md` — 10-task implementation plan for sub-project #9 (CutPlan optimiser stub; migration renumbered 0021→0024 after #9a).
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -780,3 +781,56 @@ surfaces:
   triangle opens `ItemDetailModal`. Status change accepts an optional
   note. The `/list` route is now wired (project switcher + search +
   the shared `ItemsTable`).
+
+## CutPlan Optimiser stub (sub-project #9)
+
+- **Deliberately naive** single-sheet packer. Ships the wire contract +
+  UI flow now; the real bin-packing engine slots in behind the same
+  endpoint later. Spec source: cabinet-vision design §8.1.
+- Migration **0024 `grain_locked`** adds `grain_locked boolean NOT NULL
+  DEFAULT false` to `board_materials` + `benchtop_materials`. Grain-locked
+  parts are never rotated by the optimiser. (This is the migration the
+  `2026-05-09` plan originally reserved as 0021 — renumbered after #9a
+  consumed 0021–0023.)
+- **`apps/api/app/cut_floor/optimiser.py`** — pure stdlib module
+  (`PackPart` / `PlacedSlot` / `Skip` / `PackResult` dataclasses +
+  `pack_naive`). Shelf next-fit-decreasing: sort by longest edge desc,
+  fill a row L→R, wrap to a new shelf when the row is full, skip parts
+  that don't fit (`too_large` if bigger than the sheet in every legal
+  orientation, else `no_room`). No DB, no Pydantic — unit-tested against
+  deterministic inputs.
+- **`POST /projects/{pid}/optimise`** (gated `("cut_floor","write")`) —
+  pulls candidate parts (`candidate_parts_for_optimise`: parts →
+  modules → items → project, with real dims, joined to their board
+  material's `grain_locked`), expands each by `qty`, packs one sheet,
+  and returns `OptimiseOut { proposal: CutPlanIn, summary }`. **Pure
+  function: no DB writes, no audit, no commit.** The user reviews the
+  proposal then forwards it to the existing `POST /projects/{pid}/cut-plans`
+  (#7c), which owns persistence + the `cut_plan.create` audit.
+- Sheet stock is a **per-optimisation override** — `sheet_len_mm`,
+  `sheet_wid_mm`, `kerf_mm` come in the request body (no
+  `board_inventory` table in v1).
+- `grain_locked` round-trips through the catalog: added to the `board` +
+  `benchtop` REGISTRY select/insert columns in
+  `apps/api/app/catalog/queries.py` and to `PatchBoardIn` / `PatchBenchtopIn`.
+- Web:
+  - Shared **`SheetCanvas.tsx`** (`cut-floor/_components/`) — the SVG
+    sheet renderer extracted from `BoardTab.tsx`; both surfaces import it.
+    Known sheet dims pass `extent`; the Board tab infers extent from slots.
+  - **`OptimiseDialog.tsx`** — two-phase: a form (project · plan name ·
+    material SKU · sheet dims · kerf) → a preview (summary + one
+    `SheetCanvas` per sheet + skipped-parts list) → **Save as plan**
+    forwards the proposal to `createCutPlan`. Opened by an **Optimise…**
+    button on the `/cut-floor` header (mutator roles only).
+  - `/catalog?tab=board|benchtop` grid gains a **Grain** checkbox column
+    that PATCHes `grain_locked`.
+- Seed (`make seed`): grain-locks the walnut veneer demo board
+  (`BM-103`) on ALF-001. Idempotent (an `UPDATE` after the DO-NOTHING
+  insert).
+- Out of scope (deferred): real bin-packing (FFD/MaxRects behind the same
+  `pack_naive` signature), multi-sheet packing (v1 skips overflow with
+  `no_room`), `board_inventory` stock tracking, non-rectangular parts,
+  grain-direction SVG visualisation, saving draft proposals, material-SKU
+  typeahead + per-item `include_only_item_ids` selector in the dialog
+  (the API accepts `include_only_item_ids`; the v1 dialog always sends all
+  parts).

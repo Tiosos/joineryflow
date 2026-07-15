@@ -819,6 +819,13 @@ def main() -> None:
             """), {"w": workspace_id, "code": code, "sku": sku, "desc": desc,
                    "syn": syns, "sup": supp, "lt": lt})
 
+        # Walnut veneer has visible directional grain → lock rotation so the
+        # optimiser (#9) never flips it. Idempotent (INSERT above is DO NOTHING).
+        s.execute(text("""
+            UPDATE board_materials SET grain_locked = true
+             WHERE workspace_id = :w AND code = 'BM-103'
+        """), {"w": workspace_id})
+
         # 2 cv_material_mapping demo rows (drafter creator).
         _drafter_id = s.execute(text(
             "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'drafter' LIMIT 1"

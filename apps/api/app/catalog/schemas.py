@@ -71,6 +71,7 @@ class PatchBaseIn(BaseModel):
 
 class PatchBoardIn(PatchBaseIn):
     code: str | None = Field(default=None, max_length=32)
+    grain_locked: bool | None = None
 
 
 class PatchHardwareIn(PatchBaseIn):
@@ -83,6 +84,7 @@ class PatchCustomMadeIn(PatchBaseIn):
 
 class PatchBenchtopIn(PatchBaseIn):
     slab_id: str | None = Field(default=None, max_length=64)
+    grain_locked: bool | None = None
 
 
 class PatchApplianceIn(PatchBaseIn):

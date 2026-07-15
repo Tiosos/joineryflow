@@ -103,3 +103,34 @@ export interface ReorderIn {
   scheduled_for: string;
   ordered_ids: number[];
 }
+
+// --- Optimiser (sub-project #9 stub) ---------------------------------------
+
+export interface OptimiseIn {
+  name: string;
+  material_sku: string;
+  sheet_len_mm: number;
+  sheet_wid_mm: number;
+  kerf_mm?: number;
+  include_only_item_ids?: number[] | null;
+}
+
+export interface OptimiseSkip {
+  label: string;
+  reason: string;
+  part_id: number | null;
+}
+
+export interface OptimiseSummary {
+  total_parts: number;
+  placed: number;
+  skipped: number;
+  skipped_reasons: OptimiseSkip[];
+  sheets_used: number;
+  utilization_pct: number;
+}
+
+export interface OptimiseOut {
+  proposal: CutPlanIn;
+  summary: OptimiseSummary;
+}

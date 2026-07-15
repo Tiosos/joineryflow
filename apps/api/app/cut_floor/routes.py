@@ -20,6 +20,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from . import optimiser as opt
 from . import queries as q
 from .schemas import (
     CutPlanIn,
@@ -28,7 +29,12 @@ from .schemas import (
     CutScheduleIn,
     CutSchedulePatchIn,
     CutScheduleOut,
+    CutSheetIn,
     ItemCutPlanOut,
+    OptimiseIn,
+    OptimiseOut,
+    OptimiseSummary,
+    PartSlotIn,
     ReorderIn,
 )
 
@@ -162,6 +168,88 @@ def delete_cut_plan_route(
         payload={"plan_id": plan_id},
     )
     db.commit()
+
+
+# ============================================================================
+# Optimiser (sub-project #9 stub)
+# ============================================================================
+
+@router.post("/projects/{pid}/optimise")
+def optimise_project_route(
+    pid: int,
+    body: OptimiseIn,
+    user: AuthUser = Depends(require_permission("cut_floor", "write")),
+    db: Session = Depends(get_db),
+) -> OptimiseOut:
+    """Pure-function nest proposal — **no DB writes, no audit**. Returns a
+    `CutPlanIn`-shaped `proposal` the user reviews then forwards to
+    POST /projects/{pid}/cut-plans (which owns persistence + the
+    `cut_plan.create` audit)."""
+    if not q.project_in_workspace(
+        db, project_id=pid, workspace_id=user.workspace_id
+    ):
+        raise HTTPException(404, "project not found")
+
+    rows = q.candidate_parts_for_optimise(
+        db,
+        workspace_id=user.workspace_id,
+        project_id=pid,
+        item_ids=body.include_only_item_ids,
+    )
+
+    # Expand each part row into `qty` unit rectangles; grain-locked board
+    # materials forbid rotation.
+    parts: list[opt.PackPart] = []
+    for r in rows:
+        qty = int(r["qty"] or 1)
+        label = r["part_name"] or f"part {r['part_id']}"
+        for _ in range(max(qty, 1)):
+            parts.append(
+                opt.PackPart(
+                    w=float(r["len_mm"]),
+                    h=float(r["wid_mm"]),
+                    label=label,
+                    part_id=r["part_id"],
+                    allow_rotation=not r["grain_locked"],
+                )
+            )
+
+    packed = opt.pack_naive(
+        parts,
+        sheet_len=body.sheet_len_mm,
+        sheet_wid=body.sheet_wid_mm,
+        kerf=body.kerf_mm,
+    )
+
+    proposal = CutPlanIn(
+        name=body.name,
+        notes=f"optimiser stub · {body.material_sku}",
+        sheets=[
+            CutSheetIn(
+                sheet_no=1,
+                material_sku=body.material_sku,
+                slots=[
+                    PartSlotIn(
+                        x=s.x, y=s.y, w=s.w, h=s.h,
+                        label=s.label, part_id=s.part_id,
+                    )
+                    for s in packed.placed
+                ],
+            )
+        ],
+    )
+    summary = OptimiseSummary(
+        total_parts=len(parts),
+        placed=len(packed.placed),
+        skipped=len(packed.skipped),
+        skipped_reasons=[
+            {"label": s.label, "reason": s.reason, "part_id": s.part_id}
+            for s in packed.skipped
+        ],
+        sheets_used=1 if packed.placed else 0,
+        utilization_pct=packed.utilization_pct,
+    )
+    return OptimiseOut(proposal=proposal, summary=summary)
 
 
 # ============================================================================

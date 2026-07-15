@@ -24,8 +24,9 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
         "board_materials",
         "material_id",
-        f"material_id, code, description, sku, workspace_id, {ENRICHMENT_SELECT}",
-        ("code", "description", "sku", *ENRICHMENT_INSERT),
+        f"material_id, code, description, sku, grain_locked, workspace_id, "
+        f"{ENRICHMENT_SELECT}",
+        ("code", "description", "sku", "grain_locked", *ENRICHMENT_INSERT),
     ),
     "hardware": (
         "hardware_materials",
@@ -42,8 +43,9 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "benchtop": (
         "benchtop_materials",
         "material_id",
-        f"material_id, slab_id, description, sku, workspace_id, {ENRICHMENT_SELECT}",
-        ("slab_id", "description", "sku", *ENRICHMENT_INSERT),
+        f"material_id, slab_id, description, sku, grain_locked, workspace_id, "
+        f"{ENRICHMENT_SELECT}",
+        ("slab_id", "description", "sku", "grain_locked", *ENRICHMENT_INSERT),
     ),
     "appliance": (
         "appliances",

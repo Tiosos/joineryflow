@@ -15,6 +15,7 @@ import type {
   CutScheduleOut,
   CutScheduleStatus,
 } from "@/lib/cut-floor-types";
+import { OptimiseDialog } from "./OptimiseDialog";
 
 interface Project {
   id: number;
@@ -78,6 +79,7 @@ export function CutFloorClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [optimiseOpen, setOptimiseOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   async function refresh() {
@@ -214,7 +216,16 @@ export function CutFloorClient({
           ))}
         </select>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex gap-2">
+          {mutator && (
+            <button
+              type="button"
+              onClick={() => setOptimiseOpen(true)}
+              className="rounded border border-h-line px-3 py-1 text-sm text-h-ink hover:bg-h-bg"
+            >
+              Optimise…
+            </button>
+          )}
           {mutator && (
             <button
               type="button"
@@ -316,6 +327,18 @@ export function CutFloorClient({
           onClose={() => setAddOpen(false)}
           onCreated={async () => {
             setAddOpen(false);
+            await refresh();
+          }}
+        />
+      )}
+
+      {optimiseOpen && (
+        <OptimiseDialog
+          projects={projects}
+          defaultProjectId={projectId}
+          onClose={() => setOptimiseOpen(false)}
+          onSaved={async () => {
+            setOptimiseOpen(false);
             await refresh();
           }}
         />
