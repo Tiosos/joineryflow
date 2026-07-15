@@ -4,6 +4,49 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
+# Reference/lookup rows that many tables FK against (items.status ->
+# status_options, item_stages.stage_key -> stages). Several test files seed
+# these per-test AND truncate them in teardown, which leaves them empty for any
+# later file that assumes they are still present (e.g. test_shop_floor_routes,
+# test_optimiser). This autouse fixture re-asserts them before every test —
+# idempotent (ON CONFLICT DO NOTHING) — so the suite is order-independent for
+# reference data and never depends on `make seed` having run.
+_REF_STATUS_OPTIONS = [
+    ("CLEAR", 1), ("VOID", 2), ("NOTE!", 3),
+    ("LIVE", 4), ("APPROVED", 5), ("HOLD", 6),
+]
+_REF_STAGES = [
+    ("REQ", "Required", 1), ("SM", "Shop Material", 2), ("LISTED", "Listed", 3),
+    ("DOWN", "Down", 4), ("CNC", "CNC", 5), ("EDGED", "Edged", 6),
+    ("PAINTED", "Painted", 7), ("MADE", "Made", 8), ("DEL", "Delivered", 9),
+    ("INST", "Installed", 10),
+]
+
+
+@pytest.fixture(autouse=True)
+def _ensure_reference_data():
+    from app.db import SessionLocal
+
+    s = SessionLocal()
+    try:
+        for key, order in _REF_STATUS_OPTIONS:
+            s.execute(
+                text("INSERT INTO status_options(status_key, sort_order)"
+                     " VALUES(:k, :o) ON CONFLICT DO NOTHING"),
+                {"k": key, "o": order},
+            )
+        for key, label, order in _REF_STAGES:
+            s.execute(
+                text("INSERT INTO stages(stage_key, label, sort_order)"
+                     " VALUES(:k, :l, :o) ON CONFLICT DO NOTHING"),
+                {"k": key, "l": label, "o": order},
+            )
+        s.commit()
+    finally:
+        s.close()
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _fresh_pool_per_test():
     """Dispose the API's SQLAlchemy connection pool around every test.
