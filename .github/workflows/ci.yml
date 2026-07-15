@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-tests:
+    name: API tests (pytest + migrations)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from example
+        run: cp .env.example .env
+
+      - name: Build & start db + api
+        run: docker compose up -d --build db api
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T db pg_isready -U jf -d joineryflow; then
+              echo "postgres ready"; exit 0
+            fi
+            echo "waiting for postgres ($i)…"; sleep 2
+          done
+          echo "postgres did not become ready"; docker compose logs db; exit 1
+
+      - name: Apply migrations (alembic upgrade head)
+        run: docker compose exec -T -w /db api alembic upgrade head
+
+      - name: Run pytest
+        run: docker compose exec -T api pytest -q
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+  web-typecheck:
+    name: Web typecheck (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install deps
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate next-env.d.ts
+        working-directory: apps/web
+        run: |
+          test -f next-env.d.ts || printf '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n' > next-env.d.ts
+
+      - name: Typecheck
+        working-directory: apps/web
+        run: pnpm exec tsc --noEmit
