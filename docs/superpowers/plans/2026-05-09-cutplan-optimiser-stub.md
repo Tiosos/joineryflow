@@ -1,12 +1,18 @@
 # Implementation Plan — CutPlan Optimiser (stub) — sub-project #9
 
-**Branch base:** `main` (HEAD `5e20813`).
-**Migration introduced:** `0021_grain_locked.py`.
+> **Rebased 2026-07-15.** This plan was written on top of `5e20813` and
+> reserved migration `0021_grain_locked`, but sub-project **#9a
+> (Estimating)** shipped first and consumed slots **0021–0023**. The
+> migration is renumbered **`0024_grain_locked`** (base `0023`)
+> throughout; nothing else in the design changes. #9 is still unbuilt.
+
+**Branch base:** current `main` head (migration head `0023`, after #9a).
+**Migration introduced:** `0024_grain_locked.py`.
 **Spec source:** §8.1 of `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` ("Bin-packing engine API contract — RESOLVED. Future optimizer ships as a separate POST /projects/{pid}/optimise endpoint that *returns* a CutPlanIn for the user to confirm-then-commit.")
 
 **Scope shape (per user decisions):**
 - **Algorithm: stub only.** A naive single-sheet grid placement that fits *some* parts and emits a `CutPlanIn` proposal. The wire contract + UI flow ship now; the real bin-packing engine slots in behind the same endpoint in a future pass.
-- **Rotation: per-material `grain_locked` toggle.** Migration 0021 adds `grain_locked boolean NOT NULL DEFAULT false` to `board_materials` and `benchtop_materials`. Optimiser may rotate non-grain-locked parts.
+- **Rotation: per-material `grain_locked` toggle.** Migration 0024 adds `grain_locked boolean NOT NULL DEFAULT false` to `board_materials` and `benchtop_materials`. Optimiser may rotate non-grain-locked parts.
 - **UI entry: "Optimise" button on `/cut-floor`** next to "Add to schedule". Opens a dialog → user picks project + sheet dims → server returns a proposal → user reviews + clicks "Save as plan" → reuses the existing `POST /projects/{pid}/cut-plans` endpoint.
 - **Sheet stock: per-optimisation override.** User enters `sheet_len_mm` and `sheet_wid_mm` at optimisation time. Defaults seeded from the picked material's catalog row when present.
 
@@ -40,7 +46,7 @@ The optimiser **never** mutates state. No new audit events are added — the exi
 
 ### Backend (5 tasks)
 
-1. **Migration `0021_grain_locked.py`** — add `grain_locked boolean NOT NULL DEFAULT false` to `board_materials` and `benchtop_materials`. No index needed (low-cardinality flag, only ever read by optimiser).
+1. **Migration `0024_grain_locked.py`** (base `0023`) — add `grain_locked boolean NOT NULL DEFAULT false` to `board_materials` and `benchtop_materials`. No index needed (low-cardinality flag, only ever read by optimiser).
 2. **`apps/api/app/cut_floor/optimiser.py`** — pure helper module. Functions:
    - `pack_naive(parts, sheet_len, sheet_wid, kerf, allow_rotation_per_part) -> PackResult` — places parts in a single sheet using a left-to-right, top-to-bottom shelf walk. Skips parts that don't fit. Returns `(placed_slots, skipped, utilization_pct)`. **Deliberately simple** — single sheet only, no bin overflow, no global optimisation. The real engine replaces this function.
    - Pure-Python, no deps. Tested with unit tests against deterministic inputs.
@@ -98,7 +104,7 @@ This is deliberately mediocre. Acceptance criterion is **wire-shape correctness*
 ## 3. Schema additions
 
 ```sql
--- Migration 0021_grain_locked.py
+-- Migration 0024_grain_locked.py
 ALTER TABLE board_materials
     ADD COLUMN grain_locked boolean NOT NULL DEFAULT false;
 ALTER TABLE benchtop_materials
@@ -123,7 +129,7 @@ Pydantic `BoardOut` / `BenchtopOut` gain `grain_locked: bool`. Patch schemas acc
 
 ## 5. Exit criteria
 
-- 0021 applies cleanly on top of 0020. Downgrade is the no-op pattern.
+- 0024 applies cleanly on top of 0023. Downgrade is the no-op pattern.
 - ≥10 pytest cases pass; existing 8 sub-projects' targeted tests stay green.
 - `/cut-floor` shows the new "Optimise" button. Clicking it opens the dialog. Submitting calls `POST /projects/{pid}/optimise`, displays the proposal SVG, and "Save as plan" successfully persists via the existing create-plan flow.
 - Catalog edit on `/catalog?tab=board` exposes the `grain_locked` checkbox; round-trips through PATCH.

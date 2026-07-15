@@ -656,3 +656,127 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   worker self-assignment, quality / rework loop, cross-project
   worker view, per-worker login (kiosk URL = pseudo-auth), PM
   "today's completions" widget on `/tracking`.
+
+## Estimating (sub-project #9a)
+
+> **No committed spec/plan doc.** #9a was built directly (commit
+> `a7b8d3d` + follow-ups) without a `docs/superpowers/specs|plans`
+> file — this section is the authoritative reference. (The
+> `2026-05-09-cutplan-optimiser-stub.md` plan is for #9, a *different*,
+> not-yet-built sub-project; it was leapfrogged when migration slot
+> 0021 went to estimating instead.)
+
+- New backend module `apps/api/app/estimating/` (`schemas.py`,
+  `queries.py`, `routes.py`, `pdf.py` + `templates/quote.html`).
+  Mounted at top-level paths from `main.py` (no path prefix — routes
+  live at `/customers`, `/estimates`, `/revisions/{rid}/…`,
+  `/lines/{lid}/…`, `/it/labour-rates`). All gated by
+  `require_permission("estimating", action)` except `/it/labour-rates`
+  (gated `("it_management", …)` — admin-only).
+- **New 7th auth role `estimator`** (migration 0021 widens the
+  `app_user.auth_role` CHECK). RBAC matrix (`apps/api/app/auth/permissions.py`):
+  estimator gets `{read,write,approve,comment}` on `estimating`, plus
+  read/comment across the other modules; `it_management` empty. All
+  other roles get `estimating` read-only except drafter (`read,comment`).
+  This is the first role added since drafter — the matrix now has
+  **7 roles × 11 modules** (`estimating` is the 10th operational
+  module, `it_management` the admin-only 11th).
+- **New `estimating` IA module** in `_ALL_MODULES` (between
+  `shop_floor` and `it_management`).
+- Migrations:
+  - **0021 `estimating_core`** — widens auth_role CHECK; creates
+    `customer`, `estimate`, `estimate_revision`, `estimate_line`,
+    `estimate_line_part` / `_hardware` / `_labour`,
+    `workspace_labour_rate`; adds `projects.customer_id` +
+    `projects.estimate_revision_id` (both nullable FKs, set on
+    Convert). **Downgrade is a no-op** (irreversible; recover from
+    0001–0020).
+  - **0022 `estimate_expires_at`** — nullable `estimate_revision.expires_at`
+    date (quote validity window).
+  - **0023 `team_status`** — adds `app_user.work_status`
+    (`IN|ON_SITE|SHOP|WFH|OFF`, nullable) + `location_label`. Backs the
+    dashboard Team card, not estimating per se.
+- **Data model.** `estimate` is the root (one per quoted job);
+  `estimate_revision` is revisioned (`rev_no`, immutable once it leaves
+  `draft`). Cost columns on lines/parts/hardware/labour are
+  **snapshotted** (`*_snapshot`, `cost_extended` GENERATED) so a locked
+  quote's numbers never drift when the live catalog changes; the live
+  `material_id` ref is retained alongside for traceability. Partial
+  unique index `uniq_estimate_draft` enforces at most one `draft`
+  revision per estimate. `estimate_line_labour` snapshots the
+  per-stage `workspace_labour_rate` on insert (UNIQUE on
+  `(line_id, stage_key)`).
+  - **Equipment hire is excluded** from `estimate_line_hardware`
+    (`material_type IN ('HARDWARE','APPLIANCE')` only) — hire rows are
+    project-scoped (`project_id` FK on the catalog row) and can't be
+    referenced from a pre-project quote.
+  - `estimate_line_part.material_type IN ('BOARD','CUSTOM','BENCHTOP')`.
+- **Revision workflow (binding).** `_LEGAL_TRANSITIONS` in `queries.py`:
+  `draft → sent|withdrawn`; `sent → accepted|rejected|expired|withdrawn`;
+  `accepted/rejected/expired/withdrawn` are terminal. Any illegal
+  transition → `409 {code:"BAD_TRANSITION", from, to}`. `revise` clones
+  the current revision into a new `draft` (`rev_no+1`). `approve` action
+  gates lock-and-send + Convert.
+- **Convert-to-Project.** `POST /revisions/{rid}/convert` requires
+  status `accepted` (`409 BAD_STATUS` otherwise), rejects
+  already-converted (`409 ALREADY_CONVERTED` with the existing
+  `project_id`) and archived-customer, re-resolves each part snapshot,
+  and creates a project wired to `projects.estimate_revision_id`.
+- **~30 endpoints** — Customers CRUD + archive; estimates list/detail/
+  create/patch/revise; revision detail + patch + the 6 status
+  transitions (`send/accept/reject/expire/withdraw/convert`); line
+  CRUD + reorder; per-line part / hardware / labour add/patch/delete;
+  `GET /it/labour-rates` + `PATCH /it/labour-rates`;
+  `GET /revisions/{rid}/quote.pdf` (WeasyPrint, `inline` with RFC 8187
+  dual filename).
+- Audit hooks: `customer.create` (+ patch/archive via queries),
+  `estimate.{create|update|revise|line_add|line_edit|line_delete|
+  line_reorder|part_add|part_edit|part_remove|hardware_add|hardware_edit|
+  hardware_remove|labour_set|labour_clear|send|accept|reject|expire|
+  withdraw|convert|print}`.
+- Web routes:
+  - `/estimating?subtab=active|archive&q=&customer=&status=` — list +
+    `/estimating/[eid]` detail editor (`EstimatingClient` /
+    `EstimateDetailClient`).
+  - `/customers?q=&include_archived=` — customer registry
+    (`/customers/[cid]` detail).
+  - Both are new **secondary** TabStrip entries (see chrome changes
+    below), not top-6 IA tabs.
+- Seed (`make seed`): adds a 9th staff user
+  (`kai.ngata@hartwood.test`, role `estimator`), 10 `workspace_labour_rate`
+  rows (one per stage), 2 customers, and 3 demo `EST-2026-*` estimates.
+  Idempotent — wipes `EST-2026-*` for the workspace before reinserting.
+- Out of scope (deferred): PO/supplier-order generation from an accepted
+  quote (Convert stops at project creation), multi-currency, client
+  e-signature / portal, estimate templates, per-line margin overrides
+  beyond `unit_sell_override`, revision diff UI.
+
+### Cross-cutting changes that shipped with #9a
+
+These landed in the same batch (commits `a7b8d3d`, `620930e`,
+`b910ab1`) and touch shared chrome — note them before editing those
+surfaces:
+
+- **`/home` → `/dashboard` rename.** `/home` now just
+  `redirect("/dashboard")`. The real landing page is `/dashboard` (Team
+  card + live workspace stats).
+- **Public stats endpoint** `GET /public/stats` (`app/public/routes.py`,
+  no auth) feeds the dashboard + the login page's stats block (no more
+  hardcoded numbers).
+- **Team-status feature.** `PATCH /me/status` (`work_status` +
+  `location_label`, audit `user.status`) and
+  `GET /workspace/team` (`team_router`, prefix `/workspace`) power the
+  dashboard Team card.
+- **TabStrip secondary row.** Beyond the fixed 6 top tabs, a secondary
+  strip now carries `Catalog · Shop Floor · Cut Floor · Estimating ·
+  Customers` (`apps/web/components/chrome/TabStrip.tsx`).
+- **Design tokens expanded** to the full hi-fi palette
+  (`ink2/3/4`, `surfaceAlt`, `accentSoft`, `info`) in `globals.css` —
+  the previously-deferred richer palette from `legacy/` is now wired.
+- **Tracking overhaul.** `TrackingClient` refactored into quick-filter
+  chips + sub-tabs + search; new `ItemsTable`, `ItemDetailModal`,
+  `ProjectDetailModal`, `StatusPopup`, `ProjectInfoBar`,
+  `TrackingMetrics`. CUTLIST number links to `/items/[id]`; the ▶
+  triangle opens `ItemDetailModal`. Status change accepts an optional
+  note. The `/list` route is now wired (project switcher + search +
+  the shared `ItemsTable`).
