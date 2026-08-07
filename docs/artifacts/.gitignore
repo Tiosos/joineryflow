@@ -1,2 +1,4 @@
-docs/artifacts/*.html
-!docs/artifacts/*.src.html
+# Built artifact pages carry ~550 KB of inlined base64 font data.
+# Regenerate with: python3 docs/artifacts/build.py <name>
+*.html
+!*.src.html
