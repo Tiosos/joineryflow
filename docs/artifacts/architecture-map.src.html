@@ -1,0 +1,1158 @@
+<title>JoineryFlow — Architecture Map</title>
+
+<style>
+@font-face{font-family:"JF Sans";src:url("__INTER_REG__") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"JF Sans";src:url("__INTER_BOLD__") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"JF Mono";src:url("__MONO_REG__") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"JF Mono";src:url("__MONO_BOLD__") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+
+/* ── Tokens: the project's own H palette (apps/web/app/globals.css) ─────── */
+:root{
+  --bg:#fbfaf7; --surface:#ffffff; --alt:#f4f2ed; --line:#e4e0d8;
+  --ink:#1b1a17; --ink2:#5a574f; --ink3:#8f8b80; --ink4:#c1beb4;
+  --accent:#c96442; --accent-soft:#f3e0d6;
+  --good:#3f7d48; --warn:#c48a2e; --bad:#b4443d; --info:#3d6b8a;
+  --grid:rgba(27,26,23,.05);
+  --sans:"JF Sans",system-ui,sans-serif;
+  --mono:"JF Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#14120e; --surface:#1c1a15; --alt:#24211a; --line:#36322a;
+    --ink:#f3f0e8; --ink2:#b3ad9f; --ink3:#857f72; --ink4:#575248;
+    --accent:#e08663; --accent-soft:#3a251c;
+    --good:#6fa878; --warn:#d9a94e; --bad:#d97169; --info:#6b9dbf;
+    --grid:rgba(243,240,232,.05);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14120e; --surface:#1c1a15; --alt:#24211a; --line:#36322a;
+  --ink:#f3f0e8; --ink2:#b3ad9f; --ink3:#857f72; --ink4:#575248;
+  --accent:#e08663; --accent-soft:#3a251c;
+  --good:#6fa878; --warn:#d9a94e; --bad:#d97169; --info:#6b9dbf;
+  --grid:rgba(243,240,232,.05);
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --surface:#ffffff; --alt:#f4f2ed; --line:#e4e0d8;
+  --ink:#1b1a17; --ink2:#5a574f; --ink3:#8f8b80; --ink4:#c1beb4;
+  --accent:#c96442; --accent-soft:#f3e0d6;
+  --good:#3f7d48; --warn:#c48a2e; --bad:#b4443d; --info:#3d6b8a;
+  --grid:rgba(27,26,23,.05);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px}
+p{margin:0 0 .9em}
+a{color:var(--accent)}
+:where(a,button,summary,[tabindex]):focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+}
+code,.m{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+code{font-size:.86em;background:var(--alt);border:1px solid var(--line);
+  padding:.08em .34em;border-radius:3px;white-space:nowrap}
+
+/* ── Masthead ───────────────────────────────────────────────────────────── */
+.mast{border-bottom:2px solid var(--ink);padding:56px 0 0}
+.mast-eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 18px
+}
+.mast h1{
+  font-size:clamp(40px,7vw,76px);line-height:.96;letter-spacing:-.035em;
+  font-weight:700;margin:0 0 18px;text-wrap:balance
+}
+.mast h1 em{font-style:normal;color:var(--ink3)}
+.mast-lede{max-width:60ch;color:var(--ink2);font-size:17px;margin-bottom:32px}
+.specs{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  border-top:1px solid var(--line);
+}
+.spec{padding:14px 14px 16px 0;border-right:1px solid var(--line)}
+.spec:last-child{border-right:0}
+.spec b{display:block;font-family:var(--mono);font-size:26px;font-weight:700;
+  line-height:1.1;letter-spacing:-.03em}
+.spec span{display:block;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink3);margin-top:3px}
+
+/* ── Sheet nav ──────────────────────────────────────────────────────────── */
+.nav{
+  position:sticky;top:0;z-index:20;background:var(--bg);
+  border-bottom:1px solid var(--line);margin-bottom:0;
+  display:flex;gap:0;overflow-x:auto;scrollbar-width:thin
+}
+.nav a{
+  flex:0 0 auto;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink3);text-decoration:none;
+  padding:11px 14px;border-right:1px solid var(--line);white-space:nowrap
+}
+.nav a:hover{color:var(--ink);background:var(--alt)}
+
+/* ── Sheets ─────────────────────────────────────────────────────────────── */
+.sheet{border-bottom:1px solid var(--line);padding:0 0 56px}
+.title-block{
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  border-bottom:1px solid var(--ink);padding:44px 0 10px;margin-bottom:28px
+}
+.sht-no{
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;font-weight:700;
+  color:var(--accent);flex:0 0 auto
+}
+.title-block h2{
+  font-size:clamp(23px,3vw,31px);letter-spacing:-.025em;font-weight:700;
+  margin:0;flex:1 1 auto;text-wrap:balance
+}
+.tb-meta{
+  font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink3);
+  flex:0 0 auto
+}
+.cols{display:grid;grid-template-columns:186px minmax(0,1fr);gap:40px}
+@media (max-width:800px){.cols{grid-template-columns:1fr;gap:18px}}
+.rail{
+  font-family:var(--mono);font-size:11.5px;line-height:1.65;color:var(--ink3);
+  border-top:1px solid var(--line);padding-top:12px
+}
+.rail b{display:block;color:var(--ink2);font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;font-size:10.5px;margin-bottom:6px}
+.body{min-width:0}
+.body>p:first-child{margin-top:0}
+
+/* ── Flow diagram (request path) ────────────────────────────────────────── */
+.flow{display:flex;flex-direction:column;gap:0;margin:6px 0 22px}
+.node{
+  border:1px solid var(--line);background:var(--surface);
+  padding:12px 16px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap
+}
+.node.hi{border-color:var(--accent);background:var(--accent-soft)}
+.node .n-k{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);flex:0 0 74px}
+.node.hi .n-k{color:var(--accent)}
+.node .n-t{font-weight:700;font-size:14px}
+.node .n-p{font-family:var(--mono);font-size:11.5px;color:var(--ink2);
+  overflow-wrap:anywhere}
+.hop{
+  display:flex;align-items:center;gap:10px;padding:5px 0 5px 74px;
+  font-family:var(--mono);font-size:11px;color:var(--ink3)
+}
+.hop::before{content:"";width:1px;height:20px;background:var(--ink4);
+  margin-left:8px;flex:0 0 auto}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+.scroll{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);
+  vertical-align:top}
+thead th{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3);font-weight:700;
+  background:var(--alt);position:sticky;top:0;white-space:nowrap
+}
+tbody tr:last-child td{border-bottom:0}
+td.m,th.m{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}
+.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ── Permission matrix ──────────────────────────────────────────────────── */
+.role-bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.role-chip{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink2);
+  padding:5px 10px;cursor:pointer;border-radius:2px
+}
+.role-chip:hover{border-color:var(--ink3);color:var(--ink)}
+.role-chip[aria-pressed="true"]{
+  background:var(--ink);color:var(--bg);border-color:var(--ink)
+}
+#matrix th.role{cursor:pointer;text-align:center}
+#matrix th.role:hover{color:var(--ink)}
+#matrix td.cell{text-align:center;padding:7px 8px}
+.perm{display:inline-flex;gap:2px}
+.perm i{
+  font-family:var(--mono);font-style:normal;font-size:10.5px;font-weight:700;
+  width:15px;height:15px;line-height:15px;text-align:center;border-radius:2px;
+  color:var(--ink4);background:transparent;border:1px solid transparent
+}
+.perm i.on{color:var(--surface);background:var(--ink2)}
+.perm i.on.a-write{background:var(--info)}
+.perm i.on.a-approve{background:var(--accent)}
+.perm i.on.a-comment{background:var(--ink3)}
+.perm.none i{opacity:.35}
+#matrix.focused tbody td.cell:not(.f),
+#matrix.focused thead th.role:not(.f){opacity:.24}
+#matrix thead th.role.f{color:var(--accent)}
+.legend{
+  display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;
+  font-family:var(--mono);font-size:11px;color:var(--ink3)
+}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+
+/* ── Stage chain ────────────────────────────────────────────────────────── */
+.chain-wrap{overflow-x:auto;padding-bottom:6px}
+.chain{display:flex;align-items:stretch;gap:0;min-width:min-content}
+.stage{
+  flex:0 0 auto;border:1px solid var(--line);border-right:0;
+  background:var(--surface);padding:10px 14px;min-width:86px
+}
+.stage:last-child{border-right:1px solid var(--line)}
+.stage b{
+  display:block;font-family:var(--mono);font-size:13px;font-weight:700;
+  letter-spacing:.04em
+}
+.stage span{
+  display:block;font-size:11px;color:var(--ink3);margin-top:2px;white-space:nowrap
+}
+.stage.sf{background:var(--accent-soft);border-color:var(--accent)}
+.stage.sf b{color:var(--accent)}
+.stage.off{opacity:.4}
+.toggles{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.tg{
+  font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink2);padding:5px 10px;cursor:pointer;
+  border-radius:2px
+}
+.tg[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .tg[aria-pressed="true"]{color:#14120e}
+@media (prefers-color-scheme:dark){.tg[aria-pressed="true"]{color:#14120e}}
+:root[data-theme="light"] .tg[aria-pressed="true"]{color:#fff}
+
+/* ── State machines ─────────────────────────────────────────────────────── */
+.machines{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line)}
+.machine{background:var(--surface);padding:16px 18px 18px}
+.machine h3{
+  font-size:14px;margin:0 0 3px;letter-spacing:-.01em;font-weight:700
+}
+.machine .src{font-family:var(--mono);font-size:10.5px;color:var(--ink3);
+  margin:0 0 12px;overflow-wrap:anywhere}
+.tr{display:flex;flex-direction:column;gap:5px;margin:0 0 12px}
+.tr div{font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
+.tr .st{color:var(--ink);font-weight:700}
+.tr .arw{color:var(--ink4)}
+.machine .rule{font-size:12.5px;color:var(--ink2);line-height:1.5;margin:0}
+.machine .rule b{color:var(--ink)}
+.term{color:var(--ink3)}
+
+/* ── Pins / callouts ────────────────────────────────────────────────────── */
+.pin{
+  border-left:2px solid var(--accent);background:var(--alt);
+  padding:12px 16px;margin:20px 0;font-size:13.5px;color:var(--ink2)
+}
+.pin b{color:var(--ink)}
+.warnbox{border-left-color:var(--warn)}
+
+/* ── Invariant list ─────────────────────────────────────────────────────── */
+.inv{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.inv li{border-top:1px solid var(--line);padding:14px 0;display:grid;
+  grid-template-columns:26px minmax(0,1fr);gap:14px}
+.inv li:last-child{border-bottom:1px solid var(--line)}
+.inv .no{font-family:var(--mono);font-size:11px;color:var(--accent);
+  font-weight:700;padding-top:2px}
+.inv h4{margin:0 0 4px;font-size:14.5px;letter-spacing:-.01em}
+.inv p{margin:0;font-size:13.5px;color:var(--ink2)}
+
+/* ── Module grid ────────────────────────────────────────────────────────── */
+.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line)}
+.mod{background:var(--surface);padding:12px 14px 14px}
+.mod .mp{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)}
+.mod .mm{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-top:3px;
+  overflow-wrap:anywhere}
+.mod .mc{font-family:var(--mono);font-size:10.5px;color:var(--accent);margin-top:6px;
+  letter-spacing:.06em;text-transform:uppercase}
+
+/* ── Dev loop ───────────────────────────────────────────────────────────── */
+.cmds{border:1px solid var(--line);background:var(--surface);font-size:13px}
+.cmd{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;
+  padding:10px 14px;border-bottom:1px solid var(--line)}
+.cmd:last-child{border-bottom:0}
+.cmd .c{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--accent)}
+.cmd .d{color:var(--ink2)}
+@media (max-width:560px){.cmd{grid-template-columns:1fr;gap:2px}}
+
+.foot{padding:32px 0 0;font-family:var(--mono);font-size:11px;color:var(--ink3);
+  line-height:1.7}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="mast-eyebrow">Monorepo orientation · tiosos/joineryflow</p>
+  <h1>JoineryFlow<br><em>architecture map</em></h1>
+  <p class="mast-lede">
+    A web replacement for a FileMaker-era joinery production system — from the
+    drafter who enters a cabinet to the machine operator who cuts it. Nine
+    sub-projects have shipped onto one Postgres database. This sheet set covers
+    the parts you have to know before you change anything.
+  </p>
+  <div class="specs">
+    <div class="spec"><b>23</b><span>Migrations</span></div>
+    <div class="spec"><b>183</b><span>API routes</span></div>
+    <div class="spec"><b>11</b><span>IA modules</span></div>
+    <div class="spec"><b>7</b><span>Auth roles</span></div>
+    <div class="spec"><b>437</b><span>Pytest cases</span></div>
+    <div class="spec"><b>12</b><span>E2E specs</span></div>
+  </div>
+</header>
+
+<nav class="nav" aria-label="Sheet index">
+  <a href="#path">01 Request path</a>
+  <a href="#ledger">02 Sub-projects</a>
+  <a href="#perms">03 Permissions</a>
+  <a href="#lifecycle">04 Lifecycle</a>
+  <a href="#machines">05 State machines</a>
+  <a href="#terms">06 Terminology</a>
+  <a href="#invariants">07 Invariants</a>
+  <a href="#where">08 Where things live</a>
+</nav>
+
+<!-- ═══ 01 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="path">
+  <div class="title-block">
+    <span class="sht-no">SHT 01</span>
+    <h2>The request path</h2>
+    <span class="tb-meta">one rule, no exceptions</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Stack</b>
+      Next.js 16.2.4<br>React 19.2.4<br>Tailwind v4<br>FastAPI<br>
+      SQLAlchemy Core<br>Pydantic v2<br>Postgres 16
+    </aside>
+    <div class="body">
+      <p>
+        Every browser request enters through Next.js and leaves through a
+        server-side proxy. <b>The browser never calls FastAPI directly</b> — it
+        has no address for it. FastAPI is reachable only as <code>api:8000</code>
+        on the Docker network, and the session cookie is <code>httpOnly</code>,
+        so a client-side fetch could not authenticate even if it found the host.
+      </p>
+
+      <div class="flow">
+        <div class="node">
+          <span class="n-k">Browser</span>
+          <span class="n-t">fetch("/api/…")</span>
+          <span class="n-p">cookie: jf_session</span>
+        </div>
+        <div class="hop">redirects to /login on any non-public path</div>
+        <div class="node">
+          <span class="n-k">Guard</span>
+          <span class="n-t">middleware.ts</span>
+          <span class="n-p">apps/web/middleware.ts · also writes x-pathname</span>
+        </div>
+        <div class="hop">same-origin, server-side</div>
+        <div class="node hi">
+          <span class="n-k">Proxy</span>
+          <span class="n-t">Route Handler</span>
+          <span class="n-p">apps/web/app/api/[...proxy]/route.ts</span>
+        </div>
+        <div class="hop">internal Docker network only</div>
+        <div class="node">
+          <span class="n-k">API</span>
+          <span class="n-t">FastAPI</span>
+          <span class="n-p">api:8000 · 21 routers mounted in app/main.py</span>
+        </div>
+        <div class="hop">SQLAlchemy Core — text() queries, no ORM models</div>
+        <div class="node">
+          <span class="n-k">Data</span>
+          <span class="n-t">Postgres 16</span>
+          <span class="n-p">Alembic 0001 → 0023</span>
+        </div>
+      </div>
+
+      <p>
+        Auth is self-built: argon2id password hashes, an opaque 32-byte session
+        token stored as its sha256, a sliding 14-day window with a hard 30-day
+        cap. The layout at <code>app/(app)/layout.tsx</code> does a server-side
+        <code>fetchMe()</code> and renders the chrome from the result, so the
+        signed-in user is known before the first paint.
+      </p>
+
+      <div class="pin">
+        <b>Workspace isolation is a query-level concern, not a middleware one.</b>
+        Every read and write gates on <code>projects.workspace_id</code>
+        directly — the legacy <code>pm_id</code> chain was retired in migration
+        0014. Cross-workspace access returns <b>404</b>, never 403: you are not
+        told the row exists.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 02 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="ledger">
+  <div class="title-block">
+    <span class="sht-no">SHT 02</span>
+    <h2>What has been built, in order</h2>
+    <span class="tb-meta">9 sub-projects</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Reading order</b>
+      Each row adds tables and routes on top of the last. Foundation is the only
+      one you must read first — the rest are largely independent.
+    </aside>
+    <div class="body">
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Sub-project</th><th class="m">Migrations</th>
+              <th>What it introduced</th><th>Surface</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Foundation</b></td><td class="m">0001–0009</td>
+              <td>Auth shell, RBAC matrix, audit log, schema, 6-tab IA</td>
+              <td class="m">/login · chrome</td>
+            </tr>
+            <tr>
+              <td><b>PM Workbench + Drafter Editor</b></td><td class="m">0008–0011</td>
+              <td>Project → Item → Module → Part, item edit log, soft-lock</td>
+              <td class="m">/home · /tracking · /items/[id]</td>
+            </tr>
+            <tr>
+              <td><b>Procurement Workbench</b></td><td class="m">0012</td>
+              <td>Batches, allocations, supplier queue, availability drawer</td>
+              <td class="m">/orderbook</td>
+            </tr>
+            <tr>
+              <td><b>Shop Drawings + uploads</b></td><td class="m">0013–0014</td>
+              <td>Content-addressed <code>file_blob</code>, revision workflow</td>
+              <td class="m">/shop-dwgs</td>
+            </tr>
+            <tr>
+              <td><b>PDF generation + attachments</b></td><td class="m">0015</td>
+              <td>WeasyPrint render, pypdf merge, 3 attachment slots per item</td>
+              <td class="m">*.pdf routes</td>
+            </tr>
+            <tr>
+              <td><b>iSample</b></td><td class="m">0016</td>
+              <td>Sample wall, approval ledger, photo swatches</td>
+              <td class="m">/isample</td>
+            </tr>
+            <tr>
+              <td><b>Catalog + CV mappings</b></td><td class="m">0017</td>
+              <td>Synonyms, soft-archive, bulk import, CV code mappings</td>
+              <td class="m">/catalog</td>
+            </tr>
+            <tr>
+              <td><b>CV import + Cut Floor</b></td><td class="m">0018–0019</td>
+              <td>3-phase CSV wizard, CutPlan nesting, daily CutSchedule</td>
+              <td class="m">/cut-floor</td>
+            </tr>
+            <tr>
+              <td><b>Shop Floor Ops</b></td><td class="m">0020</td>
+              <td>Worker assignment, stage completion log, kiosk station</td>
+              <td class="m">/shop-floor</td>
+            </tr>
+            <tr>
+              <td><b>Estimating</b></td><td class="m">0021–0023</td>
+              <td>Customers, revisioned quotes, labour rates, quote PDF</td>
+              <td class="m">/estimating · /customers</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pin warnbox">
+        <b>CLAUDE.md lags the code.</b> It documents 10 modules and 5 auth roles;
+        the matrix in <code>app/auth/permissions.py</code> now has <b>11 modules
+        and 7 roles</b> — <code>estimating</code> and the <code>estimator</code>
+        role arrived with migration 0021 and were never written back. Trust the
+        source file.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 03 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="perms">
+  <div class="title-block">
+    <span class="sht-no">SHT 03</span>
+    <h2>Who can do what</h2>
+    <span class="tb-meta">7 roles × 11 modules × 4 actions</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Source</b>
+      apps/api/app/<br>auth/permissions.py<br><br>
+      <b>Enforced by</b>
+      require_permission(<br>&nbsp;&nbsp;module, action)<br>
+      in auth/rbac.py<br><br>
+      <b>Tap a role</b>
+      to isolate its column.
+    </aside>
+    <div class="body">
+      <p>
+        Six operational job roles map onto seven auth roles: CEO → admin,
+        PM → manager, Drafter → drafter, Foreman and Machine team → editor,
+        Procurement → purchase_officer, Estimator → estimator. The matrix is
+        static and total — there is no per-record ACL anywhere in the system.
+      </p>
+
+      <div class="role-bar" id="roleBar" role="group" aria-label="Isolate a role"></div>
+
+      <div class="scroll">
+        <table id="matrix"><thead></thead><tbody></tbody></table>
+      </div>
+
+      <div class="legend">
+        <span><i class="sw" style="background:var(--ink2)"></i> R read</span>
+        <span><i class="sw" style="background:var(--info)"></i> W write</span>
+        <span><i class="sw" style="background:var(--accent)"></i> A approve</span>
+        <span><i class="sw" style="background:var(--ink3)"></i> C comment</span>
+        <span>faint = not granted</span>
+      </div>
+
+      <div class="pin">
+        <b>The elevated drafter is the pattern to know.</b> Drafter is the
+        authoritative data-entry point, so it holds full read/write/approve/comment
+        on seven modules — including <code>approve</code>, which
+        <code>editor</code> never gets, even though editor outranks drafter on
+        <code>shop_floor</code>. Drafter is deliberately held to read-and-comment
+        on <code>shop_floor</code> and <code>estimating</code>: it enters the
+        work, it does not run the floor or price it.
+      </div>
+      <p>
+        Two rules live in route handlers rather than the matrix, because they
+        depend on <em>who</em> rather than <em>what</em>: a reviewer may not
+        approve their own shop drawing or sample, and a worker may not override
+        another worker's in-progress assignment.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 04 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="lifecycle">
+  <div class="title-block">
+    <span class="sht-no">SHT 04</span>
+    <h2>The ten lifecycle stages</h2>
+    <span class="tb-meta">REQ → INST</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Source</b>
+      items/queries.py<br>VALID_STAGE_KEYS<br><br>
+      shop_floor/<br>lifecycle.py<br><br>
+      <b>Highlighted</b>
+      the five stages the shop floor actually schedules.
+    </aside>
+    <div class="body">
+      <p>
+        An item moves through ten milestones. Only the middle five happen on the
+        shop floor and can carry a worker assignment; the rest are drafting,
+        delivery and site work.
+      </p>
+
+      <div class="toggles">
+        <button class="tg" id="tgPaint" aria-pressed="false">paint_after_assembly</button>
+        <button class="tg" id="tgReq" aria-pressed="true">painting_req</button>
+      </div>
+
+      <div class="chain-wrap">
+        <div class="chain" id="chain"></div>
+      </div>
+
+      <p style="margin-top:18px">
+        Stage order is enforced on completion, not on assignment.
+        Marking <code>CNC</code> done before <code>DOWN</code> returns
+        <code>409 STAGE_OUT_OF_ORDER</code> with the missing stages listed.
+        Two item flags reshape that order: <code>paint_after_assembly</code>
+        moves PAINTED behind MADE, and <code>painting_req = false</code> drops
+        PAINTED from the prerequisites entirely.
+      </p>
+
+      <div class="pin">
+        <b>A completion can be undone.</b> The worker who marked a stage done has
+        five minutes to reverse it from their own kiosk banner; a supervisor can
+        undo at any time. <code>stage_completion_log</code> is append-only — the
+        undo writes an <code>undone_at</code> marker rather than deleting the row.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 05 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="machines">
+  <div class="title-block">
+    <span class="sht-no">SHT 05</span>
+    <h2>Six state machines</h2>
+    <span class="tb-meta">illegal transitions → 409 BAD_TRANSITION</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Shape</b>
+      Each is a dict of legal targets checked under a row lock, then written in
+      one transaction with its audit row.
+    </aside>
+    <div class="body">
+      <div class="machines">
+
+        <div class="machine">
+          <h3>Estimate revision</h3>
+          <p class="src">estimating/queries.py · _LEGAL_TRANSITIONS</p>
+          <div class="tr">
+            <div><span class="st">draft</span> <span class="arw">→</span> sent · withdrawn</div>
+            <div><span class="st">sent</span> <span class="arw">→</span> accepted · rejected · expired · withdrawn</div>
+            <div class="term">accepted / rejected / expired / withdrawn — terminal</div>
+          </div>
+          <p class="rule">Only a <b>draft</b> accepts line edits. Only an
+            <b>accepted</b> revision can convert to a project.</p>
+        </div>
+
+        <div class="machine">
+          <h3>Shop drawing revision</h3>
+          <p class="src">shop_drawings/routes.py</p>
+          <div class="tr">
+            <div><span class="st">draft</span> <span class="arw">→</span> pending</div>
+            <div><span class="st">pending</span> <span class="arw">→</span> approved · rejected</div>
+          </div>
+          <p class="rule">The reviewer <b>may not be the uploader</b>. A partial
+            unique index allows at most one in-flight revision per drawing;
+            approval repoints <code>current_revision_id</code> atomically.</p>
+        </div>
+
+        <div class="machine">
+          <h3>Sample</h3>
+          <p class="src">samples/routes.py</p>
+          <div class="tr">
+            <div><span class="st">pending</span> <span class="arw">→</span> approved · rejected</div>
+          </div>
+          <p class="rule">Rejection <b>requires a review note</b>, and reviewer ≠
+            creator. Rejected samples fall into the Archive subtab automatically;
+            there are no revisions — you create a new sample.</p>
+        </div>
+
+        <div class="machine">
+          <h3>Worker assignment</h3>
+          <p class="src">shop_floor/routes.py</p>
+          <div class="tr">
+            <div><span class="st">assigned</span> <span class="arw">→</span> in_progress · cancelled</div>
+            <div><span class="st">in_progress</span> <span class="arw">→</span> done · cancelled</div>
+            <div><span class="st">done</span> <span class="arw">→</span> in_progress <span class="term">(undo only)</span></div>
+          </div>
+          <p class="rule">A duplicate active assignment returns 409 carrying the
+            <b>existing assignment and worker</b>, so the UI can offer reassign
+            instead of asking the user to retry.</p>
+        </div>
+
+        <div class="machine">
+          <h3>Cut schedule</h3>
+          <p class="src">cut_floor/routes.py</p>
+          <div class="tr">
+            <div><span class="st">planned</span> <span class="arw">→</span> running · cancelled</div>
+            <div><span class="st">running</span> <span class="arw">→</span> done · cancelled</div>
+            <div class="term">done / cancelled — terminal</div>
+          </div>
+          <p class="rule">Delete is a <b>soft cancel</b>; cancelling twice is 409.
+            Priorities are rewritten densely as 100, 200, 300 … when a day is
+            reordered.</p>
+        </div>
+
+        <div class="machine">
+          <h3>Procurement batch</h3>
+          <p class="src">procurement_v1/batches</p>
+          <div class="tr">
+            <div class="term">status is <b>derived in SQL</b>, never persisted</div>
+          </div>
+          <p class="rule">Cancelling sets <code>cancelled_at</code>. A batch with
+            live allocations returns 409 — remove the allocations first. Allocating
+            beyond <code>qty_received</code> is also 409.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 06 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="terms">
+  <div class="title-block">
+    <span class="sht-no">SHT 06</span>
+    <h2>Terminology pins</h2>
+    <span class="tb-meta">inherited collisions — read before naming anything</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Why</b>
+      The FileMaker original used one word for four things. The port fixed the
+      columns but the vocabulary still trips people.
+    </aside>
+    <div class="body">
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Term</th><th>Means</th><th>Example</th><th>Not</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="m"><b>Stage</b></td>
+              <td>A site location or area</td>
+              <td class="m">Joinery Lab · Block B</td>
+              <td>a production milestone</td>
+            </tr>
+            <tr>
+              <td class="m"><b>Zone</b></td>
+              <td>A numeric sub-division of a Stage</td>
+              <td class="m">3</td>
+              <td>a lifecycle step</td>
+            </tr>
+            <tr>
+              <td class="m"><b>lifecycle_stage</b><br><b>stage_key</b></td>
+              <td>One of the ten production milestones</td>
+              <td class="m">CNC · PAINTED</td>
+              <td>ever called plain "stage"</td>
+            </tr>
+            <tr>
+              <td class="m"><b>Status</b></td>
+              <td>Record state</td>
+              <td class="m">CLEAR · VOID · NOTE! · LIVE · APPROVED · HOLD</td>
+              <td>lifecycle progress</td>
+            </tr>
+            <tr>
+              <td class="m"><b>Status Symbol</b></td>
+              <td>A drafter-only UI flag</td>
+              <td class="m">—</td>
+              <td>reported anywhere</td>
+            </tr>
+            <tr>
+              <td class="m"><b>CutPlan</b></td>
+              <td>Nesting output — which part sits where on a sheet</td>
+              <td class="m">"ALF-001 v1 nest"</td>
+              <td>a schedule</td>
+            </tr>
+            <tr>
+              <td class="m"><b>CutSchedule</b></td>
+              <td>The machine team's ordering for one day</td>
+              <td class="m">priority 100, 200, 300</td>
+              <td>a plan</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:18px">
+        The first three are the dangerous ones. <code>items.stage</code> is a
+        place; <code>item_stages.stage_key</code> is a milestone. They sit two
+        tables apart and read identically in a code review.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 07 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="invariants">
+  <div class="title-block">
+    <span class="sht-no">SHT 07</span>
+    <h2>Invariants you must not "fix"</h2>
+    <span class="tb-meta">each one looks like a mistake and is not</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Test</b>
+      If a change makes one of these simpler, the change is wrong. They encode
+      differences the business actually has.
+    </aside>
+    <div class="body">
+      <ol class="inv">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <h4>Six material catalog tables stay six tables</h4>
+            <p>
+              <code>board_materials</code>, <code>hardware_materials</code>,
+              <code>custom_made</code>, <code>benchtop_materials</code>,
+              <code>appliances</code>, <code>equipment_hire</code> share an
+              abstract interface but have genuinely different lifecycles. Do not
+              unify them. <code>equipment_hire</code> is the odd one: its primary
+              key is <code>hire_id</code>, and inserting one requires a
+              <code>project_id</code>.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <h4>CutPlan and CutSchedule are two entities</h4>
+            <p>
+              One is optimisation output, the other is the machine team's daily
+              ordering. Deleting a plan that any live schedule references returns
+              409 <code>PLAN_HAS_SCHEDULES</code>.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <h4>Batch → allocation → hardware line is one join</h4>
+            <p>
+              That chain exists so "is this item blocked on a material?" is
+              answerable in a single query, with no second window and no
+              N+1. Keep it joinable.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <h4><code>parts</code> only has <code>board_material_id</code></h4>
+            <p>
+              There is no generic material FK, so a CV import of a non-board code
+              stores <code>NULL</code> there. The resolution is not lost — it is
+              preserved in the commit audit payload, the import run snapshot, and
+              the part's comment as <code>[material: table#id]</code>.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">05</span>
+          <div>
+            <h4>Every mutation writes audit; item mutations write twice</h4>
+            <p>
+              <code>audit_log</code> is workspace governance,
+              <code>item_edit_log</code> is the item's own history, and both are
+              written inside the same transaction as the change. The iSample
+              approval ledger is not a table — it is <code>audit_log</code>
+              filtered to <code>sample.%</code>.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">06</span>
+          <div>
+            <h4>Archiving is soft; only CV mappings hard-delete</h4>
+            <p>
+              Catalog rows, batches, samples and drawings all set an
+              <code>archived_at</code> or <code>cancelled_at</code>. Re-archiving
+              is 409 rather than a silent no-op, so the UI can tell the user
+              nothing happened.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">07</span>
+          <div>
+            <h4>Bulk catalog import is all-or-nothing</h4>
+            <p>
+              Every row is validated before any row is inserted; one bad row
+              returns <code>{created: 0, errors: […]}</code> and writes nothing.
+              One audit row per import, not per row.
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="no">08</span>
+          <div>
+            <h4>No ORM models, no client state library</h4>
+            <p>
+              The API is SQLAlchemy Core with <code>text()</code> queries
+              throughout. The web app is raw <code>fetch()</code>, URL search
+              params and controlled inputs — no TanStack Query, React Hook Form
+              or Zustand. Match what is there.
+            </p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 08 ═══════════════════════════════════════════════════════════════ -->
+<section class="sheet" id="where">
+  <div class="title-block">
+    <span class="sht-no">SHT 08</span>
+    <h2>Where things live</h2>
+    <span class="tb-meta">21 routers · 183 routes</span>
+  </div>
+  <div class="cols">
+    <aside class="rail">
+      <b>Shape</b>
+      Every backend module is the same four files — schemas.py, queries.py,
+      routes.py, __init__.py — mounted flat in main.py.
+    </aside>
+    <div class="body">
+      <div class="mods" id="mods"></div>
+
+      <p style="margin:22px 0 12px">
+        The web app mirrors this: one route folder per surface under
+        <code>apps/web/app/(app)/</code>, with the six primary tabs and five
+        secondary tabs declared in
+        <code>components/chrome/TabStrip.tsx</code>. Design tokens live once, in
+        <code>app/globals.css</code>, mirrored for JS in <code>lib/tokens.ts</code>.
+        There is no <code>tailwind.config.ts</code> — Tailwind v4 is configured
+        in CSS.
+      </p>
+
+      <div class="cmds">
+        <div class="cmd"><span class="c">make up</span><span class="d">Build and start db, api, web</span></div>
+        <div class="cmd"><span class="c">make migrate</span><span class="d">Apply Alembic 0001 → 0023</span></div>
+        <div class="cmd"><span class="c">make seed</span><span class="d">Hartwood workspace, 12 staff users, 2 projects, demo data across every sub-project</span></div>
+        <div class="cmd"><span class="c">make test</span><span class="d">437 pytest cases in the api container</span></div>
+        <div class="cmd"><span class="c">make e2e-docker</span><span class="d">12 Playwright specs via the official image</span></div>
+      </div>
+
+      <div class="pin warnbox">
+        <b><code>make test</code> truncates your login.</b> It TRUNCATEs
+        <code>workspace</code>, <code>app_user</code>, <code>session</code> and
+        <code>audit_log</code> between cases. Re-run <code>make seed</code>
+        before you try to sign in again —
+        <code>rin.park@hartwood.test</code> / <code>hartwood-dev</code>.
+      </div>
+
+      <p>
+        Two things are quarantined rather than live. <code>legacy/</code> holds
+        the original FileMaker-era prototypes — read-only reference, still the
+        authority for the product surface via <code>product_spec.md</code>. And
+        the old <code>/procurement/*</code> namespace (32 routes: orders,
+        vendors, budget, approvals) is untouched by the v1 product surface, which
+        uses <code>procurement_v1</code> instead. Both are expected to converge
+        later; neither is dead code you should delete.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  Compiled from source at <span class="m">claude/web-page-artifact-u8d4fp</span> ·
+  permissions read from <span class="m">apps/api/app/auth/permissions.py</span> ·
+  counts from <span class="m">app/main.py</span>, <span class="m">db/alembic/versions</span>,
+  <span class="m">apps/api/tests</span>, <span class="m">tests/e2e</span>.<br>
+  Palette and typefaces are the project's own — H tokens from
+  <span class="m">apps/web/app/globals.css</span>, Inter and JetBrains Mono from
+  <span class="m">seed/fonts/</span>.
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ── Permission matrix ─────────────────────────────────────────────── */
+  var ROLES = ["admin","manager","editor","drafter","estimator","purchase_officer","viewer"];
+  var ROLE_SHORT = {
+    admin:"admin", manager:"manager", editor:"editor", drafter:"drafter",
+    estimator:"estimator", purchase_officer:"purchase", viewer:"viewer"
+  };
+  var MODULES = [
+    ["dashboard","Landing metrics"],
+    ["tracking","Project item board"],
+    ["list","Item editor + print"],
+    ["shop_dwgs","Drawing revisions"],
+    ["isample","Sample wall"],
+    ["orderbook","Procurement queue"],
+    ["catalog","Material catalogs"],
+    ["cut_floor","CutPlan + schedule"],
+    ["shop_floor","Worker assignment"],
+    ["estimating","Quotes + customers"],
+    ["it_management","Admin console"]
+  ];
+  var ACTIONS = ["read","write","approve","comment"];
+  var ALL = ["read","write","approve","comment"];
+  var RW  = ["read","write"];
+  var RWC = ["read","write","comment"];
+  var RC  = ["read","comment"];
+  var R   = ["read"];
+  var NONE = [];
+
+  /* Transcribed verbatim from apps/api/app/auth/permissions.py */
+  var MATRIX = {
+    admin: {
+      dashboard:ALL, tracking:ALL, list:ALL, shop_dwgs:ALL, isample:ALL,
+      orderbook:ALL, catalog:ALL, cut_floor:ALL, shop_floor:ALL,
+      estimating:ALL, it_management:ALL
+    },
+    manager: {
+      dashboard:ALL, tracking:ALL, list:ALL, shop_dwgs:ALL, isample:ALL,
+      orderbook:ALL, catalog:ALL, cut_floor:ALL, shop_floor:ALL,
+      estimating:ALL, it_management:R
+    },
+    editor: {
+      dashboard:RWC, tracking:RWC, list:RWC, shop_dwgs:RWC, isample:RWC,
+      orderbook:RC, catalog:RWC, cut_floor:RWC, shop_floor:RWC,
+      estimating:R, it_management:NONE
+    },
+    drafter: {
+      dashboard:R, tracking:ALL, list:ALL, shop_dwgs:ALL, isample:ALL,
+      orderbook:ALL, catalog:ALL, cut_floor:ALL, shop_floor:RC,
+      estimating:RC, it_management:NONE
+    },
+    estimator: {
+      dashboard:R, tracking:RC, list:RC, shop_dwgs:RC, isample:RC,
+      orderbook:R, catalog:RC, cut_floor:R, shop_floor:R,
+      estimating:ALL, it_management:NONE
+    },
+    purchase_officer: {
+      dashboard:R, tracking:RC, list:R, shop_dwgs:R, isample:R,
+      orderbook:ALL, catalog:RC, cut_floor:R, shop_floor:R,
+      estimating:R, it_management:NONE
+    },
+    viewer: {
+      dashboard:R, tracking:R, list:R, shop_dwgs:R, isample:R,
+      orderbook:R, catalog:R, cut_floor:R, shop_floor:R,
+      estimating:R, it_management:NONE
+    }
+  };
+
+  var table = document.getElementById("matrix");
+  var thead = table.querySelector("thead");
+  var tbody = table.querySelector("tbody");
+
+  var hr = document.createElement("tr");
+  var corner = document.createElement("th");
+  corner.textContent = "Module";
+  hr.appendChild(corner);
+  ROLES.forEach(function(role){
+    var th = document.createElement("th");
+    th.className = "role m";
+    th.dataset.role = role;
+    th.textContent = ROLE_SHORT[role];
+    th.setAttribute("scope","col");
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+
+  MODULES.forEach(function(mod){
+    var tr = document.createElement("tr");
+    var th = document.createElement("th");
+    th.setAttribute("scope","row");
+    th.style.textTransform = "none";
+    th.style.letterSpacing = "0";
+    th.style.fontSize = "12px";
+    th.style.background = "var(--surface)";
+    th.style.position = "static";
+    th.innerHTML = '<span class="m" style="color:var(--ink);font-size:12.5px">' +
+      mod[0] + '</span><br><span style="color:var(--ink3);font-weight:400;' +
+      'font-family:var(--sans);font-size:11px;letter-spacing:0">' + mod[1] + '</span>';
+    tr.appendChild(th);
+
+    ROLES.forEach(function(role){
+      var granted = MATRIX[role][mod[0]] || [];
+      var td = document.createElement("td");
+      td.className = "cell";
+      td.dataset.role = role;
+      var span = document.createElement("span");
+      span.className = "perm" + (granted.length ? "" : " none");
+      ACTIONS.forEach(function(a){
+        var i = document.createElement("i");
+        i.textContent = a.charAt(0).toUpperCase();
+        if (granted.indexOf(a) !== -1) i.className = "on a-" + a;
+        i.title = role + " · " + mod[0] + " · " + a +
+          (granted.indexOf(a) !== -1 ? " — allowed" : " — denied");
+        span.appendChild(i);
+      });
+      td.appendChild(span);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  var focused = null;
+  function focusRole(role){
+    focused = (focused === role) ? null : role;
+    table.classList.toggle("focused", focused !== null);
+    Array.prototype.forEach.call(
+      table.querySelectorAll("td.cell, th.role"), function(el){
+        el.classList.toggle("f", focused !== null && el.dataset.role === focused);
+      });
+    Array.prototype.forEach.call(bar.children, function(btn){
+      btn.setAttribute("aria-pressed", String(btn.dataset.role === focused));
+    });
+  }
+
+  var bar = document.getElementById("roleBar");
+  ROLES.forEach(function(role){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "role-chip";
+    b.dataset.role = role;
+    b.textContent = role;
+    b.setAttribute("aria-pressed","false");
+    b.addEventListener("click", function(){ focusRole(role); });
+    bar.appendChild(b);
+  });
+  table.addEventListener("click", function(e){
+    var th = e.target.closest ? e.target.closest("th.role") : null;
+    if (th) focusRole(th.dataset.role);
+  });
+
+  /* ── Lifecycle chain ───────────────────────────────────────────────── */
+  var STAGES = {
+    REQ:"requested", SM:"site measure", LISTED:"listed", DOWN:"cut down",
+    CNC:"machined", EDGED:"edge banded", PAINTED:"painted", MADE:"assembled",
+    DEL:"delivered", INST:"installed"
+  };
+  var SHOP = ["DOWN","CNC","EDGED","PAINTED","MADE"];
+  var chain = document.getElementById("chain");
+  var paintLast = false, paintReq = true;
+
+  function order(){
+    var base = ["REQ","SM","LISTED"];
+    var mid = paintLast
+      ? ["DOWN","CNC","EDGED","MADE","PAINTED"]
+      : ["DOWN","CNC","EDGED","PAINTED","MADE"];
+    return base.concat(mid, ["DEL","INST"]);
+  }
+  function render(){
+    chain.textContent = "";
+    order().forEach(function(k){
+      var d = document.createElement("div");
+      var isShop = SHOP.indexOf(k) !== -1;
+      var dropped = (k === "PAINTED" && !paintReq);
+      d.className = "stage" + (isShop && !dropped ? " sf" : "") + (dropped ? " off" : "");
+      d.innerHTML = '<b>' + k + '</b><span>' +
+        (dropped ? "skipped" : STAGES[k]) + '</span>';
+      chain.appendChild(d);
+    });
+  }
+  function bindToggle(id, get, set){
+    var el = document.getElementById(id);
+    el.addEventListener("click", function(){
+      set(!get());
+      el.setAttribute("aria-pressed", String(get()));
+      render();
+    });
+  }
+  bindToggle("tgPaint", function(){return paintLast;}, function(v){paintLast=v;});
+  bindToggle("tgReq",   function(){return paintReq;},  function(v){paintReq=v;});
+  render();
+
+  /* ── Backend module map ────────────────────────────────────────────── */
+  var MODS = [
+    ["auth","/login · /logout · /me","3"],
+    ["projects","/projects","6"],
+    ["items","/items/{id}","10"],
+    ["parts","/lines · /parts","6"],
+    ["hardware_lines","/lines/{lid}/hardware","7"],
+    ["home","/home/dashboard","1"],
+    ["files","/files","2"],
+    ["shop_drawings","/projects/{pid}/shop-drawings","10"],
+    ["item_attachments","/items/{iid}/attachments","3"],
+    ["printing","/items/{iid}/*.pdf","3"],
+    ["samples","/projects/{pid}/samples","10"],
+    ["catalog","/catalog/{slug}","10"],
+    ["cv","/items/{iid}/cv-imports","4"],
+    ["cut_floor","/cut-plans · /cut-schedules","11"],
+    ["shop_floor","/assignments · /workers","10"],
+    ["estimating","/estimates · /customers","32"],
+    ["procurement_v1","/batches · /allocations","16"],
+    ["procurement","/orders · /vendors (legacy)","32"],
+    ["users","/users · /team","5"],
+    ["workspaces","/workspaces","1"],
+    ["public","/health","1"]
+  ];
+  var modsEl = document.getElementById("mods");
+  MODS.forEach(function(m){
+    var d = document.createElement("div");
+    d.className = "mod";
+    d.innerHTML = '<div class="mp">' + m[0] + '</div><div class="mm">' + m[1] +
+      '</div><div class="mc">' + m[2] + ' route' + (m[2] === "1" ? "" : "s") + '</div>';
+    modsEl.appendChild(d);
+  });
+})();
+</script>
