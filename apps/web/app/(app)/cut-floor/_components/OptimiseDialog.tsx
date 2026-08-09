@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { createCutPlan, optimiseProject } from "@/lib/cut-floor-fetch";
-import type { OptimiseOut } from "@/lib/cut-floor-types";
+import type { OptimiseOut, OptimiseStrategy } from "@/lib/cut-floor-types";
 import { SheetCanvas } from "./SheetCanvas";
 
 interface Project {
@@ -33,6 +33,7 @@ export function OptimiseDialog({
   const [sheetLen, setSheetLen] = useState(2440);
   const [sheetWid, setSheetWid] = useState(1220);
   const [kerf, setKerf] = useState(3);
+  const [strategy, setStrategy] = useState<OptimiseStrategy>("maxrects");
 
   const [result, setResult] = useState<OptimiseOut | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,7 @@ export function OptimiseDialog({
         sheet_len_mm: sheetLen,
         sheet_wid_mm: sheetWid,
         kerf_mm: kerf,
+        strategy,
       });
       setResult(out);
     } catch (e) {
@@ -166,9 +168,22 @@ export function OptimiseDialog({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm text-h-muted">Algorithm</label>
+              <select
+                value={strategy}
+                onChange={(e) => setStrategy(e.target.value as OptimiseStrategy)}
+                className="w-full rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink"
+              >
+                <option value="maxrects">MaxRects (best yield)</option>
+                <option value="naive">Naive shelf (baseline)</option>
+              </select>
+            </div>
+
             <p className="text-xs text-h-muted">
-              Naive single-sheet placement over every part in the project.
-              Parts that don&apos;t fit are skipped — re-run with bigger stock.
+              Nests every part in the project across as many sheets as needed;
+              parts larger than the sheet are skipped. Preview the result before
+              saving it as a cut plan.
             </p>
 
             {error && (

@@ -782,34 +782,46 @@ surfaces:
   note. The `/list` route is now wired (project switcher + search +
   the shared `ItemsTable`).
 
-## CutPlan Optimiser stub (sub-project #9)
+## CutPlan Optimiser (sub-project #9 + engine)
 
-- **Deliberately naive** single-sheet packer. Ships the wire contract +
-  UI flow now; the real bin-packing engine slots in behind the same
-  endpoint later. Spec source: cabinet-vision design §8.1.
+- Ships the wire contract + UI flow **and** a real nesting engine. The
+  original naive shelf packer is kept as a selectable fallback / A/B
+  baseline. Spec source: cabinet-vision design §8.1.
 - Migration **0024 `grain_locked`** adds `grain_locked boolean NOT NULL
   DEFAULT false` to `board_materials` + `benchtop_materials`. Grain-locked
   parts are never rotated by the optimiser. (This is the migration the
   `2026-05-09` plan originally reserved as 0021 — renumbered after #9a
   consumed 0021–0023.)
-- **`apps/api/app/cut_floor/optimiser.py`** — pure stdlib module
-  (`PackPart` / `PlacedSlot` / `Skip` / `PackResult` dataclasses +
-  `pack_naive`). Shelf next-fit-decreasing: sort by longest edge desc,
-  fill a row L→R, wrap to a new shelf when the row is full, skip parts
-  that don't fit (`too_large` if bigger than the sheet in every legal
-  orientation, else `no_room`). No DB, no Pydantic — unit-tested against
-  deterministic inputs.
+- **`apps/api/app/cut_floor/optimiser.py`** — pure stdlib module (no DB, no
+  Pydantic; unit-tested against deterministic inputs). Dataclasses
+  `PackPart` (now carries a `uid` for multi-sheet tracking) / `PlacedSlot` /
+  `Skip` / `PackResult` / `MultiPackResult`. Three packers:
+  - `pack_naive` — shelf next-fit-decreasing (the original stub; baseline).
+  - `pack_maxrects` — **MaxRects** nester. Places parts largest-first; runs
+    three free-rect choice heuristics (Best-Short-Side-Fit,
+    Best-Area-Fit, Bottom-Left) and keeps the best-yielding sheet. Splits
+    free space against the part inflated by `kerf` so neighbours keep a saw
+    gap; rotates non grain-locked parts. Robustly ≥ `pack_naive` on mixed
+    parts, matches it on uniform grids.
+  - `pack_sheets(parts, …, strategy, max_sheets)` — **multi-sheet** wrapper:
+    overflow (`no_room`) parts roll onto a fresh sheet until placed or
+    `max_sheets` is hit; `too_large` parts (bigger than the sheet) are never
+    retried. Returns `MultiPackResult { sheets: [PackResult], skipped }`.
 - **`POST /projects/{pid}/optimise`** (gated `("cut_floor","write")`) —
-  pulls candidate parts (`candidate_parts_for_optimise`: parts →
-  modules → items → project, with real dims, joined to their board
-  material's `grain_locked`), expands each by `qty`, packs one sheet,
-  and returns `OptimiseOut { proposal: CutPlanIn, summary }`. **Pure
-  function: no DB writes, no audit, no commit.** The user reviews the
-  proposal then forwards it to the existing `POST /projects/{pid}/cut-plans`
-  (#7c), which owns persistence + the `cut_plan.create` audit.
+  pulls candidate parts (`candidate_parts_for_optimise`: parts → modules →
+  items → project, with real dims, joined to their board material's
+  `grain_locked`), expands each by `qty` (assigning a `uid`), calls
+  `pack_sheets`, and returns `OptimiseOut { proposal: CutPlanIn, summary }`
+  with **N** `CutSheetIn`. **Pure function: no DB writes, no audit, no
+  commit.** The user reviews the proposal then forwards it to the existing
+  `POST /projects/{pid}/cut-plans` (#7c), which owns persistence + the
+  `cut_plan.create` audit. `OptimiseIn` gains `strategy` (`maxrects` default
+  | `naive`) + `max_sheets` (default 20); `OptimiseSummary` gains
+  `sheet_utilization[]` (per sheet) and `utilization_pct` is the mean across
+  sheets used. Empty / all-oversized input → zero sheets in the proposal.
 - Sheet stock is a **per-optimisation override** — `sheet_len_mm`,
   `sheet_wid_mm`, `kerf_mm` come in the request body (no
-  `board_inventory` table in v1).
+  `board_inventory` table yet).
 - `grain_locked` round-trips through the catalog: added to the `board` +
   `benchtop` REGISTRY select/insert columns in
   `apps/api/app/catalog/queries.py` and to `PatchBoardIn` / `PatchBenchtopIn`.
@@ -818,19 +830,18 @@ surfaces:
     sheet renderer extracted from `BoardTab.tsx`; both surfaces import it.
     Known sheet dims pass `extent`; the Board tab infers extent from slots.
   - **`OptimiseDialog.tsx`** — two-phase: a form (project · plan name ·
-    material SKU · sheet dims · kerf) → a preview (summary + one
-    `SheetCanvas` per sheet + skipped-parts list) → **Save as plan**
-    forwards the proposal to `createCutPlan`. Opened by an **Optimise…**
-    button on the `/cut-floor` header (mutator roles only).
+    material SKU · sheet dims · kerf · **Algorithm** selector) → a preview
+    (summary + one `SheetCanvas` **per sheet** + skipped-parts list) →
+    **Save as plan** forwards the multi-sheet proposal to `createCutPlan`.
+    Opened by an **Optimise…** button on the `/cut-floor` header (mutator
+    roles only).
   - `/catalog?tab=board|benchtop` grid gains a **Grain** checkbox column
     that PATCHes `grain_locked`.
 - Seed (`make seed`): grain-locks the walnut veneer demo board
   (`BM-103`) on ALF-001. Idempotent (an `UPDATE` after the DO-NOTHING
   insert).
-- Out of scope (deferred): real bin-packing (FFD/MaxRects behind the same
-  `pack_naive` signature), multi-sheet packing (v1 skips overflow with
-  `no_room`), `board_inventory` stock tracking, non-rectangular parts,
-  grain-direction SVG visualisation, saving draft proposals, material-SKU
-  typeahead + per-item `include_only_item_ids` selector in the dialog
-  (the API accepts `include_only_item_ids`; the v1 dialog always sends all
-  parts).
+- Out of scope (still deferred): `board_inventory` stock tracking (sheet
+  stock is a per-run override), non-rectangular parts, grain-direction SVG
+  visualisation, saving draft proposals, material-SKU typeahead + per-item
+  `include_only_item_ids` selector in the dialog (the API accepts
+  `include_only_item_ids`; the dialog always sends all parts).

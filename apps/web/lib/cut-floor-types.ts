@@ -106,6 +106,8 @@ export interface ReorderIn {
 
 // --- Optimiser (sub-project #9 stub) ---------------------------------------
 
+export type OptimiseStrategy = "maxrects" | "naive";
+
 export interface OptimiseIn {
   name: string;
   material_sku: string;
@@ -113,6 +115,8 @@ export interface OptimiseIn {
   sheet_wid_mm: number;
   kerf_mm?: number;
   include_only_item_ids?: number[] | null;
+  strategy?: OptimiseStrategy;
+  max_sheets?: number;
 }
 
 export interface OptimiseSkip {
@@ -128,6 +132,7 @@ export interface OptimiseSummary {
   skipped_reasons: OptimiseSkip[];
   sheets_used: number;
   utilization_pct: number;
+  sheet_utilization: number[];
 }
 
 export interface OptimiseOut {
