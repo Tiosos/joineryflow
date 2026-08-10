@@ -2,23 +2,33 @@
 name = "jf-api"
 version = "0.1.0"
 requires-python = ">=3.12"
+# Upper bounds keep CI reproducible. Every cap sits at the major above what is
+# currently resolved, so today's versions are unchanged — only future majors
+# are held back until someone opts in.
+#
+# `starlette` is listed explicitly even though it arrives via fastapi: fastapi
+# declares `starlette>=0.46.0` with NO upper bound, so starlette 1.x was being
+# pulled in silently. That drift is what changed oversized-form-body handling
+# (transport-layer 400 before the app's own 415 guard) and broke a CV upload
+# test. Capping fastapi alone would not have caught it.
 dependencies = [
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.32",
-  "sqlalchemy>=2.0",
-  "psycopg[binary]>=3.2",
-  "alembic>=1.13",
-  "pydantic>=2.9",
-  "pydantic-settings>=2.6",
-  "email-validator>=2.2",
-  "argon2-cffi>=23.1",
-  "python-multipart>=0.0.12",
-  "weasyprint>=63",
-  "pypdf>=5",
-  "jinja2>=3.1",
+  "fastapi>=0.115,<1.0",
+  "starlette>=0.46,<2.0",
+  "uvicorn[standard]>=0.32,<1.0",
+  "sqlalchemy>=2.0,<3.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "alembic>=1.13,<2.0",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.6,<3.0",
+  "email-validator>=2.2,<3.0",
+  "argon2-cffi>=23.1,<26.0",
+  "python-multipart>=0.0.12,<0.1",
+  "weasyprint>=63,<70",
+  "pypdf>=5,<7",
+  "jinja2>=3.1,<4.0",
 ]
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2.0", "httpx>=0.27,<1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
