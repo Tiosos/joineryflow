@@ -368,6 +368,72 @@ def test_optimise_multi_sheet_overflows():
     assert nums == list(range(1, len(nums) + 1))
 
 
+def _add_item_with_part(wid: int, pid: int, num_offset: int, len_mm, wid_mm, qty=1):
+    """Add a second item (+module+part) to an existing project. Returns item_id."""
+    s = SessionLocal()
+    try:
+        iid = s.execute(
+            text(
+                """
+                INSERT INTO items(num, project_id, description)
+                VALUES (:n, :p, 'Item extra') RETURNING item_id
+                """
+            ),
+            {"n": wid * 1000 + num_offset, "p": pid},
+        ).scalar()
+        mid = s.execute(
+            text(
+                """
+                INSERT INTO modules(item_id, module_no, name)
+                VALUES (:i, '1', 'M-extra') RETURNING module_id
+                """
+            ),
+            {"i": iid},
+        ).scalar()
+        s.execute(
+            text(
+                """
+                INSERT INTO parts(module_id, seq, qty, part_name, len_mm, wid_mm)
+                VALUES (:m, 1, :q, 'Part extra', :l, :wd)
+                """
+            ),
+            {"m": mid, "q": qty, "l": len_mm, "wd": wid_mm},
+        )
+        s.commit()
+        return iid
+    finally:
+        s.close()
+
+
+def test_optimise_include_only_item_ids_filters_parts():
+    """The dialog's item picker sends include_only_item_ids; only those items'
+    parts should be packed."""
+    c, wid, _uid, pid, iid, mid, *_ = _setup("drafter")
+    _add_part(mid, 720, 580, qty=2)          # 2 parts on the original item
+    other = _add_item_with_part(wid, pid, 2, 600, 400, qty=3)  # 3 on a second
+
+    # No filter → every part in the project.
+    r_all = c.post(f"/projects/{pid}/optimise", json=_body())
+    assert r_all.status_code == 200, r_all.text
+    assert r_all.json()["summary"]["total_parts"] == 5
+
+    # Narrowed to the first item only.
+    r_one = c.post(
+        f"/projects/{pid}/optimise",
+        json=_body(include_only_item_ids=[iid]),
+    )
+    assert r_one.status_code == 200, r_one.text
+    assert r_one.json()["summary"]["total_parts"] == 2
+
+    # Narrowed to the other item only.
+    r_other = c.post(
+        f"/projects/{pid}/optimise",
+        json=_body(include_only_item_ids=[other]),
+    )
+    assert r_other.status_code == 200, r_other.text
+    assert r_other.json()["summary"]["total_parts"] == 3
+
+
 def test_optimise_naive_strategy_still_supported():
     c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
     _add_part(mid, 720, 580, qty=3)

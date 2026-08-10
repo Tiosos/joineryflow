@@ -1,15 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { listCatalog } from "@/lib/catalog-fetch";
 import { createCutPlan, optimiseProject } from "@/lib/cut-floor-fetch";
 import type { OptimiseOut, OptimiseStrategy } from "@/lib/cut-floor-types";
+import { PM } from "@/lib/pm-fetch";
 import { SheetCanvas } from "./SheetCanvas";
 
 interface Project {
   id: number;
   project_code: string;
   name: string;
+}
+
+/** Board material the SKU field can suggest, from the catalog. */
+interface SkuOption {
+  sku: string;
+  description: string;
+}
+
+/** One selectable item in the project. */
+interface ItemOption {
+  id: number;
+  label: string;
 }
 
 interface OptimiseDialogProps {
@@ -39,6 +53,82 @@ export function OptimiseDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Board-material SKUs for the datalist. Catalog-wide (not project-scoped),
+  // fetched once — the field stays free-text so an unlisted SKU still works.
+  const [skus, setSkus] = useState<SkuOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listCatalog({ slug: "board-materials" })
+      .then((r) => {
+        if (cancelled) return;
+        setSkus(
+          r.rows
+            .filter((row) => row.sku)
+            .map((row) => ({ sku: row.sku, description: row.description })),
+        );
+      })
+      .catch(() => {
+        /* typeahead is a convenience — a failure must not block optimising */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Items in the selected project. All are included by default; unchecking
+  // narrows the run via include_only_item_ids.
+  const [items, setItems] = useState<ItemOption[]>([]);
+  const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set());
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  useEffect(() => {
+    if (projectId === null) {
+      setItems([]);
+      setExcludedIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    setItemsLoading(true);
+    PM.trackingGrid("", projectId)
+      .then((grid) => {
+        if (cancelled) return;
+        setItems(
+          grid.items.map((it) => ({
+            id: it.id,
+            label:
+              [it.code, it.description].filter(Boolean).join(" · ") ||
+              `Item ${it.item_number ?? it.id}`,
+          })),
+        );
+        setExcludedIds(new Set()); // switching project resets the selection
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const includedIds = useMemo(
+    () => items.filter((it) => !excludedIds.has(it.id)).map((it) => it.id),
+    [items, excludedIds],
+  );
+  const allIncluded = excludedIds.size === 0;
+  const noneSelected = items.length > 0 && includedIds.length === 0;
+
+  function toggleItem(id: number) {
+    setExcludedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function runOptimise() {
     if (projectId === null) return;
     setBusy(true);
@@ -51,6 +141,9 @@ export function OptimiseDialog({
         sheet_wid_mm: sheetWid,
         kerf_mm: kerf,
         strategy,
+        // Omit when everything is selected so the API keeps its "all parts"
+        // default rather than receiving a redundant list.
+        include_only_item_ids: allIncluded ? null : includedIds,
       });
       setResult(out);
     } catch (e) {
@@ -127,8 +220,17 @@ export function OptimiseDialog({
               <input
                 value={materialSku}
                 onChange={(e) => setMaterialSku(e.target.value)}
+                list="optimise-sku-options"
+                autoComplete="off"
                 className="w-full rounded border border-h-line bg-h-surface px-2 py-1 font-mono text-sm text-h-ink"
               />
+              <datalist id="optimise-sku-options">
+                {skus.map((s) => (
+                  <option key={s.sku} value={s.sku}>
+                    {s.description}
+                  </option>
+                ))}
+              </datalist>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
@@ -180,10 +282,61 @@ export function OptimiseDialog({
               </select>
             </div>
 
+            <div>
+              <div className="flex items-baseline justify-between">
+                <label className="block text-sm text-h-muted">
+                  Items to include
+                </label>
+                {items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExcludedIds(
+                        allIncluded ? new Set(items.map((it) => it.id)) : new Set(),
+                      )
+                    }
+                    className="text-xs text-h-accent hover:underline"
+                  >
+                    {allIncluded ? "Clear all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              {itemsLoading ? (
+                <div className="rounded border border-h-line bg-h-surface px-2 py-2 text-xs text-h-muted">
+                  Loading items…
+                </div>
+              ) : items.length === 0 ? (
+                <div className="rounded border border-h-line bg-h-surface px-2 py-2 text-xs text-h-muted">
+                  No items in this project.
+                </div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto rounded border border-h-line bg-h-surface">
+                  {items.map((it) => (
+                    <label
+                      key={it.id}
+                      className="flex cursor-pointer items-center gap-2 px-2 py-1 text-sm text-h-ink hover:bg-h-bg"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!excludedIds.has(it.id)}
+                        onChange={() => toggleItem(it.id)}
+                      />
+                      <span className="truncate">{it.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1 text-xs text-h-muted">
+                {allIncluded
+                  ? "All items included."
+                  : `${includedIds.length} of ${items.length} items included.`}
+              </p>
+            </div>
+
             <p className="text-xs text-h-muted">
-              Nests every part in the project across as many sheets as needed;
-              parts larger than the sheet are skipped. Preview the result before
-              saving it as a cut plan.
+              Nests the selected items&apos; parts across as many sheets as
+              needed; parts larger than the sheet are skipped. Preview the
+              result before saving it as a cut plan.
             </p>
 
             {error && (
@@ -202,8 +355,12 @@ export function OptimiseDialog({
               </button>
               <button
                 type="button"
-                disabled={busy || projectId === null}
+                // Block the empty selection: an empty include_only_item_ids is
+                // treated as "no filter" server-side, which would silently pack
+                // everything — the opposite of what unchecking all means.
+                disabled={busy || projectId === null || noneSelected}
                 onClick={runOptimise}
+                title={noneSelected ? "Select at least one item" : undefined}
                 className="rounded border border-h-accent bg-h-accent px-3 py-1 text-sm text-h-bg disabled:opacity-50"
               >
                 {busy ? "Optimising…" : "Optimise"}
