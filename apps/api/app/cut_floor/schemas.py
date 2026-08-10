@@ -91,6 +91,8 @@ class OptimiseIn(BaseModel):
     sheet_wid_mm: float = Field(gt=0)
     kerf_mm: float = Field(default=3, ge=0)
     include_only_item_ids: list[int] | None = None
+    strategy: Literal["maxrects", "naive"] = "maxrects"
+    max_sheets: int = Field(default=20, ge=1, le=200)
 
 
 class OptimiseSkip(BaseModel):
@@ -105,7 +107,8 @@ class OptimiseSummary(BaseModel):
     skipped: int
     skipped_reasons: list[OptimiseSkip] = Field(default_factory=list)
     sheets_used: int
-    utilization_pct: float
+    utilization_pct: float  # mean across the sheets used
+    sheet_utilization: list[float] = Field(default_factory=list)  # per-sheet
 
 
 class OptimiseOut(BaseModel):

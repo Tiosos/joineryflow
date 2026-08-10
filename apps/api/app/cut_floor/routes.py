@@ -171,7 +171,7 @@ def delete_cut_plan_route(
 
 
 # ============================================================================
-# Optimiser (sub-project #9 stub)
+# Optimiser (sub-project #9)
 # ============================================================================
 
 @router.post("/projects/{pid}/optimise")
@@ -181,10 +181,10 @@ def optimise_project_route(
     user: AuthUser = Depends(require_permission("cut_floor", "write")),
     db: Session = Depends(get_db),
 ) -> OptimiseOut:
-    """Pure-function nest proposal — **no DB writes, no audit**. Returns a
-    `CutPlanIn`-shaped `proposal` the user reviews then forwards to
-    POST /projects/{pid}/cut-plans (which owns persistence + the
-    `cut_plan.create` audit)."""
+    """Pure-function nest proposal — **no DB writes, no audit**. Packs parts
+    across one or more sheets and returns a `CutPlanIn`-shaped `proposal` the
+    user reviews then forwards to POST /projects/{pid}/cut-plans (which owns
+    persistence + the `cut_plan.create` audit)."""
     if not q.project_in_workspace(
         db, project_id=pid, workspace_id=user.workspace_id
     ):
@@ -198,8 +198,10 @@ def optimise_project_route(
     )
 
     # Expand each part row into `qty` unit rectangles; grain-locked board
-    # materials forbid rotation.
+    # materials forbid rotation. `uid` lets the multi-sheet packer track each
+    # instance as it overflows to the next sheet.
     parts: list[opt.PackPart] = []
+    uid = 0
     for r in rows:
         qty = int(r["qty"] or 1)
         label = r["part_name"] or f"part {r['part_id']}"
@@ -211,43 +213,52 @@ def optimise_project_route(
                     label=label,
                     part_id=r["part_id"],
                     allow_rotation=not r["grain_locked"],
+                    uid=uid,
                 )
             )
+            uid += 1
 
-    packed = opt.pack_naive(
+    packed = opt.pack_sheets(
         parts,
         sheet_len=body.sheet_len_mm,
         sheet_wid=body.sheet_wid_mm,
         kerf=body.kerf_mm,
+        strategy=body.strategy,
+        max_sheets=body.max_sheets,
     )
 
     proposal = CutPlanIn(
         name=body.name,
-        notes=f"optimiser stub · {body.material_sku}",
+        notes=f"optimiser · {body.strategy} · {body.material_sku}",
         sheets=[
             CutSheetIn(
-                sheet_no=1,
+                sheet_no=i + 1,
                 material_sku=body.material_sku,
                 slots=[
                     PartSlotIn(
                         x=s.x, y=s.y, w=s.w, h=s.h,
                         label=s.label, part_id=s.part_id,
                     )
-                    for s in packed.placed
+                    for s in sheet.placed
                 ],
             )
+            for i, sheet in enumerate(packed.sheets)
         ],
     )
+    placed_count = sum(len(sheet.placed) for sheet in packed.sheets)
+    sheet_utils = [sheet.utilization_pct for sheet in packed.sheets]
+    overall = round(sum(sheet_utils) / len(sheet_utils), 4) if sheet_utils else 0.0
     summary = OptimiseSummary(
         total_parts=len(parts),
-        placed=len(packed.placed),
+        placed=placed_count,
         skipped=len(packed.skipped),
         skipped_reasons=[
             {"label": s.label, "reason": s.reason, "part_id": s.part_id}
             for s in packed.skipped
         ],
-        sheets_used=1 if packed.placed else 0,
-        utilization_pct=packed.utilization_pct,
+        sheets_used=len(packed.sheets),
+        utilization_pct=overall,
+        sheet_utilization=sheet_utils,
     )
     return OptimiseOut(proposal=proposal, summary=summary)
 

@@ -1,10 +1,11 @@
-"""Tests for the CutPlan optimiser stub (sub-project #9).
+"""Tests for the CutPlan optimiser (sub-project #9 + engine).
 
 Two layers:
-  * pure-function packing unit tests (no DB) against `pack_naive`, and
+  * pure-function packing unit tests (no DB) against `pack_naive`,
+    `pack_maxrects`, and the multi-sheet `pack_sheets`, and
   * route tests for POST /projects/{pid}/optimise — non-mutating,
-    workspace-isolated, RBAC-gated, and proposal round-trips into the
-    existing create-plan endpoint.
+    workspace-isolated, RBAC-gated, multi-sheet, and proposal round-trips into
+    the existing create-plan endpoint.
 """
 import uuid
 
@@ -13,7 +14,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
-from app.cut_floor.optimiser import PackPart, pack_naive
+from app.cut_floor.optimiser import (
+    PackPart,
+    pack_maxrects,
+    pack_naive,
+    pack_sheets,
+)
 from app.db import SessionLocal
 from app.main import app
 
@@ -112,6 +118,93 @@ def test_pack_empty_input():
     r = pack_naive([], 2440, 1220)
     assert not r.placed and not r.skipped
     assert r.utilization_pct == 0.0
+
+
+# ---------------------------------------------------------------------------
+# MaxRects engine + multi-sheet (pure functions, no DB)
+# ---------------------------------------------------------------------------
+
+def _within(placed, L, W) -> bool:
+    return all(
+        s.x >= -1e-9 and s.y >= -1e-9
+        and s.x + s.w <= L + 1e-9 and s.y + s.h <= W + 1e-9
+        for s in placed
+    )
+
+
+def test_maxrects_no_overlap_and_in_bounds():
+    parts = [PackPart(560, 380, f"B{i}", i) for i in range(12)]
+    r = pack_maxrects(parts, 2440, 1220, kerf=3)
+    assert _no_overlap(r.placed)
+    assert _within(r.placed, 2440, 1220)
+
+
+def test_maxrects_beats_naive_on_mixed_parts():
+    # Heterogeneous parts are where a real nester wins over shelf packing.
+    parts = [
+        PackPart(900, 600, "a", 1), PackPart(800, 300, "b", 2),
+        PackPart(500, 500, "c", 3), PackPart(1200, 250, "d", 4),
+        PackPart(400, 700, "e", 5), PackPart(650, 450, "f", 6),
+        PackPart(300, 300, "g", 7), PackPart(1100, 400, "h", 8),
+    ]
+    rm = pack_maxrects(parts, 2440, 1220, kerf=3)
+    rn = pack_naive(parts, 2440, 1220, kerf=3)
+    assert _no_overlap(rm.placed)
+    assert rm.utilization_pct >= rn.utilization_pct
+
+
+def test_maxrects_rotation_and_grain_lock():
+    free = pack_maxrects(
+        [PackPart(1200, 300, "w", 1, allow_rotation=True)], 1000, 2000, kerf=3
+    )
+    assert (free.placed[0].w, free.placed[0].h) == (300, 1200)
+    locked = pack_maxrects(
+        [PackPart(1200, 300, "w", 1, allow_rotation=False)], 1000, 2000, kerf=3
+    )
+    assert not locked.placed and locked.skipped[0].reason == "too_large"
+
+
+def test_maxrects_keeps_kerf_gap():
+    r = pack_maxrects(
+        [PackPart(1000, 600, "a", 1), PackPart(1000, 600, "b", 2)],
+        2440, 1220, kerf=10,
+    )
+    assert len(r.placed) == 2
+    a, b = r.placed
+    gap = max(a.x - (b.x + b.w), b.x - (a.x + a.w),
+              a.y - (b.y + b.h), b.y - (a.y + a.h))
+    assert gap >= 10 - 1e-9
+
+
+def test_pack_sheets_overflows_to_more_sheets():
+    parts = [PackPart(700, 500, f"Q{i}", i) for i in range(40)]
+    m = pack_sheets(parts, 2440, 1220, kerf=3, strategy="maxrects", max_sheets=20)
+    assert len(m.sheets) >= 2
+    assert sum(len(s.placed) for s in m.sheets) == 40
+    assert not m.skipped
+    # every part placed exactly once, and each sheet is internally valid
+    uids = sorted(sl.uid for s in m.sheets for sl in s.placed)
+    assert uids == list(range(40))
+    for s in m.sheets:
+        assert _no_overlap(s.placed)
+        assert _within(s.placed, 2440, 1220)
+
+
+def test_pack_sheets_skips_oversized_but_places_rest():
+    parts = [PackPart(700, 500, f"R{i}", i) for i in range(5)]
+    parts.append(PackPart(9000, 9000, "giant", 99))
+    m = pack_sheets(parts, 2440, 1220, kerf=3)
+    assert sum(len(s.placed) for s in m.sheets) == 5
+    assert len(m.skipped) == 1 and m.skipped[0].reason == "too_large"
+
+
+def test_pack_sheets_max_sheets_cap_reports_no_room():
+    parts = [PackPart(700, 500, f"Q{i}", i) for i in range(40)]
+    m = pack_sheets(parts, 2440, 1220, kerf=3, max_sheets=1)
+    assert len(m.sheets) == 1
+    placed = len(m.sheets[0].placed)
+    assert placed + len(m.skipped) == 40
+    assert all(s.reason == "no_room" for s in m.skipped)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +348,32 @@ def test_optimise_empty_project_zero_placed():
     assert body["summary"]["total_parts"] == 0
     assert body["summary"]["placed"] == 0
     assert body["summary"]["sheets_used"] == 0
-    assert body["proposal"]["sheets"][0]["slots"] == []
+    # Nothing to pack → no sheets in the proposal.
+    assert body["proposal"]["sheets"] == []
+
+
+def test_optimise_multi_sheet_overflows():
+    c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    # 30 big parts can't share one 2440×1220 sheet → the engine spills onto more.
+    _add_part(mid, 1180, 780, qty=30)
+    r = c.post(f"/projects/{pid}/optimise", json=_body(name="Big nest"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["summary"]["sheets_used"] >= 2
+    assert body["summary"]["placed"] == 30
+    assert body["summary"]["skipped"] == 0
+    assert len(body["summary"]["sheet_utilization"]) == body["summary"]["sheets_used"]
+    # sheets are numbered 1..N
+    nums = [s["sheet_no"] for s in body["proposal"]["sheets"]]
+    assert nums == list(range(1, len(nums) + 1))
+
+
+def test_optimise_naive_strategy_still_supported():
+    c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _add_part(mid, 720, 580, qty=3)
+    r = c.post(f"/projects/{pid}/optimise", json=_body(strategy="naive"))
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"]["placed"] == 3
 
 
 def test_optimise_grain_locked_part_not_rotated():
