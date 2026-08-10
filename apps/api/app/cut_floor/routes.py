@@ -20,9 +20,13 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from . import inventory_queries as inv
 from . import optimiser as opt
 from . import queries as q
 from .schemas import (
+    BoardInventoryIn,
+    BoardInventoryOut,
+    BoardInventoryPatchIn,
     CutPlanIn,
     CutPlanOut,
     CutPlanSummary,
@@ -190,6 +194,32 @@ def optimise_project_route(
     ):
         raise HTTPException(404, "project not found")
 
+    # Sheet size: explicit dimensions win; otherwise fall back to the largest
+    # in-stock sheet for this SKU (board_inventory, 0025). Reading stock never
+    # reserves or decrements it — /optimise stays a pure function.
+    sheet_len = body.sheet_len_mm
+    sheet_wid = body.sheet_wid_mm
+    dims_from_stock = False
+    if sheet_len is None or sheet_wid is None:
+        stock = inv.best_stock_for_sku(
+            db, workspace_id=user.workspace_id, sku=body.material_sku
+        )
+        if stock is None:
+            raise HTTPException(
+                422,
+                {
+                    "code": "NO_SHEET_SIZE",
+                    "message": (
+                        "no sheet stock on hand for this SKU — record stock "
+                        "or supply sheet_len_mm and sheet_wid_mm"
+                    ),
+                    "material_sku": body.material_sku,
+                },
+            )
+        sheet_len = float(stock["len_mm"])
+        sheet_wid = float(stock["wid_mm"])
+        dims_from_stock = True
+
     rows = q.candidate_parts_for_optimise(
         db,
         workspace_id=user.workspace_id,
@@ -220,8 +250,8 @@ def optimise_project_route(
 
     packed = opt.pack_sheets(
         parts,
-        sheet_len=body.sheet_len_mm,
-        sheet_wid=body.sheet_wid_mm,
+        sheet_len=sheet_len,
+        sheet_wid=sheet_wid,
         kerf=body.kerf_mm,
         strategy=body.strategy,
         max_sheets=body.max_sheets,
@@ -248,6 +278,19 @@ def optimise_project_route(
     placed_count = sum(len(sheet.placed) for sheet in packed.sheets)
     sheet_utils = [sheet.utilization_pct for sheet in packed.sheets]
     overall = round(sum(sheet_utils) / len(sheet_utils), 4) if sheet_utils else 0.0
+
+    # Stock context. A SKU with no recorded stock reports `None` (unknown)
+    # rather than 0, so the UI never claims a shortfall it can't substantiate.
+    on_hand = inv.total_sheets_for_size(
+        db, workspace_id=user.workspace_id, sku=body.material_sku,
+        len_mm=sheet_len, wid_mm=sheet_wid,
+    )
+    has_stock_record = dims_from_stock or on_hand > 0
+    sheets_available = on_hand if has_stock_record else None
+    shortfall = (
+        max(0, len(packed.sheets) - on_hand) if has_stock_record else 0
+    )
+
     summary = OptimiseSummary(
         total_parts=len(parts),
         placed=placed_count,
@@ -259,8 +302,124 @@ def optimise_project_route(
         sheets_used=len(packed.sheets),
         utilization_pct=overall,
         sheet_utilization=sheet_utils,
+        sheet_len_mm=sheet_len,
+        sheet_wid_mm=sheet_wid,
+        sheet_dims_from_stock=dims_from_stock,
+        sheets_available=sheets_available,
+        sheet_shortfall=shortfall,
     )
     return OptimiseOut(proposal=proposal, summary=summary)
+
+
+# ============================================================================
+# Board inventory (sheet stock on hand — migration 0025)
+# ============================================================================
+
+@router.get("/board-inventory")
+def list_board_inventory_route(
+    material_sku: str | None = Query(None),
+    in_stock_only: bool = Query(False),
+    user: AuthUser = Depends(require_permission("cut_floor", "read")),
+    db: Session = Depends(get_db),
+) -> list[BoardInventoryOut]:
+    rows = inv.list_inventory(
+        db,
+        workspace_id=user.workspace_id,
+        material_sku=material_sku,
+        in_stock_only=in_stock_only,
+    )
+    return [BoardInventoryOut(**r) for r in rows]
+
+
+@router.post("/board-inventory", status_code=201)
+def upsert_board_inventory_route(
+    body: BoardInventoryIn,
+    user: AuthUser = Depends(require_permission("cut_floor", "write")),
+    db: Session = Depends(get_db),
+) -> BoardInventoryOut:
+    """Record stock for a (material, sheet size). Upserts: posting the same
+    size again sets the quantity rather than creating a duplicate row."""
+    material_id = inv.material_by_sku(
+        db, workspace_id=user.workspace_id, sku=body.material_sku
+    )
+    if material_id is None:
+        raise HTTPException(
+            404,
+            {"code": "UNKNOWN_MATERIAL", "material_sku": body.material_sku},
+        )
+    inventory_id = inv.upsert_inventory(
+        db,
+        workspace_id=user.workspace_id,
+        material_id=material_id,
+        len_mm=body.len_mm,
+        wid_mm=body.wid_mm,
+        qty_on_hand=body.qty_on_hand,
+        location=body.location,
+        notes=body.notes,
+        actor_id=user.id,
+    )
+    write_audit(
+        db, workspace_id=user.workspace_id, actor_id=user.id,
+        event="board_inventory.upsert", target=str(inventory_id),
+        payload={
+            "inventory_id": inventory_id,
+            "material_sku": body.material_sku,
+            "len_mm": body.len_mm,
+            "wid_mm": body.wid_mm,
+            "qty_on_hand": body.qty_on_hand,
+        },
+    )
+    row = inv.get_inventory(
+        db, workspace_id=user.workspace_id, inventory_id=inventory_id
+    )
+    db.commit()
+    return BoardInventoryOut(**row)
+
+
+@router.patch("/board-inventory/{inventory_id}")
+def patch_board_inventory_route(
+    inventory_id: int,
+    body: BoardInventoryPatchIn,
+    user: AuthUser = Depends(require_permission("cut_floor", "write")),
+    db: Session = Depends(get_db),
+) -> BoardInventoryOut:
+    if inv.get_inventory(
+        db, workspace_id=user.workspace_id, inventory_id=inventory_id
+    ) is None:
+        raise HTTPException(404, "inventory row not found")
+    fields = body.model_dump(exclude_unset=True)
+    inv.patch_inventory(
+        db, workspace_id=user.workspace_id,
+        inventory_id=inventory_id, fields=fields,
+    )
+    write_audit(
+        db, workspace_id=user.workspace_id, actor_id=user.id,
+        event="board_inventory.update", target=str(inventory_id),
+        payload={"inventory_id": inventory_id, "changes": list(fields.keys())},
+    )
+    row = inv.get_inventory(
+        db, workspace_id=user.workspace_id, inventory_id=inventory_id
+    )
+    db.commit()
+    return BoardInventoryOut(**row)
+
+
+@router.delete("/board-inventory/{inventory_id}", status_code=204)
+def delete_board_inventory_route(
+    inventory_id: int,
+    user: AuthUser = Depends(require_permission("cut_floor", "write")),
+    db: Session = Depends(get_db),
+):
+    if not inv.delete_inventory(
+        db, workspace_id=user.workspace_id, inventory_id=inventory_id
+    ):
+        raise HTTPException(404, "inventory row not found")
+    write_audit(
+        db, workspace_id=user.workspace_id, actor_id=user.id,
+        event="board_inventory.delete", target=str(inventory_id),
+        payload={"inventory_id": inventory_id},
+    )
+    db.commit()
 
 
 # ============================================================================

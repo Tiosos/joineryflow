@@ -840,8 +840,55 @@ surfaces:
 - Seed (`make seed`): grain-locks the walnut veneer demo board
   (`BM-103`) on ALF-001. Idempotent (an `UPDATE` after the DO-NOTHING
   insert).
-- Out of scope (still deferred): `board_inventory` stock tracking (sheet
-  stock is a per-run override), non-rectangular parts, grain-direction SVG
-  visualisation, saving draft proposals, material-SKU typeahead + per-item
-  `include_only_item_ids` selector in the dialog (the API accepts
-  `include_only_item_ids`; the dialog always sends all parts).
+- Dialog UX (shipped later): material-SKU **typeahead** (a `datalist` fed by
+  `listCatalog`; the field stays free-text) and an **item picker** — a checkbox
+  list of the project's items wired to `include_only_item_ids`. An empty
+  `include_only_item_ids` means *no items*, not *no filter*
+  (`candidate_parts_for_optimise` short-circuits); the dialog also disables
+  **Optimise** when nothing is selected.
+- Out of scope (still deferred): non-rectangular parts, grain-direction SVG
+  visualisation, saving draft proposals, stock **consumption** (see below —
+  `/optimise` reads stock but never reserves or decrements it).
+
+## Board inventory — sheet stock (migration 0025)
+
+- Migration **0025 `board_inventory`** — one row per (workspace, board
+  material, sheet size): `len_mm`, `wid_mm`, `qty_on_hand`, `location`,
+  `notes`. UNIQUE on `(workspace_id, material_id, len_mm, wid_mm)`, so
+  adjusting stock is an UPDATE of `qty_on_hand`, not a second row. Indexes on
+  `(workspace_id, material_id)` plus a partial one `WHERE qty_on_hand > 0`
+  for the optimiser's hot path.
+- **`/optimise` reads stock; it never writes it.** The pure-function invariant
+  from #9 holds — no reserving, no decrementing. Consumption on cut-plan
+  completion is a deliberate later decision, not an oversight.
+- `OptimiseIn.sheet_len_mm` / `sheet_wid_mm` are now **optional**:
+  - omitted → the server picks the **largest in-stock sheet** for
+    `material_sku` (by area, tie-broken by quantity) and sets
+    `sheet_dims_from_stock=true`;
+  - omitted with no stock on hand → `422 {code: "NO_SHEET_SIZE"}`;
+  - supplied → explicit dims win, so ad-hoc stock the catalog doesn't know
+    about can still be nested against.
+- `OptimiseSummary` gains `sheet_len_mm`, `sheet_wid_mm`,
+  `sheet_dims_from_stock`, `sheets_available`, `sheet_shortfall`.
+  **`sheets_available` is `null` when no stock is recorded at that size** —
+  that means *unknown*, not zero, so the UI must not claim a shortfall
+  against it.
+- Routes (`apps/api/app/cut_floor/`, queries in `inventory_queries.py`),
+  reads gated `("cut_floor","read")`, writes `("cut_floor","write")`:
+  - `GET /board-inventory?material_sku=&in_stock_only=`
+  - `POST /board-inventory` — **upsert** by (material, size); posting the same
+    size again sets the quantity instead of duplicating. Omitted `location` /
+    `notes` are preserved, not clobbered. `404 UNKNOWN_MATERIAL` for an
+    unknown SKU.
+  - `PATCH /board-inventory/{id}` (qty / location / notes),
+    `DELETE /board-inventory/{id}`.
+- Audit: `board_inventory.{upsert|update|delete}`.
+- Web: `OptimiseDialog` defaults to **Use sheet size from stock** (the dim
+  inputs grey out; kerf stays editable since it's a saw property, not a stock
+  one), lists what's on hand under the SKU field, and shows a shortfall
+  banner when a nest needs more sheets than exist. Saving is still allowed —
+  a short nest is a purchasing signal, not an error.
+- Seed (`make seed`): 6 stock rows across 5 boards on the demo workspace —
+  BM-101 deliberately stocked in **two** sizes (2440×1220 and 3600×1800) to
+  exercise the largest-sheet pick, and BM-104 at **zero** to exercise the
+  out-of-stock path. Idempotent via the same upsert.

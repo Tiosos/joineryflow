@@ -111,12 +111,28 @@ export type OptimiseStrategy = "maxrects" | "naive";
 export interface OptimiseIn {
   name: string;
   material_sku: string;
-  sheet_len_mm: number;
-  sheet_wid_mm: number;
+  /** Omit to use the largest in-stock sheet for the SKU (board_inventory). */
+  sheet_len_mm?: number | null;
+  sheet_wid_mm?: number | null;
   kerf_mm?: number;
   include_only_item_ids?: number[] | null;
   strategy?: OptimiseStrategy;
   max_sheets?: number;
+}
+
+export interface BoardInventoryRow {
+  inventory_id: number;
+  material_id: number;
+  material_sku: string | null;
+  material_description: string | null;
+  grain_locked: boolean;
+  len_mm: number;
+  wid_mm: number;
+  qty_on_hand: number;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface OptimiseSkip {
@@ -133,6 +149,12 @@ export interface OptimiseSummary {
   sheets_used: number;
   utilization_pct: number;
   sheet_utilization: number[];
+  sheet_len_mm: number | null;
+  sheet_wid_mm: number | null;
+  sheet_dims_from_stock: boolean;
+  /** null = no stock recorded for this size (unknown), not zero. */
+  sheets_available: number | null;
+  sheet_shortfall: number;
 }
 
 export interface OptimiseOut {
