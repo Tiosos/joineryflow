@@ -434,6 +434,28 @@ def test_optimise_include_only_item_ids_filters_parts():
     assert r_other.json()["summary"]["total_parts"] == 3
 
 
+def test_optimise_empty_item_filter_packs_nothing():
+    """An explicit empty include_only_item_ids means "no items selected", not
+    "no filter" — it must not silently fall back to packing the whole project."""
+    c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _add_part(mid, 720, 580, qty=3)
+
+    # Sanity: omitting the field packs everything.
+    r_all = c.post(f"/projects/{pid}/optimise", json=_body())
+    assert r_all.json()["summary"]["total_parts"] == 3
+
+    r_none = c.post(
+        f"/projects/{pid}/optimise",
+        json=_body(include_only_item_ids=[]),
+    )
+    assert r_none.status_code == 200, r_none.text
+    body = r_none.json()
+    assert body["summary"]["total_parts"] == 0
+    assert body["summary"]["placed"] == 0
+    assert body["summary"]["sheets_used"] == 0
+    assert body["proposal"]["sheets"] == []
+
+
 def test_optimise_naive_strategy_still_supported():
     c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
     _add_part(mid, 720, 580, qty=3)

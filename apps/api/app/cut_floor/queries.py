@@ -71,7 +71,16 @@ def candidate_parts_for_optimise(
     dimensions, joined to its board material's `grain_locked` flag (parts
     with no board material default to rotatable). Optionally narrowed to
     `item_ids`. Workspace isolation is enforced by the caller's
-    project_in_workspace() check plus the project join here."""
+    project_in_workspace() check plus the project join here.
+
+    `item_ids` distinguishes "not filtering" from "filtering to nothing":
+      * `None`  -> no filter, every part in the project.
+      * `[]`    -> an explicit empty selection, so no parts. Treating this as
+        "no filter" would silently pack the whole project — the opposite of
+        what an empty selection means.
+    """
+    if item_ids is not None and len(item_ids) == 0:
+        return []
     conds = [
         "pr.workspace_id = :w",
         "i.project_id = :pid",
