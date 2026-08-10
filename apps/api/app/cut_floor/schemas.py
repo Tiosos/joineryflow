@@ -82,6 +82,39 @@ class ItemCutPlanOut(BaseModel):
     sheets: list[CutSheetOut] = Field(default_factory=list)
 
 
+# --- Optimiser (sub-project #9 stub) -----------------------------------------
+
+class OptimiseIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    material_sku: str = Field(min_length=1, max_length=128)
+    sheet_len_mm: float = Field(gt=0)
+    sheet_wid_mm: float = Field(gt=0)
+    kerf_mm: float = Field(default=3, ge=0)
+    include_only_item_ids: list[int] | None = None
+
+
+class OptimiseSkip(BaseModel):
+    label: str
+    reason: str  # 'too_large' | 'no_room'
+    part_id: int | None = None
+
+
+class OptimiseSummary(BaseModel):
+    total_parts: int
+    placed: int
+    skipped: int
+    skipped_reasons: list[OptimiseSkip] = Field(default_factory=list)
+    sheets_used: int
+    utilization_pct: float
+
+
+class OptimiseOut(BaseModel):
+    """`proposal` is the identical shape accepted by
+    POST /projects/{pid}/cut-plans — the user confirms then forwards it."""
+    proposal: CutPlanIn
+    summary: OptimiseSummary
+
+
 # --- CutSchedule -------------------------------------------------------------
 
 class CutScheduleIn(BaseModel):

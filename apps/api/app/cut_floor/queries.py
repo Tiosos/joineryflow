@@ -58,6 +58,50 @@ def item_project(db: Session, *, item_id: int, workspace_id: int) -> int | None:
     return row[0] if row else None
 
 
+# ---- Optimiser: candidate parts (sub-project #9) ---------------------------
+
+def candidate_parts_for_optimise(
+    db: Session,
+    *,
+    workspace_id: int,
+    project_id: int,
+    item_ids: list[int] | None = None,
+) -> list[dict]:
+    """Parts eligible for packing: every part in the project with real
+    dimensions, joined to its board material's `grain_locked` flag (parts
+    with no board material default to rotatable). Optionally narrowed to
+    `item_ids`. Workspace isolation is enforced by the caller's
+    project_in_workspace() check plus the project join here."""
+    conds = [
+        "pr.workspace_id = :w",
+        "i.project_id = :pid",
+        "p.len_mm IS NOT NULL AND p.wid_mm IS NOT NULL",
+        "p.len_mm > 0 AND p.wid_mm > 0",
+    ]
+    params: dict[str, Any] = {"w": workspace_id, "pid": project_id}
+    if item_ids:
+        conds.append("i.item_id = ANY(:item_ids)")
+        params["item_ids"] = item_ids
+    where = " AND ".join(conds)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT p.part_id, p.part_name, p.qty, p.len_mm, p.wid_mm,
+                   COALESCE(bm.grain_locked, false) AS grain_locked
+            FROM parts p
+            JOIN modules m  ON m.module_id = p.module_id
+            JOIN items i    ON i.item_id = m.item_id
+            JOIN projects pr ON pr.project_id = i.project_id
+            LEFT JOIN board_materials bm ON bm.material_id = p.board_material_id
+            WHERE {where}
+            ORDER BY p.part_id
+            """
+        ),
+        params,
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 # ---- CutPlan: insert -------------------------------------------------------
 
 def insert_cut_plan(

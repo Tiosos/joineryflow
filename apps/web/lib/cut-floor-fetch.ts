@@ -6,6 +6,8 @@ import type {
   CutSchedulePatchIn,
   CutScheduleOut,
   ItemCutPlanOut,
+  OptimiseIn,
+  OptimiseOut,
   ReorderIn,
 } from "./cut-floor-types";
 
@@ -74,6 +76,19 @@ export async function deleteCutPlan(planId: number): Promise<void> {
     credentials: "include",
   });
   await check<void>(res, "deleteCutPlan");
+}
+
+export async function optimiseProject(
+  projectId: number,
+  body: OptimiseIn,
+): Promise<OptimiseOut> {
+  const res = await fetch(`/api/projects/${projectId}/optimise`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return check<OptimiseOut>(res, "optimiseProject");
 }
 
 // --- CutSchedule -----------------------------------------------------------

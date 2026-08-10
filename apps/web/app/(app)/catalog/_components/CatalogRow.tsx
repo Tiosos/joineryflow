@@ -110,6 +110,17 @@ export default function CatalogRow({ tab, slug, row, canWrite, onChanged }: Prop
         <Cell value={row.synonyms.join(", ")} canWrite={canWrite}
               onSave={(v) => save({ synonyms: v.split(/\s*,\s*/).filter(Boolean) })} />
       </td>
+      {(tab === "board" || tab === "benchtop") && (
+        <td className="px-3 py-1 text-center">
+          <input
+            type="checkbox"
+            checked={row.grain_locked ?? false}
+            disabled={!canWrite || busy}
+            onChange={(e) => save({ grain_locked: e.target.checked })}
+            aria-label="Grain locked"
+          />
+        </td>
+      )}
       <td className="px-3 py-1 text-xs text-h-muted">
         {row.archived_at ? "Archived" : "Active"}
       </td>

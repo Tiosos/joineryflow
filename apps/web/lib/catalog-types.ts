@@ -32,6 +32,7 @@ export interface CatalogRow {
   default_lead_time_days: number | null;
   archived_at: string | null;
   archived_by: number | null;
+  grain_locked?: boolean; // board + benchtop only (migration 0024)
 }
 
 export interface CatalogListResp {

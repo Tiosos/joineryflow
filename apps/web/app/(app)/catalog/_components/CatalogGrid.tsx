@@ -25,6 +25,8 @@ const LEGACY_COL_LABEL: Record<Exclude<CatalogTab, "cv-mappings">, string> = {
 export default function CatalogGrid(p: Props) {
   if (p.tab === "cv-mappings") return null;
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
+  const hasGrain = p.tab === "board" || p.tab === "benchtop";
+  const colCount = hasGrain ? 9 : 8;
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -37,13 +39,14 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2">Default supplier</th>
             <th className="px-3 py-2">Lead (d)</th>
             <th className="px-3 py-2">Synonyms</th>
+            {hasGrain && <th className="px-3 py-2">Grain</th>}
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {p.rows.length === 0 && (
-            <tr><td colSpan={8} className="px-3 py-6 text-center text-h-muted">No rows.</td></tr>
+            <tr><td colSpan={colCount} className="px-3 py-6 text-center text-h-muted">No rows.</td></tr>
           )}
           {p.rows.map((r) => {
             const key = r.material_id ?? r.hire_id;
