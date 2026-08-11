@@ -1,4 +1,5 @@
 import type {
+  BoardInventoryRow,
   CutPlanIn,
   CutPlanOut,
   CutPlanSummary,
@@ -76,6 +77,20 @@ export async function deleteCutPlan(planId: number): Promise<void> {
     credentials: "include",
   });
   await check<void>(res, "deleteCutPlan");
+}
+
+export async function listBoardInventory(opts: {
+  materialSku?: string;
+  inStockOnly?: boolean;
+} = {}): Promise<BoardInventoryRow[]> {
+  const qs = new URLSearchParams();
+  if (opts.materialSku) qs.set("material_sku", opts.materialSku);
+  if (opts.inStockOnly) qs.set("in_stock_only", "true");
+  const url = qs.toString()
+    ? `/api/board-inventory?${qs.toString()}`
+    : "/api/board-inventory";
+  const res = await fetch(url, { credentials: "include", cache: "no-store" });
+  return check<BoardInventoryRow[]>(res, "listBoardInventory");
 }
 
 export async function optimiseProject(

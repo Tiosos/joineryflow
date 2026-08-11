@@ -826,6 +826,34 @@ def main() -> None:
              WHERE workspace_id = :w AND code = 'BM-103'
         """), {"w": workspace_id})
 
+        # Sheet stock on hand (#board_inventory / migration 0025) so the
+        # optimiser can default its sheet size and show a shortfall without
+        # anyone typing dimensions. BM-101 is deliberately stocked in two
+        # sizes; BM-104 is deliberately at zero to exercise the out-of-stock
+        # path. Idempotent via the (workspace, material, size) upsert.
+        for code, len_mm, wid_mm, qty, loc in [
+            ("BM-001", 2440, 1220, 24, "Rack A1"),
+            ("BM-002", 2440, 1220,  9, "Rack A2"),
+            ("BM-101", 2440, 1220, 15, "Rack B1"),
+            ("BM-101", 3600, 1800,  4, "Rack B2"),   # oversize stock
+            ("BM-103", 2440, 1220,  6, "Rack C1"),   # grain-locked walnut
+            ("BM-104", 2440, 1220,  0, "Rack C2"),   # out of stock
+        ]:
+            s.execute(text("""
+                INSERT INTO board_inventory
+                    (workspace_id, material_id, len_mm, wid_mm, qty_on_hand,
+                     location, created_by)
+                SELECT :w, bm.material_id, :len, :wid, :qty, :loc, :cb
+                  FROM board_materials bm
+                 WHERE bm.workspace_id = :w AND bm.code = :code
+                ON CONFLICT (workspace_id, material_id, len_mm, wid_mm)
+                DO UPDATE SET qty_on_hand = EXCLUDED.qty_on_hand,
+                              location    = EXCLUDED.location,
+                              updated_at  = now()
+            """), {"w": workspace_id, "code": code, "len": len_mm,
+                   "wid": wid_mm, "qty": qty, "loc": loc, "cb": _drafter_id})
+        print("seeded board_inventory: 6 stock rows across 5 boards")
+
         # 2 cv_material_mapping demo rows (drafter creator).
         _drafter_id = s.execute(text(
             "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'drafter' LIMIT 1"

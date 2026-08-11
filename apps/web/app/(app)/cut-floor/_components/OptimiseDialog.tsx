@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { listCatalog } from "@/lib/catalog-fetch";
-import { createCutPlan, optimiseProject } from "@/lib/cut-floor-fetch";
-import type { OptimiseOut, OptimiseStrategy } from "@/lib/cut-floor-types";
+import {
+  createCutPlan,
+  listBoardInventory,
+  optimiseProject,
+} from "@/lib/cut-floor-fetch";
+import type {
+  BoardInventoryRow,
+  OptimiseOut,
+  OptimiseStrategy,
+} from "@/lib/cut-floor-types";
 import { PM } from "@/lib/pm-fetch";
 import { SheetCanvas } from "./SheetCanvas";
 
@@ -48,6 +56,52 @@ export function OptimiseDialog({
   const [sheetWid, setSheetWid] = useState(1220);
   const [kerf, setKerf] = useState(3);
   const [strategy, setStrategy] = useState<OptimiseStrategy>("maxrects");
+  // Default to stock-driven sizing; the manual fields are the escape hatch for
+  // ad-hoc sheets the catalog doesn't know about.
+  const [useStockSize, setUseStockSize] = useState(true);
+
+  // Stock rows for the SKU currently typed, so the dialog can show what's on
+  // hand before the user commits to a run.
+  const [stock, setStock] = useState<BoardInventoryRow[]>([]);
+  useEffect(() => {
+    const sku = materialSku.trim();
+    if (!sku) {
+      setStock([]);
+      return;
+    }
+    let cancelled = false;
+    // Small debounce — the SKU field is free-text and fires per keystroke.
+    const t = setTimeout(() => {
+      listBoardInventory({ materialSku: sku })
+        .then((rows) => {
+          if (!cancelled) setStock(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setStock([]);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [materialSku]);
+
+  const inStock = useMemo(
+    () => stock.filter((r) => r.qty_on_hand > 0),
+    [stock],
+  );
+  // Mirrors the server's choice: largest in-stock sheet by area.
+  const bestStock = useMemo(
+    () =>
+      inStock
+        .slice()
+        .sort(
+          (a, b) =>
+            b.len_mm * b.wid_mm - a.len_mm * a.wid_mm ||
+            b.qty_on_hand - a.qty_on_hand,
+        )[0] ?? null,
+    [inStock],
+  );
 
   const [result, setResult] = useState<OptimiseOut | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,8 +191,9 @@ export function OptimiseDialog({
       const out = await optimiseProject(projectId, {
         name,
         material_sku: materialSku,
-        sheet_len_mm: sheetLen,
-        sheet_wid_mm: sheetWid,
+        // Omitting the dims tells the server to size from stock.
+        sheet_len_mm: useStockSize ? null : sheetLen,
+        sheet_wid_mm: useStockSize ? null : sheetWid,
         kerf_mm: kerf,
         strategy,
         // Omit when everything is selected so the API keeps its "all parts"
@@ -231,10 +286,44 @@ export function OptimiseDialog({
                   </option>
                 ))}
               </datalist>
+              <p className="mt-1 text-xs text-h-muted">
+                {bestStock ? (
+                  <>
+                    In stock:{" "}
+                    {inStock.map((r, i) => (
+                      <span key={r.inventory_id}>
+                        {i > 0 && " · "}
+                        <span className="font-mono">
+                          {r.qty_on_hand}× {r.len_mm}×{r.wid_mm}
+                        </span>
+                        {r.location ? ` (${r.location})` : ""}
+                      </span>
+                    ))}
+                  </>
+                ) : stock.length > 0 ? (
+                  "Recorded, but none on hand at any size."
+                ) : (
+                  "No sheet stock recorded for this SKU."
+                )}
+              </p>
             </div>
 
+            <label className="flex items-center gap-2 text-sm text-h-ink">
+              <input
+                type="checkbox"
+                checked={useStockSize}
+                onChange={(e) => setUseStockSize(e.target.checked)}
+              />
+              Use sheet size from stock
+              {bestStock && useStockSize && (
+                <span className="font-mono text-xs text-h-muted">
+                  ({bestStock.len_mm}×{bestStock.wid_mm})
+                </span>
+              )}
+            </label>
+
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <div className={useStockSize ? "opacity-50" : ""}>
                 <label className="block text-sm text-h-muted">
                   Sheet length (mm)
                 </label>
@@ -242,11 +331,12 @@ export function OptimiseDialog({
                   type="number"
                   min={1}
                   value={sheetLen}
+                  disabled={useStockSize}
                   onChange={(e) => setSheetLen(Number(e.target.value))}
-                  className="w-full rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink"
+                  className="w-full rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink disabled:cursor-not-allowed"
                 />
               </div>
-              <div>
+              <div className={useStockSize ? "opacity-50" : ""}>
                 <label className="block text-sm text-h-muted">
                   Sheet width (mm)
                 </label>
@@ -254,11 +344,13 @@ export function OptimiseDialog({
                   type="number"
                   min={1}
                   value={sheetWid}
+                  disabled={useStockSize}
                   onChange={(e) => setSheetWid(Number(e.target.value))}
-                  className="w-full rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink"
+                  className="w-full rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink disabled:cursor-not-allowed"
                 />
               </div>
               <div>
+                {/* Kerf is a saw property, not a stock property — always editable. */}
                 <label className="block text-sm text-h-muted">Kerf (mm)</label>
                 <input
                   type="number"
@@ -388,8 +480,32 @@ export function OptimiseDialog({
                 {result.summary.total_parts} parts ·{" "}
                 {result.summary.sheets_used} sheet
                 {result.summary.sheets_used === 1 ? "" : "s"}
+                {result.summary.sheet_len_mm != null && (
+                  <>
+                    {" · "}
+                    <span className="font-mono">
+                      {Math.round(result.summary.sheet_len_mm)}×
+                      {Math.round(result.summary.sheet_wid_mm ?? 0)}
+                    </span>
+                    {result.summary.sheet_dims_from_stock && " from stock"}
+                  </>
+                )}
               </span>
             </div>
+
+            {result.summary.sheet_shortfall > 0 && (
+              <div className="rounded-lg border border-h-warn bg-h-surface px-3 py-2 text-sm text-h-ink">
+                <span className="font-medium">
+                  Short {result.summary.sheet_shortfall} sheet
+                  {result.summary.sheet_shortfall === 1 ? "" : "s"}.
+                </span>{" "}
+                <span className="text-h-muted">
+                  This nest needs {result.summary.sheets_used} but only{" "}
+                  {result.summary.sheets_available} on hand. You can still save
+                  the plan — order or re-stock before cutting.
+                </span>
+              </div>
+            )}
 
             {result.summary.skipped > 0 && (
               <details className="rounded-lg border border-h-line bg-h-surface px-3 py-2 text-sm">

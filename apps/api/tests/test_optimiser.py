@@ -456,6 +456,171 @@ def test_optimise_empty_item_filter_packs_nothing():
     assert body["proposal"]["sheets"] == []
 
 
+# ---------------------------------------------------------------------------
+# Board inventory (sheet stock, migration 0025)
+# ---------------------------------------------------------------------------
+
+def _board_sku(wid: int) -> tuple[int, str]:
+    """Create a board material and return (material_id, sku)."""
+    sku = f"SKU-{uuid.uuid4().hex[:6]}"
+    s = SessionLocal()
+    try:
+        mid = s.execute(
+            text(
+                """
+                INSERT INTO board_materials(code, sku, description, workspace_id)
+                VALUES (:code, :sku, 'Board', :w) RETURNING material_id
+                """
+            ),
+            {"code": f"BM-{uuid.uuid4().hex[:8]}", "sku": sku, "w": wid},
+        ).scalar()
+        s.commit()
+        return mid, sku
+    finally:
+        s.close()
+
+
+def test_board_inventory_upsert_is_idempotent_per_size():
+    c, wid, *_ = _setup("drafter")
+    _mid, sku = _board_sku(wid)
+
+    r1 = c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 2440, "wid_mm": 1220,
+        "qty_on_hand": 5, "location": "Rack A",
+    })
+    assert r1.status_code == 201, r1.text
+    assert r1.json()["qty_on_hand"] == 5
+
+    # Same size again sets the quantity rather than creating a second row.
+    r2 = c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 9,
+    })
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["inventory_id"] == r1.json()["inventory_id"]
+    assert r2.json()["qty_on_hand"] == 9
+    assert r2.json()["location"] == "Rack A"  # not clobbered by the omitted field
+
+    rows = c.get("/board-inventory").json()
+    assert len(rows) == 1
+
+
+def test_board_inventory_unknown_sku_404():
+    c, *_ = _setup("drafter")
+    r = c.post("/board-inventory", json={
+        "material_sku": "NOPE-404", "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 1,
+    })
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "UNKNOWN_MATERIAL"
+
+
+def test_board_inventory_patch_and_delete():
+    c, wid, *_ = _setup("drafter")
+    _mid, sku = _board_sku(wid)
+    iid = c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 4,
+    }).json()["inventory_id"]
+
+    r = c.patch(f"/board-inventory/{iid}", json={"qty_on_hand": 0})
+    assert r.status_code == 200, r.text
+    assert r.json()["qty_on_hand"] == 0
+
+    assert c.delete(f"/board-inventory/{iid}").status_code == 204
+    assert c.get("/board-inventory").json() == []
+    assert c.patch(f"/board-inventory/{iid}", json={"qty_on_hand": 1}).status_code == 404
+
+
+def test_board_inventory_viewer_cannot_write():
+    c, wid, *_ = _setup("viewer")
+    r = c.post("/board-inventory", json={
+        "material_sku": "any", "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 1,
+    })
+    assert r.status_code == 403
+
+
+def test_optimise_takes_sheet_size_from_stock_when_omitted():
+    c, wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _bmid, sku = _board_sku(wid)
+    _add_part(mid, 700, 500, qty=2)
+    # Two stocked sizes — the larger one should be chosen.
+    c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 6,
+    })
+    c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 1200, "wid_mm": 800, "qty_on_hand": 50,
+    })
+
+    body = {"name": "Stock nest", "material_sku": sku, "kerf_mm": 3}
+    r = c.post(f"/projects/{pid}/optimise", json=body)
+    assert r.status_code == 200, r.text
+    summary = r.json()["summary"]
+    assert summary["sheet_dims_from_stock"] is True
+    assert (summary["sheet_len_mm"], summary["sheet_wid_mm"]) == (2440, 1220)
+    assert summary["sheets_available"] == 6
+    assert summary["sheet_shortfall"] == 0
+
+
+def test_optimise_without_dims_and_without_stock_is_422():
+    c, wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _bmid, sku = _board_sku(wid)
+    _add_part(mid, 700, 500, qty=1)
+    r = c.post(
+        f"/projects/{pid}/optimise",
+        json={"name": "No stock", "material_sku": sku, "kerf_mm": 3},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "NO_SHEET_SIZE"
+
+
+def test_optimise_reports_shortfall_when_stock_is_short():
+    c, wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _bmid, sku = _board_sku(wid)
+    # Big parts: one per sheet, so 5 parts need 5 sheets but only 2 are stocked.
+    _add_part(mid, 1180, 780, qty=5)
+    c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 1200, "wid_mm": 800, "qty_on_hand": 2,
+    })
+    r = c.post(
+        f"/projects/{pid}/optimise",
+        json={"name": "Short nest", "material_sku": sku, "kerf_mm": 3},
+    )
+    assert r.status_code == 200, r.text
+    summary = r.json()["summary"]
+    assert summary["sheets_used"] == 5
+    assert summary["sheets_available"] == 2
+    assert summary["sheet_shortfall"] == 3
+
+
+def test_optimise_explicit_dims_beat_stock_and_report_unknown_availability():
+    c, wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
+    _bmid, sku = _board_sku(wid)
+    _add_part(mid, 700, 500, qty=2)
+    c.post("/board-inventory", json={
+        "material_sku": sku, "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 6,
+    })
+    # Explicit dims for a size that isn't stocked at all.
+    r = c.post(f"/projects/{pid}/optimise", json=_body(
+        material_sku=sku, sheet_len_mm=3000, sheet_wid_mm=1500,
+    ))
+    assert r.status_code == 200, r.text
+    summary = r.json()["summary"]
+    assert summary["sheet_dims_from_stock"] is False
+    assert (summary["sheet_len_mm"], summary["sheet_wid_mm"]) == (3000, 1500)
+    # No stock recorded at THIS size → availability is unknown, not zero, and
+    # no shortfall is claimed.
+    assert summary["sheets_available"] is None
+    assert summary["sheet_shortfall"] == 0
+
+
+def test_board_inventory_workspace_isolated():
+    c_a, wid_a, *_ = _setup("drafter")
+    _mid, sku_a = _board_sku(wid_a)
+    c_a.post("/board-inventory", json={
+        "material_sku": sku_a, "len_mm": 2440, "wid_mm": 1220, "qty_on_hand": 7,
+    })
+    c_b, *_ = _setup("drafter")
+    assert c_b.get("/board-inventory").json() == []
+
+
 def test_optimise_naive_strategy_still_supported():
     c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
     _add_part(mid, 720, 580, qty=3)

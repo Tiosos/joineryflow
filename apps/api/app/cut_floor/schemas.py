@@ -87,8 +87,12 @@ class ItemCutPlanOut(BaseModel):
 class OptimiseIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     material_sku: str = Field(min_length=1, max_length=128)
-    sheet_len_mm: float = Field(gt=0)
-    sheet_wid_mm: float = Field(gt=0)
+    # Optional since board_inventory (0025): when omitted, the sheet size is
+    # taken from the largest in-stock sheet for `material_sku`. Supplying them
+    # explicitly still wins, so ad-hoc stock the catalog doesn't know about can
+    # be nested against.
+    sheet_len_mm: float | None = Field(default=None, gt=0)
+    sheet_wid_mm: float | None = Field(default=None, gt=0)
     kerf_mm: float = Field(default=3, ge=0)
     include_only_item_ids: list[int] | None = None
     strategy: Literal["maxrects", "naive"] = "maxrects"
@@ -109,6 +113,46 @@ class OptimiseSummary(BaseModel):
     sheets_used: int
     utilization_pct: float  # mean across the sheets used
     sheet_utilization: list[float] = Field(default_factory=list)  # per-sheet
+    # Sheet stock context (board_inventory, 0025). `sheets_available` is null
+    # when the SKU has no stock recorded — that is "unknown", not "zero", so
+    # the UI must not report a shortfall against it.
+    sheet_len_mm: float | None = None
+    sheet_wid_mm: float | None = None
+    sheet_dims_from_stock: bool = False
+    sheets_available: int | None = None
+    sheet_shortfall: int = 0
+
+
+# --- Board inventory (migration 0025) ----------------------------------------
+
+class BoardInventoryIn(BaseModel):
+    material_sku: str = Field(min_length=1, max_length=255)
+    len_mm: int = Field(gt=0)
+    wid_mm: int = Field(gt=0)
+    qty_on_hand: int = Field(default=0, ge=0)
+    location: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+
+class BoardInventoryPatchIn(BaseModel):
+    qty_on_hand: int | None = Field(default=None, ge=0)
+    location: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+
+class BoardInventoryOut(BaseModel):
+    inventory_id: int
+    material_id: int
+    material_sku: str | None = None
+    material_description: str | None = None
+    grain_locked: bool = False
+    len_mm: int
+    wid_mm: int
+    qty_on_hand: int
+    location: str | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class OptimiseOut(BaseModel):
