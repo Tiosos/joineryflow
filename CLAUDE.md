@@ -408,7 +408,9 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   without inserting. Audit: one `catalog.{table}.csv_import` row per import
   (not per row).
 - Web routes:
-  - `/catalog?tab=board|hardware|custom_made|benchtop|appliance|hire|cv-mappings`
+  - `/catalog?tab=board|hardware|custom_made|benchtop|appliance|hire|stock|cv-mappings`
+    (`stock` added by 0025; `stock` and `cv-mappings` are self-contained
+    panels — the six catalog-table tabs are typed as `MaterialTab`)
   - SideBar entry visible to all roles with `catalog.read`.
 - Workspace isolation enforced on every read + write via `workspace_id`
   column (already on the 6 catalog tables from migration 0007;
@@ -883,7 +885,10 @@ surfaces:
   - `PATCH /board-inventory/{id}` (qty / location / notes),
     `DELETE /board-inventory/{id}`.
 - Audit: `board_inventory.{upsert|update|delete}`.
-- Web: `OptimiseDialog` defaults to **Use sheet size from stock** (the dim
+- Web: a **Sheet Stock** tab on `/catalog` (`StockPanel`) lists stock by
+  material + size with inline qty/location editing, remove, and a
+  set-stock form (the same upsert, so re-entering a size updates it).
+  `OptimiseDialog` defaults to **Use sheet size from stock** (the dim
   inputs grey out; kerf stays editable since it's a saw property, not a stock
   one), lists what's on hand under the SKU field, and shows a shortfall
   banner when a nest needs more sheets than exist. Saving is still allowed —

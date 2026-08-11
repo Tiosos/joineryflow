@@ -5,19 +5,19 @@ import { useState } from "react";
 import { createRow } from "@/lib/catalog-fetch";
 import type { CatalogSlug } from "@/lib/catalog-types";
 
-import type { CatalogTab } from "./CatalogClient";
+import type { MaterialTab } from "./CatalogClient";
 
 interface Project { id: number; project_code: string; name: string; }
 
 interface Props {
-  tab: CatalogTab;
+  tab: MaterialTab;
   slug: CatalogSlug;
   projects: Project[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-const LEGACY_FIELD: Record<Exclude<CatalogTab, "cv-mappings">, { key: string; label: string } | null> = {
+const LEGACY_FIELD: Record<MaterialTab, { key: string; label: string } | null> = {
   board: { key: "code", label: "Code" },
   hardware: null,
   custom_made: { key: "internal_ref", label: "Internal ref" },
@@ -28,8 +28,7 @@ const LEGACY_FIELD: Record<Exclude<CatalogTab, "cv-mappings">, { key: string; la
 
 export default function NewCatalogRowDialog(p: Props) {
   // Parent (CatalogClient) gates rendering on tab !== "cv-mappings".
-  // We assert the narrowed type here; LEGACY_FIELD has no entry for "cv-mappings".
-  const legacy = p.tab === "cv-mappings" ? null : LEGACY_FIELD[p.tab];
+  const legacy = LEGACY_FIELD[p.tab];
 
   const [description, setDescription] = useState("");
   const [sku, setSku] = useState("");

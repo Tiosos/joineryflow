@@ -14,6 +14,7 @@ const TABS: { key: CatalogTab; label: string }[] = [
   { key: "benchtop",    label: "Benchtop" },
   { key: "appliance",   label: "Appliances" },
   { key: "hire",        label: "Equipment Hire" },
+  { key: "stock",       label: "Sheet Stock" },
   { key: "cv-mappings", label: "CV Mappings" },
 ];
 
