@@ -12,6 +12,7 @@ import CatalogGrid from "./CatalogGrid";
 import CatalogTabs from "./CatalogTabs";
 import MappingPanel from "./MappingPanel";
 import NewCatalogRowDialog from "./NewCatalogRowDialog";
+import StockPanel from "./StockPanel";
 
 interface Project { id: number; project_code: string; name: string; }
 interface Me { id: number; auth_role: string; full_name: string; workspace_id: number; }
@@ -23,9 +24,18 @@ export type CatalogTab =
   | "benchtop"
   | "appliance"
   | "hire"
+  | "stock"
   | "cv-mappings";
 
-const TAB_TO_SLUG: Record<Exclude<CatalogTab, "cv-mappings">, CatalogSlug> = {
+/** The six tabs backed by a catalog table. "stock" and "cv-mappings" are
+ *  their own panels and have no catalog slug or legacy column. */
+export type MaterialTab = Exclude<CatalogTab, "cv-mappings" | "stock">;
+
+function isMaterialTab(t: CatalogTab): t is MaterialTab {
+  return t !== "cv-mappings" && t !== "stock";
+}
+
+const TAB_TO_SLUG: Record<MaterialTab, CatalogSlug> = {
   board: "board-materials",
   hardware: "hardware-materials",
   custom_made: "custom-made",
@@ -60,7 +70,10 @@ export default function CatalogClient(props: Props) {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
-  const slug = tab === "cv-mappings" ? null : TAB_TO_SLUG[tab];
+  // Only the six material tabs map to a catalog slug; "stock" and
+  // "cv-mappings" render their own panels.
+  const materialTab = isMaterialTab(tab) ? tab : null;
+  const slug = materialTab ? TAB_TO_SLUG[materialTab] : null;
 
   const isWriter = ["admin", "manager", "drafter", "editor"].includes(props.me.auth_role);
 
@@ -87,8 +100,9 @@ export default function CatalogClient(props: Props) {
     return Array.from(seen).sort();
   }, [list]);
 
-  const headerText = tab === "cv-mappings"
-    ? "CV Mappings"
+  const headerText =
+    tab === "cv-mappings" ? "CV Mappings"
+    : tab === "stock" ? "Sheet stock on hand"
     : `${list?.rows.length ?? 0} ${tab} rows`;
 
   return (
@@ -98,7 +112,7 @@ export default function CatalogClient(props: Props) {
           <h1 className="text-2xl font-semibold text-h-ink">Catalog</h1>
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
-        {tab !== "cv-mappings" && isWriter && (
+        {materialTab && isWriter && (
           <div className="flex gap-2">
             <button onClick={() => setBulkOpen(true)}
                     className="rounded border border-h-line px-3 py-1.5 text-sm">
@@ -114,7 +128,7 @@ export default function CatalogClient(props: Props) {
 
       <CatalogTabs current={tab} onChange={(t) => updateUrl({ tab: t })} />
 
-      {tab !== "cv-mappings" && (
+      {materialTab && (
         <CatalogFilters
           searchValue={q ?? ""}
           selectedSupplier={supplier}
@@ -133,9 +147,11 @@ export default function CatalogClient(props: Props) {
         <MappingPanel canWrite={isWriter} />
       )}
 
-      {tab !== "cv-mappings" && slug && list && (
+      {tab === "stock" && <StockPanel canWrite={isWriter} />}
+
+      {materialTab && slug && list && (
         <CatalogGrid
-          tab={tab}
+          tab={materialTab}
           slug={slug}
           rows={list.rows}
           canWrite={isWriter}
@@ -143,9 +159,9 @@ export default function CatalogClient(props: Props) {
         />
       )}
 
-      {newOpen && tab !== "cv-mappings" && slug && (
+      {newOpen && materialTab && slug && (
         <NewCatalogRowDialog
-          tab={tab}
+          tab={materialTab}
           slug={slug}
           projects={props.projects}
           onClose={() => setNewOpen(false)}
@@ -153,7 +169,7 @@ export default function CatalogClient(props: Props) {
         />
       )}
 
-      {bulkOpen && tab !== "cv-mappings" && slug && (
+      {bulkOpen && materialTab && slug && (
         <CatalogBulkImportDialog
           slug={slug}
           onClose={() => setBulkOpen(false)}

@@ -2,18 +2,18 @@
 
 import type { CatalogRow as Row, CatalogSlug } from "@/lib/catalog-types";
 
-import type { CatalogTab } from "./CatalogClient";
+import type { MaterialTab } from "./CatalogClient";
 import CatalogRow from "./CatalogRow";
 
 interface Props {
-  tab: CatalogTab;
+  tab: MaterialTab;
   slug: CatalogSlug;
   rows: Row[];
   canWrite: boolean;
   onChanged: () => void;
 }
 
-const LEGACY_COL_LABEL: Record<Exclude<CatalogTab, "cv-mappings">, string> = {
+const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
   board: "Code",
   hardware: "—",
   custom_made: "Internal ref",
@@ -23,7 +23,6 @@ const LEGACY_COL_LABEL: Record<Exclude<CatalogTab, "cv-mappings">, string> = {
 };
 
 export default function CatalogGrid(p: Props) {
-  if (p.tab === "cv-mappings") return null;
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
   const colCount = hasGrain ? 9 : 8;

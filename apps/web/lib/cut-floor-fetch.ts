@@ -93,6 +93,44 @@ export async function listBoardInventory(opts: {
   return check<BoardInventoryRow[]>(res, "listBoardInventory");
 }
 
+export async function upsertBoardInventory(body: {
+  material_sku: string;
+  len_mm: number;
+  wid_mm: number;
+  qty_on_hand: number;
+  location?: string | null;
+  notes?: string | null;
+}): Promise<BoardInventoryRow> {
+  const res = await fetch("/api/board-inventory", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return check<BoardInventoryRow>(res, "upsertBoardInventory");
+}
+
+export async function patchBoardInventory(
+  inventoryId: number,
+  body: { qty_on_hand?: number; location?: string | null; notes?: string | null },
+): Promise<BoardInventoryRow> {
+  const res = await fetch(`/api/board-inventory/${inventoryId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return check<BoardInventoryRow>(res, "patchBoardInventory");
+}
+
+export async function deleteBoardInventory(inventoryId: number): Promise<void> {
+  const res = await fetch(`/api/board-inventory/${inventoryId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  await check<void>(res, "deleteBoardInventory");
+}
+
 export async function optimiseProject(
   projectId: number,
   body: OptimiseIn,

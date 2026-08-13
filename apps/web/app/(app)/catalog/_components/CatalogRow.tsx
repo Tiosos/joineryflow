@@ -5,17 +5,17 @@ import { useEffect, useState } from "react";
 import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug } from "@/lib/catalog-types";
 
-import type { CatalogTab } from "./CatalogClient";
+import type { MaterialTab } from "./CatalogClient";
 
 interface Props {
-  tab: CatalogTab;
+  tab: MaterialTab;
   slug: CatalogSlug;
   row: Row;
   canWrite: boolean;
   onChanged: () => void;
 }
 
-const LEGACY_COL_KEY: Record<Exclude<CatalogTab, "cv-mappings">, keyof Row | null> = {
+const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
   board: "code",
   hardware: null,
   custom_made: "internal_ref",
@@ -58,7 +58,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, onChanged }: Prop
     // or hire_id (equipment_hire). Render an empty row rather than crashing.
     return null;
   }
-  const legacyKey = tab === "cv-mappings" ? null : LEGACY_COL_KEY[tab];
+  const legacyKey = LEGACY_COL_KEY[tab];
   const legacyVal = legacyKey ? (row[legacyKey] as string | null | undefined) ?? "" : "—";
   const [busy, setBusy] = useState(false);
 
