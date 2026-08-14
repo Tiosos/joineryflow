@@ -1,4 +1,4 @@
-import { fetchMe } from "@/lib/session";
+import { can, fetchMe } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { ProcurementTabs } from "./_components/ProcurementTabs";
 
@@ -28,21 +28,11 @@ export default async function ProjectProcurementPage({
   const tab = sp.tab ?? "materials";
   const pid = Number(id);
   // `materials` + `batches` gate on the `orderbook` module; the `catalog` tab
-  // now writes through `/catalog/{slug}`, which gates on the `catalog` module —
+  // writes through `/catalog/{slug}`, which gates on the `catalog` module —
   // the two role sets differ (purchase_officer is read-only on catalog, editor
   // is read-only on orderbook), so they are threaded separately.
-  const canWrite =
-    !!me &&
-    (me.auth_role === "admin" ||
-      me.auth_role === "manager" ||
-      me.auth_role === "drafter" ||
-      me.auth_role === "purchase_officer");
-  const canWriteCatalog =
-    !!me &&
-    (me.auth_role === "admin" ||
-      me.auth_role === "manager" ||
-      me.auth_role === "drafter" ||
-      me.auth_role === "editor");
+  const canWrite = can(me, "orderbook", "write");
+  const canWriteCatalog = can(me, "catalog", "write");
   return (
     <div className="grid gap-4">
       <header className="flex items-baseline justify-between">

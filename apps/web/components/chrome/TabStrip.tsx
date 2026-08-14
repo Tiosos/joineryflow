@@ -1,27 +1,36 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { can, type Me, type Module } from "@/lib/session";
 
-const TABS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/tracking", label: "Tracking" },
-  { href: "/list", label: "List" },
-  { href: "/shop-dwgs", label: "Shop Dwgs" },
-  { href: "/isample", label: "iSample" },
-  { href: "/orderbook", label: "Orderbook" },
+interface Tab {
+  href: string;
+  label: string;
+  /** Matrix module gating this tab; `read` is required to see it at all. */
+  module: Module;
+}
+
+const TABS: Tab[] = [
+  { href: "/dashboard",  label: "Dashboard", module: "dashboard" },
+  { href: "/tracking",   label: "Tracking",  module: "tracking" },
+  { href: "/list",       label: "List",      module: "list" },
+  { href: "/shop-dwgs",  label: "Shop Dwgs", module: "shop_dwgs" },
+  { href: "/isample",    label: "iSample",   module: "isample" },
+  { href: "/orderbook",  label: "Orderbook", module: "orderbook" },
 ];
 
-const SECONDARY_TABS = [
-  { href: "/catalog", label: "Catalog" },
-  { href: "/shop-floor", label: "Shop Floor" },
-  { href: "/cut-floor", label: "Cut Floor" },
-  { href: "/estimating", label: "Estimating" },
-  { href: "/customers", label: "Customers" },
+const SECONDARY_TABS: Tab[] = [
+  { href: "/catalog",    label: "Catalog",    module: "catalog" },
+  { href: "/shop-floor", label: "Shop Floor", module: "shop_floor" },
+  { href: "/cut-floor",  label: "Cut Floor",  module: "cut_floor" },
+  { href: "/estimating", label: "Estimating", module: "estimating" },
+  // /customers is the estimating module's customer registry — same gate.
+  { href: "/customers",  label: "Customers",  module: "estimating" },
 ];
 
-export function TabStrip() {
+export function TabStrip({ user }: { user: Me }) {
   const p = usePathname();
-  function renderTab(t: { href: string; label: string }) {
+  function renderTab(t: Tab) {
     const active = p === t.href || p.startsWith(`${t.href}/`);
     return (
       <Link
@@ -37,11 +46,15 @@ export function TabStrip() {
       </Link>
     );
   }
+  const primary = TABS.filter((t) => can(user, t.module, "read"));
+  const secondary = SECONDARY_TABS.filter((t) => can(user, t.module, "read"));
   return (
     <nav className="flex flex-wrap items-center gap-1 border-b border-h-line px-4 bg-h-surface">
-      {TABS.map(renderTab)}
-      <span className="mx-2 h-5 w-px bg-h-line" aria-hidden="true" />
-      {SECONDARY_TABS.map(renderTab)}
+      {primary.map(renderTab)}
+      {primary.length > 0 && secondary.length > 0 && (
+        <span className="mx-2 h-5 w-px bg-h-line" aria-hidden="true" />
+      )}
+      {secondary.map(renderTab)}
     </nav>
   );
 }

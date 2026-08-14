@@ -113,3 +113,52 @@ def test_me_includes_jtbd_role():
     r2 = c.get("/auth/me")
     assert r2.status_code == 200
     assert r2.json()["jtbd_role"] == "Drafter"
+
+
+def _login_as(auth_role: str):
+    """Seed a workspace + user with `auth_role`, log in, return the client."""
+    suffix = uuid.uuid4().hex[:8]
+    slug = f"h-{suffix}"
+    email = f"r-{suffix}@example.com"
+    db = SessionLocal()
+    try:
+        wid = db.execute(
+            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
+            {"s": slug},
+        ).scalar()
+        db.execute(
+            text(
+                """
+                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+                VALUES (:w, :e, 'Role User', :p, :r)
+                """
+            ),
+            {"w": wid, "e": email, "p": hash_password("pw"), "r": auth_role},
+        )
+        db.commit()
+    finally:
+        db.close()
+    c = TestClient(app)
+    r = c.post(
+        "/auth/login",
+        json={"workspace_slug": slug, "email": email, "password": "pw"},
+    )
+    assert r.status_code == 200, r.text
+    return c
+
+
+def test_me_includes_permissions_matching_the_matrix():
+    """The web tier gates navigation off this payload — it must mirror MATRIX."""
+    from app.auth.permissions import _ALL_MODULES, has_permission
+
+    for role in ("admin", "viewer", "purchase_officer", "estimator"):
+        perms = _login_as(role).get("/auth/me").json()["permissions"]
+        assert set(perms) == set(_ALL_MODULES), role
+        for module in _ALL_MODULES:
+            for action in ("read", "write", "approve", "comment"):
+                assert (action in perms[module]) is has_permission(role, module, action)
+
+
+def test_me_permissions_deny_it_management_for_non_admin():
+    assert _login_as("viewer").get("/auth/me").json()["permissions"]["it_management"] == []
+    assert "read" in _login_as("admin").get("/auth/me").json()["permissions"]["it_management"]

@@ -161,3 +161,34 @@ def test_manager_admin_cut_floor_full_access():
     from app.auth.permissions import MATRIX
     assert MATRIX["manager"]["cut_floor"] == {"read", "write", "approve", "comment"}
     assert MATRIX["admin"]["cut_floor"] == {"read", "write", "approve", "comment"}
+
+
+# ── permissions_for: the matrix row served on /auth/me ────────────────────────
+
+def test_permissions_for_covers_every_module():
+    from app.auth.permissions import _ALL_MODULES, MATRIX, permissions_for
+    for role in MATRIX:
+        row = permissions_for(role)
+        assert set(row) == set(_ALL_MODULES), role
+
+
+def test_permissions_for_agrees_with_has_permission():
+    from app.auth.permissions import _ALL_MODULES, MATRIX, permissions_for
+    for role in MATRIX:
+        row = permissions_for(role)
+        for module in _ALL_MODULES:
+            for action in ("read", "write", "approve", "comment"):
+                assert (action in row[module]) is has_permission(role, module, action)
+
+
+def test_permissions_for_unknown_role_denies_everything():
+    from app.auth.permissions import permissions_for
+    assert all(v == [] for v in permissions_for("nope").values())
+
+
+def test_permissions_for_actions_are_sorted():
+    """Stable ordering keeps the /auth/me payload diffable."""
+    from app.auth.permissions import MATRIX, permissions_for
+    for role in MATRIX:
+        for actions in permissions_for(role).values():
+            assert actions == sorted(actions)

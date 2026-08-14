@@ -110,3 +110,14 @@ MATRIX: dict[str, dict[str, set[str]]] = {
 def has_permission(role: str, module: str, action: str) -> bool:
     """Return True iff `role` is allowed to perform `action` on `module`."""
     return action in MATRIX.get(role, {}).get(module, set())
+
+
+def permissions_for(role: str) -> dict[str, list[str]]:
+    """The whole matrix row for `role`, as `{module: sorted actions}`.
+
+    Served on `/auth/me` so the web tier can gate navigation and write
+    affordances off this matrix instead of hardcoding role lists per surface.
+    Every module is present; an empty list means "no access".
+    """
+    row = MATRIX.get(role, {})
+    return {m: sorted(row.get(m, set())) for m in _ALL_MODULES}
