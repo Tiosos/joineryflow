@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { can, type Me, type Module } from "@/lib/session";
+import { can, type Me, type Module } from "@/lib/permissions";
 
 interface Tab {
   href: string;

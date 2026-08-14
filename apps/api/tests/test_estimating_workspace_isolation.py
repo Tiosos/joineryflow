@@ -221,13 +221,28 @@ def test_patch_revision_cross_workspace_returns_404(client, truncate_all):
     assert r.status_code == 404
 
 
+# reject/expire/withdraw take a body; without one FastAPI answers 422 on
+# validation before the handler runs, which would leave the workspace check
+# untested. Each entry carries the minimum body that reaches the handler.
+_TRANSITIONS = [
+    ("send", None),
+    ("accept", None),
+    ("reject", {"lost_reason": "price"}),   # RejectIn.lost_reason is required
+    ("expire", {}),
+    ("withdraw", {}),
+    ("convert", None),
+]
+
+
 @pytest.mark.parametrize(
-    "action", ["send", "accept", "reject", "expire", "withdraw", "convert"]
+    "action,body", _TRANSITIONS, ids=[a for a, _ in _TRANSITIONS]
 )
-def test_revision_transitions_cross_workspace_return_404(client, truncate_all, action):
+def test_revision_transitions_cross_workspace_return_404(
+    client, truncate_all, action, body
+):
     ids = _seed_two_workspaces(truncate_all)
     _login_b(client)
-    r = client.post(f"/revisions/{ids['rid_a']}/{action}")
+    r = client.post(f"/revisions/{ids['rid_a']}/{action}", json=body)
     assert r.status_code == 404, f"{action} -> {r.status_code} {r.text}"
 
 
