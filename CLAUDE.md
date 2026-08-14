@@ -168,7 +168,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
-- `docs/superpowers/plans/2026-05-09-cutplan-optimiser-stub.md` — 10-task implementation plan for sub-project #9 (CutPlan optimiser stub; migration renumbered 0021→0024 after #9a).
+- `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -664,10 +664,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 > **No committed spec/plan doc.** #9a was built directly (commit
 > `a7b8d3d` + follow-ups) without a `docs/superpowers/specs|plans`
-> file — this section is the authoritative reference. (The
-> `2026-05-09-cutplan-optimiser-stub.md` plan is for #9, a *different*,
-> not-yet-built sub-project; it was leapfrogged when migration slot
-> 0021 went to estimating instead.)
+> file — this section is the authoritative reference. #9 (CutPlan
+> optimiser) is a *different* sub-project; it shipped after #9a, which
+> is why estimating holds migration slots 0021–0023 and the
+> optimiser's `grain_locked` landed as 0024.
 
 - New backend module `apps/api/app/estimating/` (`schemas.py`,
   `queries.py`, `routes.py`, `pdf.py` + `templates/quote.html`).
