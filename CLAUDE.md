@@ -589,9 +589,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   `cut_schedule.{create,update,status_change,reorder,cancel}`. All
   routed through `apps/api/app/auth/audit.py::write_audit`.
 - Seed (`make seed`) on ALF-001: 1 cut_plan "ALF-001 v1 nest", 1
-  sheet (18-PB), up to 8 part_slots (the first 6 parts of ALF-001's
-  first item + 2 foreign ones, for the Board-tab demo — fewer if that
-  item has fewer parts), and 2 cut_schedule rows (`running` today + `planned`
+  sheet (18-PB), **5 part_slots** (3 own + 2 foreign, for the Board-tab
+  demo), and 2 cut_schedule rows (`running` today + `planned`
   tomorrow). Idempotent — `DELETE FROM cut_plan WHERE project_id =
   ALF-001` runs first.
 - Out of scope **for #7c** (the optimiser it reserved
@@ -673,11 +672,11 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   for note-only PATCH and `it.worker_toggle` for the admin roster
   panel.
 - Seed (`make seed`) adds 4 shop workers to the staff roster and
-  inserts up to 6 demo assignments on ALF-001, one per item (one
+  inserts **5 demo assignments** on ALF-001, one per item (one
   `in_progress`, one `done` with matching `stage_completion_log` and
-  yesterday's `item_stages.done_date`, the rest `assigned`) —
-  fewer if the project has fewer than 6 items. Idempotent — wipes the
-  ALF-001 shop-floor demo state before re-seeding.
+  yesterday's `item_stages.done_date`, three `assigned`). The block asks
+  for up to 6 (`LIMIT 6` items) but the demo project yields 5. Idempotent
+  — wipes the ALF-001 shop-floor demo state before re-seeding.
 - Out of scope (deferred): mobile-first responsive UI, real-time
   pub/sub (15-s poll instead), efficiency analytics dashboards,
   per-part painting tracking, `time_record` table for payroll,
