@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 
-export const SESSION_COOKIE_NAME = "jf_session";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
+
+export { SESSION_COOKIE_NAME };
 const COOKIE_NAME = SESSION_COOKIE_NAME;
 const API = process.env.API_URL ?? "http://api:8000";
 

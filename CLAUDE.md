@@ -195,7 +195,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Web routes: `/home`, `/projects`, `/tracking?project_id=`, `/items/[id]?tab=cutlist|hardware|board|log`. (#2 made `/home` the landing page in place of `/dashboard`; **#9a reversed that** — `/home` is now a bare `redirect("/dashboard")` and `/dashboard` is the real landing page.)
 - Editor mode is detected by middleware writing `x-pathname`; layout reads it and hides TabStrip + SideBar, swapping in a "← Return to home" link.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
-- Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`. That variable is in neither `.env.example` nor `docker-compose.yml`, so the button is **off in a fresh dev setup** even though #4 shipped — set it in `.env` to reach the Procurement surface from Tracking.
+- Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`, now defaulted to `1` in `.env.example` (it was absent, so the button was off in every fresh dev setup even though #4 shipped). A `.env` copied before that fix won't have it.
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
 - Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.

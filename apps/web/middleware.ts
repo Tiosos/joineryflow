@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
+
 const PUBLIC = ["/login", "/api", "/_next", "/favicon.ico"];
 
 export function middleware(req: NextRequest) {
@@ -7,7 +9,7 @@ export function middleware(req: NextRequest) {
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
-  const tok = req.cookies.get("jf_session")?.value;
+  const tok = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!tok) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
