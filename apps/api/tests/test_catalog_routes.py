@@ -1,8 +1,11 @@
 """Tests for /catalog/* CRUD endpoints (sub-project #7a).
 
 Pattern: per-test workspace + drafter user + autouse TRUNCATE of the 6
-catalog tables. Mirrors test_proc_v1_catalogs.py but exercises the new
-catalog-gated surface ("/catalog" singular) added by #7a.
+catalog tables.
+
+`/catalog/*` is the sole write surface for the six material catalog tables.
+The `/catalogs/*` namespace that Procurement Workbench v1 shipped alongside it
+has been retired — see the retirement guards at the bottom of this file.
 """
 import uuid
 
@@ -374,3 +377,42 @@ def test_archive_writes_catalog_table_archive_audit():
         assert n == 1
     finally:
         db.close()
+
+
+# ── Retirement of the `/catalogs/*` (plural) surface ──────────────────────────
+#
+# That namespace duplicated these six tables under the `orderbook` RBAC module,
+# was not workspace-scoped, and its DELETE hard-deleted rows that `parts`,
+# `board_inventory`, `cv_material_mapping` and `estimate_line_part` point at.
+# These guards fail if it is ever remounted.
+
+@pytest.mark.parametrize("type_", [
+    "board", "hardware", "custom_made", "benchtop", "appliance", "hire",
+])
+def test_plural_catalogs_namespace_is_gone(type_):
+    c, _, _ = _login()
+    assert c.get(f"/catalogs/{type_}").status_code == 404
+    assert c.post(f"/catalogs/{type_}", json={"sku": "x"}).status_code == 404
+
+
+def test_no_hard_delete_route_on_catalog_rows():
+    """Removal is soft-archive only; DELETE must not reach a handler."""
+    c, wid, _ = _login()
+    mid = _seed_board(wid, code="A", sku="b-1")
+    assert c.delete(f"/catalog/board-materials/{mid}").status_code == 405
+    assert c.delete(f"/catalogs/board/{mid}").status_code == 404
+    # Row survives both attempts.
+    assert c.get(f"/catalog/board-materials/{mid}").status_code == 200
+
+
+def test_purchase_officer_cannot_write_catalog():
+    """purchase_officer is {read, comment} on `catalog`. Before the plural
+    surface was retired, `orderbook` write let them create and hard-delete."""
+    c, wid, _ = _login(role="purchase_officer")
+    mid = _seed_board(wid, code="A", sku="b-1")
+    assert c.get("/catalog/board-materials").status_code == 200
+    assert c.post("/catalog/board-materials", json={
+        "code": "B", "sku": "b-2", "description": "Board",
+    }).status_code == 403
+    assert c.patch(f"/catalog/board-materials/{mid}", json={"description": "X"}).status_code == 403
+    assert c.post(f"/catalog/board-materials/{mid}/archive").status_code == 403

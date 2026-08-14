@@ -12,10 +12,11 @@ interface Props {
   projectId: number;
   tab: Tab;
   canWrite: boolean;
+  canWriteCatalog: boolean;
   sp: Record<string, string | undefined>;
 }
 
-export function ProcurementTabs({ projectId, tab, canWrite, sp }: Props) {
+export function ProcurementTabs({ projectId, tab, canWrite, canWriteCatalog, sp }: Props) {
   return (
     <>
       <nav role="tablist" className="flex gap-1 border-b border-h-line">
@@ -44,7 +45,7 @@ export function ProcurementTabs({ projectId, tab, canWrite, sp }: Props) {
           <BatchesTable projectId={projectId} canWrite={canWrite} sp={sp} />
         )}
         {tab === "catalog" && (
-          <CatalogTabs canWrite={canWrite} catalogType={sp.catalog_type} />
+          <CatalogTabs canWrite={canWriteCatalog} catalogType={sp.catalog_type} />
         )}
       </div>
     </>

@@ -27,12 +27,22 @@ export default async function ProjectProcurementPage({
   const sp = await searchParams;
   const tab = sp.tab ?? "materials";
   const pid = Number(id);
+  // `materials` + `batches` gate on the `orderbook` module; the `catalog` tab
+  // now writes through `/catalog/{slug}`, which gates on the `catalog` module —
+  // the two role sets differ (purchase_officer is read-only on catalog, editor
+  // is read-only on orderbook), so they are threaded separately.
   const canWrite =
     !!me &&
     (me.auth_role === "admin" ||
       me.auth_role === "manager" ||
       me.auth_role === "drafter" ||
       me.auth_role === "purchase_officer");
+  const canWriteCatalog =
+    !!me &&
+    (me.auth_role === "admin" ||
+      me.auth_role === "manager" ||
+      me.auth_role === "drafter" ||
+      me.auth_role === "editor");
   return (
     <div className="grid gap-4">
       <header className="flex items-baseline justify-between">
@@ -43,6 +53,7 @@ export default async function ProjectProcurementPage({
         projectId={pid}
         tab={tab}
         canWrite={canWrite}
+        canWriteCatalog={canWriteCatalog}
         sp={sp as Record<string, string | undefined>}
       />
     </div>

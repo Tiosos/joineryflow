@@ -16,7 +16,6 @@ from .printing.routes import router as printing_router
 from .procurement.routes import router as proc_router
 from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
 from .procurement_v1.batches.routes import router as proc_v1_batches_router
-from .procurement_v1.catalogs.routes import router as proc_v1_catalogs_router
 from .procurement_v1.materials.routes import router as proc_v1_materials_router
 from .procurement_v1.queue.routes import router as proc_v1_queue_router
 from .projects.routes import router as projects_router
@@ -50,7 +49,6 @@ app.include_router(proc_router)
 app.include_router(proc_v1_materials_router)
 app.include_router(proc_v1_batches_router)
 app.include_router(proc_v1_alloc_router)
-app.include_router(proc_v1_catalogs_router)
 app.include_router(proc_v1_queue_router)
 app.include_router(projects_router)
 app.include_router(items_router)
