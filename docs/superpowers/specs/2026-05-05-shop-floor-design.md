@@ -581,12 +581,37 @@ Already enumerated in §4.2. The IT Management timeline at `/it` aggregates `aud
 
 ---
 
-## 15. Open questions
+## 15. Open questions — resolved 2026-08-14
+
+Q1 and Q2 were answered by the implementation plan and shipped. Q3 and Q4 were
+never dispositioned and sat here as live questions long after #8 shipped;
+recorded below against what the code actually does.
 
 1. **PAINTED-after-MADE stage ordering** — spec says PAINTED before MADE. Some shops assemble first, then paint. Confirm before implementation.
+   → **RESOLVED — both orders supported.** Migration 0020 adds
+   `items.paint_after_assembly`; when true the order becomes
+   DOWN → CNC → EDGED → MADE → PAINTED. `prior_stages_done()` reads it
+   alongside `items.painting_req`, and PAINTED drops out of the order entirely
+   when `painting_req = false`.
 2. **Reassign-on-in-progress behavior**: clear `started_at` on reassign (new worker starts fresh) vs preserve. Proposed: clear.
+   → **RESOLVED as proposed.** `PATCH /assignments/{aid}` clears `started_at`
+   and resets status to `assigned`.
 3. **What happens when a worker is deactivated while holding active assignments?** Proposed: route-layer flip rejects with 409 if active assignments exist.
+   → **NOT IMPLEMENTED — still open.** The proposal was never built. Neither
+   `PATCH /users/{uid}` (`is_active`) nor `PATCH /users/{uid}/shop-worker`
+   consults `worker_assignment`, so deactivating or un-flagging a worker
+   leaves their `assigned` / `in_progress` rows intact and still rendered on
+   the Foreman board, assigned to someone who can no longer log in. The
+   partial unique index `uniq_active_assignment` then blocks reassigning that
+   `(item, stage)` to anybody else until the orphan is cancelled by hand.
+   Whoever picks this up should decide between the original 409 and a
+   cascade that cancels the assignments as part of the flip — the 409 is
+   safer, since silently cancelling work in progress loses the record of who
+   had it.
 4. **PM "Labour & Progress" panel** — does PM need a small "today's completions" widget on `/tracking`? Proposed: defer.
+   → **RESOLVED: deferred as proposed.** Not built; listed under #8's
+   out-of-scope items in `CLAUDE.md`. `stage_completion_log` already holds
+   everything such a widget would need.
 
 ---
 

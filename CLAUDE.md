@@ -151,14 +151,16 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Reference docs (read before large changes)
 
-> **The plans are not a complete record of the codebase.** They stop at
-> migration 0020 plus 0024/0025. Migrations **0010** (item_edit_log reshape),
-> **0021–0023** (estimating core, quote expiry, team status) and the
-> `board_inventory` half of **0025** have no spec or plan — the sub-project
-> sections in *this* file are their only written reference. Nor are the plans a
-> progress tracker: their task checkboxes were never ticked, including for
-> shipped work. Treat a plan as the design record for the sub-project it names,
-> and this file as the record of current state.
+> **The plans are not a complete record of the codebase.** Migration **0010**
+> (item_edit_log reshape) still has no spec or plan; the sub-project sections
+> in *this* file are its only written reference. Nor are the plans a progress
+> tracker: their task checkboxes were never ticked, including for shipped
+> work. Treat a plan as the design record for the sub-project it names, and
+> this file as the record of current state.
+>
+> Two plans are **shipped-state records written after the fact**, not forward
+> plans — #9 (rewritten once the optimiser outgrew its stub) and #9a (never
+> had a plan at all). They say so in their own header.
 >
 > Note also the two plan formats: #1–#7b are long-form (1.2k–4.7k lines, full
 > code, checkboxes); #7c, #8 and #9 are ~140-line summaries.
@@ -184,6 +186,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
+- `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
@@ -687,12 +690,14 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Estimating (sub-project #9a)
 
-> **No committed spec/plan doc.** #9a was built directly (commit
-> `a7b8d3d` + follow-ups) without a `docs/superpowers/specs|plans`
-> file — this section is the authoritative reference. #9 (CutPlan
-> optimiser) is a *different* sub-project; it shipped after #9a, which
-> is why estimating holds migration slots 0021–0023 and the
-> optimiser's `grain_locked` landed as 0024.
+> **Built without a spec or plan.** #9a shipped directly (commit `a7b8d3d`
+> + follow-ups); the design record was backfilled afterwards as
+> `docs/superpowers/plans/2026-05-26-estimating.md`, which explains *why*
+> the schema and workflow read as they do. **This section stays the
+> statement of current state.** #9 (CutPlan optimiser) is a *different*
+> sub-project; it shipped after #9a, which is why estimating holds
+> migration slots 0021–0023 and the optimiser's `grain_locked` landed
+> as 0024.
 
 - New backend module `apps/api/app/estimating/` (`schemas.py`,
   `queries.py`, `routes.py`, `pdf.py` + `templates/quote.html`).
