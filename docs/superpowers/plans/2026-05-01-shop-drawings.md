@@ -1,5 +1,10 @@
 # JoineryFlow Shop Drawings + File-Upload Subsystem Implementation Plan
 
+> **Status: shipped.** Migration `0013`. Current state lives in
+> `## Shop Drawings + File-Upload Subsystem (sub-project #5a)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship sub-project #5a — the file-upload subsystem + Shop Drawings tab — on top of the merged Procurement Workbench branch. A Drafter can upload a PDF/PNG/JPG drawing for a project, tag it with a room, and submit it for review. Manager/Admin can approve or reject with a note. Drawings render as cards on `/shop-dwgs` across three subtabs (Current / In review / Archive). Files are RBAC-gated, content-addressable on local disk behind a swappable `FileStore` interface, and deduped per workspace by sha256.

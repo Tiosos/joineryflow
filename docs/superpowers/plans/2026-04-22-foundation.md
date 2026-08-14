@@ -1,5 +1,13 @@
 # JoineryFlow Foundation Implementation Plan
 
+> **Status: shipped.** Migrations `0001`–`0004`. Current state lives in
+> `## Foundation dev loop` / `## Auth & RBAC` / `## Web shell` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change:** The Goal below says *five-role RBAC* and *six-tab IA*: both have since
+> grown — 7 auth roles and 11 modules, with a secondary tab row added by #9a.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up the JoineryFlow monorepo (Next.js web + FastAPI + Postgres 16) with self-built auth, five-role RBAC, Alembic migrations porting the legacy MySQL schemas, and a signed-in shell showing the six-tab IA — end-to-end verifiable via a Playwright smoke test.

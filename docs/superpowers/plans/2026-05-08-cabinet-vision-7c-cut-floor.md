@@ -1,5 +1,13 @@
 # Implementation Plan — Cabinet Vision Integration #7c (CutPlan / CutSchedule + Board tab)
 
+> **Status: shipped.** Migration `0019`. Current state lives in
+> `## Cut Floor — CutPlan + CutSchedule + Board tab (sub-project #7c)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change:** The optimiser it reserves `POST /projects/{pid}/optimise` for shipped
+> later, in #9.
+
 **Spec:** `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` (§1, §3.2, §4.3, §4.4, §7.3, §7.4, §8 — `0019_cut_floor.py`)
 **Branch base:** `feat/foundation` (HEAD ahead of `cd4c57d` — #7b shipped).
 **Migration introduced:** `0019_cut_floor.py`.

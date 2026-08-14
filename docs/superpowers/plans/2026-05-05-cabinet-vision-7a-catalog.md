@@ -1,5 +1,14 @@
 # JoineryFlow Catalog Enrichment + CV Mappings UI Implementation Plan
 
+> **Status: shipped.** Migration `0017`. Current state lives in
+> `## Catalog enrichment + CV Mappings (sub-project #7a)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change:** The risk note telling you **not** to retire the procurement-side
+> `/catalogs/*` is superseded — that surface was retired in `64ef89e` and
+> `/catalog/*` is now the only one.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Date:** 2026-05-05

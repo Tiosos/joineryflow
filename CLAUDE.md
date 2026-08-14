@@ -151,19 +151,16 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Reference docs (read before large changes)
 
-> **The plans are not a complete record of the codebase.** Migration **0010**
-> (item_edit_log reshape) still has no spec or plan; the sub-project sections
-> in *this* file are its only written reference. Nor are the plans a progress
-> tracker: their task checkboxes were never ticked, including for shipped
-> work. Treat a plan as the design record for the sub-project it names, and
-> this file as the record of current state.
+> **Read `docs/superpowers/plans/README.md` first.** It defines the status
+> header every plan carries (shipped / in progress, migrations introduced,
+> later changes), why the `- [ ]` checkboxes are *not* a progress signal, and
+> which plans are shipped-state records written after the fact rather than
+> forward plans.
 >
-> Two plans are **shipped-state records written after the fact**, not forward
-> plans — #9 (rewritten once the optimiser outgrew its stub) and #9a (never
-> had a plan at all). They say so in their own header.
->
-> Note also the two plan formats: #1–#7b are long-form (1.2k–4.7k lines, full
-> code, checkboxes); #7c, #8 and #9 are ~140-line summaries.
+> Treat a plan as the design record for the sub-project it names, and this
+> file as the record of current state. Migration **0010** (item_edit_log
+> reshape) has neither spec nor plan; the sub-project sections here are its
+> only written reference.
 
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
