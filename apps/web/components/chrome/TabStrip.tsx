@@ -46,8 +46,16 @@ export function TabStrip({ user }: { user: Me }) {
       </Link>
     );
   }
-  const primary = TABS.filter((t) => can(user, t.module, "read"));
-  const secondary = SECONDARY_TABS.filter((t) => can(user, t.module, "read"));
+  // Fail OPEN, not closed, when the permissions map is entirely absent —
+  // e.g. the web tier deployed ahead of an API that predates the field on
+  // /auth/me. Blanking the whole nav bar is a worse failure than showing a
+  // tab whose API call will 403 anyway (the 403 is the real gate). Once a
+  // permissions map is present, a missing module means genuinely no access,
+  // so we filter normally.
+  const hasPerms = !!user.permissions && Object.keys(user.permissions).length > 0;
+  const visible = (t: Tab) => !hasPerms || can(user, t.module, "read");
+  const primary = TABS.filter(visible);
+  const secondary = SECONDARY_TABS.filter(visible);
   return (
     <nav className="flex flex-wrap items-center gap-1 border-b border-h-line px-4 bg-h-surface">
       {primary.map(renderTab)}

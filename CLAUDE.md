@@ -109,7 +109,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 - Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
 - `apps/web/middleware.ts` enforces login redirect on all non-public paths.
 - `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · Estimating · Customers`); `SideBar.tsx` is the project list only.
-- **Navigation is not permission-gated** — every tab renders for every role, and an unauthorised click surfaces the API's 403. Gating the strip on the RBAC matrix is a known open item.
+- **The tab strip is gated on the RBAC matrix**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves. Today every role holds `read` on every tab's module, so all tabs still render for everyone — the gate only starts hiding tabs once some module's read grant is removed for a role. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
 - Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
 
 ## Architecture (big picture)
