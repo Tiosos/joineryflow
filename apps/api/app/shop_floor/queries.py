@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .lifecycle import prior_stages, shop_floor_order
+from .lifecycle import later_stages, prior_stages, shop_floor_order
 
 
 # ============================================================================
@@ -181,6 +181,38 @@ def prior_stages_done(
         if have.get(s) is None:
             missing.append(s)
     return missing
+
+
+def later_stages_done(
+    db: Session,
+    *,
+    item_id: int,
+    stage_key: str,
+    painting_req: bool,
+    paint_after_assembly: bool,
+) -> list[str]:
+    """Return the stages AFTER `stage_key` that are already done. Empty -> the
+    stage can be undone without leaving a completed successor stranded."""
+    after = later_stages(
+        stage_key,
+        painting_req=painting_req,
+        paint_after_assembly=paint_after_assembly,
+    )
+    if not after:
+        return []
+    rows = db.execute(
+        text(
+            """
+            SELECT stage_key
+            FROM item_stages
+            WHERE item_id = :iid AND stage_key = ANY(:keys)
+              AND done_date IS NOT NULL
+            """
+        ),
+        {"iid": item_id, "keys": list(after)},
+    ).mappings().all()
+    done = {r["stage_key"] for r in rows}
+    return [s for s in after if s in done]
 
 
 def next_open_stage(
@@ -546,7 +578,8 @@ def get_completion_log(
             """
             SELECT scl.log_id, scl.item_id, scl.stage_key,
                    scl.assignment_id, scl.worker_id, scl.completed_at,
-                   scl.note, scl.undone_at, scl.undone_by
+                   scl.note, scl.undone_at, scl.undone_by,
+                   i.painting_req, i.paint_after_assembly
             FROM stage_completion_log scl
             JOIN items i    ON i.item_id    = scl.item_id
             JOIN projects p ON p.project_id = i.project_id

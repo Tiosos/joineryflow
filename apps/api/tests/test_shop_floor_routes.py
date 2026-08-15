@@ -477,3 +477,91 @@ def test_board_skips_painted_when_not_required_and_row_missing():
         stages={"DOWN": True, "CNC": True, "EDGED": True},
     )
     assert iid in _board_column(c, pid, "MADE")
+
+
+# --- Complete requires in_progress (status machine) -----------------------
+
+def test_complete_requires_in_progress():
+    """assigned -> done skips in_progress; it must 409, leave started_at NULL,
+    and write no completion log."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    a = _assign(c, pid, items[0], "DOWN", worker)  # status 'assigned', not started
+    r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NOT_IN_PROGRESS"
+
+    s = SessionLocal()
+    try:
+        row = s.execute(
+            text(
+                """
+                SELECT status, started_at FROM worker_assignment
+                WHERE assignment_id = :a
+                """
+            ),
+            {"a": a["assignment_id"]},
+        ).mappings().first()
+        assert row["status"] == "assigned"
+        assert row["started_at"] is None
+        logs = s.execute(
+            text("SELECT COUNT(*) FROM stage_completion_log WHERE assignment_id = :a"),
+            {"a": a["assignment_id"]},
+        ).scalar()
+        assert logs == 0
+    finally:
+        s.close()
+
+
+# --- Undo cannot strand a completed later stage ---------------------------
+
+def _start_and_complete(c: TestClient, pid: int, iid: int, stage: str,
+                        worker: int) -> dict:
+    a = _assign(c, pid, iid, stage, worker)
+    c.post(f"/assignments/{a['assignment_id']}/start")
+    r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_undo_blocked_when_later_stage_done():
+    """DOWN and CNC both done; undoing DOWN would leave DOWN open with CNC
+    done — the out-of-order state /complete forbids. Must 409 and preserve
+    DOWN's done_date."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    down = _start_and_complete(c, pid, items[0], "DOWN", worker)
+    _start_and_complete(c, pid, items[0], "CNC", worker)
+
+    r = c.post(f"/completions/{down['log_id']}/undo")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "LATER_STAGE_DONE"
+    assert "CNC" in r.json()["detail"]["blocking"]
+
+    s = SessionLocal()
+    try:
+        done_date = s.execute(
+            text("SELECT done_date FROM item_stages WHERE item_id = :i AND stage_key = 'DOWN'"),
+            {"i": items[0]},
+        ).scalar()
+        assert done_date is not None
+    finally:
+        s.close()
+
+
+def test_undo_allowed_for_the_latest_completed_stage():
+    """Undoing the most-recent stage (no later stage done) still works."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    _start_and_complete(c, pid, items[0], "DOWN", worker)
+    cnc = _start_and_complete(c, pid, items[0], "CNC", worker)
+
+    r = c.post(f"/completions/{cnc['log_id']}/undo")
+    assert r.status_code == 200, r.text
+
+    s = SessionLocal()
+    try:
+        cnc_done = s.execute(
+            text("SELECT done_date FROM item_stages WHERE item_id = :i AND stage_key = 'CNC'"),
+            {"i": items[0]},
+        ).scalar()
+        assert cnc_done is None
+    finally:
+        s.close()

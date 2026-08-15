@@ -53,6 +53,28 @@ def prior_stages(
     return priors
 
 
+def later_stages(
+    stage_key: str,
+    *,
+    painting_req: bool,
+    paint_after_assembly: bool,
+) -> tuple[str, ...]:
+    """Return the shop-floor stages that come after `stage_key`.
+
+    The inverse of `prior_stages`. PAINTED is omitted when an item doesn't
+    require painting. Raises ValueError if `stage_key` is not a shop-floor
+    stage. Used to block undoing a stage whose successor is already done.
+    """
+    order = shop_floor_order(paint_after_assembly)
+    if stage_key not in order:
+        raise ValueError(f"unknown shop-floor stage: {stage_key}")
+    idx = order.index(stage_key)
+    after = order[idx + 1:]
+    if not painting_req:
+        after = tuple(s for s in after if s != "PAINTED")
+    return after
+
+
 def is_within_undo_window(completed_at: datetime, *, now: datetime | None = None) -> bool:
     """True iff `completed_at` is within the worker undo window (5 min)."""
     current = now if now is not None else datetime.now(timezone.utc)

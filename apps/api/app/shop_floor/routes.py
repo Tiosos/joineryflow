@@ -404,6 +404,14 @@ def complete_assignment_route(
             409,
             {"code": "ASSIGNMENT_TERMINAL", "status": locked["status"]},
         )
+    # The status machine is assigned -> in_progress -> done; completing a
+    # never-started assignment would skip in_progress and leave started_at
+    # NULL on a done row. The kiosk always Starts before Mark-done.
+    if locked["status"] != "in_progress":
+        raise HTTPException(
+            409,
+            {"code": "NOT_IN_PROGRESS", "status": locked["status"]},
+        )
     if user.id != locked["worker_id"] and not _is_admin_or_manager(user.auth_role):
         raise HTTPException(403, {"code": "NOT_THE_WORKER"})
 
@@ -490,6 +498,23 @@ def undo_completion_route(
                 409,
                 {"code": "UNDO_WINDOW_EXPIRED"},
             )
+
+    # Undoing a stage whose successor is already done would produce the
+    # out-of-order lifecycle (earlier stage open, later stage done) that
+    # /complete's prior-stages check forbids. Make the later stage be undone
+    # first.
+    blockers = q.later_stages_done(
+        db,
+        item_id=log["item_id"],
+        stage_key=log["stage_key"],
+        painting_req=bool(log["painting_req"]),
+        paint_after_assembly=bool(log["paint_after_assembly"]),
+    )
+    if blockers:
+        raise HTTPException(
+            409,
+            {"code": "LATER_STAGE_DONE", "blocking": blockers},
+        )
 
     q.mark_completion_undone(db, log_id=log_id, undone_by=user.id)
     q.clear_item_stage_done(
