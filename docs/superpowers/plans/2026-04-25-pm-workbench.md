@@ -1,5 +1,13 @@
 # JoineryFlow PM Workbench Implementation Plan
 
+> **Status: shipped.** Migrations `0008` + `0009`. Current state lives in
+> `## PM Workbench (sub-project #2 + #3)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change:** This plan makes `/home` the landing page in place of `/dashboard`; **#9a
+> reversed that** — `/home` is now a bare `redirect("/dashboard")`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship sub-projects #2 + #3 (PM Project Workbench grid + Drafter Item Editor) of the JoineryFlow build, on top of the Foundation branch. PM lands on `/home`, opens a project, sees the tracking grid, clicks an item ▶, lands in the Drafter Item Editor with editable Cutlist + Hardware tabs, and returns to home — end-to-end verifiable via two new Playwright specs.

@@ -2,9 +2,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import type { ProjectListOut } from "@/lib/pm-types";
 import { fetchMe } from "@/lib/session";
+import { SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session-cookie";
 import { CreateProjectDrawer } from "./_components/CreateProjectDrawer";
 
-const COOKIE_NAME = "jf_session";
 
 async function fetchProjects(): Promise<ProjectListOut> {
   const c = await cookies();

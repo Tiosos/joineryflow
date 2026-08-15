@@ -73,3 +73,11 @@ jobs:
       - name: Typecheck
         working-directory: apps/web
         run: pnpm exec tsc --noEmit
+
+      # tsc alone is not enough. Server/client boundary violations — a client
+      # component importing a module that pulls in `next/headers`, for example
+      # — are bundler errors, not type errors: tsc passes and the build fails.
+      # That exact break shipped through this job once.
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build

@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
 import { ProjectSidebar } from "./ProjectSidebar";
 import type { ProjectListOut } from "@/lib/pm-types";
+import { SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session-cookie";
 
 const API = process.env.API_URL ?? "http://api:8000";
-const COOKIE_NAME = "jf_session";
 
 async function fetchProjects(
   tok: string,

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
 import { fetchMe, getSessionCookie } from "@/lib/session";
+import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 import { ItemHeader } from "./_components/ItemHeader";
 import { ItemMetadataPanel } from "./_components/ItemMetadataPanel";
 import { EditorTabs } from "./_components/EditorTabs";
@@ -12,7 +13,7 @@ async function fetchItem(id: number): Promise<ItemOut | null> {
   if (!tok) return null;
   const apiUrl = process.env.API_URL ?? "http://api:8000";
   const r = await fetch(`${apiUrl}/items/${id}`, {
-    headers: { cookie: `jf_session=${tok}` },
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${tok}` },
     cache: "no-store",
   }).catch(() => null);
   if (!r || !r.ok) return null;

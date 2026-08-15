@@ -1,11 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createRow, listCatalog } from "@/lib/catalog-fetch";
+import type { CatalogRow, CatalogSlug } from "@/lib/catalog-types";
 
 const TYPES = ["board","hardware","custom_made","benchtop","appliance","hire"] as const;
 type CatType = typeof TYPES[number];
 
-// Correct field mappings per API (Task 11) — all use 'description', hire has 'project_id'
+// The canonical catalog surface is `/catalog/{slug}` (sub-project #7a) — it is
+// workspace-scoped, Pydantic-validated, audited and soft-archive only. The old
+// `/catalogs/{type}` namespace this tab used to call has been retired.
+const SLUG: Record<CatType, CatalogSlug> = {
+  board:       "board-materials",
+  hardware:    "hardware-materials",
+  custom_made: "custom-made",
+  benchtop:    "benchtop-materials",
+  appliance:   "appliances",
+  hire:        "equipment-hire",
+};
+
+// `sku` + `description` are common to all six; the rest is the per-table legacy
+// NOT NULL UNIQUE column, plus `project_id` for the project-scoped hire table.
 const CREATE_FIELDS: Record<CatType, string[]> = {
   board:       ["code", "description", "sku"],
   hardware:    ["sku", "description"],
@@ -14,6 +29,11 @@ const CREATE_FIELDS: Record<CatType, string[]> = {
   appliance:   ["model_number", "description", "sku"],
   hire:        ["contract_ref", "project_id", "description", "sku"],
 };
+
+// Bookkeeping columns the rollup view has no use for.
+const HIDDEN_COLUMNS = new Set([
+  "type", "workspace_id", "archived_at", "archived_by",
+]);
 
 interface Props {
   canWrite: boolean;
@@ -24,36 +44,32 @@ export function CatalogTabs({ canWrite, catalogType }: Props) {
   const initial = (TYPES as readonly string[]).includes(catalogType ?? "")
     ? (catalogType as CatType) : "hardware";
   const [type, setType] = useState<CatType>(initial);
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [rows, setRows] = useState<CatalogRow[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
   async function refresh() {
     setErr(null);
     try {
-      const r = await fetch(`/api/catalogs/${type}`, { credentials: "include" });
-      if (!r.ok) throw new Error(await r.text());
-      setRows((await r.json()).rows);
+      setRows((await listCatalog({ slug: SLUG[type] })).rows);
     } catch (e) { setErr(String(e)); }
   }
   useEffect(() => { refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [type]);
 
   async function create() {
-    // Coerce project_id to number for hire type
-    const payload = { ...draft };
-    if (type === "hire" && payload.project_id) {
-      payload.project_id = String(Number(payload.project_id));
+    // `project_id` is an int FK on equipment_hire; everything else is text.
+    const payload: Record<string, unknown> = { ...draft };
+    if (type === "hire" && draft.project_id) {
+      payload.project_id = Number(draft.project_id);
     }
-
-    const r = await fetch(`/api/catalogs/${type}`, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!r.ok) { setErr(await r.text()); return; }
+    try {
+      await createRow(SLUG[type], payload);
+    } catch (e) { setErr(String(e)); return; }
     setDraft({});
     refresh();
   }
+
+  const columns = Object.keys(rows[0] ?? {}).filter(k => !HIDDEN_COLUMNS.has(k));
 
   return (
     <div className="grid gap-3">
@@ -75,7 +91,7 @@ export function CatalogTabs({ canWrite, catalogType }: Props) {
       <table className="w-full text-sm">
         <thead className="bg-h-bg text-xs uppercase text-h-muted">
           <tr>
-            {Object.keys(rows[0] ?? {}).filter(k => k !== "type").map(k => (
+            {columns.map(k => (
               <th key={k} className="px-2 py-1 text-left">{k}</th>
             ))}
           </tr>
@@ -83,9 +99,14 @@ export function CatalogTabs({ canWrite, catalogType }: Props) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-t border-h-line">
-              {Object.entries(r).filter(([k]) => k !== "type").map(([k,v]) => (
-                <td key={k} className="px-2 py-1">{String(v ?? "—")}</td>
-              ))}
+              {columns.map(k => {
+                const v = (r as unknown as Record<string, unknown>)[k];
+                return (
+                  <td key={k} className="px-2 py-1">
+                    {Array.isArray(v) ? (v.join(", ") || "—") : String(v ?? "—")}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

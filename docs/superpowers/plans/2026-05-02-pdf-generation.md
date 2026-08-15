@@ -1,5 +1,10 @@
 # JoineryFlow PDF Generation + Item Attachments Implementation Plan
 
+> **Status: shipped.** Migration `0015` (`0014`, the workspace-isolation hardening, landed alongside). Current state lives in
+> `## PDF Generation + Item Attachments (sub-project #5b)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship sub-project #5b — PDF generation (Cutlist, Hardware, Combined) + item attachments (cv_drawing, floor_plan, site_measure slots) — on top of the merged Shop Drawings + file-upload subsystem from #5a. A Drafter clicks Print Cutlist / Print Hardware / Print Combined PDF in the item editor footer and gets a PDF download. Combined PDF merges the rendered Cutlist + Hardware + 3 uploaded attachments + (optional) painting parts list.

@@ -1,23 +1,18 @@
 import { cookies } from "next/headers";
 
-export const SESSION_COOKIE_NAME = "jf_session";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
+
+export { SESSION_COOKIE_NAME };
 const COOKIE_NAME = SESSION_COOKIE_NAME;
 const API = process.env.API_URL ?? "http://api:8000";
 
-export type Me = {
-  id: number;
-  workspace_id: number;
-  email: string;
-  full_name: string;
-  auth_role:
-    | "admin"
-    | "manager"
-    | "editor"
-    | "drafter"
-    | "estimator"
-    | "purchase_officer"
-    | "viewer";
-};
+// `Me` / `can` live in ./permissions so client components can import them —
+// this module is server-only via next/headers. Re-exported for callers that
+// already import them from here.
+export { can } from "./permissions";
+export type { Action, Me, Module } from "./permissions";
+
+import type { Me } from "./permissions";
 
 export async function getSessionCookie(): Promise<string | null> {
   const c = await cookies();

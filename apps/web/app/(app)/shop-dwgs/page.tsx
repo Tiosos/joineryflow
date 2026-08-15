@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import { fetchMe } from "@/lib/session";
 import type { ProjectListOut } from "@/lib/pm-types";
 import type { Subtab } from "@/lib/shop-drawings-types";
+import { SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session-cookie";
 import ShopDwgsClient from "./_components/ShopDwgsClient";
 
-const COOKIE_NAME = "jf_session";
 
 async function fetchProjects(): Promise<ProjectListOut> {
   const c = await cookies();

@@ -73,20 +73,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
-- `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, 6-tab chrome, server-side proxy.
-- `db/` — Alembic migrations (0001 tracking, 0002 procurement, 0003 cut-schedule, 0004 auth, 0005 procurement_user_profile, 0006 procurement views, 0007 material catalog hybrid, 0008 drafter role widening, 0009 app_user repoint + projects.pm_id).
-- `seed/` — `seed.hartwood_joinery` dev seed (workspace + 8 staff users).
-- `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only.
-- `tests/e2e/` — Playwright specs: `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts` (PM happy path), `drafter_editor.spec.ts` (drafter happy path).
+- `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
+- `db/` — Alembic migrations `0001` → `0025`. Head is `0025_board_inventory`. Each sub-project section below names the migration(s) it introduced.
+- `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
+- `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
+- `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 
 ## Foundation dev loop
 
 ```
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
-make migrate      # apply Alembic 0001 -> 0009
-make seed         # create hartwood-joinery workspace + 8 users + 2 projects + ~40 items/modules/parts/hardware (dev password: hartwood-dev)
-make test         # pytest in api container (~74 tests)
+make migrate      # apply Alembic 0001 -> 0025
+make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
+make test         # pytest in api container (52 files, ~470 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
@@ -98,8 +98,8 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 ## Auth & RBAC
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
-- 5 auth roles: `admin`, `manager`, `editor`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py`. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
-- 6 IA modules + admin-only IT: `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, `it_management`.
+- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth; the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
+- **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
 - FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action)` factory in `apps/api/app/auth/rbac.py`.
 - All authenticated mutations write to `audit_log` via `apps/api/app/auth/audit.py`.
@@ -108,7 +108,8 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 - Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
 - `apps/web/middleware.ts` enforces login redirect on all non-public paths.
-- `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + 6-tab strip + SideBar).
+- `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · Estimating · Customers`); `SideBar.tsx` is the project list only.
+- **The tab strip is gated on the RBAC matrix**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves. Today every role holds `read` on every tab's module, so all tabs still render for everyone — the gate only starts hiding tabs once some module's read grant is removed for a role. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
 - Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
 
 ## Architecture (big picture)
@@ -132,9 +133,11 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
   - `Status` = record state (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`).
   - `Status Symbol` = Drafter-only UI flag, not reported.
 
-**Role model.** Six operational JTBD roles (CEO, PM, Drafter, Foreman, Machine, Procurement) map onto **five** auth roles (admin, manager, editor, purchase_officer, viewer). Procurement -> purchase_officer; CEO -> admin; PM -> manager; Drafter/Foreman/Machine -> editor; Observer -> viewer. Drafter is the authoritative data-entry point; every other role is upstream or downstream.
+**Role model.** Operational JTBD roles map onto the 7 auth roles: CEO -> admin; PM -> manager; Drafter -> `drafter` (its own role since 0008); Foreman/Machine/Joiner -> editor; Procurement -> purchase_officer; Estimator -> `estimator` (added by 0021); Observer -> viewer. Drafter is the authoritative data-entry point; every other role is upstream or downstream.
 
-**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). 26 endpoints, all gated by `require_permission("orderbook", action)`. Mounted at `/procurement/*`. Some legacy DB views (`v_po_summary`, `v_inventory_status`, `v_budget_utilisation`) are not yet recreated in migration 0002 — endpoints depending on them will fail at runtime until a follow-up migration adds them.
+`jtbd_role` is a free-text column on `app_user` (no CHECK constraint, despite the Foundation spec §5 sketching one) used for display only — the seed writes mixed-case values like `CEO`, `Drafter`, `CNC operator`. Nothing branches on it: `/home/dashboard`'s `_role_view` keys off `auth_role` alone, and `estimator`/`editor` currently fall through to the viewer shape.
+
+**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). 32 endpoints, all gated by `require_permission("orderbook", action)`. Mounted at `/procurement/*`. The legacy DB views it reads (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`) were skipped by migration 0002 and recreated by **migration 0006**; 0009 redefines `v_po_summary` after the `app_user` repoint. This namespace (orders, vendors, budget, approvals) is **not** used by the v1 product surface — that is `procurement_v1`.
 
 ## Design system (binding)
 
@@ -142,13 +145,25 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - Do not invent new colors — use Tailwind utilities `bg-h-bg`, `bg-h-surface`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `text-h-accent`. Inline styles can use `H.bg`, `H.ink`, etc. from `lib/tokens.ts`.
 - Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
-- Typography: Inter (default sans) for UI, JetBrains Mono (`.h-mono`, with `tnum`) for part #, PO #, ETAs, money. Mono utility not yet wired — add in a future task.
+- Typography: Inter (default sans) for UI, JetBrains Mono for part #, PO #, ETAs, money. The `.h-mono` utility (with `tnum`) is wired in `globals.css`.
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 top tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Tab strip lives in `apps/web/components/chrome/TabStrip.tsx`.
+- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`.
 
 ## Reference docs (read before large changes)
 
-- `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface.
+> **Read `docs/superpowers/plans/README.md` first.** It defines the status
+> header every plan carries (shipped / in progress, migrations introduced,
+> later changes), why the `- [ ]` checkboxes are *not* a progress signal, and
+> which plans are shipped-state records written after the fact rather than
+> forward plans.
+>
+> Treat a plan as the design record for the sub-project it names, and this
+> file as the record of current state. Migration **0010** (item_edit_log
+> reshape) has neither spec nor plan; the sub-project sections here are its
+> only written reference.
+
+- `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
+- `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
 - `docs/superpowers/specs/2026-04-22-foundation-design.md` — Foundation spec.
 - `docs/superpowers/plans/2026-04-22-foundation.md` — 31-task implementation plan (tracks all build decisions).
@@ -168,7 +183,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-cabinet-vision-7c-cut-floor.md` — 12-task implementation plan for sub-project #7c.
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
-- `docs/superpowers/plans/2026-05-09-cutplan-optimiser-stub.md` — 10-task implementation plan for sub-project #9 (CutPlan optimiser stub; migration renumbered 0021→0024 after #9a).
+- `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
+- `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
 
@@ -176,10 +192,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Drafter-narrow gate: `require_drafter()` — items / modules / parts / hardware_lines / project_hardware_catalog mutations only allow `auth_role IN {drafter, manager, admin}`.
 - New routers under `apps/api/app/{home, projects, items, parts, hardware_lines}/`. Mounted in `main.py`.
 - Every item-scoped mutation writes both `audit_log` (workspace governance) and `item_edit_log` (item history) in the same DB transaction. Helper: `apps/api/app/edit_log.py`.
-- Web routes: `/home` (default landing, replaces `/dashboard`), `/projects`, `/tracking?project_id=`, `/items/[id]?tab=cutlist|hardware|board|log`.
+- Web routes: `/home`, `/projects`, `/tracking?project_id=`, `/items/[id]?tab=cutlist|hardware|board|log`. (#2 made `/home` the landing page in place of `/dashboard`; **#9a reversed that** — `/home` is now a bare `redirect("/dashboard")` and `/dashboard` is the real landing page.)
 - Editor mode is detected by middleware writing `x-pathname`; layout reads it and hides TabStrip + SideBar, swapping in a "← Return to home" link.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
-- Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`.
+- Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`, now defaulted to `1` in `.env.example` (it was absent, so the button was off in every fresh dev setup even though #4 shipped). A `.env` copied before that fix won't have it.
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
 - Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
@@ -188,7 +204,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - New backend module `apps/api/app/procurement_v1/` mounted at top-level paths
   (`/projects/{pid}/materials`, `/batches`, `/batches/{bid}/allocations`,
-  `/catalogs/{type}`, `/procurement-queue`). The legacy `/procurement/*`
+  `/procurement-queue`; it also shipped `/catalogs/{type}`, since retired —
+  see #7a). The legacy `/procurement/*`
   namespace (orders, vendors, budget, approvals) is **left untouched** and is
   not used by the v1 product surface.
 - Migration 0012 adds `procurement_batches.cancelled_at` and two indexes
@@ -386,8 +403,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Catalog enrichment + CV Mappings (sub-project #7a)
 
-- New backend module `apps/api/app/catalog/` mounted at `/catalog/*` (singular,
-  not the existing procurement-side `/catalogs/*`). 7 sub-routers: 6 per
+- New backend module `apps/api/app/catalog/` mounted at `/catalog/*`
+  (singular). 7 sub-routers: 6 per
   material type (`board-materials`, `hardware-materials`, `custom-made`,
   `benchtop-materials`, `appliances`, `equipment-hire`) plus
   `/catalog/cv-mappings`. RBAC gate `("catalog", action)`.
@@ -411,17 +428,22 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   - `/catalog?tab=board|hardware|custom_made|benchtop|appliance|hire|stock|cv-mappings`
     (`stock` added by 0025; `stock` and `cv-mappings` are self-contained
     panels — the six catalog-table tabs are typed as `MaterialTab`)
-  - SideBar entry visible to all roles with `catalog.read`.
+  - Reached from the `Catalog` entry on the TabStrip secondary row (it was a
+    SideBar link when #7a shipped; #9a moved it). Not permission-gated.
 - Workspace isolation enforced on every read + write via `workspace_id`
   column (already on the 6 catalog tables from migration 0007;
   added to `cv_material_mapping` by 0017). Cross-workspace returns 404.
 - Route ordering caveat: cv-mapping routes (`/catalog/cv-mappings*`) are
   declared BEFORE the parameterised `/catalog/{slug}` routes in
   `apps/api/app/catalog/routes.py` so the literal path wins.
-- The procurement-side `/catalogs/*` (plural) module at
-  `apps/api/app/procurement_v1/catalogs/` is NOT retired by #7a — it
-  remains the auth path the procurement queue depends on. The two surfaces
-  will converge in a future cleanup.
+- **`/catalog/*` is the only surface for these six tables.** The parallel
+  `/catalogs/*` (plural) module that Procurement Workbench v1 shipped —
+  gated on `orderbook`, unscoped by workspace, and hard-deleting on DELETE —
+  has been **retired**; the convergence #7a deferred is done. The project
+  Procurement page's Catalog tab reads and writes through `/catalog/{slug}`.
+  Guards in `test_catalog_routes.py` fail if the plural namespace returns.
+  Removal is soft-archive only: there is no DELETE route on a catalog row.
+  (Hard delete remains legal for `cv_material_mapping` alone.)
 - Seed (`make seed`) enriches the existing 2 board_materials + 4
   hardware_materials with synonyms/supplier/lead-time, adds 4 new demo
   boards (BM-101..BM-104), and inserts 2 demo cv_material_mapping rows
@@ -561,18 +583,18 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
     800-px viewport, scaled to sheet dimensions. This-item slots fill
     `--h-accent` 60%; foreign slots fill `--h-line` 30%. Tooltip on
     hover. Empty state: "No CutPlan yet for this project."
-  - SideBar's secondary section gets a `Cut Floor` link below
-    `Catalog` (visible to all readers).
+  - Reached from the `Cut Floor` entry on the TabStrip secondary row
+    (a SideBar link when #7c shipped; #9a moved it).
 - Audit events: `cut_plan.{create,delete}`,
   `cut_schedule.{create,update,status_change,reorder,cancel}`. All
   routed through `apps/api/app/auth/audit.py::write_audit`.
 - Seed (`make seed`) on ALF-001: 1 cut_plan "ALF-001 v1 nest", 1
-  sheet (18-PB), 5 part_slots (3 own + 2 foreign for the Board-tab
+  sheet (18-PB), **5 part_slots** (3 own + 2 foreign, for the Board-tab
   demo), and 2 cut_schedule rows (`running` today + `planned`
   tomorrow). Idempotent — `DELETE FROM cut_plan WHERE project_id =
   ALF-001` runs first.
-- Out of scope (indefinite): bin-packing optimiser (separate
-  `POST /projects/{pid}/optimise` endpoint reserved), CutPlan edit
+- Out of scope **for #7c** (the optimiser it reserved
+  `POST /projects/{pid}/optimise` for shipped later, in #9): CutPlan edit
   UI (v1 = create + delete + replace by creating a new plan),
   WebSocket schedule updates, `@dnd-kit/core`, mobile UI for
   `/cut-floor`, `cut_plan.is_current` flag (Board tab uses
@@ -643,16 +665,18 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   - `/it` — admin-only `WorkerRosterPanel` listing every workspace
     user with a checkbox to toggle `is_shop_worker`. Optimistic
     update with revert on failure.
-  - SideBar gets a `Shop Floor` link below `Cut Floor`.
+  - Reached from the `Shop Floor` entry on the TabStrip secondary row
+    (a SideBar link when #8 shipped; #9a moved it).
 - Audit hooks: `shop_floor.{assign|reassign|unassign|stage_start|
   stage_complete|stage_undo}` plus `shop_floor.assign_note_update`
   for note-only PATCH and `it.worker_toggle` for the admin roster
   panel.
-- Seed (`make seed`) grows the staff roster from 8 → 12 and inserts
-  5 demo assignments on ALF-001 (one in_progress + three assigned +
-  one done with matching `stage_completion_log` and yesterday's
-  `item_stages.done_date`). Idempotent — wipes the ALF-001
-  shop-floor demo state before re-seeding.
+- Seed (`make seed`) adds 4 shop workers to the staff roster and
+  inserts **5 demo assignments** on ALF-001, one per item (one
+  `in_progress`, one `done` with matching `stage_completion_log` and
+  yesterday's `item_stages.done_date`, three `assigned`). The block asks
+  for up to 6 (`LIMIT 6` items) but the demo project yields 5. Idempotent
+  — wipes the ALF-001 shop-floor demo state before re-seeding.
 - Out of scope (deferred): mobile-first responsive UI, real-time
   pub/sub (15-s poll instead), efficiency analytics dashboards,
   per-part painting tracking, `time_record` table for payroll,
@@ -662,12 +686,14 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Estimating (sub-project #9a)
 
-> **No committed spec/plan doc.** #9a was built directly (commit
-> `a7b8d3d` + follow-ups) without a `docs/superpowers/specs|plans`
-> file — this section is the authoritative reference. (The
-> `2026-05-09-cutplan-optimiser-stub.md` plan is for #9, a *different*,
-> not-yet-built sub-project; it was leapfrogged when migration slot
-> 0021 went to estimating instead.)
+> **Built without a spec or plan.** #9a shipped directly (commit `a7b8d3d`
+> + follow-ups); the design record was backfilled afterwards as
+> `docs/superpowers/plans/2026-05-26-estimating.md`, which explains *why*
+> the schema and workflow read as they do. **This section stays the
+> statement of current state.** #9 (CutPlan optimiser) is a *different*
+> sub-project; it shipped after #9a, which is why estimating holds
+> migration slots 0021–0023 and the optimiser's `grain_locked` landed
+> as 0024.
 
 - New backend module `apps/api/app/estimating/` (`schemas.py`,
   `queries.py`, `routes.py`, `pdf.py` + `templates/quote.html`).
@@ -725,7 +751,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   already-converted (`409 ALREADY_CONVERTED` with the existing
   `project_id`) and archived-customer, re-resolves each part snapshot,
   and creates a project wired to `projects.estimate_revision_id`.
-- **~30 endpoints** — Customers CRUD + archive; estimates list/detail/
+- **32 endpoints** — Customers CRUD + archive; estimates list/detail/
   create/patch/revise; revision detail + patch + the 6 status
   transitions (`send/accept/reject/expire/withdraw/convert`); line
   CRUD + reorder; per-line part / hardware / labour add/patch/delete;

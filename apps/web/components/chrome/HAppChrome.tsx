@@ -27,7 +27,7 @@ export function HAppChrome({ user, sidebar, children }: HAppChromeProps) {
   return (
     <div className="min-h-screen bg-h-bg">
       <TopBar user={user} editorMode={editorMode} />
-      {!editorMode && <TabStrip />}
+      {!editorMode && <TabStrip user={user} />}
       <div className="flex">
         {renderSidebar && sidebar}
         <main className="flex-1 p-6">{children}</main>

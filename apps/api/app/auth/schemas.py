@@ -17,3 +17,6 @@ class MeOut(BaseModel):
     full_name: str
     auth_role: str
     jtbd_role: str | None = None
+    # `{module: [actions]}` for this user's role — the RBAC matrix stays the
+    # single source of truth and the web tier reads it from here.
+    permissions: dict[str, list[str]] = {}

@@ -1,5 +1,15 @@
 # JoineryFlow Procurement Workbench v1 Implementation Plan
 
+> **Status: shipped.** Migration `0012`. Current state lives in
+> `## Procurement Workbench (sub-project #4)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change — Phase 4 is retired.** The `/catalogs/{type}` surface it specifies was
+> removed in `64ef89e` — it duplicated the six catalog tables under the
+> `orderbook` gate, without workspace scoping, and hard-deleted rows. Those
+> tables are served only by `/catalog/*` (#7a).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship sub-project #4 — the Procurement Workbench v1 — on top of the merged PM Workbench branch. A PM (or Drafter, who is elevated to PM-parity for `orderbook` in this sub-project) clicks the "0 ready / 2 blocked" availability chip on a tracking row, opens an item-scoped drawer, and either allocates from an existing batch or orders more — all in three clicks. A Procurement officer (`purchase_officer`) gets a cross-project queue at `/orderbook` for working across projects, and every project gets a `/projects/[id]/procurement` page with Materials, Batches, and Catalog tabs. End-to-end verifiable via one new Playwright spec.

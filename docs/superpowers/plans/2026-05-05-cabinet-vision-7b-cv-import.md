@@ -1,5 +1,10 @@
 # JoineryFlow CV Import Wizard Implementation Plan
 
+> **Status: shipped.** Migration `0018`. Current state lives in
+> `## CV Import wizard (sub-project #7b)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Date:** 2026-05-05

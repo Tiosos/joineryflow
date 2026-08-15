@@ -1,5 +1,13 @@
 # Implementation Plan — Shop Floor Ops (sub-project #8)
 
+> **Status: shipped.** Migration `0020`. Current state lives in
+> `## Shop Floor Ops (sub-project #8)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/superpowers/plans/README.md`).
+
+> **Later change:** Spec §15 Q3 (deactivating a worker who holds active assignments) was
+> proposed but never built — see the spec for the consequence.
+
 **Spec:** `docs/superpowers/specs/2026-05-05-shop-floor-design.md`
 **Branch base:** `feat/foundation` post-#7c (HEAD `bf6d331`).
 **Migration introduced:** `0020_shop_floor.py`.

@@ -2,10 +2,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { fetchMe } from "@/lib/session";
+import { SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session-cookie";
 
 import CatalogClient from "./_components/CatalogClient";
 
-const COOKIE_NAME = "jf_session";
 
 interface PageProps {
   searchParams: Promise<{
