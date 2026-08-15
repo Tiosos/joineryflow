@@ -54,21 +54,27 @@ def _role_view(user: AuthUser) -> str:
         return "pm"
     if user.auth_role == "drafter":
         return "drafter"
+    if user.auth_role == "estimator":
+        return "estimator"
     if user.auth_role == "purchase_officer":
         return "purchase_officer"
+    if user.auth_role == "editor":
+        return "editor"
     return "viewer"
 
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
 
 def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[MetricCard]:
-    """4 metric cards for ceo / pm / drafter / viewer roles.
+    """4 production/cutlist metric cards for ceo / pm / drafter / editor /
+    viewer roles. (estimator and purchase_officer get their own card sets.)
 
     Scoping:
       - ceo (admin): workspace-wide
       - pm (manager): items in projects where pm_id = caller
       - drafter: items where cutlist_owner_id = caller
-      - viewer/editor: workspace-wide (read-only)
+      - editor/viewer: workspace-wide (the editor is production-facing, so the
+        cutlist cards are relevant; kept workspace-wide rather than scoped)
     """
     wid = user.workspace_id
     uid = user.id
@@ -175,6 +181,64 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             label="Value in Progress",
             value=value_in_progress,
             href="/tracking?status=LIVE",
+        ),
+    ]
+
+
+def _metrics_estimator(db: Session, *, user: AuthUser, today: date) -> list[MetricCard]:
+    """4 metric cards for the estimator role — the quoting pipeline, keyed off
+    each estimate's *current* revision status. Workspace-scoped via
+    estimate.workspace_id. Replaces the cutlist/production cards, which have no
+    bearing on someone who quotes work that has no project yet."""
+    wid = user.workspace_id
+    horizon = today + timedelta(days=7)
+    row = db.execute(
+        text(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE r.status = 'draft')             AS drafts,
+                COUNT(*) FILTER (WHERE r.status = 'sent')              AS awaiting,
+                COUNT(*) FILTER (WHERE r.status = 'accepted'
+                                   AND r.converted_project_id IS NULL) AS accepted_unconverted,
+                COUNT(*) FILTER (WHERE r.status = 'sent'
+                                   AND r.expires_at IS NOT NULL
+                                   AND r.expires_at BETWEEN :today AND :horizon) AS expiring
+            FROM estimate e
+            JOIN estimate_revision r ON r.revision_id = e.current_revision_id
+            WHERE e.workspace_id = :wid
+            """
+        ),
+        {"wid": wid, "today": today, "horizon": horizon},
+    ).mappings().first()
+    drafts = int(row["drafts"]) if row else 0
+    awaiting = int(row["awaiting"]) if row else 0
+    accepted = int(row["accepted_unconverted"]) if row else 0
+    expiring = int(row["expiring"]) if row else 0
+
+    return [
+        MetricCard(
+            key="drafts_open",
+            label="Drafts Open",
+            value=drafts,
+            href="/estimating?status=draft",
+        ),
+        MetricCard(
+            key="awaiting_response",
+            label="Awaiting Response",
+            value=awaiting,
+            href="/estimating?status=sent",
+        ),
+        MetricCard(
+            key="accepted_unconverted",
+            label="Accepted · Unconverted",
+            value=accepted,
+            href="/estimating?status=accepted",
+        ),
+        MetricCard(
+            key="expiring_soon",
+            label="Expiring ≤7d",
+            value=expiring,
+            href="/estimating?status=sent",
         ),
     ]
 
@@ -451,6 +515,8 @@ def dashboard(db: Session, *, user: AuthUser) -> HomeDashboardOut:
 
     if role == "purchase_officer":
         metrics = _metrics_purchase_officer(db, user=user, today=today)
+    elif role == "estimator":
+        metrics = _metrics_estimator(db, user=user, today=today)
     else:
         metrics = _metrics_general(db, user=user, today=today)
 

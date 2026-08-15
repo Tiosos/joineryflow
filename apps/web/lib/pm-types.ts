@@ -353,7 +353,14 @@ export interface FavouriteProject {
   name: string;
 }
 
-export type RoleView = "ceo" | "pm" | "drafter" | "purchase_officer" | "viewer";
+export type RoleView =
+  | "ceo"
+  | "pm"
+  | "drafter"
+  | "estimator"
+  | "editor"
+  | "purchase_officer"
+  | "viewer";
 
 export interface HomeDashboardOut {
   role_view: RoleView;

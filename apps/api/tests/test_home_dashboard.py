@@ -357,3 +357,95 @@ def test_dashboard_includes_team_activity_from_audit_log():
     # First entry is the most recent (ORDER BY created_at DESC)
     assert activity[0]["event"] == "project.create"
     assert activity[0]["target"] == "42"
+
+
+# ── Estimator + editor dashboards ───────────────────────────────────────────
+#
+# estimator and editor used to fall through _role_view to 'viewer' and got the
+# production/cutlist cards. estimator now gets a quoting pipeline; editor keeps
+# the (production-relevant) general cards but is reported as its own role_view.
+
+def _seed_estimate(
+    db, *, wid, uid, no, status, expires_at=None, converted_project_id=None
+):
+    cid = db.execute(
+        text(
+            "INSERT INTO customer(workspace_id, name, created_by) "
+            "VALUES (:w, :n, :u) RETURNING customer_id"
+        ),
+        {"w": wid, "n": f"Cust-{no}", "u": uid},
+    ).scalar()
+    eid = db.execute(
+        text(
+            "INSERT INTO estimate(workspace_id, customer_id, estimate_no, "
+            "title, created_by) VALUES (:w, :c, :no, 'Quote', :u) "
+            "RETURNING estimate_id"
+        ),
+        {"w": wid, "c": cid, "no": no, "u": uid},
+    ).scalar()
+    rid = db.execute(
+        text(
+            "INSERT INTO estimate_revision(estimate_id, rev_no, status, "
+            "expires_at, converted_project_id, created_by) "
+            "VALUES (:e, 1, :s, :exp, :conv, :u) RETURNING revision_id"
+        ),
+        {"e": eid, "s": status, "exp": expires_at,
+         "conv": converted_project_id, "u": uid},
+    ).scalar()
+    db.execute(
+        text("UPDATE estimate SET current_revision_id = :r WHERE estimate_id = :e"),
+        {"r": rid, "e": eid},
+    )
+    return eid, rid
+
+
+def test_dashboard_estimator_metrics_shape():
+    """Estimator gets role_view='estimator' and quoting-pipeline cards keyed
+    off each estimate's current revision status."""
+    c, wid, uid = _login(role="estimator")
+    db = SessionLocal()
+    try:
+        today = date.today()
+        conv_pid = _create_project(db, wid=wid, uid=uid, code="CONV-1")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-A", status="draft")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-B", status="draft")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-C", status="sent")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-D", status="sent",
+                       expires_at=today + timedelta(days=3))
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-E", status="accepted")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-F", status="accepted",
+                       converted_project_id=conv_pid)
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-G", status="rejected")
+        db.commit()
+    finally:
+        db.close()
+
+    data = c.get("/home/dashboard").json()
+    assert data["role_view"] == "estimator"
+    cards = {m["key"]: m["value"] for m in data["metrics"]}
+    assert set(cards) == {
+        "drafts_open", "awaiting_response", "accepted_unconverted", "expiring_soon",
+    }
+    assert cards["drafts_open"] == 2
+    assert cards["awaiting_response"] == 2       # plain sent + expiring sent
+    assert cards["accepted_unconverted"] == 1    # converted one excluded
+    assert cards["expiring_soon"] == 1
+    assert "overdue" not in cards                # no production card
+
+
+def test_dashboard_estimator_empty_workspace_is_all_zero():
+    c, _wid, _uid = _login(role="estimator")
+    data = c.get("/home/dashboard").json()
+    assert data["role_view"] == "estimator"
+    assert all(m["value"] == 0 for m in data["metrics"])
+
+
+def test_dashboard_editor_gets_editor_view_with_general_metrics():
+    """Editor is now its own role_view but still receives the general
+    production cards, not the estimating ones."""
+    c, _wid, _uid = _login(role="editor")
+    data = c.get("/home/dashboard").json()
+    assert data["role_view"] == "editor"
+    keys = {m["key"] for m in data["metrics"]}
+    assert "overdue" in keys           # general/production card present
+    assert "drafts_open" not in keys   # not the estimator set
