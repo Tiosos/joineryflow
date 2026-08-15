@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .lifecycle import prior_stages, shop_floor_order
+from .lifecycle import later_stages, prior_stages, shop_floor_order
 
 
 # ============================================================================
@@ -181,6 +181,38 @@ def prior_stages_done(
         if have.get(s) is None:
             missing.append(s)
     return missing
+
+
+def later_stages_done(
+    db: Session,
+    *,
+    item_id: int,
+    stage_key: str,
+    painting_req: bool,
+    paint_after_assembly: bool,
+) -> list[str]:
+    """Return the stages AFTER `stage_key` that are already done. Empty -> the
+    stage can be undone without leaving a completed successor stranded."""
+    after = later_stages(
+        stage_key,
+        painting_req=painting_req,
+        paint_after_assembly=paint_after_assembly,
+    )
+    if not after:
+        return []
+    rows = db.execute(
+        text(
+            """
+            SELECT stage_key
+            FROM item_stages
+            WHERE item_id = :iid AND stage_key = ANY(:keys)
+              AND done_date IS NOT NULL
+            """
+        ),
+        {"iid": item_id, "keys": list(after)},
+    ).mappings().all()
+    done = {r["stage_key"] for r in rows}
+    return [s for s in after if s in done]
 
 
 def next_open_stage(
@@ -362,22 +394,32 @@ def board_cards(
                     i.item_id, i.num AS item_number, i.code, i.description,
                     i.painting_req, i.paint_after_assembly, i.project_id,
                     (
-                        SELECT s.stage_key
-                        FROM item_stages s
-                        WHERE s.item_id = i.item_id
-                          AND s.stage_key IN ('DOWN','CNC','EDGED','PAINTED','MADE')
-                          AND s.done_date IS NULL
-                          AND (s.stage_key <> 'PAINTED' OR i.painting_req)
+                        -- Candidates are the full canonical stage list, not
+                        -- just item_stages rows that happen to exist: the
+                        -- LEFT JOIN makes a MISSING row read as open
+                        -- (s.done_date IS NULL), matching next_open_stage().
+                        -- Without this, items created via create_item (zero
+                        -- stage rows) or seeded (REQ..CNC only) drop off the
+                        -- board once their existing rows are done.
+                        SELECT so.stage_key
+                        FROM (VALUES
+                            ('DOWN'), ('CNC'), ('EDGED'), ('PAINTED'), ('MADE')
+                        ) AS so(stage_key)
+                        LEFT JOIN item_stages s
+                               ON s.item_id = i.item_id
+                              AND s.stage_key = so.stage_key
+                        WHERE s.done_date IS NULL
+                          AND (so.stage_key <> 'PAINTED' OR i.painting_req)
                         ORDER BY (
                             CASE
                                 WHEN i.paint_after_assembly THEN
-                                    CASE s.stage_key
+                                    CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'MADE' THEN 4
                                         WHEN 'PAINTED' THEN 5
                                     END
                                 ELSE
-                                    CASE s.stage_key
+                                    CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'PAINTED' THEN 4
                                         WHEN 'MADE' THEN 5
@@ -536,7 +578,8 @@ def get_completion_log(
             """
             SELECT scl.log_id, scl.item_id, scl.stage_key,
                    scl.assignment_id, scl.worker_id, scl.completed_at,
-                   scl.note, scl.undone_at, scl.undone_by
+                   scl.note, scl.undone_at, scl.undone_by,
+                   i.painting_req, i.paint_after_assembly
             FROM stage_completion_log scl
             JOIN items i    ON i.item_id    = scl.item_id
             JOIN projects p ON p.project_id = i.project_id

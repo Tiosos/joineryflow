@@ -392,3 +392,176 @@ def test_non_admin_cannot_toggle():
         f"/users/{worker}/shop-worker", json={"is_shop_worker": False}
     )
     assert r.status_code == 403
+
+
+# --- Board: items missing item_stages rows (regression) -------------------
+#
+# create_item inserts ZERO item_stages rows, and the seed inserts only
+# REQ..CNC. The board must derive the next open stage from the canonical
+# lifecycle order — treating a missing row as open, exactly as
+# next_open_stage() does — not only from item_stages rows that happen to
+# exist. Otherwise items silently drop off the Foreman board and can never
+# be assigned the later stages. The _bootstrap fixture masks this by
+# pre-inserting all five rows.
+
+def _add_item(
+    wid: int,
+    pid: int,
+    *,
+    code: str,
+    stages: dict[str, bool],
+    painting_req: bool = True,
+    paint_after_assembly: bool = False,
+) -> int:
+    """Insert an item carrying ONLY the item_stages rows named in `stages`
+    (stage_key -> done?). Stages omitted from the dict get no row at all,
+    mirroring create_item (none) and the seed (REQ..CNC only)."""
+    s = SessionLocal()
+    try:
+        iid = s.execute(
+            text(
+                """
+                INSERT INTO items(num, project_id, code, description,
+                                  painting_req, paint_after_assembly, deleted)
+                VALUES (nextval('items_item_id_seq') + 100000, :p, :c, :d,
+                        :pr, :paa, false)
+                RETURNING item_id
+                """
+            ),
+            {"p": pid, "c": code, "d": code,
+             "pr": painting_req, "paa": paint_after_assembly},
+        ).scalar()
+        for sk, done in stages.items():
+            s.execute(
+                text(
+                    """
+                    INSERT INTO item_stages(item_id, stage_key, done_date)
+                    VALUES (:i, :s, :d)
+                    """
+                ),
+                {"i": iid, "s": sk, "d": date.today() if done else None},
+            )
+        s.commit()
+        return iid
+    finally:
+        s.close()
+
+
+def _board_column(c: TestClient, pid: int, stage: str) -> list[int]:
+    r = c.get(f"/projects/{pid}/shop-floor/board")
+    assert r.status_code == 200, r.text
+    return [card["item_id"] for card in r.json()["columns"][stage]]
+
+
+def test_board_includes_item_with_no_stage_rows():
+    """A UI-created item (zero item_stages rows) must show at DOWN, not vanish."""
+    c, wid, _u, _worker, pid, _items = _bootstrap()
+    iid = _add_item(wid, pid, code="NOSTAGES", stages={})
+    assert iid in _board_column(c, pid, "DOWN")
+
+
+def test_board_advances_to_stage_without_a_row():
+    """DOWN+CNC done, no EDGED/PAINTED/MADE rows (the seed's shape): next
+    open stage is EDGED — the item stays on the board rather than dropping off."""
+    c, wid, _u, _worker, pid, _items = _bootstrap()
+    iid = _add_item(wid, pid, code="THRUCNC", stages={"DOWN": True, "CNC": True})
+    assert iid in _board_column(c, pid, "EDGED")
+
+
+def test_board_skips_painted_when_not_required_and_row_missing():
+    """painting_req=false with DOWN..EDGED done and no PAINTED/MADE rows:
+    PAINTED is skipped, next open stage is MADE."""
+    c, wid, _u, _worker, pid, _items = _bootstrap()
+    iid = _add_item(
+        wid, pid, code="NOPAINT", painting_req=False,
+        stages={"DOWN": True, "CNC": True, "EDGED": True},
+    )
+    assert iid in _board_column(c, pid, "MADE")
+
+
+# --- Complete requires in_progress (status machine) -----------------------
+
+def test_complete_requires_in_progress():
+    """assigned -> done skips in_progress; it must 409, leave started_at NULL,
+    and write no completion log."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    a = _assign(c, pid, items[0], "DOWN", worker)  # status 'assigned', not started
+    r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "NOT_IN_PROGRESS"
+
+    s = SessionLocal()
+    try:
+        row = s.execute(
+            text(
+                """
+                SELECT status, started_at FROM worker_assignment
+                WHERE assignment_id = :a
+                """
+            ),
+            {"a": a["assignment_id"]},
+        ).mappings().first()
+        assert row["status"] == "assigned"
+        assert row["started_at"] is None
+        logs = s.execute(
+            text("SELECT COUNT(*) FROM stage_completion_log WHERE assignment_id = :a"),
+            {"a": a["assignment_id"]},
+        ).scalar()
+        assert logs == 0
+    finally:
+        s.close()
+
+
+# --- Undo cannot strand a completed later stage ---------------------------
+
+def _start_and_complete(c: TestClient, pid: int, iid: int, stage: str,
+                        worker: int) -> dict:
+    a = _assign(c, pid, iid, stage, worker)
+    c.post(f"/assignments/{a['assignment_id']}/start")
+    r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_undo_blocked_when_later_stage_done():
+    """DOWN and CNC both done; undoing DOWN would leave DOWN open with CNC
+    done — the out-of-order state /complete forbids. Must 409 and preserve
+    DOWN's done_date."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    down = _start_and_complete(c, pid, items[0], "DOWN", worker)
+    _start_and_complete(c, pid, items[0], "CNC", worker)
+
+    r = c.post(f"/completions/{down['log_id']}/undo")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "LATER_STAGE_DONE"
+    assert "CNC" in r.json()["detail"]["blocking"]
+
+    s = SessionLocal()
+    try:
+        done_date = s.execute(
+            text("SELECT done_date FROM item_stages WHERE item_id = :i AND stage_key = 'DOWN'"),
+            {"i": items[0]},
+        ).scalar()
+        assert done_date is not None
+    finally:
+        s.close()
+
+
+def test_undo_allowed_for_the_latest_completed_stage():
+    """Undoing the most-recent stage (no later stage done) still works."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    _start_and_complete(c, pid, items[0], "DOWN", worker)
+    cnc = _start_and_complete(c, pid, items[0], "CNC", worker)
+
+    r = c.post(f"/completions/{cnc['log_id']}/undo")
+    assert r.status_code == 200, r.text
+
+    s = SessionLocal()
+    try:
+        cnc_done = s.execute(
+            text("SELECT done_date FROM item_stages WHERE item_id = :i AND stage_key = 'CNC'"),
+            {"i": items[0]},
+        ).scalar()
+        assert cnc_done is None
+    finally:
+        s.close()
