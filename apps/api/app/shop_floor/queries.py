@@ -107,6 +107,31 @@ def update_worker_flag(
     return dict(row) if row else None
 
 
+def active_assignments_for_worker(
+    db: Session, *, workspace_id: int, worker_id: int
+) -> list[dict]:
+    """Active (assigned/in_progress) assignments a worker still holds, scoped
+    to the workspace. Used to block deactivating or un-flagging a worker who
+    would otherwise leave orphaned rows on the Foreman board that the
+    uniq_active_assignment index then blocks anyone else from taking over."""
+    rows = db.execute(
+        text(
+            """
+            SELECT wa.assignment_id, wa.item_id, wa.stage_key, wa.status
+            FROM worker_assignment wa
+            JOIN items i    ON i.item_id    = wa.item_id
+            JOIN projects p ON p.project_id = i.project_id
+            WHERE wa.worker_id = :wid
+              AND p.workspace_id = :w
+              AND wa.status IN ('assigned', 'in_progress')
+            ORDER BY wa.assignment_id
+            """
+        ),
+        {"wid": worker_id, "w": workspace_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 # ============================================================================
 # Project / item lookup
 # ============================================================================

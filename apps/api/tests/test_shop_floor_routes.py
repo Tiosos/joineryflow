@@ -565,3 +565,69 @@ def test_undo_allowed_for_the_latest_completed_stage():
         assert cnc_done is None
     finally:
         s.close()
+
+
+# --- Q3: deactivate / un-flag a worker holding active assignments ----------
+#
+# Deactivating or un-flagging a worker who still holds assigned/in_progress
+# work would strand those rows on the board, and uniq_active_assignment then
+# blocks reassigning that (item, stage). Both paths 409 until the work is
+# reassigned or cancelled (shop-floor spec §15 Q3, resolved as 409-reject).
+
+def _is_active(worker_id: int) -> bool:
+    s = SessionLocal()
+    try:
+        return s.execute(
+            text("SELECT is_active FROM app_user WHERE id = :i"), {"i": worker_id}
+        ).scalar()
+    finally:
+        s.close()
+
+
+def _is_shop_worker(worker_id: int) -> bool:
+    s = SessionLocal()
+    try:
+        return s.execute(
+            text("SELECT is_shop_worker FROM app_user WHERE id = :i"), {"i": worker_id}
+        ).scalar()
+    finally:
+        s.close()
+
+
+def test_cannot_deactivate_worker_holding_active_assignment():
+    c, _w, _u, worker, pid, items = _bootstrap(role="admin")
+    a = _assign(c, pid, items[0], "DOWN", worker)  # status 'assigned'
+    r = c.patch(f"/users/{worker}", json={"is_active": False})
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "HAS_ACTIVE_ASSIGNMENTS"
+    assert any(
+        x["assignment_id"] == a["assignment_id"] for x in detail["assignments"]
+    )
+    assert _is_active(worker) is True  # unchanged
+
+
+def test_cannot_unflag_worker_with_in_progress_assignment():
+    c, _w, _u, worker, pid, items = _bootstrap(role="admin")
+    a = _assign(c, pid, items[0], "DOWN", worker)
+    c.post(f"/assignments/{a['assignment_id']}/start")  # -> in_progress
+    r = c.patch(f"/users/{worker}/shop-worker", json={"is_shop_worker": False})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "HAS_ACTIVE_ASSIGNMENTS"
+    assert _is_shop_worker(worker) is True  # unchanged
+
+
+def test_can_deactivate_worker_after_assignment_cancelled():
+    c, _w, _u, worker, pid, items = _bootstrap(role="admin")
+    a = _assign(c, pid, items[0], "DOWN", worker)
+    c.delete(f"/assignments/{a['assignment_id']}")  # cancelled -> not active
+    r = c.patch(f"/users/{worker}", json={"is_active": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["is_active"] is False
+
+
+def test_can_deactivate_worker_with_no_assignments():
+    c, _w, _u, worker, _pid, _items = _bootstrap(role="admin")
+    r = c.patch(f"/users/{worker}", json={"is_active": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["is_active"] is False

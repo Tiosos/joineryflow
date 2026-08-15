@@ -597,17 +597,17 @@ recorded below against what the code actually does.
    → **RESOLVED as proposed.** `PATCH /assignments/{aid}` clears `started_at`
    and resets status to `assigned`.
 3. **What happens when a worker is deactivated while holding active assignments?** Proposed: route-layer flip rejects with 409 if active assignments exist.
-   → **NOT IMPLEMENTED — still open.** The proposal was never built. Neither
-   `PATCH /users/{uid}` (`is_active`) nor `PATCH /users/{uid}/shop-worker`
-   consults `worker_assignment`, so deactivating or un-flagging a worker
-   leaves their `assigned` / `in_progress` rows intact and still rendered on
-   the Foreman board, assigned to someone who can no longer log in. The
-   partial unique index `uniq_active_assignment` then blocks reassigning that
-   `(item, stage)` to anybody else until the orphan is cancelled by hand.
-   Whoever picks this up should decide between the original 409 and a
-   cascade that cancels the assignments as part of the flip — the 409 is
-   safer, since silently cancelling work in progress loses the record of who
-   had it.
+   → **RESOLVED as proposed — 409 reject.** Both mutation paths now consult
+   `worker_assignment` before the flip: `PATCH /users/{uid}` when it sets
+   `is_active=false`, and `PATCH /users/{uid}/shop-worker` when it sets
+   `is_shop_worker=false`. If the worker still holds any `assigned` /
+   `in_progress` assignment in the workspace, the request returns
+   `409 {code: "HAS_ACTIVE_ASSIGNMENTS", assignments: [...]}` and nothing
+   changes; the admin must reassign or cancel that work first. The
+   cascade-cancel alternative was rejected — silently cancelling in-progress
+   work as a side effect of a user edit loses the record of who held it.
+   Enforced by `shop_floor.queries.active_assignments_for_worker` +
+   `users.routes._guard_active_assignments`.
 4. **PM "Labour & Progress" panel** — does PM need a small "today's completions" widget on `/tracking`? Proposed: defer.
    → **RESOLVED: deferred as proposed.** Not built; listed under #8's
    out-of-scope items in `CLAUDE.md`. `stage_completion_log` already holds
