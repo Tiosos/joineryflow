@@ -41,7 +41,9 @@ class FavouriteProject(BaseModel):
 
 
 class HomeDashboardOut(BaseModel):
-    role_view: Literal["ceo", "pm", "drafter", "purchase_officer", "viewer"]
+    role_view: Literal[
+        "ceo", "pm", "drafter", "estimator", "editor", "purchase_officer", "viewer"
+    ]
     metrics: list[MetricCard]
     my_day: list[MyDayItem]
     deliveries_today: list[DeliveryToday]
