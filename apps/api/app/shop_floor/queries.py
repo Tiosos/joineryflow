@@ -362,22 +362,32 @@ def board_cards(
                     i.item_id, i.num AS item_number, i.code, i.description,
                     i.painting_req, i.paint_after_assembly, i.project_id,
                     (
-                        SELECT s.stage_key
-                        FROM item_stages s
-                        WHERE s.item_id = i.item_id
-                          AND s.stage_key IN ('DOWN','CNC','EDGED','PAINTED','MADE')
-                          AND s.done_date IS NULL
-                          AND (s.stage_key <> 'PAINTED' OR i.painting_req)
+                        -- Candidates are the full canonical stage list, not
+                        -- just item_stages rows that happen to exist: the
+                        -- LEFT JOIN makes a MISSING row read as open
+                        -- (s.done_date IS NULL), matching next_open_stage().
+                        -- Without this, items created via create_item (zero
+                        -- stage rows) or seeded (REQ..CNC only) drop off the
+                        -- board once their existing rows are done.
+                        SELECT so.stage_key
+                        FROM (VALUES
+                            ('DOWN'), ('CNC'), ('EDGED'), ('PAINTED'), ('MADE')
+                        ) AS so(stage_key)
+                        LEFT JOIN item_stages s
+                               ON s.item_id = i.item_id
+                              AND s.stage_key = so.stage_key
+                        WHERE s.done_date IS NULL
+                          AND (so.stage_key <> 'PAINTED' OR i.painting_req)
                         ORDER BY (
                             CASE
                                 WHEN i.paint_after_assembly THEN
-                                    CASE s.stage_key
+                                    CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'MADE' THEN 4
                                         WHEN 'PAINTED' THEN 5
                                     END
                                 ELSE
-                                    CASE s.stage_key
+                                    CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'PAINTED' THEN 4
                                         WHEN 'MADE' THEN 5
