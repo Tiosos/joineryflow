@@ -653,6 +653,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Worker-toggle endpoint at `PATCH /users/{uid}/shop-worker` (gated
   `("it_management", "write")` — admin-only). Audit event
   `it.worker_toggle`.
+- Deactivating (`PATCH /users/{uid}` `is_active=false`) or un-flagging
+  (`PATCH /users/{uid}/shop-worker` `is_shop_worker=false`) a worker who
+  still holds `assigned`/`in_progress` assignments returns
+  `409 HAS_ACTIVE_ASSIGNMENTS` (listing them) and changes nothing — reassign
+  or cancel first (spec §15 Q3). `shop_floor.queries.active_assignments_for_worker`
+  + `users.routes._guard_active_assignments`.
 - Web routes:
   - **`/shop-floor?project=…`** — Foreman office board. 5-column
     kanban DOWN | CNC | EDGED | PAINTED | MADE. Per-card status

@@ -6,6 +6,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac import current_user, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..shop_floor import queries as sf_queries
 from .schemas import (
     MyStatusPatch,
     TeamMemberOut,
@@ -21,6 +22,24 @@ team_router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 _VALID_ROLES = {"admin", "manager", "editor", "drafter", "estimator", "purchase_officer", "viewer"}
 _PATCHABLE = ("full_name", "auth_role", "jtbd_role", "is_active")
+
+
+def _guard_active_assignments(db: Session, *, workspace_id: int, uid: int) -> None:
+    """409 if `uid` still holds active shop-floor assignments.
+
+    Deactivating (is_active=false) or un-flagging (is_shop_worker=false) such a
+    worker would strand assigned/in_progress rows on the Foreman board — and
+    uniq_active_assignment would then block reassigning that (item, stage) to
+    anyone else until the orphan is cancelled by hand. Reassign or cancel them
+    first (shop-floor spec §15 Q3)."""
+    active = sf_queries.active_assignments_for_worker(
+        db, workspace_id=workspace_id, worker_id=uid
+    )
+    if active:
+        raise HTTPException(
+            409,
+            {"code": "HAS_ACTIVE_ASSIGNMENTS", "assignments": active},
+        )
 
 
 @router.get("", response_model=list[UserOut])
@@ -57,6 +76,8 @@ def patch_user(
         raise HTTPException(400, f"unknown fields: {sorted(bad)}")
     if "auth_role" in fields and fields["auth_role"] not in _VALID_ROLES:
         raise HTTPException(400, "bad auth_role")
+    if fields.get("is_active") is False:
+        _guard_active_assignments(db, workspace_id=user.workspace_id, uid=uid)
     sets = ", ".join(f"{k} = :{k}" for k in fields)
     params = {**fields, "i": uid, "w": user.workspace_id}
     row = db.execute(
@@ -189,6 +210,8 @@ def patch_user_shop_worker(
 ):
     """Admin-only toggle of `is_shop_worker`. Powers the /it
     WorkerRosterPanel."""
+    if body.is_shop_worker is False:
+        _guard_active_assignments(db, workspace_id=user.workspace_id, uid=uid)
     row = db.execute(
         text(
             """
