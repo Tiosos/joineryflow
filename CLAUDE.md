@@ -107,7 +107,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 ## Web shell
 
 - Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
-- `apps/web/middleware.ts` enforces login redirect on all non-public paths.
+- `apps/web/proxy.ts` (Next 16 renamed the `middleware` convention to `proxy`; runs in the Node.js runtime) enforces login redirect on all non-public paths.
 - `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · Estimating · Customers`); `SideBar.tsx` is the project list only.
 - **The tab strip is gated on the RBAC matrix**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves. Today every role holds `read` on every tab's module, so all tabs still render for everyone — the gate only starts hiding tabs once some module's read grant is removed for a role. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
 - Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
@@ -193,7 +193,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - New routers under `apps/api/app/{home, projects, items, parts, hardware_lines}/`. Mounted in `main.py`.
 - Every item-scoped mutation writes both `audit_log` (workspace governance) and `item_edit_log` (item history) in the same DB transaction. Helper: `apps/api/app/edit_log.py`.
 - Web routes: `/home`, `/projects`, `/tracking?project_id=`, `/items/[id]?tab=cutlist|hardware|board|log`. (#2 made `/home` the landing page in place of `/dashboard`; **#9a reversed that** — `/home` is now a bare `redirect("/dashboard")` and `/dashboard` is the real landing page.)
-- Editor mode is detected by middleware writing `x-pathname`; layout reads it and hides TabStrip + SideBar, swapping in a "← Return to home" link.
+- Editor mode is detected by `proxy.ts` writing `x-pathname`; layout reads it and hides TabStrip + SideBar, swapping in a "← Return to home" link.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
 - Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`, now defaulted to `1` in `.env.example` (it was absent, so the button was off in every fresh dev setup even though #4 shipped). A `.env` copied before that fix won't have it.
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").

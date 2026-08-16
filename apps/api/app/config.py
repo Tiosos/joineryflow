@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
@@ -6,6 +6,6 @@ class Settings(BaseSettings):
     session_sliding_days: int = 14
     session_hard_cap_days: int = 30
     cookie_secure: bool = False
-    class Config: env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
