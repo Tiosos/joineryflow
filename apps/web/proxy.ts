@@ -4,7 +4,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 
 const PUBLIC = ["/login", "/api", "/_next", "/favicon.ico"];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
