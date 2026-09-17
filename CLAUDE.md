@@ -79,6 +79,48 @@ Layout:
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
+- `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
+
+## Plan V1 — target architecture (NOT built)
+
+`docs/plan-v1/` holds **Plan V1**, the customer's specification for a
+company-wide joinery workflow and control platform, with its interview
+questions answered through Q431 (supplied 2026-09-17). It is a **target**,
+not a description of this tree. Nothing in it has been implemented.
+
+- `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
+- `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
+  state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q538, continuing Plan V1's own
+  numbering. **Unanswered.**
+
+**Before building anything from Plan V1, read `ALIGNMENT.md` §3.** Five of its
+requirements contradict invariants stated as binding in *this* file, and each
+would be a rewrite rather than an addition:
+
+1. **The Cutlist becomes the workflow-owning entity** (Plan V1 Q410–Q413).
+   Several Joinery Items share one cutlist and one shared set of production
+   stage completions. Today `item_stages` is strictly per-item and `items.num`
+   *is* the cutlist number. Adopting this reshapes #2 and rewrites #8
+   (`worker_assignment` / `stage_completion_log` key off `(item_id, stage_key)`).
+2. **Related-part rows** (Q416–Q424) — metal / benchtop / cushion rows with no
+   cutlist and **no workflow stages**, nested under a parent via Group ID.
+   `items.group_id` is free text with no hierarchy semantics today.
+3. **Project files move to SharePoint, view-only** (Q398–Q400), against #5a's
+   local-disk `file_blob` store. `file_blob` still has to exist for shop
+   drawings, item attachments and sample photos.
+4. **RBAC becomes data, not code** (Plan V1 §3) — departments, IT-authored
+   groups, multi-membership, 11 actions, project/item/tab scoping,
+   most-permissive-wins. `apps/api/app/auth/permissions.py` is a static dict.
+5. **Navigation** (Q406–Q409) introduces a third module workspace, **Cutlist**,
+   which the "primary six do not grow" rule under *Design system (binding)*
+   forbids adding to the primary row.
+
+Two further conflicts are narrower but real: Plan V1 makes **Area** and **Room**
+entities (today: free-text `level` / `rm_no` / `rm_desc` on `items`), and
+replaces the **10 lifecycle stages** with 14, moving Painting after Assembly by
+default (today: `PAINTED` before `MADE`, with `items.paint_after_assembly` as
+the opt-in flag).
 
 ## Foundation dev loop
 
@@ -98,7 +140,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 ## Auth & RBAC
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
-- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth; the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
+- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth (Plan V1 §3 would replace it with a DB-backed engine; see `docs/plan-v1/ALIGNMENT.md` §3.4); the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
 - **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
 - FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action)` factory in `apps/api/app/auth/rbac.py`.
@@ -147,7 +189,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
 - Typography: Inter (default sans) for UI, JetBrains Mono for part #, PO #, ETAs, money. The `.h-mono` utility (with `tnum`) is wired in `globals.css`.
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`.
+- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q406–Q407 conflicts with this rule** — it wants a third top-level module workspace, `Cutlist`, alongside Orderbook and Tracking. Unresolved: `docs/plan-v1/OPEN-QUESTIONS.md` Q474.)
 
 ## Reference docs (read before large changes)
 
@@ -162,6 +204,9 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 > reshape) has neither spec nor plan; the sub-project sections here are its
 > only written reference.
 
+- `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
+- `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q538, unanswered. §A gates the rest.
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
