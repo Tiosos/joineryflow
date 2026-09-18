@@ -78,6 +78,34 @@ parent item, but **no item-level cost field exists**; `projects.total_value` is
 a single project number and §16's financial model is not scoped. Either this
 sub-project introduces an item cost, or the roll-up has nowhere to land.
 
+**§K round 1 (2026-09-18):** **Q502 = 1**, **Q504 = 2**, **Q506 = 1**,
+**Q507 = 2**. These converge rather than conflict: the legacy namespace is
+revived, so its `vendors` table becomes Q506's supplier entity and its
+`purchase_orders` / `po_line_items` become Q504's commercial order layer, with
+`procurement_batches` + `batch_allocations` kept beneath as allocation. Orders
+then cover all procurement, not just related parts.
+
+**Two verified problems with reviving the legacy namespace.**
+
+1. **It has no workspace scoping at all.** Checked: `workspace_id` appears
+   **zero times** in `0002_procurement_port.py` — none of the 9 tables have it.
+   The current standard (migration `0014` and commit `cc7ea11`) is that every
+   read and write scopes through `workspace_id`, with cross-workspace returning
+   404. Reviving these tables therefore requires adding workspace scoping to
+   each one before they can serve a multi-workspace product. This is not
+   optional and is the largest hidden cost in Q502 = 1.
+2. **Legacy `inventory` duplicates `board_inventory`.** The legacy table carries
+   `sku` (UNIQUE), `quantity_on_hand`, `quantity_reserved`, `reorder_point`,
+   `reorder_quantity`, `unit_cost` and `location`; migration `0025` added
+   `board_inventory` for the same job. This is precisely the duplicate-surface
+   situation #7a judged worth fixing when it retired `/catalogs`. Notably the
+   legacy table has `quantity_reserved` and `reorder_point`, which
+   `board_inventory` lacks and Plan V1 §18 wants — so it is a partial head
+   start, not pure redundancy. Raised as **Q544**.
+
+Legacy `cost_centers` and `budget_transactions` similarly overlap §16's
+financial model, which is unscoped — they bear on **Q543**.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -663,9 +691,24 @@ item cost column today, and §16 (financials) is not scoped.
    scoped. Q451 then describes intent rather than this sub-project's behaviour.
 
 ### Q502 — Is the legacy `/procurement/*` namespace the basis for the order forms?
+**Option 1 confirmed (2026-09-18).** Revive and converge the legacy namespace rather than building fresh.
 1. Yes — revive and converge it (as #7a did for catalogs).
 2. No — build fresh in `procurement_v1` and retire the legacy namespace.
 3. Keep them separate.
+
+### Q544 — Legacy `inventory` vs `board_inventory` *(new — forced by Q502 + migration 0025)*
+Reviving the legacy namespace brings `inventory` + `inventory_movements`, which
+duplicate `board_inventory` (0025). Two tables for sheet stock is the situation
+#7a retired for `/catalogs`.
+1. **Keep `board_inventory`, drop legacy `inventory`** — port the columns worth
+   having (`quantity_reserved`, `reorder_point`, `reorder_quantity`) onto it,
+   and revive only the PO/vendor half of the legacy namespace.
+2. **Keep legacy `inventory`, retire `board_inventory`** — it is the richer
+   table, but `/optimise`, `StockPanel` and the Sheet Stock tab all read
+   `board_inventory` today, so all of #9/0025's surface would be rewritten.
+3. **Keep both, different jobs** — `board_inventory` for sheet stock the
+   optimiser nests against, legacy `inventory` for general consumables.
+   Avoids a migration but leaves two stock tables to reconcile later.
 
 ### Q503 — Are order-details forms per material type?
 Screenshots 07–09 show three quite different field sets.
@@ -674,6 +717,7 @@ Screenshots 07–09 show three quite different field sets.
 3. One generic form plus a free-form attributes blob.
 
 ### Q504 — How does an order relate to a procurement batch?
+**Option 2 confirmed (2026-09-18).** Orders are the commercial layer; `procurement_batches` + `batch_allocations` remain beneath as the allocation mechanism, preserving #4's single-join availability query.
 1. An order *is* a batch (rename and extend).
 2. Orders are new; batches remain the allocation mechanism beneath them.
 
@@ -682,12 +726,14 @@ Screenshots 07–09 show three quite different field sets.
 2. It just marks the order issued and records a number.
 
 ### Q506 — Does Supplier become an entity on the v1 surface?
+**Option 1 confirmed (2026-09-18).** Yes — a supplier table, with the 6 catalog tables' free-text supplier columns repointed to it.
 Supplier is free text on catalog rows today (`supplier`, `default_supplier`).
 §21 wants comparison, performance and five statuses.
 1. Yes — a `supplier` table, and catalog rows repoint to it.
 2. Not yet — free text is fine until supplier performance is built.
 
 ### Q507 — Can non-related-part items also have orders?
+**Option 2 confirmed (2026-09-18).** Orders cover **all** procurement — board, hardware and related parts alike; batches become the internal allocation detail.
 Q417 attaches order numbers to related parts. Board and hardware for normal
 items flow through batches instead.
 1. Orders are for related parts only.

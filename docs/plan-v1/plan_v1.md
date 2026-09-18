@@ -1370,7 +1370,8 @@ Q443 = Option 1, Q445 = Option 1, Q446 = Option 1, Q539 = Option 2,
 Q540 = Option 1, Q442 = Option 1, Q447 = Option 1, Q448 = Option 2,
 Q450 = Option 1, Q449 = Option 1, Q452 = Option 1, Q453 = Option 1,
 Q541 = Option 1, Q432 = Option 1, Q444 = Option 1, Q451 = Option 1,
-Q542 = Option 3.
+Q542 = Option 3, Q502 = Option 1, Q504 = Option 2, Q506 = Option 1,
+Q507 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1561,3 +1562,36 @@ it now spans the cutlist entity, the Tracking row model, and procurement.
 
 ### Q543 — Location of the parent item's cost
 *Raised by the combination of Q451 and Q542; pending.*
+
+
+### Q502 — Basis for the order and purchase-order work
+**Option 1 confirmed.** The existing legacy procurement namespace is
+**revived and converged** into the live product surface, rather than being
+replaced by a newly built one. Its vendor, purchase-order, line-item,
+attachment and approval tables become the basis of the order work.
+
+Two conditions follow from the current codebase and are binding on that
+revival: the legacy tables carry **no workspace scoping whatsoever**, which
+must be added to meet the isolation standard every other surface now holds;
+and the legacy inventory tables **duplicate** the sheet-stock table added
+later, which Q544 resolves.
+
+### Q504 — Orders and procurement batches
+**Option 2 confirmed.** The order is the **commercial record** — supplier,
+purchase-order number, cost. Procurement batches and their allocations
+**remain beneath it** as the allocation mechanism that answers "is this
+Joinery Item blocked on a material". Two layers, each with one job.
+
+### Q506 — Supplier as an entity
+**Option 1 confirmed.** Supplier becomes a **real entity**. The free-text
+supplier fields on the six Material Catalogue tables are repointed to it. This
+is the prerequisite for §21's supplier comparison, supplier performance
+tracking and the five supplier statuses.
+
+### Q507 — Coverage of orders
+**Option 2 confirmed.** Orders cover **all procurement** — board, hardware and
+related parts alike — not only related parts. Batches become an internal
+allocation detail beneath the order layer.
+
+### Q544 — Duplicate inventory tables
+*Raised by Q502 together with the later sheet-stock migration; pending.*
