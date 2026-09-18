@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0025`. Head is `0025_board_inventory`. Each sub-project section below names the migration(s) it introduced.
+- `db/` — Alembic migrations `0001` → `0029`. Head is `0029_orderbook`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
@@ -211,7 +211,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 **Key data-model invariants** (enforced across schemas and UI):
 
-- **Six separate Material Catalog tables** (`board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) — do NOT unify them; lifecycles differ. They share an abstract interface `(id, type, description, supplier, cost_unit, lead_time_days, notes)`.
+- **Six separate Material Catalog tables** (`board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) — do NOT unify them; lifecycles differ. They are *intended* to share an abstract interface `(id, type, description, supplier, cost_unit, lead_time_days, notes)` — but **verify before relying on it**: `custom_made` names its supplier column `vendor`, not `supplier`. Of that list only `description`, `notes` and (since `0017`) `default_supplier` / `default_lead_time_days` are genuinely common to all six; the PK is `hire_id` on `equipment_hire` and `material_id` elsewhere. `0029` carries a per-table supplier-column map for this reason.
 - **ProjectHardwareCatalog** is a project-scoped link layer; item hardware lines reference materials *through* it. Log-only governance (no approval step; every add/remove writes an audit row).
 - **ProcurementBatch → Allocations → item_hardware_line_id** answers "is this item blocked on a material?" as a single join — no second window needed.
 - **CutPlan ≠ CutSchedule.** Optimisation output vs. Machine team's daily ordering. Keep as two entities.
@@ -253,7 +253,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
-- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — **forward plan** for the next sub-project (Plan V1 #10): cutlist entity, related-part rows, Area/Room rename, and the Orderbook rework. Migrations `0026`–`0029` reserved. Not started.
+- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — **forward plan** for the next sub-project (Plan V1 #10): cutlist entity, related-part rows, Area/Room rename, and the Orderbook rework. Migrations `0026`–`0029` **applied** (the A-series is done and verified); the B/C/D/E backend and UI tasks are not started.
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q551, **115 of 118 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.

@@ -132,14 +132,61 @@ hand-edited predicates.
          metal/benchtop/cushion kind is mandatory. A typeless related part has
          no meaning in Q420's nested display, so it is enforced. One CHECK to
          relax if that is wrong.
-- [ ] **A4** `0029_orderbook` — add `workspace_id` to the 9 legacy procurement
-      tables **and backfill it** (Q502 — they have none today); create
-      `supplier` and repoint the 6 catalog tables' `supplier` /
-      `default_supplier` free text (Q506); add `order` + `order_line` with a
-      JSONB `attributes` column (Q503); port `quantity_reserved`,
-      `reorder_point`, `reorder_quantity` onto `board_inventory` and **drop**
-      legacy `inventory` + `inventory_movements` (Q544).
-      → verify: `make migrate` clean from `0001`; re-run idempotent.
+- [x] **A4** `0029_orderbook` — **done.** Task text **corrected 2026-09-18.** The task as first
+      written said "add `order` + `order_line`" and "add `workspace_id` to the
+      9 legacy procurement tables". Both contradicted the decision record; see
+      **Q553** and **Q555**. What it actually does:
+      1. **Reuse the legacy order tables** (Q502 = 1, Q505 = 1, Q553 = 1) —
+         `purchase_orders` + `po_line_items` become the order layer. No new
+         `order` / `order_line`. All 9 legacy tables are empty and unseeded,
+         so reshaping costs no data.
+      2. **`project_id` FK on `purchase_orders`** (Q554), nullable; workspace
+         is reached through `projects.workspace_id`. `project_name` stays as
+         the free-text fallback.
+      3. **`workspace_id` on `vendors` and `cost_centers` only** (Q555) — the
+         other tables reach workspace through `po_id` or `project_id`.
+      4. **JSONB `attributes`** on `purchase_orders` and `po_line_items`
+         (Q503).
+      5. **`vendors` *is* the supplier entity** (Q506 + Q556) — no new
+         `supplier` table. It gains the columns a joinery supplier needs, and
+         the 6 catalog tables gain `supplier_id` / `default_supplier_id` FKs to
+         it, **beside** the retained free text (Q435 keeps the old columns).
+      6. **Port `quantity_reserved`, `reorder_point`, `reorder_quantity`** onto
+         `board_inventory`; **drop** legacy `inventory` +
+         `inventory_movements` (Q544) — which forces dropping
+         `v_inventory_status` (migration `0006`) and not recreating it.
+      Also shipped: `purchase_orders.item_id` (Q418 — Tracking shows a related
+      part's order number where a cutlist number would go, so the order must
+      point back at the row; a plain `items` FK, since Q507 = 2 makes orders
+      cover all procurement), and `po_line_items.(material_table, material_id)`
+      — the `cv_material_mapping` pair form, because the six catalog tables
+      share no key and an FK is therefore impossible.
+
+      **Left open on purpose:** the `category` CHECKs on `vendors` and
+      `purchase_orders` still carry the office-procurement taxonomy
+      (`IT / Office / Logistics / …`). Widening them is **Q557**, taken with
+      the C-series Orderbook UI where the list is rendered — not silently here.
+
+      **Found while building:** `CLAUDE.md` says the six catalog tables share an
+      abstract interface including `supplier`. **They do not** —
+      `custom_made` calls it `vendor`. Only `default_supplier` (added uniformly
+      by `0017`) is genuinely common. The migration carries a per-table column
+      map; `CLAUDE.md`'s claim should be corrected when C-series touches it.
+
+      → **verified** against a real Postgres 16 with `0001`–`0028` replayed:
+      full chain `0001`–`0029` clean on a virgin DB; `inventory`,
+      `inventory_movements` and `v_inventory_status` gone while the other three
+      legacy views survive; `cost_centers.code` now unique **per workspace**
+      (same code in two workspaces accepted, twice in one rejected);
+      `vendors.workspace_id` NOT NULL enforced; `attributes` rejects `[]` and
+      defaults to `{}`; the material pair rejects a half-set pair and a bogus
+      table name; `qty_reserved` rejects negatives **and** anything above
+      `qty_on_hand`; the supplier backfill links a whitespace/case-differing
+      name and **refuses to link across workspaces**; deleting a project nulls
+      `purchase_orders.project_id` and keeps the order with its
+      `project_name` label (Q554). Downgrade → re-upgrade produces a schema
+      **byte-identical** to a fresh `0001`–`0029` across all columns,
+      constraints and indexes.
 
 ### B. Backend
 

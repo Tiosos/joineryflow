@@ -1366,6 +1366,93 @@ items flow through batches instead.
 1. Orders are for related parts only.
 2. Orders cover all procurement; batches become an internal detail.
 
+### Q553 — Does the order layer reuse `purchase_orders`, or get new `order` tables? *(new — raised while building A4)*
+**Option 1 confirmed (2026-09-18): reuse `purchase_orders` + `po_line_items`.**
+The plan's A4 task said "add `order` + `order_line`", which **contradicted
+Q502 = 1 and Q505 = 1** in this file. The decision record wins; the plan text
+was wrong and has been corrected.
+
+*Evidence that forced the question:* legacy `purchase_orders` already carries
+`cutlist_no`, `order_number`, `supplier_ref_no`, `product_code`,
+`product_website`, `product_description`, `product_image_path`,
+`stock_tracked`, the GST fields, `internal_comments` and `line_item_comments` —
+a close match for the Orderbook screenshots 07–09. Building `order` beside it
+would have left two order tables to reconcile, the exact situation #7a retired
+for `/catalogs`. All 9 legacy procurement tables are **empty** and the seed
+touches none, so reshaping them costs no data.
+
+**Consequence:** Q503's JSONB `attributes` column lands on `purchase_orders`
+(header) and `po_line_items` (line), not on a new table.
+
+### Q554 — How does an order reach a workspace and a project? *(new — raised while building A4)*
+**Option 2 confirmed (2026-09-18): add `project_id` FK; derive workspace through it.**
+`purchase_orders` has **no `project_id`** today — only free-text `project_name`
+and `location`. It gains a nullable `project_id` FK to `projects`; workspace is
+reached by joining `projects.workspace_id`, the post-`0014`/`cc7ea11` pattern.
+`project_name` stays as a free-text fallback for orders with no project (office
+consumables, stock buys), so nothing is lost.
+
+**Consequence:** no `workspace_id` column on `purchase_orders`. A workspace-less
+order (`project_id IS NULL`) is invisible to workspace-scoped reads — acceptable,
+because every order the v1 surface creates is project-scoped.
+
+### Q555 — Which legacy tables get `workspace_id`? *(new — supersedes Q502's "all 9")*
+**Option 2 confirmed (2026-09-18): only where it belongs.**
+- `purchase_orders` — reached via `project_id` (Q554). Everything hanging off an
+  order (`po_line_items`, `po_attachments`, `approval_workflows`,
+  `budget_transactions`) carries `po_id`, so none of them needs a column
+  either.
+- `vendors` and `cost_centers` — **do** get `workspace_id`; they are referenced
+  directly and have no path today (`cost_centers` only reaches a user via
+  `manager_id`).
+- `inventory` and `inventory_movements` — dropped by **Q544**, so the question
+  is moot for them.
+
+*Why this departs from §K round 1:* the round-1 note said "add `workspace_id` to
+the 9 legacy procurement tables". That was written before the FK graph was
+traced. Denormalising a column onto a table that already has a join path is the
+`cut_plan` pattern this codebase moved away from at `0014`.
+
+**Consequence for A4:** dropping `inventory` requires dropping and **not**
+recreating `v_inventory_status` (migration `0006`), which reads it.
+
+### Q556 — Is the supplier entity a new table, or `vendors`? *(new — raised while building A4)*
+**`vendors` — confirmed by the §K round-1 record, not a fresh decision.**
+Q506 = 1 said "a `supplier` table, and catalog rows repoint to it"; the §K
+round-1 note then made it concrete: *"its `vendors` table becomes Q506's
+supplier entity."* The plan's A4 text said "create `supplier`", which would have
+produced the second supplier table Q506 exists to avoid — the same class of
+plan-text error as **Q553**. The record wins; the plan is corrected.
+
+**What A4 therefore does:** the 6 catalog tables gain `supplier_id` and
+`default_supplier_id` FKs to `vendors`, sitting **beside** the existing
+free-text `supplier` / `default_supplier` columns rather than replacing them.
+Keeping the text is required by **Q435** (shipped behaviour changes only behind
+data-preserving migrations) and lets the repoint happen incrementally.
+
+### Q557 — Do the legacy `category` CHECKs need widening for joinery? *(new — raised while building A4; OPEN)*
+**Not decided. A4 deliberately does not touch them.**
+
+`vendors.category` and `purchase_orders.category` both CHECK against
+`('IT','Office','Logistics','Facilities','Services','Other')` — an
+office-procurement taxonomy inherited from the FileMaker-era system. A board
+supplier, a hardware supplier and a benchtop fabricator are none of those; they
+all land in `'Other'`, which makes §21's supplier comparison useless as a
+grouping.
+
+This is **flagged, not silently resolved**, per Rule Zero. A4's scope is
+workspace scoping, the project FK, the attributes blob, the supplier repoint and
+the inventory port — widening a product taxonomy is a separate decision that
+belongs with the Orderbook UI tasks (C-series), where the category list is
+actually rendered. The options when it is taken:
+
+1. Widen both CHECKs with joinery categories (Board, Hardware, Benchtop,
+   Appliance, Custom, Hire, …).
+2. Drop the CHECKs and make category a lookup table, consistent with **Q448**'s
+   configurable related-part types.
+3. Leave them; category stays an office-procurement field and joinery grouping
+   happens on `supplier_id` instead.
+
 ---
 
 ## §L — Locking, concurrency and rollback *(Plan V1 §11–§12, §39)*
