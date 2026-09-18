@@ -1368,7 +1368,8 @@ confirmed so far.
 Q438 = Option 1, Q439 = Option 3, Q440 = Option 1, Q441 = Option 1,
 Q443 = Option 1, Q445 = Option 1, Q446 = Option 1, Q539 = Option 2,
 Q540 = Option 1, Q442 = Option 1, Q447 = Option 1, Q448 = Option 2,
-Q450 = Option 1.
+Q450 = Option 1, Q449 = Option 1, Q452 = Option 1, Q453 = Option 1,
+Q541 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1510,5 +1511,24 @@ consistent with how workflow stages and statuses are already configured.
 of its parent Joinery Item, so a single stuck supplier order can be flagged
 without changing the parent's status.
 
+### Q449 — Nesting of related parts
+**Option 1 confirmed.** **One level only.** A related part cannot itself have
+related parts; its parent must be a Joinery Item.
+
+### Q452 — Moving a related part to another Joinery Item
+**Option 1 confirmed.** A related part **may be reassigned** to a different
+parent Joinery Item. The move updates its Group ID and, following the
+precedent set by Q431, the parent cutlist reference on any supplier order
+already linked to that part. Every such move is recorded in the change history.
+
+### Q453 — Existing Group ID values
+**Option 1 confirmed.** The existing Group ID field is **repurposed** for the
+semantics of Q416, with existing values migrated. For a main Joinery Item the
+Group ID is its own Item ID; related parts carry their parent's.
+
 ### Q541 — Relationship between Item IDs and cutlist numbers
-*Raised by the combination of Q447, Q540 and Q442; pending.*
+**Option 1 confirmed.** Item IDs and cutlist numbers draw from **one shared
+company-wide sequence**, so the same six-digit number is never both an Item ID
+and an unrelated cutlist number. Each series will contain gaps, which is
+acceptable. This preserves the property Q540 creates for every migrated record,
+where a Joinery Item's Item ID and its cutlist number are the same number.

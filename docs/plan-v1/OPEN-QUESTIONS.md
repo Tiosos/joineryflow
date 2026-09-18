@@ -41,6 +41,21 @@ should only see Joinery Items — `shop_floor` especially, since Q419 gives
 related parts no workflow stages at all. This is the main implementation risk
 in §C and wants a shared helper rather than 50 hand-edited predicates.
 
+**§C round 2 (2026-09-18):** **Q449 = 1**, **Q452 = 1**, **Q453 = 1**,
+**Q541 = 1**. One level of nesting; reparenting allowed with audit; `group_id`
+repurposed with its values migrated; Item IDs and cutlist numbers share one
+company-wide sequence.
+
+**Q453 is cheaper than it looked — verified.** `items.group_id` is currently
+**written by nothing**. The seed never sets it, no API route accepts it
+(`ItemMetadataPanel.tsx:196` carries the comment *"group_id is read-only in
+v1 — not exposed in PatchItemIn"*), and it is read in exactly three places:
+`items/queries.py:387`, plus two display fields
+(`ItemMetadataPanel.tsx:197` and `ItemDetailModal.tsx:177`). Against seeded
+data the migration is a **no-op** — there are no values to migrate. Whether
+real deployments hold values depends on **Q436**, which is still open; that
+question is worth closing before the migration is written.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -230,6 +245,7 @@ Group ID, no cutlist, no stages, order number in the cutlist column. Today
 3. Free-text type.
 
 ### Q541 — Do Item IDs and cutlist numbers share one number space? *(new — forced by Q447 + Q540 + Q442)*
+**Option 1 confirmed (2026-09-18).** One shared company-wide sequence, so a six-digit number never means two different things.
 Q540 makes each existing item's `num` become its cutlist's number, so for every
 legacy row **Item ID == cutlist number**. Going forward they diverge: Q442
 allocates cutlist numbers from a company-wide sequence, and Q447 puts related
@@ -246,6 +262,7 @@ because in legacy rows they are always the same thing.
    an Item ID and an unrelated cutlist number; context disambiguates.
 
 ### Q449 — Can a related part have its own related parts?
+**Option 1 confirmed (2026-09-18).** One level only — a related part cannot itself be a parent.
 1. No — one level only.
 2. Yes, arbitrary nesting.
 
@@ -264,10 +281,12 @@ Relevant to §16's item-level financials.
 3. No.
 
 ### Q452 — Can a related part be moved to a different parent?
+**Option 1 confirmed (2026-09-18).** Yes, with audit; the move updates the part's Group ID and, per Q431's precedent, the CUTLIST NO. on any linked supplier orders.
 1. Yes, with audit (and Q431-style order reference updates).
 2. No — delete and recreate.
 
 ### Q453 — Existing `items.group_id` data
+**Option 1 confirmed (2026-09-18).** Repurpose the column for Q416's Group ID semantics, migrating existing values.
 Seeded and legacy rows carry free-text values.
 1. Repurpose the column for the new Group ID semantics; migrate existing values.
 2. Leave it alone; add a new column.
