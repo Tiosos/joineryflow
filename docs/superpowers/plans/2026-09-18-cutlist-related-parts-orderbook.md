@@ -101,12 +101,37 @@ hand-edited predicates.
       `cutlist_id` nullable; duplicate `cutlist_no` rejected; downgrade clean
       with `items` and `items.num` intact; two full down/up round-trips
       idempotent; on an empty DB the sequence starts at a six-digit number.
-- [ ] **A3** `0028_related_parts` — add `items.row_type`
+- [x] **A3** `0028_related_parts` — **done.** `items.row_type`
       (`joinery_item` | `related_part`, default `joinery_item`),
       `items.parent_item_id` self-FK, `related_part_type` lookup seeded with
-      metal / benchtop / cushion (Q448); CHECK that a `related_part` has a
-      parent and a `joinery_item` does not (Q449); backfill
-      `items.group_id` = own id for existing rows (Q453).
+      metal / benchtop / cushion (Q448). Backfill `group_id = num::text` for
+      Joinery Items (Q416 — see note below).
+      **Five constraints, all structural:** a related part must have a parent
+      and a Joinery Item must not; that parent is itself a Joinery Item
+      (composite FK on `(item_id, row_type)` + a generated `parent_row_type`,
+      the same technique `0026` uses for room-within-area — without it Q449's
+      one-level rule is unenforced); a related part cannot hold a cutlist
+      (Q417); a related part must carry a type and a Joinery Item must not;
+      unknown types rejected by the lookup FK.
+      **Q419 is *not* structural** — "no workflow stages for a related part"
+      cannot be a CHECK, because `item_stages` is another table. It is B1's
+      filter plus its test, which is why B1 is first.
+      → **verified**: full chain `0001`–`0028` clean on a virgin DB (62
+      tables); backfill exact on 16/16; happy path inserts; **all seven
+      violation attempts rejected by the intended constraint**; parent delete
+      cascades to its parts leaving no orphans; downgrade clean with `items`
+      intact.
+
+      **Two calls made rather than asked** (Rule Zero — both cheap to reverse,
+      flagged rather than blocking):
+      1. *Group ID is `num`, not `item_id`.* The task said "own id", which is
+         ambiguous. Q416 says the internal number serves as **both** Item ID
+         and Group ID, and `num` is the number users see in Tracking, so
+         `group_id = num::text`.
+      2. *A related part's type is required.* Nothing states whether the
+         metal/benchtop/cushion kind is mandatory. A typeless related part has
+         no meaning in Q420's nested display, so it is enforced. One CHECK to
+         relax if that is wrong.
 - [ ] **A4** `0029_orderbook` — add `workspace_id` to the 9 legacy procurement
       tables **and backfill it** (Q502 — they have none today); create
       `supplier` and repoint the 6 catalog tables' `supplier` /
