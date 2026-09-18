@@ -280,6 +280,29 @@ and merely writes `item.lock_overridden`. As a Controlled Lock that becomes a
 request needing approval — a genuine behaviour change on a shipped path, and
 one Q435's data-preserving-migration rule covers.
 
+**§L close + §F round 1 (2026-09-18):** **Q510 = 2**, **Q512 = 1**,
+**Q466 = 2**, **Q467 = 2**.
+
+**Q510 = 2 and Q512 = 1 are not contradictory — they are different
+mechanisms.** Q510 says there is no *field-level lock type*: nobody can
+deliberately lock a field, only an item or a project. Q512 says conflict
+*detection* is per-field, so when two people edit the same record the system
+locks just the fields genuinely in conflict (Q366) until resolved. One is a
+governance action someone takes; the other is a transient state the system
+enters. Both can hold at once, and the wording matters when implementing §12.
+
+**Q466 = 2 keeps the largest conflict bounded.** `ALIGNMENT.md` §3.4 called the
+RBAC replacement the highest-blast-radius item in Plan V1. Stopping at project
+scope keeps §3's real benefit — IT configuring access without a deploy — while
+avoiding a permission check per row. **Item-level and tab-level scoping from §3
+are not built.**
+
+**Q467 = 2 leaves `jtbd_role` as it is.** It stays free text and display-only,
+exactly as `CLAUDE.md` already records. Groups carry permission meaning, so
+§4.2's department dashboards will key off group membership rather than a
+department entity. Q468 (mapping the 7 roles onto ~21 departments) is
+correspondingly simpler: the roles become groups.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -638,11 +661,13 @@ Plan V1 §3: 7-level scoping, 11 actions, IT-authored groups, multi-membership,
 most-permissive-wins.
 
 ### Q466 — Replace the static matrix with a DB-backed engine?
+**Option 2 confirmed (2026-09-18).** Yes, but scoped down to **project** only — not item, not tab. IT can configure access without a deploy; no permission check lands on every row of every list.
 1. Yes — full Plan V1 model.
 2. Yes, but only down to project scope (not item, not tab).
 3. No — keep the static matrix; add roles as needed.
 
 ### Q467 — Do departments become an entity?
+**Option 2 confirmed (2026-09-18).** No — departments stay a descriptive label; **user groups carry all permission meaning**.
 `app_user.jtbd_role` is free-text, display-only and nothing branches on it.
 1. Yes — a real `department` table driving dashboards and permissions.
 2. No — departments are a label; groups do the work.
@@ -977,6 +1002,7 @@ display history, not to restore state.
 3. Removed.
 
 ### Q510 — At what granularity does locking apply?
+**Option 2 confirmed (2026-09-18).** Item and project only — no field, tab, Area, revision or department locks.
 §12 lists fields, components, items, areas, projects, tabs, revisions and
 departments.
 1. All of them.
@@ -991,6 +1017,7 @@ all 181 existing endpoints.
 3. No — last-write-wins is acceptable; drop Q364–Q378.
 
 ### Q512 — Field-level conflict detection (Q366 locks only conflicting fields)
+**Option 1 confirmed (2026-09-18).** True field-level, with per-field versioning, on the three Q511 surfaces.
 1. True field-level — requires per-field versioning.
 2. Row-level is sufficient; lock the whole record.
 

@@ -1378,7 +1378,8 @@ Q545 = Option 2, Q454 = Option 1, Q455 = Option 1, Q457 = Option 1,
 Q546 = Option 1, Q456 = Option 1, Q495 = Option 1, Q497 = Option 2,
 Q499 = Option 2, Q496 = Option 3, Q498 = Option 2, Q500 = Option 2,
 Q501 = Option 1, Q508 = Option 1, Q509 = Option 1, Q511 = Option 2,
-Q513 = Option 3.
+Q513 = Option 3, Q510 = Option 2, Q512 = Option 1, Q466 = Option 2,
+Q467 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1804,3 +1805,31 @@ change states to be retained for rollback and describes rollback as creating a
 restorative revision. That requirement is superseded: history is for
 accountability and review, not restoration. Q514, which asked what rollback
 applies to, no longer arises.
+
+
+### Q510 — What can be locked
+**Option 2 confirmed.** Locks apply at **Joinery Item and Project level only**.
+The wider list in §12 — fields, components, Areas, tabs, revisions and
+department information — is not implemented.
+
+### Q512 — Granularity of simultaneous-edit detection
+**Option 1 confirmed.** Detection is **per field**. When two people edit the
+same record, only the fields genuinely in conflict are held for resolution, and
+the rest of the record stays editable, as Q366 requires.
+
+This does not contradict Q510. A **lock** is a governance action a person
+takes, and those exist only at Item and Project level. A **conflict hold** is a
+transient state the system enters on its own, and that is per field.
+
+### Q466 — The permission engine
+**Option 2 confirmed.** The permission model becomes **configurable data rather
+than code**, with departments, IT-authored user groups and multiple group
+membership — but scoped **down to Project level only**. Per-Joinery-Item and
+per-tab permissions described in §3 are **not** built: they would place a
+permission check on every row of every list for very little practical gain.
+
+### Q467 — Departments
+**Option 2 confirmed.** Departments remain a **descriptive label**. All
+permission meaning is carried by **user groups**, which can already express any
+department's access. The department dashboards of §4.2 key off group
+membership.
