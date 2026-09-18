@@ -1384,7 +1384,8 @@ Q473 = Option 1, Q479 = Option 1, Q481 = Option 1, Q482 = Option 1,
 Q485 = Option 2, Q515 = Option 1, Q516 = Option 2, Q517 = Option 2,
 Q518 = Option 2, Q521 = Option 1, Q522 = Option 1, Q524 = Option 1,
 Q520 = Search first, Q525 = Option 2, Q526 = Option 1, Q527 = Option 2,
-Q468 = Option 1.
+Q468 = Option 1, Q487 = Option 1, Q488 = Option 1, Q489 = Option 1,
+Q491 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2001,3 +2002,38 @@ slow.
 groups**, carrying exactly the access they grant today. Nobody's access changes
 when the new permission model arrives, and IT then creates
 department-shaped groups as they are needed.
+
+
+### Q487 — The Tender Dashboard and the existing quoting module
+**Option 1 confirmed.** The Tender Dashboard **wraps** the existing quoting
+module rather than replacing it. The quote that the system already produces
+becomes one step of the tender lifecycle, and nothing already built is
+discarded.
+
+### Q488 — The tender lifecycle
+**Option 1 confirmed.** The **full twelve-stage lifecycle of §5 is adopted**,
+replacing the six states the quoting module uses today. The module, its data
+and its quotes survive under Q487; it is the set of states that changes, and
+existing quotes are migrated onto the new stages.
+
+One existing state has no equivalent in §5: a quote that **lapsed** because its
+validity window passed. §5 ends at Won, Lost and Withdrawn. Q548 settles where
+lapsed quotes belong.
+
+### Q489 — Preliminary Joinery Items at handover
+**Option 1 confirmed.** Preliminary Joinery Items created during tender
+**become real Joinery Items** when the project is handed over, delivering §6's
+requirement that nothing already captured is re-entered by hand.
+
+This requires a defined correspondence between a priced quote line and a
+buildable Joinery Item, which the system does not have today.
+
+### Q491 — Contract Value
+**Option 2 confirmed.** Contract value is held as a **record with history** —
+the original value agreed at handover, every approved variation, and the
+resulting current value — rather than as a pair of fields. §17 requires that
+the original is never overwritten, and §16 reports Original and Current
+separately, which a history supports and two columns do not.
+
+### Q548 — Lapsed quotes in the new lifecycle
+*Raised by Q488; pending.*

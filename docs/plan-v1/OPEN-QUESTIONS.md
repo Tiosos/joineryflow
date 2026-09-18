@@ -437,6 +437,38 @@ today's grants, so the migration is behaviour-preserving on day one — which is
 what Q435's data-preserving rule asks for — and IT grows department-shaped
 groups from there.
 
+**§I round 1 (2026-09-18):** **Q487 = 1**, **Q488 = 1**, **Q489 = 1**,
+**Q491 = 2**.
+
+**Q487 and Q488 are compatible, but say different things.** Q487 keeps the
+shipped module, its 32 endpoints and its data. Q488 replaces its **state
+machine**. So: `estimate`, `estimate_revision`, the lines and the snapshot
+columns all survive; `_LEGAL_TRANSITIONS` and the status enum are rewritten to
+§5's twelve stages, and existing rows are migrated onto them.
+
+**That migration has a gap — `expired` has nowhere to go.** Today's six states
+map onto §5 readably except one:
+
+| Today | §5 stage |
+| --- | --- |
+| `draft` | Estimating / Quote Prepared |
+| `sent` | Submitted |
+| `accepted` | Won |
+| `rejected` | Lost |
+| `withdrawn` | Withdrawn |
+| **`expired`** | **— nothing** |
+
+§5's list ends `Won / Lost / Withdrawn`; there is no Expired. But `expired` is a
+real shipped state with a real column behind it — `estimate_revision.expires_at`
+(migration `0022`, the quote validity window) — and a real transition
+(`sent → expired`). Raised as **Q548**.
+
+**Q489 = 1 needs a line-to-item mapping that does not exist yet.** An
+`estimate_line` carries commercial breakdown (parts, hardware, labour with
+snapshot costs); a Joinery Item carries modules and parts. Handover must turn
+one into the other, and today `convert` deliberately does not. Worth scoping
+before it is built.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -977,20 +1009,37 @@ and a one-shot `POST /revisions/{rid}/convert`. No contract value, no
 variations, no pre-quote stages.
 
 ### Q487 — Does the Tender Dashboard replace or precede `/estimating`?
+**Option 1 confirmed (2026-09-18).** Tender **wraps** it — the shipped estimate becomes a step of §5's lifecycle. Nothing built is discarded.
 1. Tender wraps it — the existing estimate becomes one step of the 12-stage
    tender lifecycle.
 2. Separate module; `/estimating` stays for non-tender quoting.
 3. Tender replaces `/estimating` entirely.
 
 ### Q488 — Adopt the full 12-stage tender lifecycle?
+**Option 1 confirmed (2026-09-18).** All 12, replacing `_LEGAL_TRANSITIONS`. The module and its data survive (Q487); the state enum does not.
 1. Yes — all 12, extending `_LEGAL_TRANSITIONS`.
 2. A subset (say which).
 3. Keep today's 6 states.
 
 ### Q489 — Do Preliminary Joinery Items become real items on handover?
+**Option 1 confirmed (2026-09-18).** Yes — handover creates Joinery Items from them, delivering §6's "no manual re-entry where information already exists".
 Estimate lines currently do **not** become items on convert.
 1. Yes — handover creates items from the preliminary ones.
 2. No — the PM creates items fresh.
+
+### Q548 — Where does `expired` go in the 12-stage lifecycle? *(new — forced by Q488)*
+§5's lifecycle ends `Won / Lost / Withdrawn` and has no Expired stage, but
+`expired` is a shipped state backed by `estimate_revision.expires_at`
+(migration `0022`) with a live `sent → expired` transition.
+1. **Add Expired as a 13th terminal stage** alongside Won / Lost / Withdrawn —
+   an unanswered quote that lapsed is not the same as one the client rejected,
+   and the distinction matters for win-rate reporting.
+2. **Map `expired` onto Lost** — commercially it is a quote that did not win.
+   Loses the reason, and existing expired rows become indistinguishable from
+   rejected ones.
+3. **Map `expired` onto Withdrawn** — treat a lapsed quote as retracted.
+   Misleading: withdrawn implies the company chose to pull it.
+4. **Drop the concept**, retiring `expires_at` and the transition.
 
 ### Q490 — Does handover get a review-and-select step (Plan V1 §6)?
 Convert is currently one click.
@@ -998,6 +1047,7 @@ Convert is currently one click.
 2. No — keep one-click.
 
 ### Q491 — Where does Contract Value live?
+**Option 2 confirmed (2026-09-18).** A `project_contract` table with full history — original value, each approved variation, current value. §17 requires the original is never overwritten and §16 tracks Original vs Current separately, which needs history rather than two columns.
 1. A new column on `projects`, set at handover, never overwritten.
 2. A separate `project_contract` table with a full value history.
 
