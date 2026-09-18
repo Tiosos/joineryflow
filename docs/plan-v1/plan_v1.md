@@ -1366,7 +1366,8 @@ confirmed so far.
 
 **Confirmed on 2026-09-18:** Q433 = Option 1, Q435 = Option 2, Q437 = Option 1,
 Q438 = Option 1, Q439 = Option 3, Q440 = Option 1, Q441 = Option 1,
-Q445 = Option 1.
+Q443 = Option 1, Q445 = Option 1, Q446 = Option 1, Q539 = Option 2,
+Q540 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1452,8 +1453,31 @@ stage rows directly, with no join to the cutlist.
 One worker owns a given production stage for the whole cutlist; installation is
 assigned and completed per Joinery Item, per Q413 and Q415.
 
+### Q443 — Scope of cutlist number uniqueness
+**Option 1 confirmed.** Cutlist numbers are **unique company-wide** — one
+sequence across all projects, not a per-project sequence. A cutlist number is
+therefore unambiguous in search, on a printed sheet and on a shop-floor scan.
+
+### Q446 — Scope of the completion undo
+**Option 1 confirmed.** Undo reverses the **whole cutlist's** completion
+atomically: the cutlist-level completion log entry and the fanned-out
+completion date on every linked Joinery Item. If completion is a single
+cutlist-level act under Q445, so is undoing it.
+
 ### Q539 — Linking an item to a cutlist with completed stages
-*Raised by the combination of Q439 and Q440; pending.*
+**Option 2 confirmed.** The newly linked Joinery Item's earlier stages are
+**left blank**. It catches up when a later stage completes and fans out.
+
+This means a Joinery Item's stage strip may legitimately differ from its
+siblings on the same cutlist, and from the cutlist's own completion record.
+That is accepted. The cutlist-level completion log remains the authoritative
+answer to "has this stage been done"; the per-item strip is a projection that
+may lag for a late-linked item. Undo under Q446 is simply a no-op on an item
+that never received the fanned-out date.
 
 ### Q540 — Migration of existing internal item numbers
-*Raised by the combination of Q438 and Q435; pending.*
+**Option 1 confirmed.** Each existing Joinery Item receives **its own cutlist**,
+carrying its current internal number across as that cutlist's number. Nobody
+loses the number they recognise, and cutlist **sharing begins only with new
+work**. The company-wide sequence (Q443) starts above the highest existing
+number.

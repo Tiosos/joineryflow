@@ -21,8 +21,18 @@ becomes cutlist-level truth, and `item_stages` becomes a **per-item projection
 of it**, fanned out on write — which is exactly what Q441's repeated stage
 strip reads, with no join. Installation stays per item throughout (Q413/Q415).
 
-That combination raises two questions the original set did not contain, added
-below as **Q539** (late linking) and **Q540** (migrating `items.num`).
+**§B round 3 (2026-09-18):** **Q443 = 1**, **Q446 = 1**, **Q539 = 2**,
+**Q540 = 1**. Numbers are company-wide unique; undo reverses a whole cutlist;
+a late-linked item leaves earlier stages blank; and existing items each get
+their own cutlist carrying their current number.
+
+**Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
+disagree with the cutlist-level completion log for a late-linked item, and
+Q441's repeated strip will therefore show *different* strips for items on the
+same cutlist. This is accepted, not an oversight: the completion log is the
+truth, the strip is a per-item projection that may lag. Anything asking "is
+this cutlist's CNC done?" must read the **log**, never an item's strip. Undo
+(Q446) is a no-op on an item that never received the fanned-out date.
 
 ---
 
@@ -128,6 +138,7 @@ item table repeats the same strip five times.
 3. System-suggested, manually overridable.
 
 ### Q443 — Are cutlist numbers unique company-wide or per project?
+**Option 1 confirmed (2026-09-18).** Company-wide unique — one sequence across all projects.
 Six digits across all projects implies a company-wide sequence.
 1. Company-wide unique.
 2. Unique per project.
@@ -146,6 +157,7 @@ Migration `0020`'s `worker_assignment` and `stage_completion_log` key off
 3. `(cutlist_id, stage_key)` for production, `(item_id, 'INST')` for install.
 
 ### Q539 — An item linked to a cutlist that already has completed stages *(new — forced by Q439 + Q440)*
+**Option 2 confirmed (2026-09-18).** Leave blank; the item catches up when a later stage completes.
 Q440 lets an item sit with no cutlist indefinitely, and Q439 makes
 `item_stages` a projection written at completion time. So an item linked to a
 cutlist whose CNC and EDGED are already done has no rows for them — the
@@ -160,6 +172,7 @@ fan-out already happened, before this item existed on the cutlist.
    completed production stage; the drafter must use a new cutlist.
 
 ### Q540 — What happens to the existing `items.num` values? *(new — forced by Q438 + Q435)*
+**Option 1 confirmed (2026-09-18).** Mint one cutlist per existing item, carrying `items.num` across as its cutlist number. Verified: seeded values are already six-digit (`290001`–`290010`), so the new company-wide sequence simply starts above the highest existing value — no renumbering and no padding needed.
 `items.num` is today a `UNIQUE NOT NULL integer` rendered in Tracking's CUTLIST
 column. Under Q438 the cutlist number becomes a separate six-digit reference
 that several items share. Q435 requires a data-preserving migration.
@@ -174,6 +187,7 @@ that several items share. Q435 requires a data-preserving migration.
    a new, separate column shown alongside.
 
 ### Q446 — Does the 5-minute undo window apply per cutlist?
+**Option 1 confirmed (2026-09-18).** Undo reverses the whole cutlist's completion atomically — the log entry and every fanned-out `done_date`.
 An undo currently reverses one item's stage completion.
 1. Undo reverses the whole cutlist's stage completion.
 2. Undo is per item even where completion is shared (inconsistent — flag it).
