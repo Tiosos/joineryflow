@@ -56,6 +56,28 @@ data the migration is a **no-op** — there are no values to migrate. Whether
 real deployments hold values depends on **Q436**, which is still open; that
 question is worth closing before the migration is written.
 
+**Scope round (2026-09-18):** **Q542 = 3**, **Q432 = 1**, **Q444 = 1**,
+**Q451 = 1**. The sub-project **includes the full Orderbook rework** (§K);
+Create Order stays with today's `orderbook` write holders; a cutlist belongs to
+exactly one project; related-part cost rolls into the parent item.
+
+**What Q542 = 3 does to the sub-project.** It is no longer "cutlist + related
+parts". It now also carries §K — an order entity, per-type order-details forms
+(screenshots 07–09), PO creation and a supplier registry — on top of a row-model
+reshape that already touches 50 call sites. For sizing, the two existing
+procurement surfaces are: the **legacy `/procurement/*` namespace**, 9 tables
+(`vendors`, `cost_centers`, `purchase_orders`, `po_line_items`,
+`po_attachments`, `approval_workflows`, `inventory`, `inventory_movements`,
+`budget_transactions`) and 32 endpoints, currently unused by the v1 surface;
+and **`procurement_v1`**, 11 endpoints across 4 sub-routers with no order or PO
+entity at all. §K (Q502–Q507) is therefore design-blocking now, and Q502
+decides whether those 9 legacy tables are revived or retired.
+
+**Raised by Q451 = 1 — pending as Q543.** Related-part cost rolls into the
+parent item, but **no item-level cost field exists**; `projects.total_value` is
+a single project number and §16's financial model is not scoped. Either this
+sub-project introduces an item cost, or the roll-up has nowhere to land.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -69,6 +91,7 @@ this cutlist's CNC done?" must read the **log**, never an item's strip. Undo
 ## §A — Scope and intent (answer these first)
 
 ### Q432 — Create Order authority *(Plan V1's own next question)*
+**Option 1 confirmed (2026-09-18).** Today's `orderbook` write holders — admin, manager, drafter, purchase_officer. No RBAC change.
 Which roles can click **Create Order** in Tracking's O/BOOK subtab and submit a
 related-part order request?
 Today `orderbook` write is held by `admin`, `manager`, `drafter` and
@@ -175,6 +198,7 @@ Six digits across all projects implies a company-wide sequence.
 2. Unique per project.
 
 ### Q444 — Can a cutlist span more than one project?
+**Option 1 confirmed (2026-09-18).** No — a cutlist belongs to exactly one project, enforced by FK.
 1. No — a cutlist belongs to exactly one project.
 2. Yes.
 
@@ -275,6 +299,7 @@ Q419 empties the workflow-stage area but says nothing about the
 3. They have no status.
 
 ### Q451 — Does a related part carry cost?
+**Option 1 confirmed (2026-09-18).** Yes — the part's order cost rolls into its parent Joinery Item's cost, matching §16's Project + Item granularity.
 Relevant to §16's item-level financials.
 1. Yes — its order's cost rolls into the parent item's cost.
 2. Yes — it is costed separately at project level.
@@ -626,6 +651,16 @@ and never reserves or decrements it. §18 wants reservations.
 order-details form** on the v1 surface. The legacy `/procurement/*` namespace
 has orders, vendors, budget and approvals but `CLAUDE.md` records it as unused
 by v1.
+
+### Q543 — Where does the parent item's cost live? *(new — forced by Q451 + Q542)*
+Q451 rolls related-part order cost into the parent Joinery Item, but there is no
+item cost column today, and §16 (financials) is not scoped.
+1. **Add a derived item cost** — computed on read from linked orders, stored
+   nowhere. No new truth to keep in sync; costs are always current.
+2. **Add a stored item cost**, updated when a linked order changes. Cheap to
+   query and report on, but a second place cost can be wrong.
+3. **Defer** — related-part orders carry cost, nothing rolls up until §16 is
+   scoped. Q451 then describes intent rather than this sub-project's behaviour.
 
 ### Q502 — Is the legacy `/procurement/*` namespace the basis for the order forms?
 1. Yes — revive and converge it (as #7a did for catalogs).

@@ -1369,7 +1369,8 @@ Q438 = Option 1, Q439 = Option 3, Q440 = Option 1, Q441 = Option 1,
 Q443 = Option 1, Q445 = Option 1, Q446 = Option 1, Q539 = Option 2,
 Q540 = Option 1, Q442 = Option 1, Q447 = Option 1, Q448 = Option 2,
 Q450 = Option 1, Q449 = Option 1, Q452 = Option 1, Q453 = Option 1,
-Q541 = Option 1.
+Q541 = Option 1, Q432 = Option 1, Q444 = Option 1, Q451 = Option 1,
+Q542 = Option 3.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1532,3 +1533,31 @@ company-wide sequence**, so the same six-digit number is never both an Item ID
 and an unrelated cutlist number. Each series will contain gaps, which is
 acceptable. This preserves the property Q540 creates for every migrated record,
 where a Joinery Item's Item ID and its cutlist number are the same number.
+
+
+### Q432 — Authority to create a related-part order
+**Option 1 confirmed.** The roles that may click **Create Order** and submit a
+related-part order request are the existing Orderbook write holders:
+Management, Project Management, Designer/Draftsperson and Purchasing. No new
+permission is introduced for this action.
+
+### Q444 — Project scope of a cutlist
+**Option 1 confirmed.** A cutlist belongs to **exactly one project**. Cutlists
+do not span projects.
+
+### Q451 — Cost of a related part
+**Option 1 confirmed.** A related part's order cost **rolls into its parent
+Joinery Item's cost**, consistent with §16's stated granularity of Project and
+Joinery Item level rather than component level.
+
+### Q542 — Scope of the Cutlist sub-project
+**Option 3 confirmed.** The sub-project selected in Q437 also carries the
+**full Orderbook rework** — the order entity, the order-details forms of
+Q426, purchase-order creation and the supplier registry of §21 — rather than
+deferring them or shipping a minimal order record.
+
+This makes the sub-project substantially larger than "Cutlist + related parts":
+it now spans the cutlist entity, the Tracking row model, and procurement.
+
+### Q543 — Location of the parent item's cost
+*Raised by the combination of Q451 and Q542; pending.*
