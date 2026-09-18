@@ -91,8 +91,9 @@ not a description of this tree. Nothing in it has been implemented.
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q538, continuing Plan V1's own
-  numbering. §A settled, §B in progress.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q549, continuing Plan V1's own
+  numbering. **101 of 117 resolved.** Complete: §A–§F, §I–§N.
+  Open: §G (3), §H (5), §O (4, aspirational), housekeeping (3), Q458.
 
 **Confirmed 2026-09-18** (Plan V1 §43, `OPEN-QUESTIONS.md` §A):
 
@@ -222,7 +223,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q540. §A is settled; §B is in progress.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q549, 101 of 117 resolved. Blocking inputs still needed: Q480 (SharePoint site URL) and Q547 (drawing filename pattern).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.

@@ -840,6 +840,7 @@ DOWN; and puts Painting **after** Assembly.
 3. No — keep today's 10 and treat Plan V1's extras as sub-states.
 
 ### Q460 — Where did REQ, SM and DOWN go?
+**Deferred (2026-09-18).** Q459 = 3 kept today's 10 stages, so this does not arise until Plan V1's extra stages are adopted. (Q519 added Packing as the first of them; its `stage_key` is the live instance of Q465.)
 1. They are dropped — the work still happens but is not a tracked stage.
 2. They are renamed (say which: SM → Site Measure is obvious; REQ and DOWN
    are not).
@@ -862,18 +863,21 @@ lookup table and §22 says projects "skip stages that do not apply".
 3. Per-project, freely edited.
 
 ### Q463 — Are Material Take and Shop Drawing Approved really *stages*?
+**Deferred (2026-09-18).** Q459 = 3 kept today's 10 stages, so this does not arise until Plan V1's extra stages are adopted. (Q519 added Packing as the first of them; its `stage_key` is the live instance of Q465.)
 Both are approval gates rather than shop-floor work; Shop Floor's kanban would
 show columns no worker can action.
 1. Yes — tracked stages like any other.
 2. They are gates, shown in Tracking but excluded from Shop Floor.
 
 ### Q464 — Does QC get its own stage, or one per preceding stage?
+**Deferred (2026-09-18).** Q459 = 3 kept today's 10 stages, so this does not arise until Plan V1's extra stages are adopted. (Q519 added Packing as the first of them; its `stage_key` is the live instance of Q465.)
 §26 says QC checks "the work just completed", implying a check after several
 stages, not one QC step.
 1. One QC stage, after Assembly.
 2. A QC checkpoint attached to each production stage.
 
 ### Q465 — What is `stage_key` for the new stages?
+**Deferred (2026-09-18).** Q459 = 3 kept today's 10 stages, so this does not arise until Plan V1's extra stages are adopted. (Q519 added Packing as the first of them; its `stage_key` is the live instance of Q465.)
 Existing keys are short uppercase (`REQ`, `LISTED`, `EDGED`). Naming now avoids
 a rename later.
 1. Propose keys and confirm them in review.
@@ -956,7 +960,7 @@ The existing primary `List` tab becomes the Cutlist module workspace. No seventh
 
 Corroborated by the existing code: the RBAC module is already named `list`, and it **already gates the cutlist surfaces** — `GET /items/{iid}/cutlist.pdf` is gated `("list", "read")` and item-attachment writes `("list", "write")`. The module named `list` has been the cutlist module all along; this names it honestly. `/list` today is a project switcher + search + the shared `ItemsTable` (`ListClient.tsx`), which becomes the cutlist list.
 
-### Q474 (original options, superseded)
+#### Q474 — original options, superseded by the custom decision above
 1. Amend the binding rule — primary row becomes 7 tabs including Cutlist.
 2. Cutlist joins the secondary strip.
 3. Cutlist is not a top-level module; it opens from an item (today's
@@ -1311,6 +1315,7 @@ all 181 existing endpoints.
 3. Drop rollback; history-for-display is enough.
 
 ### Q514 — Does rollback apply to everything, or nominated objects?
+**Moot (2026-09-18).** Q513 = 3 dropped rollback entirely, so there is nothing to scope.
 1. Every significant object.
 2. Items and drawings only.
 
@@ -1352,7 +1357,7 @@ Lister updates the cutlist; after Assembly it is Internal Rework.
 All absent. Each is a sub-project in its own right.
 
 ### Q520 — Which comes first?
-**Confirmed (2026-09-18): Search (§13) first.** The cheapest of the six and the only one with no dependency on the others — it works against the item, cutlist and order data that already exists. The remaining five are unranked.
+**Option confirmed (2026-09-18): Search (§13) first.** The cheapest of the six and the only one with no dependency on the others — it works against the item, cutlist and order data that already exists. The remaining five are unranked.
 Rank: Notifications (§30) · Comms (§29) · Tasks (§10) · Search (§13) ·
 Reporting (§31) · KPIs (§32).
 
