@@ -85,11 +85,22 @@ hand-edited predicates.
       cross-area room and accepts a same-area one; downgrade drops cleanly and
       leaves `items` untouched; edge cases pass (NULL stage, blank stage, no
       room, one `rm_no` with two spellings, whitespace-padded stage).
-- [ ] **A2** `0027_cutlist` — create `cutlist` (`cutlist_no` six-digit UNIQUE
-      workspace-wide, `project_id` FK, audit columns); create the shared
-      `joinery_number_seq` (Q541) starting above `MAX(items.num)`; add
-      `items.cutlist_id` (nullable — Q440). **Data step:** one cutlist per
-      existing item carrying its `num` (Q540).
+- [x] **A2** `0027_cutlist` — **done.** `cutlist` (`cutlist_no` integer UNIQUE,
+      `project_id` FK per Q444, `created_by` → `app_user.id`), project-scoped
+      rather than carrying `workspace_id`, matching the post-`0014` pattern
+      `shop_drawing` / `sample` use. Shared `joinery_number_seq` (Q541) seeded
+      above **both** existing watermarks (see B2a). `items.cutlist_id` nullable
+      (Q440), single column so an item can never hold two (Q411). Data step:
+      one cutlist per existing item carrying its `num` (Q540).
+      **No width CHECK on `cutlist_no`** — new numbers are six digits because
+      the sequence starts at ≥ 100000, but historical numbers carry across
+      verbatim, since Q540 exists precisely so they survive recognisably.
+      → **verified**: full chain `0001`–`0027` clean on a virgin DB (61
+      tables); 16/16 items linked, every `cutlist_no` equal to its item's `num`
+      and in the same project; sharing works (several items on one cutlist);
+      `cutlist_id` nullable; duplicate `cutlist_no` rejected; downgrade clean
+      with `items` and `items.num` intact; two full down/up round-trips
+      idempotent; on an empty DB the sequence starts at a six-digit number.
 - [ ] **A3** `0028_related_parts` — add `items.row_type`
       (`joinery_item` | `related_part`, default `joinery_item`),
       `items.parent_item_id` self-FK, `related_part_type` lookup seeded with
@@ -117,6 +128,18 @@ hand-edited predicates.
       shop-floor board, cut-plan, print or estimating query.
 - [ ] **B2** `apps/api/app/cutlists/` — CRUD, number allocation from the shared
       sequence, link/unlink an item, 409 on linking a second cutlist (Q411).
+- [ ] **B2a** **Repoint both existing `items.num` allocators at
+      `joinery_number_seq`** — this fixes a live pre-existing bug, found while
+      building A2. The tree has **two** inconsistent schemes for one UNIQUE
+      column:
+      `items/queries.py` uses `nextval('items_item_id_seq') + 100000`, and
+      `estimating/queries.py` uses `SELECT COALESCE(MAX(num), 0) + 1`. The
+      second is a read-then-insert with no lock, so two concurrent estimate
+      conversions pick the same number and the loser fails on `items_num_key`.
+      **Reproduced directly against the real schema.** Q541's single sequence
+      is the fix; `0027` already seeds it above both watermarks so nothing
+      either scheme issued can collide.
+      → verify: a test that two conversions in flight both succeed.
 - [ ] **B3** Rework `shop_floor` — re-key `worker_assignment` and
       `stage_completion_log` to `(cutlist_id, stage_key)` for production and
       `(item_id, 'INST')` for install (Q445); rebuild the partial unique index;
