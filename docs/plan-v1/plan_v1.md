@@ -1374,7 +1374,8 @@ Q542 = Option 3, Q502 = Option 1, Q504 = Option 2, Q506 = Option 1,
 Q507 = Option 2, Q503 = Option 3, Q505 = Option 1, Q543 = Option 3,
 Q544 = Option 1, Q434 = Option 2, Q436 = Option 2, Q475 = Option 2,
 Q474 = custom decision, Q459 = Option 3, Q461 = Option 2, Q462 = Option 1,
-Q545 = Option 2.
+Q545 = Option 2, Q454 = Option 1, Q455 = Option 1, Q457 = Option 1,
+Q546 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1684,3 +1685,27 @@ projects marking stages not applicable — which is what §22 already describes,
 and which keeps the Tracking Dashboard's consistent layout under §4.1. A
 per-template stage list is not built, consistent with Q434 treating the
 template system as aspirational.
+
+
+### Q454 — Area and Room as entities
+**Option 1 confirmed.** **Both Area and Room become real entities**, with
+Joinery Items referring to them, rather than remaining free text.
+
+### Q455 — Mapping onto existing information
+**Option 1 confirmed.** **Area is the existing site location** (the field
+holding values such as "Stage 1" and "Stage 2") and **Room is the existing room
+number together with its description** (for example `K1` / Kitchen). Plan V1's
+Area and Room already exist in the system under other names, so this is a
+rename and normalisation rather than a new structure.
+
+### Q457 — Scope of Areas and Rooms
+**Option 1 confirmed.** Areas and Rooms are **created per project**. They are
+not drawn from a shared company-wide library: one project's "Stage 1" bears no
+relation to another's.
+
+### Q546 — Level and Zone
+**Option 1 confirmed.** The system also records a building **level** and a
+numeric **zone**, which Plan V1's hierarchy does not name. Both are **kept as
+attributes** of the record rather than becoming levels of the drill-down. The
+hierarchy remains Project → Area → Room → Joinery Item exactly as §2 states,
+and the Tracking Dashboard's consistent layout is unaffected.

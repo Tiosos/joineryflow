@@ -190,6 +190,28 @@ Of the seven `REARCH` rows in `ALIGNMENT.md`:
 | §3.4 RBAC as data | Open — §F unanswered; Q432 avoided touching the matrix |
 | Area / Room as entities | Open — §D unanswered |
 
+**§D round 1 (2026-09-18):** **Q454 = 1**, **Q455 = 1**, **Q457 = 1**,
+**Q546 = 1**. Area and Room become real per-project entities; Area is today's
+`items.stage` and Room is today's `rm_no` + `rm_desc`; `level` and `zone` stay
+as attributes rather than becoming hierarchy levels.
+
+**This is a rename plus normalisation, not new structure.** Both levels already
+exist as data — the API already aliases `rm_no`/`rm_desc` to `room_no`/
+`room_desc`, and CLAUDE.md already pins Stage as "site location/area". The
+migration dedupes existing free-text values per project into `area` and `room`
+tables and repoints `items`.
+
+**Measured: the `items.stage` → Area rename is cheap.** Only **14 references
+across 7 files** — `items/queries.py`, `items/schemas.py`, `printing/context.py`,
+`TrackingFilters.tsx`, `ItemMetadataPanel.tsx`, `ItemsTable.tsx`, `pm-types.ts`.
+Doing it alongside the Q447 `row_type` change means one migration on `items`
+rather than two, which is why §D was worth settling now rather than later.
+
+It also has a side effect worth taking: renaming the site-location column
+frees the bare word **"stage"** to mean only the lifecycle, retiring a
+terminology collision CLAUDE.md currently guards with a standing rule. That is
+**Q456**.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -439,16 +461,28 @@ carries free-text `stage` (site location), `zone`, `level`, `rm_no`, `rm_desc`
 and there are no Area or Room tables.
 
 ### Q454 — Do Area and Room become real entities?
+**Option 1 confirmed (2026-09-18).** Yes — both, as real tables with FKs from `items`.
 1. Yes — both, with their own tables and FKs from `items`.
 2. Area only; Room stays free-text on the item.
 3. Neither — keep today's free-text columns and treat Area/Room as labels.
 
 ### Q455 — How does this map onto the existing terminology pins?
+**Option 1 confirmed (2026-09-18).** **Area = `items.stage`** (the site location CLAUDE.md already pins as "site location/area") and **Room = `rm_no` + `rm_desc`** (already aliased `room_no` / `room_desc` in `items/queries.py`). Plan V1's two levels already exist as data under other names — this is a rename plus normalisation, not an invention.
 `CLAUDE.md` pins `Stage` = site location/area and `Zone` = numeric sub-division
 of Stage — which reads like Plan V1's Area and Room under different names.
 1. `Stage` **is** Area and `Zone` **is** Room — rename and keep the data.
 2. They are different concepts; Area/Room are new alongside them.
 3. Retire `stage`/`zone` entirely in favour of Area/Room.
+
+### Q546 — What happens to `level` and `zone`? *(new — forced by Q454 + the real column set)*
+**Option 1 confirmed (2026-09-18).** Both are **kept as attributes, not hierarchy
+levels**. The drill-down stays `Project → Area → Room → Item` exactly as Plan V1
+§2 specifies; `level` (L1/L2) and `zone` remain searchable, displayable fields.
+
+*Why this question exists:* Plan V1's hierarchy names two location levels, but
+`items` carries **four** — `level`, `stage`, `zone` and `rm_no`/`rm_desc`. The
+seed populates all four (`L1` / `"Stage 1"` / `"1"` / `K1`+`Kitchen`), so a
+straight two-level reading would have silently dropped two of them.
 
 ### Q456 — If renamed, what happens to the "never use bare 'stage'" pin?
 Renaming site-location `stage` → `area` would free the word "stage" and remove
@@ -457,6 +491,7 @@ a long-standing source of confusion with `lifecycle_stage`.
 2. Keep the pin regardless.
 
 ### Q457 — Are Areas and Rooms project-scoped or reusable?
+**Option 1 confirmed (2026-09-18).** Created per project — one job's "Stage 1" has nothing to do with another's.
 1. Created per project.
 2. Drawn from a workspace-level library.
 
