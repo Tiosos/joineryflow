@@ -1377,7 +1377,8 @@ Q474 = custom decision, Q459 = Option 3, Q461 = Option 2, Q462 = Option 1,
 Q545 = Option 2, Q454 = Option 1, Q455 = Option 1, Q457 = Option 1,
 Q546 = Option 1, Q456 = Option 1, Q495 = Option 1, Q497 = Option 2,
 Q499 = Option 2, Q496 = Option 3, Q498 = Option 2, Q500 = Option 2,
-Q501 = Option 1.
+Q501 = Option 1, Q508 = Option 1, Q509 = Option 1, Q511 = Option 2,
+Q513 = Option 3.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1768,3 +1769,38 @@ since advanced is flagged as potentially outdated, as §20 requires.
 reserving or consuming it**. Reservation is a separate, explicit action, so
 exploring a nest never commits material. §18's reservation features are built
 on that separate action when they arrive.
+
+
+### Q508 — The lock types
+**Option 1 confirmed.** All three lock types in §12 are adopted: **Hard Lock**
+(only authorised management can unlock), **Controlled Lock** (a change may be
+requested but requires approval) and **Approval Lock** (information locks
+automatically once approved).
+
+### Q509 — The existing ownership lock
+**Option 1 confirmed.** The current advisory ownership lock becomes a
+**Controlled Lock**. Today a second person's save succeeds and merely records
+that the lock was overridden; under a Controlled Lock that becomes a request
+requiring approval. This is a real change to existing behaviour, made under the
+migration rule confirmed in Q435.
+
+### Q511 — Detecting simultaneous edits
+**Option 2 confirmed.** Simultaneous-edit detection is added **only where
+conflicts actually occur** — the Joinery Item editor, the cutlist, and orders.
+Elsewhere the last save wins, as today.
+
+The three lock types make this sufficient: locks prevent most collisions
+outright, so detection is only needed where no lock applies. The conflict
+comparison and resolution flow of Q364–Q378 therefore operates on those three
+surfaces.
+
+### Q513 — Rollback
+**Option 3 confirmed.** **Rollback is not built.** The change history remains a
+complete record of who changed what, when, and from what value to what value,
+but it cannot restore a previous state.
+
+**This knowingly departs from §11**, which requires at least the last twenty
+change states to be retained for rollback and describes rollback as creating a
+restorative revision. That requirement is superseded: history is for
+accountability and review, not restoration. Q514, which asked what rollback
+applies to, no longer arises.

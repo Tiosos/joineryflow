@@ -256,6 +256,30 @@ Q544's port of `quantity_reserved` onto `board_inventory`, reservation has
 somewhere to live whenever it is built, without a what-if nest ever silently
 committing stock.
 
+**§L round 1 (2026-09-18):** **Q508 = 1**, **Q509 = 1**, **Q511 = 2**,
+**Q513 = 3**.
+
+**Q513 = 3 is the second deliberate departure from Plan V1's text.** §11 states
+that the system *"retains at least the last 20 change states/steps for
+rollback"* and that *"rollback creates a restorative revision rather than
+erasing history"*. Neither is built. The audit trail answers **who changed what
+and when**; it cannot restore a prior state, and no promise of restore is made.
+
+> **Recorded so it is not "fixed" later.** Like Q499, a future reader comparing
+> code to §11 will find them disagreeing. The code is right: Q513 supersedes
+> §11's rollback requirement. Q514 (scope of rollback) is moot as a result.
+
+**Q508 = 1 and Q511 = 2 are complementary, not redundant.** The three lock
+types prevent most collisions outright, so optimistic concurrency control is
+only needed where a lock does *not* apply. That is why targeting three surfaces
+is defensible where it would not be on its own: item editor, cutlist, orders.
+Q512's field-level detection is scoped to those same three.
+
+**Q509 = 1 tightens a real behaviour.** Today a non-owner's save **succeeds**
+and merely writes `item.lock_overridden`. As a Controlled Lock that becomes a
+request needing approval — a genuine behaviour change on a shipped path, and
+one Q435's data-preserving-migration rule covers.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -941,11 +965,13 @@ Today: an advisory item soft-lock (non-owner saves are permitted and audited as
 display history, not to restore state.
 
 ### Q508 — Adopt the three lock types?
+**Option 1 confirmed (2026-09-18).** All three — Hard, Controlled and Approval.
 1. All three (Hard / Controlled / Approval).
 2. Approval Lock only — auto-lock on approve is the common case.
 3. Keep today's advisory lock.
 
 ### Q509 — What happens to the existing soft-lock?
+**Option 1 confirmed (2026-09-18).** It becomes a **Controlled Lock** — override-with-audit becomes request-and-approve. The existing `item.lock_overridden` audit event is the evidence that people do override in practice.
 1. Becomes Controlled Lock (request + approve, instead of override + audit).
 2. Stays as a fourth, weakest kind.
 3. Removed.
@@ -957,6 +983,7 @@ departments.
 2. Item and project only.
 
 ### Q511 — Add optimistic concurrency control?
+**Option 2 confirmed (2026-09-18).** Only where conflicts actually hurt. **Named surfaces: the item editor, the cutlist, and orders.** Everything else stays last-write-wins.
 Q364–Q378's conflict resolution is unimplementable without it, and it touches
 all 181 existing endpoints.
 1. Yes — version column + `If-Match` on every mutating route, now.
@@ -968,6 +995,7 @@ all 181 existing endpoints.
 2. Row-level is sufficient; lock the whole record.
 
 ### Q513 — The 20-state rollback (§11)
+**Option 3 confirmed (2026-09-18).** Drop rollback. `audit_log` + `item_edit_log` remain the record of who changed what; no restore capability is built.
 1. Full object snapshots per change (storage cost, real rollback).
 2. Keep field-level deltas and reconstruct (cheaper, fragile).
 3. Drop rollback; history-for-display is enough.
