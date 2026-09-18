@@ -8,6 +8,15 @@
 > **Later change:** Spec §15 Q3 (deactivating a worker who holds active assignments) was
 > proposed but never built — see the spec for the consequence.
 
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** This
+> module is re-keyed. `worker_assignment` and `stage_completion_log` move from
+> `(item_id, stage_key)` to **`(cutlist_id, stage_key)` for production stages**,
+> keeping `(item_id, 'INST')` for installation (Q445) — including the partial
+> unique index `uniq_active_assignment`. Completion **fans out** to every item on
+> the cutlist (Q439) and **undo reverses the whole cutlist** atomically (Q446).
+> A **Packing** stage joins the lifecycle, with scanning (Q519), and QC arrives
+> as its own module rather than a stage (Q515).
+
 **Spec:** `docs/superpowers/specs/2026-05-05-shop-floor-design.md`
 **Branch base:** `feat/foundation` post-#7c (HEAD `bf6d331`).
 **Migration introduced:** `0020_shop_floor.py`.

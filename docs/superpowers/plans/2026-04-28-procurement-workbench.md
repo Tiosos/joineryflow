@@ -12,6 +12,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** An
+> **order layer is added above batches**: orders carry the commercial record
+> (supplier, PO number, cost) and `procurement_batches` + `batch_allocations`
+> remain beneath as the allocation mechanism (Q504), covering **all**
+> procurement rather than just related parts (Q507). The legacy `/procurement/*`
+> namespace this plan left untouched is **revived and converged** for that work
+> (Q502) — which requires adding workspace scoping to its 9 tables, since they
+> have none. **Supplier becomes a real entity** and the catalog tables' free-text
+> supplier columns repoint to it (Q506).
+
 **Goal:** Ship sub-project #4 — the Procurement Workbench v1 — on top of the merged PM Workbench branch. A PM (or Drafter, who is elevated to PM-parity for `orderbook` in this sub-project) clicks the "0 ready / 2 blocked" availability chip on a tracking row, opens an item-scoped drawer, and either allocates from an existing batch or orders more — all in three clicks. A Procurement officer (`purchase_officer`) gets a cross-project queue at `/orderbook` for working across projects, and every project gets a `/projects/[id]/procurement` page with Materials, Batches, and Catalog tabs. End-to-end verifiable via one new Playwright spec.
 
 **Spec:** `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions.

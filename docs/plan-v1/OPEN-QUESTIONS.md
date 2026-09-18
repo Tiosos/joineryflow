@@ -570,6 +570,32 @@ the shop floor. But **option 4 was a separate item**: multi-letter ordering
 Plus the multi-letter revision rule from Q486. None of §H can be built until
 these land.
 
+**Housekeeping closed (2026-09-18):** **Q536 = 1**, **Q537 = 1**,
+**Q538 = 1 (done)**, plus **Q551 = finish the questions first**.
+
+**Q538's work is complete.** Eight of the nine sub-project plans now carry a
+Plan V1 supersession blockquote, following the convention in
+`plans/README.md` — which calls a plan without an accurate header a bug and
+cites a case where that caused real trouble. #7b (CV import) is the one plan no
+decision materially supersedes.
+
+### Everything answerable is now answered.
+
+**Q551 asked to finish the questions first — and they are finished**, except for
+what only you can supply. No further multiple-choice questions remain; the four
+items below are **inputs**, not decisions:
+
+| Needed | For | Since |
+| --- | --- | --- |
+| SharePoint site URL + document library path | Q480 | Q398 — never supplied |
+| One real drawing filename, e.g. `A-101-C-Ground Floor Plan.pdf` | Q547 | Q485 chose pattern-matching |
+| Name of the architectural-drawings folder | Q484 | folder confirmed separate, unnamed |
+| Multi-letter revision rule (`AA` after `Z`?) | Q486 | option 4 not selected |
+| What Cars and OH&S tabs hold | Q550 | Q477 put them in scope |
+
+The first four block §H entirely. Q550 blocks only those two tabs; the Project
+Details window ships without them meanwhile.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1547,16 +1573,19 @@ Microsoft 365.
 ## Housekeeping
 
 ### Q536 — Does `plan_v1.md` stay canonical in this repo?
+**Option 1 confirmed (2026-09-18).** Authoritative, updated in place — one source of truth, versioned with the code it describes. Consistent with Q433.
 It is committed at `docs/plan-v1/plan_v1.md`.
 1. Yes — it is the authoritative source; update it in place as questions are
    answered.
 2. It is a snapshot; the canonical copy lives elsewhere.
 
 ### Q537 — Where do answers land?
+**Option 1 confirmed (2026-09-18).** Both, as done so far: `plan_v1.md` §43 is the readable decision record in the plan's own voice; this file tracks what is still open and carries the codebase-specific reasoning, measurements and consequences.
 1. Back into `plan_v1.md` as new `### Q4xx` sections (its existing convention).
 2. Into a separate decisions log.
 
 ### Q538 — Do the nine existing sub-project plans get re-headed?
+**Option 1 confirmed (2026-09-18) — and done.** A `> **Later change — superseded in part by Plan V1**` blockquote was added to **8 of the 9 plans**: #2/#3, #4, #5a, #7a, #7c, #8, #9, #9a. Only #7b (CV import) is untouched, as no decision materially supersedes it.
 `docs/superpowers/plans/README.md` requires a status header on every plan.
 Plans that Plan V1 supersedes are currently marked simply "shipped".
 1. Add a `> **Later change:** superseded by Plan V1 §x` blockquote to each

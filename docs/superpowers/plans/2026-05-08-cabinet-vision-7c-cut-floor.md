@@ -8,6 +8,12 @@
 > **Later change:** The optimiser it reserves `POST /projects/{pid}/optimise` for shipped
 > later, in #9.
 
+> **Later change — extended by Plan V1 (see `docs/plan-v1/`).** `part_slot` and
+> `parts` dimensions become the basis for **apportioning shared cutlist labour**
+> to individual Joinery Items, weighted by each item's share of the parts on a
+> cutlist (Q549) — since Plan V1 moves production stage completions onto the
+> cutlist (Q445) while costs stay at item level (Q492).
+
 **Spec:** `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` (§1, §3.2, §4.3, §4.4, §7.3, §7.4, §8 — `0019_cut_floor.py`)
 **Branch base:** `feat/foundation` (HEAD ahead of `cd4c57d` — #7b shipped).
 **Migration introduced:** `0019_cut_floor.py`.

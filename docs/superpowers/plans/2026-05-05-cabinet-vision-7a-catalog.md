@@ -11,6 +11,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** The
+> `supplier` / `default_supplier` free-text columns this plan enriched become
+> **foreign keys to a real supplier entity** (Q506), which Plan V1 §21's supplier
+> comparison, performance tracking and five supplier statuses all require.
+
 **Date:** 2026-05-05
 **Sub-project:** #7a — Catalog enrichment + CV Mappings UI (the first slice of #7 Cabinet Vision Integration)
 **Spec:** `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — read §1 (scope), §2.1 (backend layout), §3.1–3.4 (catalog enrichment + `cv_material_mapping`), §4.1 (catalog routes incl. CV mappings), §5 (RBAC), §7.1 (`/catalog` page UI), §8 (migration 0017 portion only), §9 (seed updates limited to catalog enrichment + 2 cv_material_mapping rows).
