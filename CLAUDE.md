@@ -132,11 +132,11 @@ would be a rewrite rather than an addition:
    module workspaces to open as **separate windows**, against today's single
    Next.js shell — see `OPEN-QUESTIONS.md` Q545.
 
-Two further conflicts are narrower but real: Plan V1 makes **Area** and **Room**
-entities (today: free-text `level` / `rm_no` / `rm_desc` on `items`), and
-replaces the **10 lifecycle stages** with 14, moving Painting after Assembly by
-default (today: `PAINTED` before `MADE`, with `items.paint_after_assembly` as
-the opt-in flag).
+Two further conflicts were narrower. **Area/Room as entities** (today:
+free-text `level` / `rm_no` / `rm_desc` on `items`) is still open. The
+**10-vs-14 lifecycle stages** question is **deferred** — Q459 keeps today's 10,
+Q461 keeps `PAINTED` before `MADE` with `items.paint_after_assembly`, and Q462
+keeps the single global `stages` lookup, so no lifecycle change is planned.
 
 ## Foundation dev loop
 

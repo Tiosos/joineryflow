@@ -273,7 +273,7 @@ strip against Plan V1's stated arrangement.
 
 | Plan V1 stage order | Current `stages` seed | Verdict |
 | --- | --- | --- |
-| `Shop Drawing → Material Take → Shop Drawing Approved → Procurement → Listing → CNC → Edging → Assembly → Painting → QC → Packing → Delivery → Installation → Completed` (14) | `REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST` (10) | `REARCH` |
+| `Shop Drawing → Material Take → Shop Drawing Approved → Procurement → Listing → CNC → Edging → Assembly → Painting → QC → Packing → Delivery → Installation → Completed` (14) | `REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST` (10) | ~~`REARCH`~~ **deferred (Q459)** — today's 10 stand; Plan V1's extra stages arrive with the sub-projects that need them. Q461 keeps the existing paint ordering and Q462 keeps the single global lookup, so no lifecycle migration happens. |
 
 The lists are not a relabelling of each other:
 

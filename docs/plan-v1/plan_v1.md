@@ -1373,7 +1373,8 @@ Q541 = Option 1, Q432 = Option 1, Q444 = Option 1, Q451 = Option 1,
 Q542 = Option 3, Q502 = Option 1, Q504 = Option 2, Q506 = Option 1,
 Q507 = Option 2, Q503 = Option 3, Q505 = Option 1, Q543 = Option 3,
 Q544 = Option 1, Q434 = Option 2, Q436 = Option 2, Q475 = Option 2,
-Q474 = custom decision.
+Q474 = custom decision, Q459 = Option 3, Q461 = Option 2, Q462 = Option 1,
+Q545 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1659,4 +1660,27 @@ every screen. Q545 settles precisely what "separate window" means before it is
 built.
 
 ### Q545 — Definition of a separate window
-*Raised by Q475; pending.*
+**Option 2 confirmed.** A **normal new browser tab**, which the user can drag
+out into its own window whenever they want two modules side by side. Not a
+fixed popup window. Deep links keep working and no separate sign-in path is
+needed.
+
+### Q459 — The workflow stage list
+**Option 3 confirmed.** The **existing ten production stages are kept** for
+now. The cutlist takes over the current lifecycle unchanged. The additional
+stages named in §22 — Material Take, Shop Drawing Approved, Procurement, QC,
+Packing and Completed — arrive with the sub-projects that introduce that work,
+rather than being added in advance as empty columns.
+
+### Q461 — Order of Painting and Assembly
+**Option 2 confirmed.** The **current default order is kept**, with the
+existing per-item flag continuing to reverse it where a job paints after
+assembly. §22's ordering is treated as one project pattern rather than the
+company-wide rule.
+
+### Q462 — Scope of the stage list
+**Option 1 confirmed.** **One company-wide stage list**, with individual
+projects marking stages not applicable — which is what §22 already describes,
+and which keeps the Tracking Dashboard's consistent layout under §4.1. A
+per-template stage list is not built, consistent with Q434 treating the
+template system as aspirational.

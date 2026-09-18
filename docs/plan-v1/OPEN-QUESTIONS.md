@@ -155,12 +155,40 @@ single block in Plan V1) are explicitly **aspirational**, so `ALIGNMENT.md`
 §6's observation that they are separable is now the agreed position.
 
 ### Q545 — What exactly does "separate window" mean? *(new — forced by Q475)*
+**Option 2 confirmed (2026-09-18).** A normal browser tab opened with `target="_blank"` — a separate OS window as soon as the user drags it out, with no popup blockers, no new auth path and deep links intact.
 1. **A real popup window** (`window.open` with sized chrome), as the reference
    FileMaker-era system does.
 2. **A normal browser tab** opened with `target="_blank"` — separate OS window
    if the user drags it out, no popup blockers, no new auth path.
 3. **Same shell, but each module is a deep-linkable route** the user may open
    in as many windows as they like — today's behaviour, formalised.
+
+**Stage + window round (2026-09-18):** **Q459 = 3**, **Q461 = 2**,
+**Q462 = 1**, **Q545 = 2**. All four are scope-reducing.
+
+- **The stage-list conflict is deferred, not adopted.** `ALIGNMENT.md` listed
+  10-vs-14 stages as one of the seven `REARCH` rows. Q459 keeps the existing
+  10, so the cutlist inherits today's lifecycle **unchanged** and no stage
+  migration happens in this sub-project. Q460, Q463, Q464 and Q465 go with it.
+- **Q545 = 2 makes Q475 nearly free.** `target="_blank"` needs no per-window
+  auth path, no popup handling and no change to the shell — each window is
+  simply the app at a different route. The two-monitor use case is met.
+- **Q461 + Q462 mean no lifecycle change at all**: today's paint ordering and
+  the single global `stages` lookup both stand.
+
+### Conflict scoreboard (2026-09-18)
+
+Of the seven `REARCH` rows in `ALIGNMENT.md`:
+
+| Conflict | State |
+| --- | --- |
+| §3.1 Cutlist owns the workflow | **Accepted** — being built (Q438) |
+| §3.2 Related-part rows | **Accepted** — being built (Q447) |
+| §3.5 Navigation / Cutlist module | **Closed** — it is the `List` tab (Q474) |
+| Stage list, 10 vs 14 | **Deferred** — today's 10 stand (Q459) |
+| §3.3 SharePoint project files | Open — §H unanswered |
+| §3.4 RBAC as data | Open — §F unanswered; Q432 avoided touching the matrix |
+| Area / Room as entities | Open — §D unanswered |
 
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
@@ -445,6 +473,7 @@ Shop Drawing Approved, Procurement, QC, Packing, Completed; drops REQ, SM and
 DOWN; and puts Painting **after** Assembly.
 
 ### Q459 — Adopt Plan V1's 14-stage list?
+**Option 3 confirmed (2026-09-18).** Keep today's 10 (`REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST`). The cutlist takes over the **existing** stages unchanged; Plan V1's extras arrive with the sub-projects that need them (Material Take with §19, QC with §26). **This defers Q460, Q463, Q464 and Q465** with it.
 1. Yes — replace the 10 wholesale.
 2. Yes, but keep REQ / SM / DOWN as well (17 stages).
 3. No — keep today's 10 and treat Plan V1's extras as sub-states.
@@ -456,6 +485,7 @@ DOWN; and puts Painting **after** Assembly.
 3. They were an oversight in Plan V1 and should stay.
 
 ### Q461 — Painting order
+**Option 2 confirmed (2026-09-18).** Keep today's default — `PAINTED` before `MADE`, with `items.paint_after_assembly` as the per-item opt-in. Plan V1 §22's order becomes one project type, not the rule. No migration.
 Shipped default is PAINTED **before** MADE, with `items.paint_after_assembly`
 (migration `0020`) as the opt-in flag. Plan V1 §22 lists Assembly → Painting.
 1. Flip the default — Painting after Assembly, keep the flag for the reverse.
@@ -463,6 +493,7 @@ Shipped default is PAINTED **before** MADE, with `items.paint_after_assembly`
 3. Remove the flag; the order is fixed by template (Plan V1 §7).
 
 ### Q462 — Is the stage list per project/template, or global?
+**Option 1 confirmed (2026-09-18).** One global `stages` lookup; projects mark inapplicable stages N/A, which is what §22 describes. Consistent with Q434 making §7's template system aspirational.
 Plan V1 §7 makes workflows template-driven; today `stages` is one global
 lookup table and §22 says projects "skip stages that do not apply".
 1. Global list; projects mark stages N/A (closest to today).
