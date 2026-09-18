@@ -1371,7 +1371,8 @@ Q540 = Option 1, Q442 = Option 1, Q447 = Option 1, Q448 = Option 2,
 Q450 = Option 1, Q449 = Option 1, Q452 = Option 1, Q453 = Option 1,
 Q541 = Option 1, Q432 = Option 1, Q444 = Option 1, Q451 = Option 1,
 Q542 = Option 3, Q502 = Option 1, Q504 = Option 2, Q506 = Option 1,
-Q507 = Option 2.
+Q507 = Option 2, Q503 = Option 3, Q505 = Option 1, Q543 = Option 3,
+Q544 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1593,5 +1594,33 @@ tracking and the five supplier statuses.
 related parts alike — not only related parts. Batches become an internal
 allocation detail beneath the order layer.
 
+### Q503 — Structure of the order-details form
+**Option 3 confirmed.** One **generic order form**: fixed fields for everything
+shared across order types (project, location, cutlist number, quantity, cost,
+supplier, comments), plus a flexible attributes store for the type-specific
+fields seen in the reference forms — benchtop underside, edging, laminate and
+joins; acoustic-panel dimensions; contractor-manufacturing references.
+
+Consequence: type-specific fields are not individually validated or readily
+searchable, so §21's supplier comparison can compare on the shared fields only.
+
+### Q505 — Purchase orders
+**Option 1 confirmed.** **Create PO** creates a **real purchase order** with its
+own number, supplier, line items and status — not merely a note that an order
+was issued. This is what §21's receiving flow, deposits, progress payments and
+credits attach to. Reviving the legacy purchase-order tables under Q502
+supplies this directly.
+
+### Q543 — Location of the parent item's cost
+**Option 3 confirmed.** **Deferred** until the financial model of §16 is
+scoped. Related-part orders carry their own cost; no roll-up to the parent
+Joinery Item is built in this sub-project. Q451 therefore records where that
+cost will land, not what this sub-project does.
+
 ### Q544 — Duplicate inventory tables
-*Raised by Q502 together with the later sheet-stock migration; pending.*
+**Option 1 confirmed.** The **sheet-stock table stays**; the legacy inventory
+and inventory-movement tables are **dropped** rather than revived. The columns
+worth keeping — reserved quantity, reorder point and reorder quantity — are
+ported onto the sheet-stock table, which §18's reservation and reorder-alert
+requirements will need anyway. Only the purchase-order and vendor half of the
+legacy namespace is revived.

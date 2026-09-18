@@ -106,6 +106,27 @@ then cover all procurement, not just related parts.
 Legacy `cost_centers` and `budget_transactions` similarly overlap §16's
 financial model, which is unscoped — they bear on **Q543**.
 
+**§K round 2 (2026-09-18):** **Q503 = 3**, **Q505 = 1**, **Q543 = 3**,
+**Q544 = 1**. A generic order form with a JSONB attributes blob; a real PO
+entity; item-level cost roll-up deferred; `board_inventory` wins and the legacy
+inventory tables are dropped.
+
+**Two reconciliations this forces.**
+
+- **Q451 is now intent, not behaviour.** Q543 = 3 defers the item cost field,
+  so related-part orders carry cost and **nothing rolls up to the parent item
+  in this sub-project**. Q451 describes where it will land once §16 is scoped.
+- **Q503 = 3 narrows what §21 can query.** With type-specific fields in a JSONB
+  blob they are neither schema-validated nor easily queryable, so supplier
+  comparison (§21) cannot filter or compare on them — only on the fixed
+  columns. Acceptable while the type list is still settling under Q448's
+  configurable lookup; worth revisiting if comparison on, say, benchtop edging
+  is later wanted.
+
+With this round, **every question for the selected sub-project is answered**
+except §A's **Q434** and **Q436**. §B (Q438–Q446), §C (Q447–Q453) and
+§K (Q502–Q507) are complete, along with Q539–Q544.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -681,6 +702,7 @@ has orders, vendors, budget and approvals but `CLAUDE.md` records it as unused
 by v1.
 
 ### Q543 — Where does the parent item's cost live? *(new — forced by Q451 + Q542)*
+**Option 3 confirmed (2026-09-18).** Defer until §16 is scoped. **This makes Q451 a statement of intent, not behaviour in this sub-project** — related-part orders carry cost, and nothing rolls up to the parent item yet.
 Q451 rolls related-part order cost into the parent Joinery Item, but there is no
 item cost column today, and §16 (financials) is not scoped.
 1. **Add a derived item cost** — computed on read from linked orders, stored
@@ -697,6 +719,7 @@ item cost column today, and §16 (financials) is not scoped.
 3. Keep them separate.
 
 ### Q544 — Legacy `inventory` vs `board_inventory` *(new — forced by Q502 + migration 0025)*
+**Option 1 confirmed (2026-09-18).** Keep `board_inventory`; drop legacy `inventory` + `inventory_movements`. Port `quantity_reserved`, `reorder_point` and `reorder_quantity` onto it, and revive only the PO/vendor half of the legacy namespace. Nothing in #9/0025's surface changes.
 Reviving the legacy namespace brings `inventory` + `inventory_movements`, which
 duplicate `board_inventory` (0025). Two tables for sheet stock is the situation
 #7a retired for `/catalogs`.
@@ -711,6 +734,7 @@ duplicate `board_inventory` (0025). Two tables for sheet stock is the situation
    Avoids a migration but leaves two stock tables to reconcile later.
 
 ### Q503 — Are order-details forms per material type?
+**Option 3 confirmed (2026-09-18).** One generic form with fixed columns for shared fields plus a JSONB attributes blob for type-specific ones.
 Screenshots 07–09 show three quite different field sets.
 1. One form with conditional sections per type.
 2. Separate forms per type.
@@ -722,6 +746,7 @@ Screenshots 07–09 show three quite different field sets.
 2. Orders are new; batches remain the allocation mechanism beneath them.
 
 ### Q505 — Does "Create PO" (screenshot 07) create a real PO entity?
+**Option 1 confirmed (2026-09-18).** Yes — a real PO with number, supplier, lines and status, which reviving legacy `purchase_orders` + `po_line_items` supplies directly.
 1. Yes — a PO entity with number, supplier, lines, status.
 2. It just marks the order issued and records a number.
 
