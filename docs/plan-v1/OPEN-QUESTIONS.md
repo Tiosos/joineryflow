@@ -380,6 +380,30 @@ core principle, applied even where individual sections use blocking language.
 
 **The RBAC matrix grows to 7 roles × 12 modules.** `qc` joins `_ALL_MODULES`.
 
+**§N round 1 (2026-09-18):** **Q520 = Search first**, **Q521 = 1**,
+**Q522 = 1**, **Q524 = 1**. Also **Q471 resolved by Q466** — per-item
+permissions are not built.
+
+**Q521 = 1 narrows several Plan V1 mechanisms, and they should be re-read in
+that light.** In-app-only delivery means a notification reaches someone **only
+when they next log in**. That materially weakens, without contradicting:
+
+- **Q369** — a *daily reminder* about an unresolved conflict does nothing for
+  someone not logging in daily.
+- **Q279 / Q466** — overdue-milestone alerts and escalations become passive.
+- **Q340–Q351** — the entire critical-notification design assumes *mandatory
+  channels* that override personal preference. With one channel, "mandatory
+  channels" collapses to "the only channel", and Q342's override of personal
+  preferences has nothing to override.
+
+None of this is wrong — it is the smallest sensible first step, and Q522 fixes
+SMTP as the transport for when email follows. But anything time-critical should
+not rely on notification alone until email ships.
+
+**Q520 = Search first is the low-risk pick.** It has no dependency on comms,
+tasks or notifications, and operates on data that already exists. Q525 (how to
+implement it) is therefore the next live question.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -771,6 +795,7 @@ Plan V1 §3 reserves this but does not enumerate it.
 3. IT nominates them per action at runtime.
 
 ### Q471 — Per-item permissions
+**Resolved by Q466 (2026-09-18), not asked separately.** Q466 = 2 scopes the permission engine to **project** level, explicitly excluding item and tab. Per-item permissions are therefore **not built** — which is this question's Option 2.
 Plan V1 scopes down to Joinery Item and Tab. That is a permission check on
 every row of every list.
 1. Yes, implement it — accept the query cost.
@@ -1167,15 +1192,18 @@ Lister updates the cutlist; after Assembly it is Internal Rework.
 All absent. Each is a sub-project in its own right.
 
 ### Q520 — Which comes first?
+**Confirmed (2026-09-18): Search (§13) first.** The cheapest of the six and the only one with no dependency on the others — it works against the item, cutlist and order data that already exists. The remaining five are unranked.
 Rank: Notifications (§30) · Comms (§29) · Tasks (§10) · Search (§13) ·
 Reporting (§31) · KPIs (§32).
 
 ### Q521 — Notification channels for v1
+**Option 1 confirmed (2026-09-18).** In-app only.
 1. In-app only.
 2. In-app + email.
 3. In-app + email + push (needs a mobile app — see §P).
 
 ### Q522 — Email transport
+**Option 1 confirmed (2026-09-18).** SMTP — when email arrives. Under Q521 v1 sends none, so this fixes the transport for later rather than for now.
 Nothing is configured today.
 1. SMTP.
 2. A provider (name it).
@@ -1186,6 +1214,7 @@ Nothing is configured today.
 2. Comments first, mentions later.
 
 ### Q524 — Are tasks a real entity or a view over existing work?
+**Option 1 confirmed (2026-09-18).** A real `task` table with assignment, due date and status — §10 needs tasks created manually, by rule and by request, none of which are derivable.
 1. A `task` table with assignment, due date, status.
 2. A derived view over stages, defects and approvals.
 

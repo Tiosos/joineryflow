@@ -1382,7 +1382,8 @@ Q513 = Option 3, Q510 = Option 2, Q512 = Option 1, Q466 = Option 2,
 Q467 = Option 2, Q469 = Option 3, Q470 = Option 1, Q472 = Option 1,
 Q473 = Option 1, Q479 = Option 1, Q481 = Option 1, Q482 = Option 1,
 Q485 = Option 2, Q515 = Option 1, Q516 = Option 2, Q517 = Option 2,
-Q518 = Option 2.
+Q518 = Option 2, Q521 = Option 1, Q522 = Option 1, Q524 = Option 1,
+Q520 = Search first.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1934,3 +1935,33 @@ on that date, and the rework records what happened after.
 **Option 2 confirmed.** §26's rule about what happens depending on how far the
 work has progressed is shown as **guidance**; the QC operator chooses. The
 operator may know something the recorded stage does not.
+
+
+### Q520 — Order of the remaining subsystems
+**Search first, confirmed.** Of the six subsystems still to build — search,
+comments, notifications, tasks, reporting and KPIs — **search is built first**.
+It depends on none of the others and works against information the system
+already holds.
+
+### Q521 — Notification channels
+**Option 1 confirmed.** Notifications are **in-app only** to begin with. Email
+and mobile push follow later.
+
+A consequence worth carrying forward: an in-app notice reaches someone only when
+they next sign in. Several parts of this plan assume more than that — daily
+reminders about unresolved conflicts, overdue-milestone escalation, and the
+"mandatory channels" of the critical-notification rules, which with a single
+channel have nothing to escalate to. Until email is added, nothing genuinely
+time-critical should depend on a notification alone.
+
+### Q522 — How email will be sent
+**Option 1 confirmed.** When email is added, it is sent by **standard mail
+relay (SMTP)** rather than through a third-party sending service or the
+Microsoft 365 mail API. Under Q521 no email is sent in the first release, so
+this settles the mechanism ahead of the need.
+
+### Q524 — Tasks
+**Option 1 confirmed.** Tasks are a **real record** with an assignee, a due
+date and a status — not a view assembled from existing work. §10 requires tasks
+that are created manually, by configured rules, from changes and at another
+person's request, and none of those can be derived from work already tracked.
