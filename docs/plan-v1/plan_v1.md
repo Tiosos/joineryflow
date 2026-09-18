@@ -1388,7 +1388,8 @@ Q468 = Option 1, Q487 = Option 1, Q488 = Option 1, Q489 = Option 1,
 Q491 = Option 2, Q548 = Option 2, Q490 = Option 1, Q493 = Option 1,
 Q494 = Option 2, Q532 = Option 3, Q533 = Option 2, Q534 = Option 1,
 Q492 = Option 1, Q549 = Option 2, Q535 = Option 1, Q523 = Option 1,
-Q519 = Option 1.
+Q519 = Option 1, Q476 = Option 3, Q477 = Option 1, Q478 = Option 2,
+Q458 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2131,3 +2132,32 @@ decision anticipated. It also completes a set decided separately: each Joinery
 Item carries a code (Q534), the site application can scan it (Q532), and packing
 is where that scanning first earns its keep.
 
+
+
+### Q476 — The Project Details window
+**Option 3 confirmed.** **Both project views are kept.** The window opened from
+Tracking's Info button gains the Project Stats, Cars, OH&S and Scope tabs, and
+the existing full project page remains. Q409 already establishes that they are
+two views of one record, so keeping both costs nothing in consistency.
+
+### Q477 — Cars and OH&S
+**Option 1 confirmed.** Both are **in scope**: site vehicle allocation and
+workplace-safety records.
+
+Neither exists anywhere in the current system and neither was described in the
+reference material, so nothing can be built from this answer alone. Q550 asks
+what each holds. Until then, Project Details carries Project Stats and Scope.
+
+### Q478 — The Dashboard as entrance
+**Option 2 confirmed.** The Dashboard is where people **arrive**, but any module
+remains **directly reachable by link**. This is also what Q475 requires: module
+workspaces open as separate browser tabs, which only works if each has its own
+address.
+
+### Q458 — Moving an item between Rooms
+**Option 1 confirmed.** A Joinery Item **may be moved to another Room**, and the
+move is recorded in its history. Rooms are renamed and reassigned as a job
+develops, and items are sometimes entered against the wrong one.
+
+### Q550 — The contents of Cars and OH&S
+*Raised by Q477; pending — neither is described anywhere available.*

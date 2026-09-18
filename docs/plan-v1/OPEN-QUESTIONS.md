@@ -531,6 +531,19 @@ This records that the next integration is one the document had already
 obligated. **Q480 is still unanswered** — no site URL or library path has been
 supplied, and that blocks the work.
 
+**§G close + §D close (2026-09-18):** **Q476 = 3**, **Q477 = 1**,
+**Q478 = 2**, **Q458 = 1**. §D is complete; §G has only **Q550** outstanding.
+
+**Q478 = 2 and Q545 = 2 depend on each other.** Separate module windows are
+`target="_blank"` tabs, which are only possible if every module is directly
+linkable. Had Q478 made the Dashboard the sole entrance, Q545's cheap window
+model would have broken. They were answered in different rounds and agree.
+
+**Q477 = 1 is answered in principle only.** Cars and OH&S are confirmed in
+scope, but nothing is known about either — no columns, no screens, no mention
+in `legacy/`. Raised as **Q550**; until it is answered the Project Details
+window ships with Project Stats and Scope only.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -822,6 +835,7 @@ a long-standing source of confusion with `lifecycle_stage`.
 2. Drawn from a workspace-level library.
 
 ### Q458 — Can an item move between Rooms?
+**Option 1 confirmed (2026-09-18).** Yes, with audit. `item_edit_log` already records field changes, so the mechanism exists.
 1. Yes, with audit.
 2. No.
 
@@ -974,6 +988,7 @@ is a single-page shell with a tab strip.
 2. Genuinely separate browser windows.
 
 ### Q476 — Project Details window
+**Option 3 confirmed (2026-09-18).** Keep both surfaces — the Info-button modal gains the four tabs, `/projects/[id]` stays as the full page. Q409 already makes them two views of one record, so nothing shipped is retired.
 Q408 puts `Project Stats / Cars / OH&S / Scope` behind an **Info** button in
 Tracking. Today `ProjectDetailModal` exists with none of those tabs, and
 `/projects/[id]` is a separate page.
@@ -982,11 +997,23 @@ Tracking. Today `ProjectDetailModal` exists with none of those tabs, and
 3. Keep both surfaces; they share one record per Q409.
 
 ### Q477 — What are Cars and OH&S?
+**Option 1 confirmed (2026-09-18).** In scope — site vehicle allocation and workplace-safety records. **The fields have not been supplied**, so this is answered in principle only; see **Q550**.
 Neither appears anywhere in this codebase or in `legacy/`.
 1. Site vehicle allocation and workplace-safety records — specify them.
 2. Out of scope; drop the tabs.
 
+### Q550 — What do the Cars and OH&S tabs actually hold? *(new — Q477 is unimplementable without it)*
+Q477 put both in scope, but neither appears anywhere in this codebase or in
+`legacy/`, so there is nothing to build from. Needed before either tab exists:
+1. **Cars** — what is recorded per vehicle (registration, driver, which site,
+   dates?), who maintains it, and whether it is per project or workspace-wide.
+2. **OH&S** — what is recorded (incidents, inductions, SWMS, toolbox talks?),
+   who may see it, and whether any of it is legally retained.
+3. Or supply an example of each screen from the reference system, as with
+   screenshots 01–18.
+
 ### Q478 — Does the Dashboard become the only entrance?
+**Option 2 confirmed (2026-09-18).** Dashboard is the landing page, but every module stays directly linkable — today's behaviour. Q545's `target="_blank"` windows depend on deep links working, so this is also the consistent choice.
 `/home` currently redirects to `/dashboard`, which is already the landing page.
 1. Yes — matches today; formalise it.
 2. Users should be able to deep-link into any module directly (today's
