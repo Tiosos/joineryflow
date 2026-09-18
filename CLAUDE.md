@@ -91,9 +91,11 @@ not a description of this tree. Nothing in it has been implemented.
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q549, continuing Plan V1's own
-  numbering. **101 of 117 resolved.** Complete: §A–§F, §I–§N.
-  Open: §G (3), §H (5), §O (4, aspirational), housekeeping (3), Q458.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q551, continuing Plan V1's own
+  numbering. **115 of 118 resolved; every answerable question is answered.**
+  The three left are **inputs only the customer can supply**: the SharePoint
+  site URL (Q480), a real drawing filename (Q547), and what the Cars / OH&S
+  tabs hold (Q550). The first two block §H entirely.
 
 **Confirmed 2026-09-18** (Plan V1 §43, `OPEN-QUESTIONS.md` §A):
 
