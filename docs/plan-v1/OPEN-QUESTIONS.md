@@ -510,6 +510,27 @@ linked Joinery Item. But Q492 says cost lives at Project and **Item** level with
 no cutlist level. So one CNC completion produces one labour cost for a cutlist
 that five items share, and something must apportion it. Raised as **Q549**.
 
+**Closing round (2026-09-18):** **Q549 = 2**, **Q535 = 1**, **Q523 = 1**,
+**Q519 = 1**. §I, §M and §P are complete.
+
+**Q519 = 1 is the first confirmed addition to the stage list.** Q459 kept
+today's 10 and said Plan V1's extras arrive "with the sub-projects that need
+them". Packing is the first to arrive, and it comes with scanning — which is
+coherent with Q534 (barcode per Joinery Item) and Q532 (native app). Those three
+answers were given separately and land together: label the item, scan it at
+packing, on the app built for site use.
+
+**Q549 = 2 is buildable from data that already exists.** `part_slot` rows carry
+each part's placement and `parts` carries its dimensions, so an item's share of
+a cutlist is computable without new capture. Note it needs a rule for parts with
+no dimensions and for the `is_foreign` slots #7c already flags.
+
+**Q535 = 1 is an acknowledgement, not a choice.** §H already committed to
+Microsoft 365 through Q398's `site related` folder and Q481's app registration.
+This records that the next integration is one the document had already
+obligated. **Q480 is still unanswered** — no site URL or library path has been
+supplied, and that blocks the work.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1320,6 +1341,7 @@ Lister updates the cutlist; after Assembly it is Internal Rework.
 2. Guidance only; QC picks.
 
 ### Q519 — Packing (§22, §27)
+**Option 1 confirmed (2026-09-18).** A tracked stage with scanning.
 1. A tracked stage with scanning.
 2. A stage only, no scanning yet.
 
@@ -1348,6 +1370,7 @@ Nothing is configured today.
 3. Microsoft 365 / Graph (consistent with §H).
 
 ### Q523 — Do comments support @mentions and notifications on day one?
+**Option 1 confirmed (2026-09-18).** Yes — mentions ship with comments. Without them §29's comments are a notice board.
 1. Yes.
 2. Comments first, mentions later.
 
@@ -1432,6 +1455,8 @@ the document.
 4. Each packed crate.
 
 ### Q549 — How is shared cutlist labour apportioned to items? *(new — forced by Q492 + Q493 + Q438)*
+**Option 2 confirmed (2026-09-18).** Weight by each item's share of the parts on
+that cutlist. The nest already knows part areas, so the data exists.
 Labour cost derives from stage completions (Q493); those completions belong to
 the cutlist (Q438/Q445); but cost must land on the Joinery Item (Q492). One CNC
 completion on a cutlist shared by five items yields one labour figure needing a
@@ -1444,6 +1469,7 @@ split.
    carry materials alone. Simplest, and §16 still gets a project figure.
 
 ### Q535 — Which integration is genuinely next (§33)?
+**Option 1 confirmed (2026-09-18).** Microsoft 365 / SharePoint — which §H already forces via Q398's folder and Q481's app registration.
 Cabinet Vision is built. §33 lists ~16 others, and §H already depends on
 Microsoft 365.
 1. Microsoft 365 / SharePoint (required by §H).

@@ -1387,7 +1387,8 @@ Q520 = Search first, Q525 = Option 2, Q526 = Option 1, Q527 = Option 2,
 Q468 = Option 1, Q487 = Option 1, Q488 = Option 1, Q489 = Option 1,
 Q491 = Option 2, Q548 = Option 2, Q490 = Option 1, Q493 = Option 1,
 Q494 = Option 2, Q532 = Option 3, Q533 = Option 2, Q534 = Option 1,
-Q492 = Option 1.
+Q492 = Option 1, Q549 = Option 2, Q535 = Option 1, Q523 = Option 1,
+Q519 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2103,4 +2104,30 @@ stages, and those stages belong to the cutlist, which several Joinery Items may
 share. Q549 settles how that shared labour reaches the individual items.
 
 ### Q549 — Apportioning shared labour
-*Raised by Q492 together with Q493 and the shared cutlist; pending.*
+**Option 2 confirmed.** Labour recorded against a cutlist is divided among its
+Joinery Items **in proportion to each item's share of the parts** on that
+cutlist, rather than split equally. A large item that occupies most of the
+material carries most of the cost.
+
+The information needed already exists, since the cutting plan records every
+part's size and placement.
+
+### Q535 — The next integration
+**Option 1 confirmed.** **Microsoft 365 and SharePoint.** This is less a choice
+than an acknowledgement: §40's Project-file decisions already require it. The
+site address and document library still have to be supplied before the work can
+begin.
+
+### Q523 — Mentions in comments
+**Option 1 confirmed.** Comments support **mentioning people from the start**.
+Without that, a comment only reaches whoever happens to look at the record.
+
+### Q519 — Packing
+**Option 1 confirmed.** Packing is a **tracked stage, with scanning**.
+
+This is the first addition to the workflow stage list since Q459 kept the
+existing ten, and it arrives with the sub-project that needs it, exactly as that
+decision anticipated. It also completes a set decided separately: each Joinery
+Item carries a code (Q534), the site application can scan it (Q532), and packing
+is where that scanning first earns its keep.
+
