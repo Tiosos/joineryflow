@@ -1372,7 +1372,8 @@ Q450 = Option 1, Q449 = Option 1, Q452 = Option 1, Q453 = Option 1,
 Q541 = Option 1, Q432 = Option 1, Q444 = Option 1, Q451 = Option 1,
 Q542 = Option 3, Q502 = Option 1, Q504 = Option 2, Q506 = Option 1,
 Q507 = Option 2, Q503 = Option 3, Q505 = Option 1, Q543 = Option 3,
-Q544 = Option 1.
+Q544 = Option 1, Q434 = Option 2, Q436 = Option 2, Q475 = Option 2,
+Q474 = custom decision.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1624,3 +1625,38 @@ worth keeping — reserved quantity, reorder point and reorder quantity — are
 ported onto the sheet-stock table, which §18's reservation and reorder-alert
 requirements will need anyway. Only the purchase-order and vendor half of the
 legacy namespace is revived.
+
+
+### Q434 — Extent of committed scope
+**Option 2 confirmed.** The **joinery-workflow half of Plan V1 is committed
+scope**. The IT-governance half — template versioning, validation, simulation,
+the technical-debt register, Initiatives and the escalation engine (§7–§8 and
+§35–§38) — is **aspirational**, to be revisited rather than scheduled.
+
+### Q436 — Live data today
+**Option 2 confirmed.** There are **pilot users on the demonstration
+workspace**. Real records exist but nothing business-critical, so every
+migration needs a correct data step while re-seeding remains an acceptable
+recovery.
+
+### Q474 — Where the Cutlist module lives
+**Custom decision confirmed. The Cutlist module *is* the existing `List`
+tab.** It is not a seventh primary tab and not a secondary-strip entry. The
+fixed six-tab information architecture is unchanged.
+
+This matches how the system is already built: the permission module governing
+that tab is already the one guarding the cutlist print and item-attachment
+routes. The tab is being named for what it has always contained.
+
+### Q475 — Module workspaces as separate windows
+**Option 2 confirmed.** Orderbook, Tracking and Cutlist open as **genuinely
+separate windows**, as in the reference system, so that two of them can be kept
+open side by side on separate monitors.
+
+This is a real departure from the current single-shell application, which
+resolves the signed-in user once and draws one set of navigation chrome around
+every screen. Q545 settles precisely what "separate window" means before it is
+built.
+
+### Q545 — Definition of a separate window
+*Raised by Q475; pending.*
