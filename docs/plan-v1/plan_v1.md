@@ -1375,7 +1375,8 @@ Q507 = Option 2, Q503 = Option 3, Q505 = Option 1, Q543 = Option 3,
 Q544 = Option 1, Q434 = Option 2, Q436 = Option 2, Q475 = Option 2,
 Q474 = custom decision, Q459 = Option 3, Q461 = Option 2, Q462 = Option 1,
 Q545 = Option 2, Q454 = Option 1, Q455 = Option 1, Q457 = Option 1,
-Q546 = Option 1.
+Q546 = Option 1, Q456 = Option 1, Q495 = Option 1, Q497 = Option 2,
+Q499 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1709,3 +1710,33 @@ numeric **zone**, which Plan V1's hierarchy does not name. Both are **kept as
 attributes** of the record rather than becoming levels of the drill-down. The
 hierarchy remains Project → Area → Room → Joinery Item exactly as §2 states,
 and the Tracking Dashboard's consistent layout is unaffected.
+
+
+### Q456 — The "stage" terminology rule
+**Option 1 confirmed.** Once the site-location field is renamed to Area, the
+word **stage** can only mean a workflow stage, and the standing rule warning
+against the bare word is **retired**. The rule stays in force until the rename
+has actually been made.
+
+### Q495 — Material Take as a record
+**Option 1 confirmed.** Material Take is its **own record**, generated from the
+Joinery Item's parts and hardware, then adjusted, approved and frozen. It is
+not merely a flag on the live lines. Keeping it separate is what allows §19's
+later impact review — comparing an approved take against a changed Shop
+Drawing — to have something to compare against, and what preserves the original
+history §19 requires.
+
+### Q497 — Material Take and Shop Drawing Approval
+**Option 2 confirmed.** Material Take is **advisory**, not a hard gate. An
+approver is warned when no approved take exists but may still approve the Shop
+Drawing. The existing drawing approval workflow is unchanged.
+
+### Q499 — Releasing the Material Summary to Procurement
+**Option 2 confirmed.** Project Manager confirmation is **advisory**.
+Procurement may order against unconfirmed summary lines where lead times
+require it, with the unconfirmed state clearly flagged.
+
+**This knowingly departs from §20**, which states that the summary is released
+to Procurement only after Project Manager confirmation. The decision here
+supersedes that sentence: the confirmation is a strong recommendation, not a
+block, so that long-lead material is never held up by an unconfirmed summary.

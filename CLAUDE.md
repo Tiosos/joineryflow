@@ -187,7 +187,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 - **Terminology pins** (critical, legacy-FileMaker-era collisions):
   - `Stage` = site location/area (e.g. `Joinery Lab`, `Block B`).
   - `Zone` = numeric sub-division of Stage.
-  - `lifecycle_stage` (or `stage_key`) = the 10 production milestones (`REQ`, `SM`, `LISTED`, `DOWN`, `CNC`, `EDGED`, `PAINTED`, `MADE`, `DEL`, `INST`). **Never reuse the bare word "stage"** for these in code.
+  - `lifecycle_stage` (or `stage_key`) = the 10 production milestones (`REQ`, `SM`, `LISTED`, `DOWN`, `CNC`, `EDGED`, `PAINTED`, `MADE`, `DEL`, `INST`). **Never reuse the bare word "stage"** for these in code. (Plan V1 **Q455/Q456** will rename `items.stage` → `area`, after which "stage" is unambiguous and **this pin retires**. It stands until that rename ships — 14 references across 7 files.)
   - `Status` = record state (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`).
   - `Status Symbol` = Drafter-only UI flag, not reported.
 

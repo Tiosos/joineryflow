@@ -212,6 +212,26 @@ frees the bare word **"stage"** to mean only the lifecycle, retiring a
 terminology collision CLAUDE.md currently guards with a standing rule. That is
 **Q456**.
 
+**§D close + §J round 1 (2026-09-18):** **Q456 = 1**, **Q495 = 1**,
+**Q497 = 2**, **Q499 = 2**.
+
+**Q497 and Q499 are a consistent stance, and Q499 is a deliberate departure
+from Plan V1's text.** Both choose *warn* over *block*, which matches Plan V1's
+own core principle — "the system tracks, detects, alerts, records and
+recommends; authorised people decide". But §20 states plainly: *"Only after PM
+confirmation is the summary released to Procurement Dashboard."* That is a hard
+gate as written, and Q499 = 2 knowingly softens it to a warning so lead times
+can be met.
+
+> **Recorded so it is not "fixed" later.** A future reader comparing the code to
+> §20 will find them disagreeing. The code is right: Q499 supersedes §20's
+> release gate. §19's ordering is likewise advisory under Q497, though §19 never
+> used blocking language.
+
+**Q456 retires a standing rule — but not yet.** The pin stays in `CLAUDE.md`
+until the `items.stage` → `area` rename ships, because that file records what is
+true now, not what is planned.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -485,6 +505,13 @@ seed populates all four (`L1` / `"Stage 1"` / `"1"` / `K1`+`Kitchen`), so a
 straight two-level reading would have silently dropped two of them.
 
 ### Q456 — If renamed, what happens to the "never use bare 'stage'" pin?
+**Option 1 confirmed (2026-09-18).** Rename and **retire the pin**. Once the
+site-location column is `area`, "stage" can only mean the lifecycle, so the
+collision the rule guards against no longer exists.
+
+> **Not yet.** The pin stays in `CLAUDE.md` until the rename actually ships —
+> that file records what is true now, and today `items.stage` still means site
+> location.
 Renaming site-location `stage` → `area` would free the word "stage" and remove
 a long-standing source of confusion with `lifecycle_stage`.
 1. Rename and retire the pin.
@@ -767,6 +794,7 @@ Nothing exists. Today material demand *is* `parts` + `item_hardware_lines`, and
 `/procurement-queue` aggregates them live with no confirm-and-release gate.
 
 ### Q495 — Is Material Take a new entity, or a state of the existing lines?
+**Option 1 confirmed (2026-09-18).** A new `material_take` entity, generated from the item's parts + hardware lines then adjusted, approved and frozen — so it can diverge from the live lines, which is what §19's post-change impact review needs to compare against.
 1. New `material_take` entity, generated from parts/hardware, then adjusted.
 2. A snapshot/approval flag on today's lines.
 
@@ -777,6 +805,7 @@ Q80 confirms "system-generated starting point + manual control".
 3. Both.
 
 ### Q497 — Does Material Take gate Shop Drawing Approved?
+**Option 2 confirmed (2026-09-18).** Advisory — the approver is warned that no take exists but may proceed. #5a's `draft → pending → approved` flow is unchanged.
 §19 says it occurs *before* approval.
 1. Hard gate — cannot approve the drawing without an approved take.
 2. Advisory only.
@@ -786,6 +815,7 @@ Q80 confirms "system-generated starting point + manual control".
 2. No — both exist; the queue stays the live view.
 
 ### Q499 — Does PM confirmation become a hard gate on procurement?
+**Option 2 confirmed (2026-09-18).** Advisory — Procurement may order against unconfirmed lines when lead times demand it, flagged as such.
 §20 says "only after PM confirmation is the summary released".
 1. Yes — Procurement cannot order unconfirmed material.
 2. Advisory — Procurement can order early with a warning.
