@@ -1389,7 +1389,8 @@ Q491 = Option 2, Q548 = Option 2, Q490 = Option 1, Q493 = Option 1,
 Q494 = Option 2, Q532 = Option 3, Q533 = Option 2, Q534 = Option 1,
 Q492 = Option 1, Q549 = Option 2, Q535 = Option 1, Q523 = Option 1,
 Q519 = Option 1, Q476 = Option 3, Q477 = Option 1, Q478 = Option 2,
-Q458 = Option 1.
+Q458 = Option 1, Q484 = Option 2, Q483 = Option 2, Q486 = Option 3,
+Q528 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2161,3 +2162,33 @@ develops, and items are sometimes entered against the wrong one.
 
 ### Q550 — The contents of Cars and OH&S
 *Raised by Q477; pending — neither is described anywhere available.*
+
+
+### Q484 — Where architectural drawings live
+**Option 2 confirmed.** Architectural drawings live in a **separate folder**
+from the Project-file folder, so that the view-only Project-file window and the
+drawing lookup operate on different places. **That folder has not been named
+yet.**
+
+### Q483 — When SharePoint cannot be reached
+**Option 2 confirmed.** The file view **falls back to the last known list of
+files**, clearly marked as out of date, rather than showing nothing.
+
+This means the system keeps its own copy of what a folder contained — names,
+sizes and dates, not the files themselves. It must always be shown as stale, so
+that it is never mistaken for the live folder.
+
+### Q486 — Mixed revision schemes
+**Option 3 confirmed.** A project uses **one revision scheme throughout**. If
+both numbered and lettered revisions appear for the same drawing, the system
+**flags it rather than guessing** which is newer. A silently wrong answer here
+is how the wrong drawing reaches the workshop.
+
+Ordering of multi-letter revisions, where a drawing runs past Z, remains
+undefined.
+
+### Q528 — The template and governance half of the plan
+**Option 2 confirmed.** §7–§8 and §35–§38 — template versioning, validation,
+simulation, the issue register, Initiatives and escalation — are **revisited
+after the joinery workflow is complete**, consistent with Q434. They remain in
+this document as a target; nothing in the daily workflow depends on them.

@@ -544,6 +544,32 @@ scope, but nothing is known about either — no columns, no screens, no mention
 in `legacy/`. Raised as **Q550**; until it is answered the Project Details
 window ships with Project Stats and Scope only.
 
+**§H round 2 + §O close (2026-09-18):** **Q484 = 2**, **Q483 = 2**,
+**Q486 = 3**, **Q528 = 2**. §O is closed (Q529–Q531 defer with Q528).
+
+**Q483 = 2 softens Q399's view-only model.** A cached listing means the
+application keeps a **mirror of folder contents** — file names, sizes and
+modified times — which a strictly view-only pass-through would not. That is
+fine, but it must be marked stale in the UI and must never be mistaken for the
+live folder, especially under Q482's polling and Q400's "automatically update".
+The cache holds *listings*, not file contents.
+
+**Q486 = 3 is the safe choice and leaves one thing open.** Flagging rather than
+guessing is right — a wrong "latest revision" is how the wrong drawing reaches
+the shop floor. But **option 4 was a separate item**: multi-letter ordering
+(`AA` after `Z`) is still undefined, and a long revision run will hit it.
+
+**Three SharePoint inputs are now outstanding, and together they block §H:**
+
+| Input | Question | Status |
+| --- | --- | --- |
+| SharePoint site URL + document library | Q480 | never supplied, since Q398 |
+| Drawing filename pattern (a real example) | Q547 | Q485 chose pattern-matching; none given |
+| Architectural-drawings folder name | Q484 | folder confirmed separate; unnamed |
+
+Plus the multi-letter revision rule from Q486. None of §H can be built until
+these land.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1057,10 +1083,12 @@ No push channel exists today; the stack has no websockets and no client cache.
 3. Manual refresh is acceptable after all.
 
 ### Q483 — What happens when SharePoint is unreachable?
+**Option 2 confirmed (2026-09-18).** Fall back to a cached listing, marked stale.
 1. Show an error in the pop-up; the rest of the app is unaffected.
 2. Fall back to a cached listing.
 
 ### Q484 — Are architectural drawings in the same `site related` folder?
+**Option 2 confirmed (2026-09-18).** A **different folder** — drawings live beside `site related`, so the view-only Project-file pop-up (Q399) and the drawing lookup (Q401–Q405) have distinct roots. **The folder name has not been supplied** — an outstanding input alongside Q480 and Q547.
 Q402 says all architectural drawings for a project are in one common folder;
 Q398 names `site related` for project-level files. It is not stated whether
 these are the same folder.
@@ -1087,6 +1115,7 @@ number and the revision can each be located.
    `A-1010`.
 
 ### Q486 — Mixed numeric/letter revisions (Q405's open edge case)
+**Option 3 confirmed (2026-09-18).** A project never mixes schemes; if both appear in one folder, **flag it rather than guess** — a silently wrong "latest revision" puts the wrong drawing on the shop floor. **Option 4 (multi-letter ordering) was not selected, so `AA` vs `Z` remains undefined.**
 Q405 leaves ordering undefined for mixed schemes and multi-letter revisions.
 1. Letters sort after numbers.
 2. Numbers after letters.
@@ -1439,22 +1468,26 @@ tracker and a priority-aware escalation engine. Nothing exists, and nothing in
 the daily joinery workflow depends on it.
 
 ### Q528 — Is this in scope at all?
+**Option 2 confirmed (2026-09-18).** Later — after the joinery workflow is complete. Consistent with Q434; stays in the document as a target. **Q529, Q530 and Q531 defer with it.**
 1. Yes — it is why Plan V1 exists.
 2. Later — after the joinery workflow is complete.
 3. No — over-engineered for one company; drop it.
 
 ### Q529 — If in scope, what does a template actually configure?
+**Deferred (2026-09-18).** Q528 = 2 puts §7–§8 and §35–§38 after the joinery workflow, so this does not arise yet.
 1. Workflow stages + tasks + QC checklists + approvals + permissions
    (everything §7 lists).
 2. Workflow stages only, to start.
 
 ### Q530 — Who is "IT" here?
+**Deferred (2026-09-18).** Q528 = 2 puts §7–§8 and §35–§38 after the joinery workflow, so this does not arise yet.
 The `admin` auth role, a real IT department, or a vendor?
 1. The `admin` role.
 2. A new `it_admin` role distinct from `admin`.
 3. Us (the build team), not a customer role.
 
 ### Q531 — Do the Initiative and technical-debt trackers belong in this product?
+**Deferred (2026-09-18).** Q528 = 2 puts §7–§8 and §35–§38 after the joinery workflow, so this does not arise yet.
 They are a general-purpose issue tracker.
 1. Yes — build them.
 2. No — use an external tracker (Jira/Linear/GitHub) and drop Q260–Q289.
