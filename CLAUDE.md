@@ -126,9 +126,11 @@ would be a rewrite rather than an addition:
 4. **RBAC becomes data, not code** (Plan V1 §3) — departments, IT-authored
    groups, multi-membership, 11 actions, project/item/tab scoping,
    most-permissive-wins. `apps/api/app/auth/permissions.py` is a static dict.
-5. **Navigation** (Q406–Q409) introduces a third module workspace, **Cutlist**,
-   which the "primary six do not grow" rule under *Design system (binding)*
-   forbids adding to the primary row.
+5. ~~**Navigation** introduces a third module workspace, **Cutlist**.~~
+   **Resolved (Q474):** Cutlist **is** the `List` tab; the primary six do not
+   grow and the binding rule is untouched. Plan V1 Q475 does still call for the
+   module workspaces to open as **separate windows**, against today's single
+   Next.js shell — see `OPEN-QUESTIONS.md` Q545.
 
 Two further conflicts are narrower but real: Plan V1 makes **Area** and **Room**
 entities (today: free-text `level` / `rm_no` / `rm_desc` on `items`), and
@@ -203,7 +205,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
 - Typography: Inter (default sans) for UI, JetBrains Mono for part #, PO #, ETAs, money. The `.h-mono` utility (with `tnum`) is wired in `globals.css`.
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q406–Q407 conflicts with this rule** — it wants a third top-level module workspace, `Cutlist`, alongside Orderbook and Tracking. Unresolved: `docs/plan-v1/OPEN-QUESTIONS.md` Q474.)
+- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q474 confirmed this rule stands**: Plan V1's `Cutlist` module **is** the existing `List` tab — which the RBAC module name already reflects, since `("list","read")` gates `cutlist.pdf`. No seventh primary tab.)
 
 ## Reference docs (read before large changes)
 

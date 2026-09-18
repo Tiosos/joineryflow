@@ -134,7 +134,17 @@ payload the web tier gates navigation on, and of every hand-written per-object
 rule. It is the highest-blast-radius item in the document and the one most
 likely to be worth staging behind a compatibility shim.
 
-### 3.5 The fixed 6-tab IA and the Plan V1 navigation model (`REARCH`)
+### 3.5 The fixed 6-tab IA and the Plan V1 navigation model (~~`REARCH`~~ — **resolved 2026-09-18**)
+
+> **Resolved by Q474: Cutlist *is* the `List` tab.** There is no seventh
+> primary tab and the "primary six do not grow" rule stands unchanged. The
+> RBAC module `list` already gates the cutlist surfaces
+> (`GET /items/{iid}/cutlist.pdf` on `("list","read")`, item-attachment writes
+> on `("list","write")`), so this names what the code already does. The
+> analysis below is kept as the record of why it looked like a conflict.
+>
+> Q475 confirmed the module workspaces **do** open as separate windows, which
+> is a real change to the single-shell model — see `OPEN-QUESTIONS.md` Q545.
 
 - **Plan V1** Q406–Q409: Dashboard is the **main entrance**; top buttons open
   **Orderbook / Tracking / Cutlist** as dedicated module workspaces; the

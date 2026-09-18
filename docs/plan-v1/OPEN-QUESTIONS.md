@@ -127,6 +127,41 @@ With this round, **every question for the selected sub-project is answered**
 except §A's **Q434** and **Q436**. §B (Q438–Q446), §C (Q447–Q453) and
 §K (Q502–Q507) are complete, along with Q539–Q544.
 
+**Closing round (2026-09-18):** **Q434 = 2**, **Q436 = 2**, **Q474 = custom**,
+**Q475 = 2**.
+
+**Q474 dissolves a conflict rather than resolving it.** `ALIGNMENT.md` §3.5
+framed Cutlist as needing a seventh primary tab against a binding rule. It does
+not: **Cutlist is the `List` tab.** The primary six stay six, the rule is
+untouched, and the existing RBAC module `list` — which already gates
+`cutlist.pdf` and item attachments — turns out to have been the cutlist module
+from the start. Of the five conflicts in §3, this one is now closed by naming
+rather than by building.
+
+**Q475 = 2 is the one genuinely new UI cost.** Today the app is a single
+Next.js shell: `(app)/layout.tsx` does a server-side `fetchMe()` and renders
+one TopBar + TabStrip + SideBar around every route. Separate windows per module
+means per-window auth resolution and per-window state, and the tab strip stops
+being the navigation model for those three. Worth confirming the intended
+behaviour before building — see **Q545**.
+
+**Q436 = 2 sets the migration bar.** Pilot rows exist, so the Q540 cutlist mint,
+the Q453 `group_id` repurpose and the Q544 inventory drop each need a correct
+data step — but re-seeding is an acceptable recovery, so they do not need
+rollback plans.
+
+**Q434 = 2 sets what follows.** §7–§8 and §35–§38 (~99 decisions, the largest
+single block in Plan V1) are explicitly **aspirational**, so `ALIGNMENT.md`
+§6's observation that they are separable is now the agreed position.
+
+### Q545 — What exactly does "separate window" mean? *(new — forced by Q475)*
+1. **A real popup window** (`window.open` with sized chrome), as the reference
+   FileMaker-era system does.
+2. **A normal browser tab** opened with `target="_blank"` — separate OS window
+   if the user drags it out, no popup blockers, no new auth path.
+3. **Same shell, but each module is a deep-linkable route** the user may open
+   in as many windows as they like — today's behaviour, formalised.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -162,6 +197,7 @@ Today `orderbook` write is held by `admin`, `manager`, `drafter` and
    exercise), build nothing until a sub-project is chosen.
 
 ### Q434 — Is Plan V1 committed scope, or a wish list?
+**Option 2 confirmed (2026-09-18).** The joinery-workflow half is committed; the IT-governance half (§7–§8, §35–§38 — templates, validation, simulation, initiatives, escalation) is aspirational.
 Plan V1 runs to Q431 across ~35 subsystems. The gap analysis
 finds 50 `ABSENT` rows.
 1. All of it is committed scope; the only question is ordering.
@@ -180,6 +216,7 @@ behaviour.
    fit the current model.
 
 ### Q436 — Is there production data or live users today?
+**Option 2 confirmed (2026-09-18).** Pilot users on the demo workspace — real rows exist but nothing business-critical. Migrations must be correct; a bad one is recoverable by re-seeding.
 This determines whether "migration" means data migration or just schema churn.
 1. No users, no data — seed only.
 2. Pilot users on the demo workspace.
@@ -514,13 +551,19 @@ no comment entity (gap §4). Plan V1 §29 wants comments on 8 object types.
 six do not grow", with a secondary strip for new surfaces. Q406–Q407 want
 Dashboard-as-entrance with **Orderbook / Tracking / Cutlist** module workspaces.
 
-### Q474 — Where does the Cutlist module go?
+### Q474 — **Custom decision confirmed (2026-09-18): Cutlist *is* the `List` tab.**
+The existing primary `List` tab becomes the Cutlist module workspace. No seventh primary tab, no demotion to the secondary strip, and **the binding "primary six do not grow" rule stands unchanged** — so `ALIGNMENT.md` §3.5 is resolved without amending anything.
+
+Corroborated by the existing code: the RBAC module is already named `list`, and it **already gates the cutlist surfaces** — `GET /items/{iid}/cutlist.pdf` is gated `("list", "read")` and item-attachment writes `("list", "write")`. The module named `list` has been the cutlist module all along; this names it honestly. `/list` today is a project switcher + search + the shared `ItemsTable` (`ListClient.tsx`), which becomes the cutlist list.
+
+### Q474 (original options, superseded)
 1. Amend the binding rule — primary row becomes 7 tabs including Cutlist.
 2. Cutlist joins the secondary strip.
 3. Cutlist is not a top-level module; it opens from an item (today's
    `/items/[id]?tab=cutlist`).
 
 ### Q475 — Do Orderbook / Tracking / Cutlist open as separate windows?
+**Option 2 confirmed (2026-09-18).** Genuinely separate browser windows, matching the reference system — so Tracking and Orderbook can sit side by side on two monitors.
 The reference system opens a new window per module (Q406). The shipped web app
 is a single-page shell with a tab strip.
 1. Tabs in one shell (today's model) — Q407 permits a new UI.
