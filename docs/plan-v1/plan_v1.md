@@ -1359,10 +1359,64 @@ Start with screen/module relationships and what the user wants to carry into the
 
 ## 42. Current Question Status
 
-Questions have progressed through **Q431**.
+Questions have progressed through **Q538**. Q432–Q538 were added on
+2026-09-17 by the alignment pass against the existing JoineryFlow codebase and
+are recorded in `docs/plan-v1/OPEN-QUESTIONS.md`; §43 below carries the ones
+confirmed so far.
 
-**Latest confirmed decision: Q431 = Yes — replacing a parent Joinery Item's cutlist number automatically updates all linked related-part orders.**
+**Confirmed on 2026-09-18: Q433 = Option 1, Q435 = Option 2, Q437 = Option 1,
+Q438 = Option 1.**
 
-**Next unanswered question: Q432 — define which user roles can click Create Order and submit related-part order requests.**
+**Next unanswered questions: Q432** (which roles may click Create Order),
+**Q434** (committed scope vs. wish list), **Q436** (production data today), and
+all of §B–§P in `OPEN-QUESTIONS.md`. §B and §C are now design-blocking, since
+Q437 selected Cutlist + related parts as the next sub-project.
 
 This file is the canonical **Plan V1** project source for the Joinery Workflow Software and should be used as the authoritative basis for future questions and design work in this project.
+
+---
+
+## 43. Codebase Alignment Decisions — Q432 onward
+
+These questions arose from mapping Plan V1 onto the existing JoineryFlow
+codebase (nine shipped sub-projects, Alembic head `0025`). The full gap
+analysis is `docs/plan-v1/ALIGNMENT.md`; the full question set is
+`docs/plan-v1/OPEN-QUESTIONS.md`.
+
+### Q433 — Relationship between Plan V1 and the existing codebase
+**Option 1 confirmed.** Plan V1 is the **roadmap for this codebase**.
+JoineryFlow evolves into it incrementally, accepting the re-architecture work
+this implies rather than rebuilding from scratch or specifying a separate
+product. Plan V1 therefore governs future design work in this repository, and
+`CLAUDE.md` remains the statement of what is currently true.
+
+### Q435 — Whether shipped behaviour may be broken
+**Option 2 confirmed.** Shipped schema and behaviour **may change, but only
+behind migrations that preserve existing data**. Breaking changes are not
+forbidden; unmigrated ones are. Every reshape ships as a real Alembic
+migration with a data step, not a drop-and-recreate.
+
+### Q437 — Next sub-project
+**Option 1 confirmed.** **Cutlist entity + related-part rows**, built as a
+single change. They are cheaper together than apart because both reshape the
+Tracking row model and the item/workflow relationship, and together they
+unblock Q410–Q431 — the entire reference-screenshot section.
+
+### Q438 — Cutlist as a first-class entity
+**Option 1 confirmed.** A new `cutlist` entity is created. Joinery Items link
+to it, and the production workflow moves onto it, implementing Q410–Q413:
+several Joinery Items share one cutlist and one set of production-stage
+completions, with delivery shared and installation individual per item.
+
+Consequences to design against (from `ALIGNMENT.md` §3.1):
+
+- `item_stages (item_id, stage_key, due_date, done_date)` is today strictly
+  per-item and must move to the cutlist.
+- Shop Floor Ops (migration `0020`) keys `worker_assignment` and
+  `stage_completion_log` off `(item_id, stage_key)`, including the partial
+  unique index `uniq_active_assignment`. That module is reworked, not extended.
+- `items.num` is today a `UNIQUE NOT NULL integer` rendered as the CUTLIST
+  number in Tracking. Under Q410 the cutlist number is a separate six-digit
+  company reference that several items share, so the two must be separated.
+- Q413/Q415 split the lifecycle: production and delivery stages belong to the
+  cutlist, installation completion stays on the individual item.

@@ -7,8 +7,12 @@
 > cited. Answer in the plan's own style (*"Q4xx — Option 2"*, or a custom
 > decision); answers get folded back into `plan_v1.md` and `CLAUDE.md`.
 
-**Answer §A first.** The twelve questions in §B–§E are unanswerable in a stable
-way until §A settles how much of the shipped system is allowed to change.
+**Status (2026-09-18).** §A is settled: **Q433 = 1**, **Q435 = 2**,
+**Q437 = 1**, **Q438 = 1**. Plan V1 is the roadmap for this codebase; shipped
+behaviour may change but only behind data-preserving migrations; the Cutlist
+becomes a first-class entity; and **Cutlist + related parts is the next
+sub-project**. That promotes §B and §C from "eventually" to **design-blocking
+now**. Q432, Q434 and Q436 remain open.
 
 ---
 
@@ -25,6 +29,7 @@ Today `orderbook` write is held by `admin`, `manager`, `drafter` and
 4. A new dedicated permission, assignable per project.
 
 ### Q433 — What is this repository to Plan V1?
+**Option 1 confirmed (2026-09-18).** Plan V1 is the roadmap for this codebase.
 1. **Plan V1 is the roadmap for this codebase** — evolve JoineryFlow into it
    incrementally, accepting the five `REARCH` rewrites.
 2. **Plan V1 is a different product** — this repo continues as-is; Plan V1 is
@@ -44,6 +49,7 @@ finds 50 `ABSENT` rows.
 3. Neither — Plan V1 is a superset to select from, sub-project by sub-project.
 
 ### Q435 — May shipped behaviour be broken?
+**Option 2 confirmed (2026-09-18).** Changes allowed, but only behind migrations that preserve existing data.
 The five `REARCH` items cannot be built without changing existing schema and
 behaviour.
 1. Yes — shipped code has no users yet; break freely.
@@ -58,6 +64,7 @@ This determines whether "migration" means data migration or just schema churn.
 3. Real production data already in the system.
 
 ### Q437 — Which single sub-project comes next?
+**Option 1 confirmed (2026-09-18).** Cutlist entity + related parts (§3.1 + §3.2), built as one change.
 Naming one makes everything else answerable later instead of now.
 1. Cutlist entity + related parts (§3.1 + §3.2) — unblocks Q410–Q431.
 2. Material Take → Material Summary → Procurement release (§19–§20) — clean
@@ -76,6 +83,7 @@ per item, and `items.num` (UNIQUE integer) *is* the cutlist number. Q412 makes
 the cutlist a separate entity owning one shared workflow.
 
 ### Q438 — Confirm the cutlist becomes a first-class entity
+**Option 1 confirmed (2026-09-18).** New `cutlist` table; items link to it; the production workflow moves onto it.
 1. Yes — new `cutlist` table; items link to it; the workflow moves onto it.
 2. No — keep one cutlist per item (today's model); Q410–Q413's sharing was
    describing the old FileMaker system, not a requirement for the new one.

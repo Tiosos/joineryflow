@@ -92,7 +92,21 @@ not a description of this tree. Nothing in it has been implemented.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q538, continuing Plan V1's own
-  numbering. **Unanswered.**
+  numbering. Mostly unanswered; the four gating ones are settled.
+
+**Confirmed 2026-09-18** (Plan V1 §43, `OPEN-QUESTIONS.md` §A):
+
+- **Q433** — Plan V1 is the **roadmap for this codebase**. It is not a separate
+  product and not a rebuild; JoineryFlow evolves into it.
+- **Q435** — shipped behaviour **may change, but only behind data-preserving
+  migrations**.
+- **Q438** — the **Cutlist becomes a first-class entity** owning the production
+  workflow (conflict 1 below is accepted, not avoided).
+- **Q437** — the **next sub-project is Cutlist + related parts** (conflicts 1
+  and 2), built as one change.
+
+This section still describes a target. Nothing below has been implemented, and
+`CLAUDE.md` remains the record of what is actually true in the tree.
 
 **Before building anything from Plan V1, read `ALIGNMENT.md` §3.** Five of its
 requirements contradict invariants stated as binding in *this* file, and each
