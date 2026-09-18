@@ -26,6 +26,21 @@ strip reads, with no join. Installation stays per item throughout (Q413/Q415).
 a late-linked item leaves earlier stages blank; and existing items each get
 their own cutlist carrying their current number.
 
+**§C round 1 (2026-09-18):** **Q442 = 1**, **Q447 = 1**, **Q448 = 2**,
+**Q450 = 1**. Related parts are rows in `items` with a `row_type` discriminator
+and a parent FK; the type list is a configurable lookup; each part carries its
+own status; cutlist numbers are system-allocated sequentially.
+
+**Measured blast radius of Q447 = 1.** `row_type` filtering must be added to
+**50 SQL call sites across 14 files in 13 modules** — `items` (13),
+`shop_floor` (8), `procurement_v1` (5), `parts` (5), `home` (4),
+`item_attachments` (3), `hardware_lines` (3), `estimating` (2), `cv` (2),
+`cut_floor` (2), and one each in `public`, `projects` and `printing`. Any one
+of them left unfiltered silently leaks related-part rows into a surface that
+should only see Joinery Items — `shop_floor` especially, since Q419 gives
+related parts no workflow stages at all. This is the main implementation risk
+in §C and wants a shared helper rather than 50 hand-edited predicates.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -133,6 +148,7 @@ item table repeats the same strip five times.
 3. One row per cutlist by default; expand to see its items.
 
 ### Q442 — Who allocates the six-digit cutlist number?
+**Option 1 confirmed (2026-09-18).** System-allocated sequential, on creation in the Cutlist panel, from the company-wide sequence (Q443).
 1. System-allocated sequential on creation in the Cutlist panel.
 2. Manually entered by the Drafter.
 3. System-suggested, manually overridable.
@@ -201,21 +217,40 @@ Group ID, no cutlist, no stages, order number in the cutlist column. Today
 `items.group_id` is an unused free-text `varchar(32)`.
 
 ### Q447 — Are related parts rows in `items`, or a new table?
+**Option 1 confirmed (2026-09-18).** Rows in `items`, with a `row_type` discriminator and a self-referencing parent FK.
 1. Rows in `items` with a `row_type` discriminator and a self-FK parent.
 2. A new `related_part` table.
 3. Reuse `modules`/`parts` (they already hang off an item) — but those are
    cutlist components, not orderable parts.
 
 ### Q448 — Is the related-part list fixed at metal / benchtop / cushion?
+**Option 2 confirmed (2026-09-18).** A configurable lookup table, seeded with the three — matching how `stages` and `status_options` already work.
 1. Fixed — exactly those three.
 2. A configurable lookup list.
 3. Free-text type.
+
+### Q541 — Do Item IDs and cutlist numbers share one number space? *(new — forced by Q447 + Q540 + Q442)*
+Q540 makes each existing item's `num` become its cutlist's number, so for every
+legacy row **Item ID == cutlist number**. Going forward they diverge: Q442
+allocates cutlist numbers from a company-wide sequence, and Q447 puts related
+parts in `items`, so they consume Item IDs too. With two sequences, Item ID
+`290042` and cutlist `290042` could be unrelated things — confusing precisely
+because in legacy rows they are always the same thing.
+1. **One shared sequence** — Item IDs and cutlist numbers draw from the same
+   company-wide counter, so a six-digit number never means two things. Numbers
+   advance faster and have gaps in each series.
+2. **Two sequences, different formats** — keep them separate but make cutlist
+   numbers visually distinct (a prefix, or a different digit count), so the two
+   can never be mistaken for each other.
+3. **Two independent sequences** — accept that the same six digits may be both
+   an Item ID and an unrelated cutlist number; context disambiguates.
 
 ### Q449 — Can a related part have its own related parts?
 1. No — one level only.
 2. Yes, arbitrary nesting.
 
 ### Q450 — What is a related part's status and priority?
+**Option 1 confirmed (2026-09-18).** Related parts carry their own status, so a stuck supplier order can be flagged without changing the parent.
 Q419 empties the workflow-stage area but says nothing about the
 `CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD` status.
 1. Related parts carry their own status.

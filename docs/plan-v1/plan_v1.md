@@ -1367,7 +1367,8 @@ confirmed so far.
 **Confirmed on 2026-09-18:** Q433 = Option 1, Q435 = Option 2, Q437 = Option 1,
 Q438 = Option 1, Q439 = Option 3, Q440 = Option 1, Q441 = Option 1,
 Q443 = Option 1, Q445 = Option 1, Q446 = Option 1, Q539 = Option 2,
-Q540 = Option 1.
+Q540 = Option 1, Q442 = Option 1, Q447 = Option 1, Q448 = Option 2,
+Q450 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1481,3 +1482,33 @@ carrying its current internal number across as that cutlist's number. Nobody
 loses the number they recognise, and cutlist **sharing begins only with new
 work**. The company-wide sequence (Q443) starts above the highest existing
 number.
+
+
+### Q442 — Cutlist number allocation
+**Option 1 confirmed.** Cutlist numbers are **system-allocated sequentially**
+on creation in the Cutlist panel, from the company-wide sequence of Q443.
+
+### Q447 — Storage of related-part rows
+**Option 1 confirmed.** Related metal, benchtop and cushion rows are stored as
+rows in the existing Joinery Item table, distinguished by a **row-type**
+discriminator and linked to their parent by a self-referencing parent
+reference. They therefore receive their own Item ID naturally, as Q416
+requires, and share the parent's Group ID.
+
+Every query that reads Joinery Items must filter on the row type. In the
+current codebase that is **50 SQL call sites across 13 modules**; the highest
+risk is Production/Shop Floor, since Q419 gives related parts no workflow
+stages at all.
+
+### Q448 — The related-part type list
+**Option 2 confirmed.** The list is a **configurable lookup table**, seeded with
+metal, benchtop and cushion. New types can be added without a schema change,
+consistent with how workflow stages and statuses are already configured.
+
+### Q450 — Status of a related part
+**Option 1 confirmed.** A related part carries **its own status**, independent
+of its parent Joinery Item, so a single stuck supplier order can be flagged
+without changing the parent's status.
+
+### Q541 — Relationship between Item IDs and cutlist numbers
+*Raised by the combination of Q447, Q540 and Q442; pending.*
