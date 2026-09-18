@@ -72,10 +72,19 @@ hand-edited predicates.
 
 ### A. Schema (migrations `0026`–`0029`)
 
-- [ ] **A1** `0026_area_room` — create `area` + `room` (project-scoped, Q457);
-      add `items.area_id` / `items.room_id`; migrate distinct `items.stage`
-      values → `area`, `(rm_no, rm_desc)` → `room`; keep `level` + `zone` as
-      plain columns (Q546). Drop `items.stage` **last**, after A4.
+- [x] **A1** `0026_area_room` — **done.** `area` (project-scoped, Q457) +
+      `room` **nested under area** (Q552, raised while building this); composite
+      FK `items (area_id, room_id) → room` so an item's room cannot drift out of
+      its area. Distinct `btrim(stage)` → `area`; `DISTINCT ON (area, rm_no)` →
+      `room`. `level` + `zone` stay plain columns (Q546). `items.stage` /
+      `rm_no` / `rm_desc` **kept and still populated** — dropped in a later
+      migration once B/C repoint the 14 references (Q435).
+      → **verified** against a real Postgres 16 with migrations `0001`–`0025`
+      replayed: full chain clean on a virgin DB (60 tables); 10/10 demo items
+      backfilled consistently; old columns intact; the composite FK rejects a
+      cross-area room and accepts a same-area one; downgrade drops cleanly and
+      leaves `items` untouched; edge cases pass (NULL stage, blank stage, no
+      room, one `rm_no` with two spellings, whitespace-padded stage).
 - [ ] **A2** `0027_cutlist` — create `cutlist` (`cutlist_no` six-digit UNIQUE
       workspace-wide, `project_id` FK, audit columns); create the shared
       `joinery_number_seq` (Q541) starting above `MAX(items.num)`; add

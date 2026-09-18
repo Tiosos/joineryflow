@@ -886,6 +886,23 @@ a long-standing source of confusion with `lifecycle_stage`.
 1. Created per project.
 2. Drawn from a workspace-level library.
 
+### Q552 — Is Room nested under Area, or a sibling of it? *(new — raised while building A1)*
+**Option 2 confirmed (2026-09-18): nested.** A Room belongs to exactly one Area,
+enforced by a composite FK from `items (area_id, room_id)` so an item's room can
+never drift out of its area.
+
+*Why this was not already settled:* Q454/Q455 said Area and Room become real
+entities "with FKs from items" — which reads equally well as siblings. The real
+data forced the question: **`K1 Kitchen` appears under both `Stage 1` and
+`Stage 2` in every project**, so nesting turns 6 distinct (project, room) pairs
+into **8 room rows**. That is intended under Plan V1 §2, where a room lives in
+one area.
+
+**Consequence to know:** an item with a room number but **no** area gets both
+`area_id` and `room_id` NULL — its room cannot exist until it has an area.
+Nothing is lost (`rm_no` / `rm_desc` stay on the row), and giving it an area
+later creates the room then.
+
 ### Q458 — Can an item move between Rooms?
 **Option 1 confirmed (2026-09-18).** Yes, with audit. `item_edit_log` already records field changes, so the mechanism exists.
 1. Yes, with audit.

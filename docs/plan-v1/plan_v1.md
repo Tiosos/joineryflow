@@ -1390,7 +1390,7 @@ Q494 = Option 2, Q532 = Option 3, Q533 = Option 2, Q534 = Option 1,
 Q492 = Option 1, Q549 = Option 2, Q535 = Option 1, Q523 = Option 1,
 Q519 = Option 1, Q476 = Option 3, Q477 = Option 1, Q478 = Option 2,
 Q458 = Option 1, Q484 = Option 2, Q483 = Option 2, Q486 = Option 3,
-Q528 = Option 2, Q536 = Option 1, Q537 = Option 1, Q538 = Option 1.
+Q528 = Option 2, Q536 = Option 1, Q537 = Option 1, Q538 = Option 1, Q552 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2209,3 +2209,13 @@ measurements and consequences specific to the existing system.
 **Option 1 confirmed.** Each earlier implementation plan that Plan V1 changes
 now **says so at the top**, naming the decisions that supersede it. Eight of the
 nine carry such a note; only the Cabinet Vision import plan is unaffected.
+
+
+### Q552 — Room within Area
+**Option 2 confirmed.** A **Room belongs to one Area**, as §2's drill-down
+implies, rather than sitting alongside it. The system enforces that a Joinery
+Item's room is always within that item's area.
+
+Where the same room number is used in two areas — which the existing records do
+contain — it becomes two rooms, one in each. An item that records a room but no
+area keeps that room text unchanged and gains a room once an area is set.
