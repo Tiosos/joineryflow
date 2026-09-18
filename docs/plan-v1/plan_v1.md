@@ -1385,7 +1385,8 @@ Q485 = Option 2, Q515 = Option 1, Q516 = Option 2, Q517 = Option 2,
 Q518 = Option 2, Q521 = Option 1, Q522 = Option 1, Q524 = Option 1,
 Q520 = Search first, Q525 = Option 2, Q526 = Option 1, Q527 = Option 2,
 Q468 = Option 1, Q487 = Option 1, Q488 = Option 1, Q489 = Option 1,
-Q491 = Option 2.
+Q491 = Option 2, Q548 = Option 2, Q490 = Option 1, Q493 = Option 1,
+Q494 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2036,4 +2037,37 @@ the original is never overwritten, and §16 reports Original and Current
 separately, which a history supports and two columns do not.
 
 ### Q548 — Lapsed quotes in the new lifecycle
-*Raised by Q488; pending.*
+**Option 2 confirmed.** A quote that **lapses is recorded as Lost**. No separate
+Expired outcome is added; commercially, a quote that expired unanswered did not
+win.
+
+Two things follow. Existing lapsed quotes become indistinguishable from those
+the client rejected, so the reason is not recoverable after the change. And the
+validity window itself is retained — §21 depends on knowing whether supplier
+pricing is still valid — so reaching the end of that window now marks the quote
+Lost.
+
+### Q490 — Reviewing the handover
+**Option 1 confirmed.** Handover includes a **Project Manager review** of what
+transfers, as §6 describes, rather than happening in a single action.
+
+This matters more under Q489: handover now creates not just the project but its
+whole list of Joinery Items, drawn from the quote. That is too much structure to
+generate without a look first.
+
+### Q493 — Where actual costs come from
+**Option 1 confirmed.** Actual costs are **derived from work the system already
+records** — materials from quantities received against their price, and labour
+from completed production stages priced at the stored labour rates. Neither
+Accounts nor anyone else re-enters figures, and no accounting integration is
+required for §16's cost tracking.
+
+### Q494 — Variations and Production Release
+**Option 2 confirmed.** An approved variation does **not** by itself force a new
+Production Release. A variation is a commercial record; many change only price
+or timing.
+
+This does not weaken §24. That section requires changes made after release to go
+through a new controlled release rather than a silent update — the trigger is
+the **design change**, not the variation. A variation that alters what gets
+built still forces a new release by way of the change it causes.
