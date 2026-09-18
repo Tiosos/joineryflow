@@ -232,6 +232,30 @@ can be met.
 until the `items.stage` → `area` rename ships, because that file records what is
 true now, not what is planned.
 
+**§J complete (2026-09-18):** **Q496 = 3**, **Q498 = 2**, **Q500 = 2**,
+**Q501 = 1**. §J (Q495–Q501) is now fully answered.
+
+**Q496 = 3 has a sequencing tension worth designing around.** §19 puts Material
+Take *before* Shop Drawing Approved, but the CutPlan nest cannot exist that
+early — nesting needs parts, which arrive at Listing, well after drawing
+approval. So a nest-derived take is impossible at the point §19 places it.
+
+The resolution follows from answers already given: generate the take early from
+**parts + hardware lines**, then **refine it from the nest** once one exists,
+advancing the take's version (Q500) and flagging any summary line that consumed
+the earlier version. This works precisely because Q497 made the take advisory
+rather than a gate — an un-refined take never blocks anything.
+
+**Q498 = 2 keeps two overlapping views.** `/procurement-queue` stays live and
+the summary becomes the released artefact. The risk the option named is real:
+people working from the wrong one. Worth a visible marker on the queue saying
+which of its lines are covered by a confirmed summary.
+
+**Q501 = 1 holds the line from #9.** `/optimise` stays pure. Combined with
+Q544's port of `quantity_reserved` onto `board_inventory`, reservation has
+somewhere to live whenever it is built, without a what-if nest ever silently
+committing stock.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -799,6 +823,7 @@ Nothing exists. Today material demand *is* `parts` + `item_hardware_lines`, and
 2. A snapshot/approval flag on today's lines.
 
 ### Q496 — What generates the take?
+**Option 3 confirmed (2026-09-18).** Both — parts + hardware lines give the demand, and the CutPlan nest gives real sheet counts including offcut waste.
 Q80 confirms "system-generated starting point + manual control".
 1. From the item's parts + hardware lines (today's data).
 2. From the CutPlan optimiser's nest (which already knows sheet counts).
@@ -811,6 +836,7 @@ Q80 confirms "system-generated starting point + manual control".
 2. Advisory only.
 
 ### Q498 — Does the Material Summary replace `/procurement-queue`?
+**Option 2 confirmed (2026-09-18).** Both exist — the queue stays the live view for early visibility; the summary is the formal released artefact.
 1. Yes — the queue becomes the released summary.
 2. No — both exist; the queue stays the live view.
 
@@ -821,10 +847,12 @@ Q80 confirms "system-generated starting point + manual control".
 2. Advisory — Procurement can order early with a warning.
 
 ### Q500 — How are stale summary lines flagged (§20)?
+**Option 2 confirmed (2026-09-18).** Version the take; the summary records which version it consumed and flags when that version advances. Gives §19's impact review a concrete before/after to diff.
 1. Compare against the source take's `updated_at`; flag on drift.
 2. Version the take; flag when the version advances.
 
 ### Q501 — Does `/optimise` start consuming stock?
+**Option 1 confirmed (2026-09-18).** Keep #9's pure-function invariant. Reservation becomes its own explicit action — Q544 is already porting `quantity_reserved` onto `board_inventory` to support it.
 #9's pure-function invariant is explicit: `/optimise` reads `board_inventory`
 and never reserves or decrements it. §18 wants reservations.
 1. Keep the invariant — reservation is a separate, explicit action.

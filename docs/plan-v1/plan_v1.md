@@ -1376,7 +1376,8 @@ Q544 = Option 1, Q434 = Option 2, Q436 = Option 2, Q475 = Option 2,
 Q474 = custom decision, Q459 = Option 3, Q461 = Option 2, Q462 = Option 1,
 Q545 = Option 2, Q454 = Option 1, Q455 = Option 1, Q457 = Option 1,
 Q546 = Option 1, Q456 = Option 1, Q495 = Option 1, Q497 = Option 2,
-Q499 = Option 2.
+Q499 = Option 2, Q496 = Option 3, Q498 = Option 2, Q500 = Option 2,
+Q501 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1740,3 +1741,30 @@ require it, with the unconfirmed state clearly flagged.
 to Procurement only after Project Manager confirmation. The decision here
 supersedes that sentence: the confirmation is a strong recommendation, not a
 block, so that long-lead material is never held up by an unconfirmed summary.
+
+
+### Q496 — Source of the generated Material Take
+**Option 3 confirmed.** The take is generated from **both** the Joinery Item's
+parts and hardware — which express the demand — **and** the cutting nest, which
+knows the real sheet counts including offcut waste.
+
+Because a nest only exists once parts have been listed, which is later than the
+point §19 places Material Take, the take is first generated from parts and
+hardware and later **refined from the nest**, advancing its version (Q500). No
+work is blocked meanwhile, since Q497 makes the take advisory.
+
+### Q498 — The Material Summary and the existing procurement queue
+**Option 2 confirmed.** **Both exist.** The live procurement queue continues to
+show current demand for early visibility, and the Material Summary is the
+formal artefact the Project Manager confirms and releases.
+
+### Q500 — Flagging outdated summary lines
+**Option 2 confirmed.** Each approved take carries a **version**. The Material
+Summary records which version each line consumed, and any line whose take has
+since advanced is flagged as potentially outdated, as §20 requires.
+
+### Q501 — Stock reservation
+**Option 1 confirmed.** The optimiser continues to **read stock without
+reserving or consuming it**. Reservation is a separate, explicit action, so
+exploring a nest never commits material. §18's reservation features are built
+on that separate action when they arrive.
