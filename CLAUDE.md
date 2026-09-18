@@ -215,6 +215,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
+- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — **forward plan** for the next sub-project (Plan V1 #10): cutlist entity, related-part rows, Area/Room rename, and the Orderbook rework. Migrations `0026`–`0029` reserved. Not started.
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q551, **115 of 118 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
