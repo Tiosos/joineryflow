@@ -1381,7 +1381,8 @@ Q501 = Option 1, Q508 = Option 1, Q509 = Option 1, Q511 = Option 2,
 Q513 = Option 3, Q510 = Option 2, Q512 = Option 1, Q466 = Option 2,
 Q467 = Option 2, Q469 = Option 3, Q470 = Option 1, Q472 = Option 1,
 Q473 = Option 1, Q479 = Option 1, Q481 = Option 1, Q482 = Option 1,
-Q485 = Option 2.
+Q485 = Option 2, Q515 = Option 1, Q516 = Option 2, Q517 = Option 2,
+Q518 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1901,3 +1902,35 @@ yet. Q547 records what is needed.
 
 ### Q547 — The drawing filename convention
 *Raised by Q485; pending — a real example filename is required.*
+
+
+### Q515 — Quality Control as a module
+**Option 1 confirmed.** QC becomes **its own module**, with defects and
+checklists and its own permissions, rather than a checkbox hanging off the
+production workflow. This is what backs the QC Dashboard named in §4.2.
+
+Note that QC is therefore **not added as a workflow stage**. §22 lists QC among
+the stages, but §26 describes QC as checking *the work just completed* at
+whatever stage that was — which is a cross-cutting activity, not a milestone of
+its own. The workflow stage list is unchanged (Q459).
+
+### Q516 — Recording rework
+**Option 2 confirmed.** Internal Rework and Full Rework are **one kind of
+record with a type**, not two separate things. They differ in when they occur
+and in how much work they involve, but what must be recorded — cause, scope,
+cost and responsibility — is the same.
+
+### Q517 — Rework and the workflow
+**Option 2 confirmed.** Rework **does not re-open completed stages**. It is
+recorded alongside them, with its own progress.
+
+This also avoids a problem the shared cutlist would otherwise create: since
+production stages belong to the cutlist and are shared by every Joinery Item
+linked to it, re-opening a stage for one item would have re-opened it for all of
+them. It keeps the completion history truthful — the item really was assembled
+on that date, and the rework records what happened after.
+
+### Q518 — The QC timing rule
+**Option 2 confirmed.** §26's rule about what happens depending on how far the
+work has progressed is shown as **guidance**; the QC operator chooses. The
+operator may know something the recorded stage does not.

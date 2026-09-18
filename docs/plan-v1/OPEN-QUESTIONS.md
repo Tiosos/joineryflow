@@ -357,6 +357,29 @@ content, where delegated auth would have caught it. Accepted, worth knowing.
 Also still outstanding from Q398: **no SharePoint site URL or document-library
 path has ever been supplied** (Q480).
 
+**§M round 1 (2026-09-18):** **Q515 = 1**, **Q516 = 2**, **Q517 = 2**,
+**Q518 = 2**.
+
+**Q517 = 2 dissolves a problem rather than solving it.** Under Q438/Q445
+production stages belong to the *cutlist*, shared across every linked item — so
+"re-open CNC for this item" would have re-opened it for all of them. Because
+rework is a parallel record, that never arises, and no new question is needed.
+It also keeps completion history honest: the item genuinely *was* assembled on
+that date, and the rework says what happened afterwards.
+
+**Q515 = 1 and Q459 = 3 put QC somewhere §22 does not.** §22 lists QC as a
+workflow stage; Q459 kept today's 10 stages, which have none. So QC becomes a
+**cross-cutting module, not a milestone** — and that matches **§26** better than
+§22 does, since §26 describes QC as checking *"the work just completed"* at
+whatever stage that is, rather than as a step of its own. No QC stage is added.
+
+**Q518 = 2 is the third advisory choice in a row**, after Q497 (Material Take)
+and Q499 (Material Summary). The consistent stance across this document is now:
+the system detects and recommends; the operator decides. That is Plan V1's own
+core principle, applied even where individual sections use blocking language.
+
+**The RBAC matrix grows to 7 roles × 12 modules.** `qc` joins `_ALL_MODULES`.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1112,18 +1135,22 @@ all 181 existing endpoints.
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*
 
 ### Q515 — Is QC a new module?
+**Option 1 confirmed (2026-09-18).** A new `qc` RBAC module with a defect entity and checklists — the **12th** module in `_ALL_MODULES`. Gives a QC team its own permissions and backs §4.2's QC Dashboard.
 1. Yes — a `qc` RBAC module, defect entity, checklists.
 2. QC is a stage on the existing workflow with a defect list attached.
 
 ### Q516 — Internal Rework vs Full Rework (§26)
+**Option 2 confirmed (2026-09-18).** One `rework` entity with a `kind` field. They differ in when they happen and how much work they are, not in what is recorded.
 1. Two entity types.
 2. One `rework` entity with a `kind` field.
 
 ### Q517 — Does rework re-open the workflow?
+**Option 2 confirmed (2026-09-18).** No — rework is a parallel record; original stage completions stay intact.
 1. Yes — the item returns to an earlier stage.
 2. No — rework is a parallel record; the original stages stay complete.
 
 ### Q518 — Does the QC-timing rule get enforced?
+**Option 2 confirmed (2026-09-18).** Guidance only — show what §26 suggests, let QC choose.
 §26: before Listing QC need not know; after Listing but before Assembly the
 Lister updates the cutlist; after Assembly it is Internal Rework.
 1. Enforce automatically from the item's current stage.
