@@ -1,6 +1,14 @@
 # Plan V1 vs. shipped JoineryFlow — alignment record
 
 > **Status: analysis only. No code has been written against Plan V1.**
+>
+> **Re-scored 2026-09-18** against the 115 decisions in
+> [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). **The 82 verdicts in §4 are
+> unchanged and still correct** — they describe what exists in the tree today,
+> and no code has been written, so nothing about current state has moved. What
+> the decisions changed is §3 (which conflicts are still live), §5's reading of
+> the tally, and §6's sequencing. Those three are rewritten below; §4 is left
+> alone deliberately rather than churned.
 > Source of truth for the target: [`plan_v1.md`](./plan_v1.md) (canonical,
 > committed verbatim as supplied 2026-09-17, questions answered through Q431).
 > Source of truth for what exists today: `CLAUDE.md` at the repo root, and the
@@ -34,12 +42,36 @@ Plan V1's own sequence.
 | `ABSENT` | Nothing in the tree. Additive — no shipped invariant is threatened. |
 | `REARCH` | **Plan V1 contradicts a shipped invariant.** Cannot be added without changing existing schema, code or a documented rule. |
 
-## 3. The five structural conflicts
+## 3. The five structural conflicts — all now decided
 
-These are the decisions that have to be made before any Plan V1 implementation
-sequencing is meaningful. Everything else is additive and can be ordered freely.
+These were the decisions that had to be made before sequencing was meaningful.
+**All five are settled**, along with the two narrower ones named in §4:
 
-### 3.1 The Cutlist becomes the workflow-owning entity (`REARCH`)
+| # | Conflict | State after the decisions |
+| --- | --- | --- |
+| 3.1 | Cutlist owns the workflow | **Accepted, scoped** — built next (Q438) |
+| 3.2 | Related-part rows | **Accepted, scoped** — built next (Q447) |
+| 3.3 | Project files in SharePoint | **Bounded** — additive; `file_blob` survives (Q479) |
+| 3.4 | RBAC as data | **Bounded** — project scope only, not item/tab (Q466) |
+| 3.5 | Navigation / Cutlist module | **Closed** — it is the `List` tab (Q474) |
+| — | Area / Room as entities | **Accepted** — a rename of existing columns (Q455) |
+| — | 10 vs 14 lifecycle stages | **Deferred** — today's 10 stand (Q459) |
+
+Nothing in this section is now an open question. The per-conflict analysis
+below is kept because it explains *why* each looked hard and what the decision
+has to cope with.
+
+### 3.1 The Cutlist becomes the workflow-owning entity (`REARCH` — **accepted 2026-09-18**)
+
+> **Decided.** The cutlist becomes a first-class entity (Q438), numbers are
+> system-allocated and company-wide unique (Q442/Q443), one project per cutlist
+> (Q444). `item_stages` **stays per-item as a projection**, written by fan-out
+> on completion (Q439) — so the rewrite is smaller than this analysis feared.
+> Shop Floor re-keys to `(cutlist_id, stage_key)` for production and
+> `(item_id, 'INST')` for installation (Q445); undo reverses a whole cutlist
+> (Q446). A late-linked item leaves earlier stages blank (Q539). Existing
+> `items.num` values each become their own cutlist's number (Q540), sharing one
+> sequence with Item IDs (Q541).
 
 Plan V1 Q410–Q413 is the largest single conflict in the document.
 
@@ -67,7 +99,15 @@ item. It also splits the lifecycle in two: production + delivery stages on the
 cutlist, installation on the item. This is not a migration; it is a rewrite of
 sub-project #8 and a reshape of #2.
 
-### 3.2 Related-part rows are a new row class in Tracking (`REARCH`)
+### 3.2 Related-part rows are a new row class in Tracking (`REARCH` — **accepted 2026-09-18**)
+
+> **Decided.** Rows in `items` with a `row_type` discriminator and a
+> self-referencing parent FK (Q447); type list is a configurable lookup
+> (Q448); one level of nesting only (Q449); own status (Q450); reparenting
+> allowed with audit (Q452); `group_id` repurposed and its values migrated
+> (Q453 — and it is written by nothing today, so that migration is a near
+> no-op). **The measured cost is 50 SQL call sites across 13 modules**, which
+> wants a shared helper rather than 50 hand-edited predicates.
 
 - **Plan V1** Q416–Q423: each Joinery Item has a unique internal number used as
   **both** its Item ID and Group ID. Metal, benchtop and cushion **related
@@ -87,7 +127,19 @@ the leftmost reference column. It also interacts with 3.1: if the cutlist owns
 the workflow, a related part is exactly "an item with no cutlist", which may
 make the two changes cheaper together than separately.
 
-### 3.3 Project files move to SharePoint, read-only (`REARCH`)
+### 3.3 Project files move to SharePoint, read-only (`REARCH` — **bounded 2026-09-18**)
+
+> **Decided, and the blast radius is contained.** `file_blob` **survives** and
+> keeps serving shop drawings, item attachments and sample photos; SharePoint
+> is an **additional** surface for project-level files only (Q479). So nothing
+> shipped in #5a/#5b/#5c is rewritten. Auth is app-only (Q481), the pop-up
+> polls while open (Q482), an outage falls back to a stale-marked cached
+> listing (Q483), drawings live in their own folder (Q484), matched by a
+> filename pattern (Q485) with mixed revision schemes flagged rather than
+> guessed (Q486).
+>
+> **Still blocked on three inputs**: the SharePoint site URL and library
+> (Q480), a real drawing filename (Q547), and the drawings folder name (Q484).
 
 - **Plan V1** Q391–Q405: project-level files live in a SharePoint folder named
   `site related` inside each project's folder (Q398). The in-app pop-up is
@@ -112,7 +164,18 @@ is undefined) and a live-sync requirement. The `FileStore` Protocol is the
 right seam, but Q400's push-refresh has no counterpart in the current polling-
 free architecture.
 
-### 3.4 RBAC becomes data, not code (`REARCH`)
+### 3.4 RBAC becomes data, not code (`REARCH` — **bounded 2026-09-18**)
+
+> **Decided, and deliberately narrower than §3.** The engine becomes DB-backed
+> with groups and multi-membership but is scoped to **project level only** —
+> **not item, not tab** (Q466), so no permission check lands on every row of
+> every list. Departments stay labels; groups carry the meaning (Q467), and
+> today's 7 roles become 7 seed groups with identical grants (Q468), making the
+> migration behaviour-preserving on day one. The 4 matrix actions stay (Q469);
+> Lock/Unlock/Override/Configure are critical actions resolved outside
+> most-permissive-wins (Q470) — **in the rule layer, since they are not matrix
+> actions at all**. The hand-written per-object rules move into that layer
+> (Q472), which therefore needs a rule language.
 
 - **Plan V1** §3: permissions resolve across
   `Company → Department → Role/User Group → Person → Project → Joinery Item →
@@ -338,42 +401,71 @@ The lists are not a relabelling of each other:
 
 ## 5. Tally
 
-Counting the 82 mapped rows above: **4 `SHIPPED`, 21 `PARTIAL`, 50 `ABSENT`,
-7 `REARCH`.**
+Counting the 82 mapped rows in §4: **4 `SHIPPED`, 21 `PARTIAL`, 50 `ABSENT`,
+7 `REARCH`.** These are unchanged by the decisions — they describe the tree as
+it is, and no Plan V1 code has been written. (A mechanical count of the
+verdict column now returns **6** `REARCH`, because the stage-list row carries
+its deferral inline in that cell — the seventh row is that one, at §4's
+*Plan V1 §22–§27* table.)
 
-Seven `REARCH` rows, five named conflicts: §3 covers the cutlist (§3.1),
-related parts (§3.2), project files (§3.3), RBAC (§3.4) and navigation (§3.5).
-The other two are named in §4 rather than §3 because each is a single
-well-understood schema decision rather than a cross-cutting rewrite — the
-**Area/Room hierarchy** (Plan V1 §2: real entities vs. today's free-text
-`level` / `rm_no` / `rm_desc` columns) and the **stage list** (Plan V1 §22:
-14 stages vs. today's 10, with Painting moving after Assembly by default).
+What the decisions changed is **what those 7 `REARCH` rows mean**:
 
-The shipped system is a strong foundation for Plan V1's §2 (item-centric data
-model), §11 (audit), §22 (production stages), §18–§21 (procurement mechanics)
-and §31's renderer. It has effectively nothing for Plan V1's governance half —
-templates, validation, initiatives, notifications, reporting, KPIs — and it
-**contradicts** Plan V1 on the cutlist, related parts, project files, RBAC and
-navigation.
+| Was | Now | Decided by |
+| --- | --- | --- |
+| Cutlist owns the workflow | accepted, next to build | Q438–Q446, Q539–Q541 |
+| Related-part rows | accepted, next to build | Q447–Q453 |
+| Project files in SharePoint | **bounded** — additive, nothing rewritten | Q479 |
+| RBAC as data | **bounded** — project scope only | Q466 |
+| Navigation / Cutlist module | **closed** — it is the `List` tab | Q474 |
+| Area / Room as entities | accepted — a rename of existing columns | Q454/Q455 |
+| 10 vs 14 lifecycle stages | **deferred** — today's 10 stand | Q459 |
 
-## 6. What this implies about sequencing
+So of seven contradictions, **one dissolved on inspection**, **two were scoped
+down to something additive**, **one was deferred**, and **three are real work
+now in hand** — two of which turned out to be a rename and a projection rather
+than a rewrite.
 
-Not a recommendation to build, just the dependency shape:
+The shipped system remains a strong foundation for Plan V1's §2 (item-centric
+data model), §11 (audit), §22 (production stages), §18–§21 (procurement
+mechanics) and §31's renderer. It still has effectively nothing for the
+governance half — templates, validation, initiatives, reporting, KPIs — which
+**Q434 and Q528 have now placed after the joinery workflow** rather than
+alongside it.
 
-1. **The five conflicts in §3 are gates.** Q432 onward cannot be answered
-   coherently while the cutlist-vs-item question (§3.1) is open, because
-   "which roles can create an order for a related part" presumes the related
-   part row class (§3.2) exists.
-2. **§3.1 and §3.2 are cheaper together than apart** — both reshape the
-   Tracking row model and the item/workflow relationship.
-3. **Everything in §16–§17 (financials, variations) depends on a contract
-   value** that handover (§6) has to establish first.
-4. **§19–§20 (Material Take → Summary → Procurement) is a clean insert** ahead
-   of the existing `procurement_v1` batches; it does not conflict with shipped
-   code, it precedes it.
-5. **§7–§8 and §35–§38 (templates, validation, initiatives, escalation) are
-   separable** from the whole joinery workflow and could be deferred
-   indefinitely without blocking anything else in the document.
-6. **§39's conflict resolution (Q364–Q378) needs optimistic concurrency
-   control first** — a version column and `If-Match` on every mutating route —
-   which is a cross-cutting change to all 181 existing endpoints.
+## 6. Sequencing, as decided
+
+No longer a dependency sketch — this is what the answers settled.
+
+1. **Next: Cutlist + related parts + the full Orderbook rework** (Q437, Q542).
+   §3.1 and §3.2 together as predicted, plus §K, which Q542 pulled in. This is
+   the largest single change in the programme: a new entity, a row-model
+   reshape across **50 call sites in 13 modules**, an order/PO/supplier layer
+   revived from the legacy namespace (Q502), and the Area/Room rename (Q455)
+   folded in so `items` is migrated once rather than twice.
+2. **Then search** (Q520) — the cheapest of the six absent subsystems and the
+   only one depending on none of the others. It brings the **first new
+   infrastructure since Postgres** (Q525), taking `docker-compose.yml` from
+   three services to four.
+3. **§19–§20 (Material Take → Summary)** remains a clean insert ahead of
+   `procurement_v1`'s batches, and now has a version-tracked take (Q495, Q500)
+   feeding a summary whose PM confirmation is advisory (Q499).
+4. **§16–§17 (financials, variations)** still depend on a contract value that
+   handover establishes (Q491), and on actual costs derived from procurement
+   receipts and shop-floor completions (Q493) rather than entered.
+5. **§7–§8 and §35–§38 are deferred** (Q434, Q528) — confirmed separable, to be
+   revisited after the joinery workflow.
+6. **§39's conflict resolution no longer needs a cross-cutting change.** Q511
+   scoped optimistic concurrency to **three surfaces** — the item editor, the
+   cutlist and orders — instead of all 181 endpoints, because Q508's lock types
+   prevent most collisions outright. Q513 dropped rollback entirely.
+
+### Three decisions deliberately depart from Plan V1's text
+
+Recorded here as well as in `OPEN-QUESTIONS.md`, because a reader comparing code
+to the spec will find them disagreeing and the code is right:
+
+| Decision | Departs from | What the code does |
+| --- | --- | --- |
+| **Q499** | §20 — "only after PM confirmation is the summary released" | confirmation is advisory; Procurement may order early, flagged |
+| **Q513** | §11 — "retains at least the last 20 change states for rollback" | no rollback; history is for accountability, not restoration |
+| **Q527** | §32 — "IT defines KPI formulas" | fixed KPI catalogue; a new KPI needs a deploy |

@@ -1572,6 +1572,11 @@ Microsoft 365.
 
 ## Housekeeping
 
+### Q551 — What to do next
+**Asked twice.** First round (2026-09-18): *finish the remaining questions
+first* — done, 115/118. Second round: **re-score `ALIGNMENT.md` against the
+decisions, then write the implementation plan.**
+
 ### Q536 — Does `plan_v1.md` stay canonical in this repo?
 **Option 1 confirmed (2026-09-18).** Authoritative, updated in place — one source of truth, versioned with the code it describes. Consistent with Q433.
 It is committed at `docs/plan-v1/plan_v1.md`.
