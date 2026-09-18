@@ -4,7 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+---
+
+## 0. RULE ZERO — when in doubt, ask (overrides everything below)
+
+**If you are unsure, or two sources of truth disagree, STOP and ask the user a
+question. Do not pick silently, do not guess, do not average the two.**
+
+This outranks every other rule in this file, including "bias toward caution over
+speed" and any instruction to keep momentum. A question costs minutes; a wrong
+assumption buried in a migration or a schema costs days.
+
+Ask — do not decide — whenever:
+
+- **Two documents disagree.** `CLAUDE.md`, `docs/plan-v1/plan_v1.md`,
+  `docs/plan-v1/OPEN-QUESTIONS.md`, a spec, a plan, or the code itself. If they
+  conflict, the conflict *is* the question.
+- **A decision is under-specified.** An answer that reads equally well two ways
+  has not been answered. (Q454/Q455 said Area and Room become entities "with FKs
+  from items", which fits both a nested and a sibling model — the real data had
+  to force the question. That should have been asked first.)
+- **The data contradicts the plan.** If what is actually in the database does
+  not match what a document assumes, say so with the evidence before writing
+  code against either.
+- **A rule would have to be bent.** Anything this file calls *binding* or
+  *invariant*, any terminology pin, any "never".
+- **Scope is about to grow.** If the honest implementation is materially bigger
+  than what was asked, name the gap before starting.
+
+When you ask: give the concrete evidence (a row count, a file and line, the two
+conflicting sentences), state the options, and say which you would pick and why.
+Then wait.
+
+When a decision *is* settled, record it where the next reader will look, and
+note it when the code deliberately departs from a document — never leave the two
+disagreeing silently.
+
+---
+
+**Tradeoff:** The guidelines below bias toward caution over speed. For trivial tasks, use judgment — but Rule Zero still applies.
 
 ## 1. Think Before Coding
 
