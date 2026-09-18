@@ -1379,7 +1379,8 @@ Q546 = Option 1, Q456 = Option 1, Q495 = Option 1, Q497 = Option 2,
 Q499 = Option 2, Q496 = Option 3, Q498 = Option 2, Q500 = Option 2,
 Q501 = Option 1, Q508 = Option 1, Q509 = Option 1, Q511 = Option 2,
 Q513 = Option 3, Q510 = Option 2, Q512 = Option 1, Q466 = Option 2,
-Q467 = Option 2.
+Q467 = Option 2, Q469 = Option 3, Q470 = Option 1, Q472 = Option 1,
+Q473 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1833,3 +1834,35 @@ permission check on every row of every list for very little practical gain.
 permission meaning is carried by **user groups**, which can already express any
 department's access. The department dashboards of §4.2 key off group
 membership.
+
+
+### Q469 — The action list
+**Option 3 confirmed.** The **four existing actions are kept** — view, edit,
+approve and comment. The remaining actions named in §3 are expressed as rules
+about particular records rather than as separate grantable permissions.
+
+### Q470 — Critical actions
+**Option 1 confirmed.** **Lock, Unlock, Override and Configure** are critical:
+the normal "most permissive group wins" resolution does **not** apply to them.
+Belonging to two groups must never quietly confer the authority to override a
+Hard Lock.
+
+Because Q469 keeps these out of the grant list, this rule is enforced in the
+rule layer described under Q472 — not by the grant resolution, which has
+nothing to resolve for them.
+
+### Q472 — The existing record-specific rules
+**Option 1 confirmed.** Rules that today live in individual request handlers —
+that only a Designer/Draftsperson may change item content, that a reviewer may
+not approve their own upload, that only a creator or manager may edit a record,
+that a worker may undo a completion within five minutes — **move into the
+permission engine**, so that any access question has a single place to be
+answered.
+
+This requires the engine to express conditions about the record and the time,
+not merely who holds which grant.
+
+### Q473 — Comments
+**Option 1 confirmed.** The **comment capability becomes real**: §29's
+context-based comments are built, and the long-standing comment permission
+stops describing something the system cannot do.

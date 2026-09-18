@@ -303,6 +303,37 @@ exactly as `CLAUDE.md` already records. Groups carry permission meaning, so
 department entity. Q468 (mapping the 7 roles onto ~21 departments) is
 correspondingly simpler: the roles become groups.
 
+**§F round 2 (2026-09-18):** **Q469 = 3**, **Q470 = 1**, **Q472 = 1**,
+**Q473 = 1**.
+
+**These three define a two-layer engine — and Q470 only works at the second
+layer.** Read together:
+
+- **Layer 1, coarse grants.** Four actions (`read`, `write`, `approve`,
+  `comment`) × module, scoped to project (Q466), resolved across a user's
+  groups with most-permissive-wins.
+- **Layer 2, rules.** Q472 moves the hand-written per-object rules into the
+  engine — `require_drafter()`, the not-uploader approve rule,
+  creator-or-manager, the 5-minute undo window — and Q469 leaves the governance
+  operations (Lock, Unlock, Override, Release, Delete, Configure) out of the
+  matrix, so they live here too.
+
+**Q470's critical-action semantics must therefore be enforced in layer 2, not
+layer 1.** Lock, Unlock, Override and Configure are *not matrix actions* under
+Q469, so saying "most-permissive-wins does not apply to them" is vacuous at the
+grant level — there is no grant to resolve. The rule layer is where a user's
+authority for those operations is decided, and where the non-permissive
+resolution has to be implemented. Getting this wrong would silently hand Hard
+Lock override to anyone in two groups.
+
+**Q472 = 1 means the engine needs a rule language.** The option text named the
+cost and it stands: rules like "the reviewer cannot be the creator" and "a
+worker may undo within 5 minutes" need the record and the clock, not just a
+grant table. That is a real piece of design, not a table.
+
+**Q473 = 1 closes a long-standing gap.** `comment` has been granted across the
+matrix since Foundation with **no route enforcing it**. §29 makes it real.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -678,6 +709,7 @@ most-permissive-wins.
 3. Supply an explicit mapping table.
 
 ### Q469 — The 11 actions
+**Option 3 confirmed (2026-09-18).** Keep the 4 matrix actions (`read`, `write`, `approve`, `comment`); the rest are expressed as per-object rules.
 Today there are 4 (`read`, `write`, `approve`, `comment`). Plan V1 lists View,
 Create, Edit, Delete, Approve, Reject, Release, Lock, Unlock, Override,
 Configure.
@@ -686,6 +718,7 @@ Configure.
 3. Keep 4 and express the rest as per-object rules in handlers, as today.
 
 ### Q470 — Which actions are "critical" (most-permissive-wins does *not* apply)?
+**Option 1 confirmed (2026-09-18).** Lock, Unlock, Override and Configure. Multi-group membership must not silently confer the power to override a Hard Lock.
 Plan V1 §3 reserves this but does not enumerate it.
 1. Lock / Unlock / Override / Configure.
 2. Only Configure.
@@ -698,12 +731,14 @@ every row of every list.
 2. Project-level is the practical floor; item-level is over-specified.
 
 ### Q472 — What becomes of the hand-written per-object rules?
+**Option 1 confirmed (2026-09-18).** Move them into the permission engine as rules — one place to answer any access question.
 `require_drafter()`, the not-uploader approve rule, creator-or-manager, the
 5-minute undo window — all currently in route handlers.
 1. Move into the permission engine as rules.
 2. Leave in handlers; the engine covers coarse access only.
 
 ### Q473 — Does the `comment` action get a real surface?
+**Option 1 confirmed (2026-09-18).** Build §29 comments; the action stops being a dead grant. §29 is committed scope under Q434.
 `comment` is granted across the matrix but **no route enforces it** — there is
 no comment entity (gap §4). Plan V1 §29 wants comments on 8 object types.
 1. Build §29 comms; `comment` becomes real.
