@@ -111,35 +111,25 @@ not a description of this tree. Nothing in it has been implemented.
 This section still describes a target. Nothing below has been implemented, and
 `CLAUDE.md` remains the record of what is actually true in the tree.
 
-**Before building anything from Plan V1, read `ALIGNMENT.md` §3.** Five of its
-requirements contradict invariants stated as binding in *this* file, and each
-would be a rewrite rather than an addition:
+**Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
+seven places where Plan V1 contradicted an invariant stated as binding in *this*
+file. **All seven are now decided** (re-scored 2026-09-18):
 
-1. **The Cutlist becomes the workflow-owning entity** (Plan V1 Q410–Q413).
-   Several Joinery Items share one cutlist and one shared set of production
-   stage completions. Today `item_stages` is strictly per-item and `items.num`
-   *is* the cutlist number. Adopting this reshapes #2 and rewrites #8
-   (`worker_assignment` / `stage_completion_log` key off `(item_id, stage_key)`).
-2. **Related-part rows** (Q416–Q424) — metal / benchtop / cushion rows with no
-   cutlist and **no workflow stages**, nested under a parent via Group ID.
-   `items.group_id` is free text with no hierarchy semantics today.
-3. **Project files move to SharePoint, view-only** (Q398–Q400), against #5a's
-   local-disk `file_blob` store. `file_blob` still has to exist for shop
-   drawings, item attachments and sample photos.
-4. **RBAC becomes data, not code** (Plan V1 §3) — departments, IT-authored
-   groups, multi-membership, 11 actions, project/item/tab scoping,
-   most-permissive-wins. `apps/api/app/auth/permissions.py` is a static dict.
-5. ~~**Navigation** introduces a third module workspace, **Cutlist**.~~
-   **Resolved (Q474):** Cutlist **is** the `List` tab; the primary six do not
-   grow and the binding rule is untouched. Plan V1 Q475 does still call for the
-   module workspaces to open as **separate windows**, against today's single
-   Next.js shell — see `OPEN-QUESTIONS.md` Q545.
+| Conflict | Outcome |
+| --- | --- |
+| 1. **Cutlist owns the workflow** (Q410–Q413) | **Accepted — next to build.** `item_stages` stays per-item as a **projection**, written by fan-out on completion (Q439), so this is smaller than it looked. Shop Floor re-keys to `(cutlist_id, stage_key)` for production, `(item_id, 'INST')` for install (Q445). |
+| 2. **Related-part rows** (Q416–Q424) | **Accepted — next to build.** Rows in `items` with a `row_type` + parent FK (Q447). Cost measured: **50 SQL call sites across 13 modules** need the filter — use a shared helper. |
+| 3. **Project files in SharePoint** (Q398–Q400) | **Bounded.** Additive only — `file_blob` survives and keeps serving shop drawings, attachments and sample photos (Q479). Nothing in #5a/#5b/#5c is rewritten. Blocked on three customer inputs. |
+| 4. **RBAC as data** (Plan V1 §3) | **Bounded.** DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles become 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. |
+| 5. ~~Navigation / Cutlist module~~ | **Closed (Q474).** Cutlist **is** the `List` tab — which the RBAC module name already reflects. The primary six do not grow. |
+| 6. **Area / Room as entities** | **Accepted (Q455).** A **rename of existing columns**, not new structure: Area = `items.stage`, Room = `rm_no` + `rm_desc`. 14 references across 7 files. |
+| 7. **10 vs 14 lifecycle stages** | **Deferred (Q459).** Today's 10 stand; `PAINTED` before `MADE` with `paint_after_assembly` (Q461); one global `stages` lookup (Q462). Packing is the first extra stage to arrive (Q519). |
 
-Two further conflicts were narrower. **Area/Room as entities** (today:
-free-text `level` / `rm_no` / `rm_desc` on `items`) is still open. The
-**10-vs-14 lifecycle stages** question is **deferred** — Q459 keeps today's 10,
-Q461 keeps `PAINTED` before `MADE` with `items.paint_after_assembly`, and Q462
-keeps the single global `stages` lookup, so no lifecycle change is planned.
+**Three decisions deliberately depart from Plan V1's prose** — the code is right
+and should not be "fixed" to match: **Q499** (PM confirmation of the Material
+Summary is advisory, against §20's release gate), **Q513** (no rollback, against
+§11's 20 change states) and **Q527** (fixed KPI catalogue, against §32's
+IT-defined formulas).
 
 ## Foundation dev loop
 
