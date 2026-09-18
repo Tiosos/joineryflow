@@ -14,6 +14,16 @@ becomes a first-class entity; and **Cutlist + related parts is the next
 sub-project**. That promotes §B and §C from "eventually" to **design-blocking
 now**. Q432, Q434 and Q436 remain open.
 
+**§B round 2 (2026-09-18):** **Q439 = 3**, **Q440 = 1**, **Q441 = 1**,
+**Q445 = 1**. Together these settle the shape: assignment and completion are
+owned at **cutlist** level for production stages, `stage_completion_log`
+becomes cutlist-level truth, and `item_stages` becomes a **per-item projection
+of it**, fanned out on write — which is exactly what Q441's repeated stage
+strip reads, with no join. Installation stays per item throughout (Q413/Q415).
+
+That combination raises two questions the original set did not contain, added
+below as **Q539** (late linking) and **Q540** (migrating `items.num`).
+
 ---
 
 ## §A — Scope and intent (answer these first)
@@ -90,6 +100,7 @@ the cutlist a separate entity owning one shared workflow.
 3. Yes, but sharing is rare — model it, default one-cutlist-per-item.
 
 ### Q439 — What happens to `item_stages`?
+**Option 3 confirmed (2026-09-18).** `item_stages` stays per-item; completing a shared stage writes the same `done_date` to every linked item. No `cutlist_stages` table.
 1. Replace with `cutlist_stages`; items read their parent cutlist's stages.
 2. Keep both — cutlist stages for production, item stages for installation
    (Q413/Q415 split them anyway).
@@ -97,12 +108,14 @@ the cutlist a separate entity owning one shared workflow.
    item on completion.
 
 ### Q440 — Can an item exist with no cutlist?
+**Option 1 confirmed (2026-09-18).** Yes, indefinitely. The cutlist is assigned later; consistent with Q429.
 Q411 sets the maximum at one and explicitly does not require one.
 1. Yes, indefinitely — cutlist is assigned later in the workflow.
 2. Yes, but only before the Listing stage.
 3. No — every item gets a cutlist at creation.
 
 ### Q441 — Where is the shared workflow *shown* in Tracking?
+**Option 1 confirmed (2026-09-18).** The stage strip repeats on every item row, as in screenshot 12. This is what makes Q439's fan-out worth having: Tracking reads `item_stages` per row with no join to the cutlist.
 If five items share one cutlist and one stage strip, the current one-row-per-
 item table repeats the same strip five times.
 1. Repeat the strip on every item row (visually redundant, matches screenshot 12).
@@ -124,12 +137,41 @@ Six digits across all projects implies a company-wide sequence.
 2. Yes.
 
 ### Q445 — What does Shop Floor assignment key off after the change?
+**Option 1 confirmed (2026-09-18).** `(cutlist_id, stage_key)` for production stages, `(item_id, 'INST')` for installation.
 Migration `0020`'s `worker_assignment` and `stage_completion_log` key off
 `(item_id, stage_key)`, with the partial unique index `uniq_active_assignment`.
 1. `(cutlist_id, stage_key)` — one worker per stage per cutlist.
 2. Keep `(item_id, stage_key)`, and completing any linked item completes them
    all.
 3. `(cutlist_id, stage_key)` for production, `(item_id, 'INST')` for install.
+
+### Q539 — An item linked to a cutlist that already has completed stages *(new — forced by Q439 + Q440)*
+Q440 lets an item sit with no cutlist indefinitely, and Q439 makes
+`item_stages` a projection written at completion time. So an item linked to a
+cutlist whose CNC and EDGED are already done has no rows for them — the
+fan-out already happened, before this item existed on the cutlist.
+1. **Backfill on link** — copy the cutlist's completed stages onto the item at
+   link time, so its strip immediately matches its siblings. Needs an audit
+   entry, since done dates appear that this item never "earned".
+2. **Leave blank** — the item shows those stages incomplete and only catches up
+   when a later stage completes. Honest, but the strip then contradicts the
+   shared-workflow rule in Q412.
+3. **Block the link** — refuse to link an item to a cutlist that has any
+   completed production stage; the drafter must use a new cutlist.
+
+### Q540 — What happens to the existing `items.num` values? *(new — forced by Q438 + Q435)*
+`items.num` is today a `UNIQUE NOT NULL integer` rendered in Tracking's CUTLIST
+column. Under Q438 the cutlist number becomes a separate six-digit reference
+that several items share. Q435 requires a data-preserving migration.
+1. **Mint one cutlist per existing item**, carrying `items.num` across as its
+   number. Every historical item keeps the number people recognise, and each
+   starts on its own cutlist — sharing only begins for new work.
+2. **Keep `items.num` as an internal item id** and allocate cutlist numbers
+   fresh from a new sequence. Cleaner separation, but every existing item's
+   visible CUTLIST number changes.
+3. **Keep both visible** — `items.num` stays as the Item ID (per Q416, where
+   Item ID and Group ID are the same internal number) and the cutlist number is
+   a new, separate column shown alongside.
 
 ### Q446 — Does the 5-minute undo window apply per cutlist?
 An undo currently reverses one item's stage completion.

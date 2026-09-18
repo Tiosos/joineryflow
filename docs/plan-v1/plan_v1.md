@@ -1359,13 +1359,14 @@ Start with screen/module relationships and what the user wants to carry into the
 
 ## 42. Current Question Status
 
-Questions have progressed through **Q538**. Q432–Q538 were added on
+Questions have progressed through **Q540**. Q432–Q540 were added on
 2026-09-17 by the alignment pass against the existing JoineryFlow codebase and
 are recorded in `docs/plan-v1/OPEN-QUESTIONS.md`; §43 below carries the ones
 confirmed so far.
 
-**Confirmed on 2026-09-18: Q433 = Option 1, Q435 = Option 2, Q437 = Option 1,
-Q438 = Option 1.**
+**Confirmed on 2026-09-18:** Q433 = Option 1, Q435 = Option 2, Q437 = Option 1,
+Q438 = Option 1, Q439 = Option 3, Q440 = Option 1, Q441 = Option 1,
+Q445 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1420,3 +1421,39 @@ Consequences to design against (from `ALIGNMENT.md` §3.1):
   company reference that several items share, so the two must be separated.
 - Q413/Q415 split the lifecycle: production and delivery stages belong to the
   cutlist, installation completion stays on the individual item.
+
+### Q439 — Where the workflow stages are stored
+**Option 3 confirmed.** `item_stages` remains **per item**. Completing a shared
+production stage writes the same completion date/time to **every** Joinery Item
+linked to that cutlist. No separate `cutlist_stages` table is created.
+
+The stored per-item rows are therefore a **projection** of cutlist-level truth,
+not an independent record. The authoritative record of who completed what and
+when is the cutlist-level completion log (Q445); `item_stages` is the
+read-optimised copy that Tracking renders.
+
+### Q440 — Joinery Items without a cutlist
+**Option 1 confirmed.** A Joinery Item may exist with **no cutlist number
+indefinitely**. The cutlist is assigned later in the workflow. This is
+consistent with Q429, which already allows a related-part order to be created
+before the parent Joinery Item has a cutlist number.
+
+### Q441 — Displaying a shared cutlist in Tracking
+**Option 1 confirmed.** Each Joinery Item keeps its own Tracking row and the
+shared workflow-stage strip is drawn on **every** such row, as in reference
+screenshot 12. Items are not collapsed under a cutlist header row.
+
+This is what makes Q439's fan-out worth having: Tracking reads the per-item
+stage rows directly, with no join to the cutlist.
+
+### Q445 — Ownership of production assignment and completion
+**Option 1 confirmed.** Worker assignment and stage completion are keyed at
+**cutlist level for production stages** and at **item level for installation**.
+One worker owns a given production stage for the whole cutlist; installation is
+assigned and completed per Joinery Item, per Q413 and Q415.
+
+### Q539 — Linking an item to a cutlist with completed stages
+*Raised by the combination of Q439 and Q440; pending.*
+
+### Q540 — Migration of existing internal item numbers
+*Raised by the combination of Q438 and Q435; pending.*
