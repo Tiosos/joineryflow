@@ -334,6 +334,29 @@ grant table. That is a real piece of design, not a table.
 **Q473 = 1 closes a long-standing gap.** `comment` has been granted across the
 matrix since Foundation with **no route enforcing it**. §29 makes it real.
 
+**§H round 1 (2026-09-18):** **Q479 = 1**, **Q481 = 1**, **Q482 = 1**,
+**Q485 = 2**. The `ALIGNMENT.md` §3.3 conflict is now **bounded**: SharePoint is
+additive, so nothing shipped on `file_blob` is rewritten.
+
+**Q481 = 1 makes in-app permissions the only gate — state this plainly.** With
+one app-only service identity, the application can read **any** folder it is
+pointed at; Microsoft is no longer enforcing who sees which project's files.
+Combined with Q393 (everyone with project access sees its project files), that
+is coherent — but it means a mis-granted project access now exposes SharePoint
+content, where delegated auth would have caught it. Accepted, worth knowing.
+
+**Two answers are not yet implementable.**
+
+- **Q485** chose "a filename pattern" but no pattern was supplied. Q403 asserts
+  the filename contains the drawing number; Q404/Q405 then need the revision
+  parsed out to pick the latest. Without the convention, none of it can be
+  written. Raised as **Q547**.
+- **Q482** chose polling but no interval was given. Proposing **15 s**, matching
+  Shop Floor's existing cadence, unless told otherwise.
+
+Also still outstanding from Q398: **no SharePoint site URL or document-library
+path has ever been supplied** (Q480).
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -798,6 +821,7 @@ behind a `FileStore` Protocol. Q398–Q400 put project-level files in SharePoint
 view-only, auto-refreshing.
 
 ### Q479 — Does `file_blob` survive?
+**Option 1 confirmed (2026-09-18).** Yes — SharePoint is an **additional** surface for project-level files only. `file_blob` keeps serving shop drawings, item attachments and sample photos. This matches Q392, which already separates project files from Joinery Item files.
 1. Yes — SharePoint is an **additional** surface for project-level files only;
    shop drawings, item attachments and sample photos stay on `file_blob`.
 2. No — everything moves to SharePoint.
@@ -809,6 +833,7 @@ Q398 records that no site URL or document-library path has been supplied.
 2. Configurable per workspace at deploy time.
 
 ### Q481 — How does the app authenticate to Microsoft 365?
+**Option 1 confirmed (2026-09-18).** App-only (client credentials). One service identity; in-app permissions are the only gate.
 Q394 records that the permission mapping is undefined.
 1. App-only (client credentials) — the app sees all project folders; in-app
    permissions are the only gate.
@@ -816,6 +841,9 @@ Q394 records that the permission mapping is undefined.
 3. Unknown; needs a spike.
 
 ### Q482 — How does the pop-up "automatically update" (Q400)?
+**Option 1 confirmed (2026-09-18).** Poll while the pop-up is open.
+**Interval not yet set** — proposing **15 s** to match the polling cadence Shop
+Floor already uses, unless told otherwise.
 No push channel exists today; the stack has no websockets and no client cache.
 1. Poll every N seconds while the pop-up is open (say N).
 2. Microsoft Graph change notifications (webhook) — needs a public callback URL.
@@ -833,10 +861,23 @@ these are the same folder.
 2. Different folder — name it.
 
 ### Q485 — Drawing-number matching rules (Q403)
+**Option 2 confirmed (2026-09-18).** A filename pattern — **but the pattern itself has not been supplied.** This question is answered in form only; it cannot be implemented until the actual convention is given (see Q547).
 "Filename contains the drawing number" needs a rule before it can be coded.
 1. Substring match, case-insensitive.
 2. A filename pattern — supply it (e.g. `{number}-{rev}-{title}.pdf`).
 3. Regex, IT-configurable.
+
+### Q547 — The actual drawing-filename pattern *(new — Q485 is unimplementable without it)*
+Q485 chose a filename pattern over substring matching or a regex, but the
+pattern was not given. Needed as a concrete example of a real filename, so the
+number and the revision can each be located.
+1. Supply an example, e.g. `A-101-C-Ground Floor Plan.pdf`, and confirm the
+   separator and field order.
+2. Several conventions exist across projects — supply each, and the rule for
+   telling them apart.
+3. There is no reliable convention; fall back to Q485 option 1 (case-insensitive
+   substring on the drawing number) and accept that `A-101` also matches
+   `A-1010`.
 
 ### Q486 — Mixed numeric/letter revisions (Q405's open edge case)
 Q405 leaves ordering undefined for mixed schemes and multi-letter revisions.

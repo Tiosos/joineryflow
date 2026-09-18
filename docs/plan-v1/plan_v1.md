@@ -1380,7 +1380,8 @@ Q499 = Option 2, Q496 = Option 3, Q498 = Option 2, Q500 = Option 2,
 Q501 = Option 1, Q508 = Option 1, Q509 = Option 1, Q511 = Option 2,
 Q513 = Option 3, Q510 = Option 2, Q512 = Option 1, Q466 = Option 2,
 Q467 = Option 2, Q469 = Option 3, Q470 = Option 1, Q472 = Option 1,
-Q473 = Option 1.
+Q473 = Option 1, Q479 = Option 1, Q481 = Option 1, Q482 = Option 1,
+Q485 = Option 2.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1866,3 +1867,37 @@ not merely who holds which grant.
 **Option 1 confirmed.** The **comment capability becomes real**: §29's
 context-based comments are built, and the long-standing comment permission
 stops describing something the system cannot do.
+
+
+### Q479 — The existing document store
+**Option 1 confirmed.** The system's own document store **remains**, serving
+shop drawings, Joinery Item attachments and sample photographs. SharePoint is an
+**additional** surface, used for Project-level files only. This matches Q392,
+which already keeps Project-level files separate from Joinery Item files.
+
+### Q481 — Connecting to Microsoft 365
+**Option 1 confirmed.** The system connects with **its own single application
+identity**, not as each signed-in person.
+
+A consequence to be aware of: Microsoft no longer decides who may see which
+project's files. The system's own project permissions become the only control,
+so a mistakenly granted project access exposes that project's SharePoint files
+as well.
+
+### Q482 — Keeping the file view current
+**Option 1 confirmed.** The open Project-file view **checks for changes on a
+timer** while it is open, rather than receiving a push from Microsoft. The
+interval is not yet fixed; fifteen seconds is proposed, matching the refresh
+cadence already used on the Shop Floor board.
+
+### Q485 — Finding a drawing by its number
+**Option 2 confirmed.** Files are matched by a **defined filename convention**
+rather than a loose text search, so that a drawing number never matches a
+longer number that merely starts with it, and the revision can be read
+reliably.
+
+**The convention itself has not yet been supplied**, so this cannot be built
+yet. Q547 records what is needed.
+
+### Q547 — The drawing filename convention
+*Raised by Q485; pending — a real example filename is required.*
