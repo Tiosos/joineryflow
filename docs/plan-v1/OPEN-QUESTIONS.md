@@ -469,6 +469,28 @@ snapshot costs); a Joinery Item carries modules and parts. Handover must turn
 one into the other, and today `convert` deliberately does not. Worth scoping
 before it is built.
 
+**§I round 2 (2026-09-18):** **Q548 = 2**, **Q490 = 1**, **Q493 = 1**,
+**Q494 = 2**.
+
+**Q494 = 2 does not weaken §24, on the right reading.** §24 requires that
+*changes after release* get a new controlled release rather than a silent
+update. It governs changes to the **pack**, not variations as such. So the
+coupling is **design change → new release**, which stays intact; a variation
+that alters what gets built triggers it *through that design change*, while a
+variation that only moves price or dates correctly triggers nothing. The
+"single current pack" guarantee is preserved.
+
+**Q493 = 1 costs nothing new to capture.** Received quantities and prices come
+from the procurement layer being built under §K; labour comes from Shop Floor
+completions against `workspace_labour_rate`, which shipped with #9a. §16's
+Committed / Actual / Forecast can be derived rather than entered — no double
+entry, no accounting integration, no new discipline asked of anyone.
+
+**Q490 = 1 matters more now than it would have.** Before Q489, convert created a
+project. After Q489 it creates a project **and its entire Joinery Item list**
+from the quote lines. A one-click action generating that much structure is
+worth a review screen.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1028,6 +1050,15 @@ Estimate lines currently do **not** become items on convert.
 2. No — the PM creates items fresh.
 
 ### Q548 — Where does `expired` go in the 12-stage lifecycle? *(new — forced by Q488)*
+**Option 2 confirmed (2026-09-18).** Map `expired` onto **Lost** — commercially,
+a quote that lapsed did not win. Stays within §5's twelve stages.
+
+> **Two consequences, stated as assumptions to confirm.** (1) The migration is
+> **lossy**: existing `expired` rows become indistinguishable from `rejected`
+> ones, and under Q436 pilot data may contain some. (2) `expires_at`
+> (migration `0022`) is assumed to **survive** as the quote-validity window —
+> §21 relies on quote validity for supplier pricing — so passing it now marks
+> the quote **Lost** rather than a distinct lapsed state.
 §5's lifecycle ends `Won / Lost / Withdrawn` and has no Expired stage, but
 `expired` is a shipped state backed by `estimate_revision.expires_at`
 (migration `0022`) with a live `sent → expired` transition.
@@ -1042,6 +1073,7 @@ Estimate lines currently do **not** become items on convert.
 4. **Drop the concept**, retiring `expires_at` and the transition.
 
 ### Q490 — Does handover get a review-and-select step (Plan V1 §6)?
+**Option 1 confirmed (2026-09-18).** Yes — a PM review screen choosing what transfers. Especially warranted now that Q489 has handover generating a project's entire Joinery Item list.
 Convert is currently one click.
 1. Yes — a PM review screen choosing what transfers.
 2. No — keep one-click.
@@ -1057,6 +1089,7 @@ Convert is currently one click.
 2. Cutlist level too (if §B makes cutlist the workflow owner).
 
 ### Q493 — Where do actual costs come from?
+**Option 1 confirmed (2026-09-18).** Procurement (received quantities × price) plus Shop Floor completions × `workspace_labour_rate`. Both already exist as data — the rates table shipped with #9a — so no new capture burden falls on anyone.
 Nothing in the system currently records a cost event.
 1. From procurement (received quantities × price) plus labour from Shop Floor
    completions × `workspace_labour_rate`.
@@ -1064,6 +1097,7 @@ Nothing in the system currently records a cost event.
 3. An accounting integration (Xero/MYOB, §33).
 
 ### Q494 — Do variations affect an already-released Production Pack?
+**Option 2 confirmed (2026-09-18).** Independent. A variation is commercial; a release is technical, and not every variation changes what gets built.
 1. Yes — an approved variation forces a new controlled release (§24).
 2. No — they are independent.
 
