@@ -1386,7 +1386,8 @@ Q518 = Option 2, Q521 = Option 1, Q522 = Option 1, Q524 = Option 1,
 Q520 = Search first, Q525 = Option 2, Q526 = Option 1, Q527 = Option 2,
 Q468 = Option 1, Q487 = Option 1, Q488 = Option 1, Q489 = Option 1,
 Q491 = Option 2, Q548 = Option 2, Q490 = Option 1, Q493 = Option 1,
-Q494 = Option 2.
+Q494 = Option 2, Q532 = Option 3, Q533 = Option 2, Q534 = Option 1,
+Q492 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -2071,3 +2072,35 @@ This does not weaken §24. That section requires changes made after release to g
 through a new controlled release rather than a silent update — the trigger is
 the **design change**, not the variation. A variation that alters what gets
 built still forces a new release by way of the change it causes.
+
+
+### Q532 — Working on site
+**Option 3 confirmed.** A **dedicated application for site use** is built,
+rather than relying on the browser interface at phone size.
+
+Worth noting for a later review: the usual reason to prefer a dedicated app is
+working without reception, and Q533 treats that as desirable rather than
+required; push notification is the other reason, and Q521 defers it. The
+remaining justification is barcode scanning under Q534. That is a genuine
+reason, but a narrower one than it first appears.
+
+### Q533 — Working without reception
+**Option 2 confirmed.** Offline working is **desirable but not required**. The
+system is built to work online, and the ability to capture work without
+reception is added later if it proves to be a real obstacle.
+
+### Q534 — What carries a barcode
+**Option 1 confirmed.** Each **Joinery Item** carries a code. It is the unit
+every department already works in and the thing installers physically handle, so
+one label per item serves production, packing, delivery and installation alike.
+
+### Q492 — What is costed
+**Option 1 confirmed.** Costs are tracked at **Project and Joinery Item level**,
+exactly as §16 states. The cutlist does not become a third costing level.
+
+This leaves one thing to settle: labour is calculated from completed production
+stages, and those stages belong to the cutlist, which several Joinery Items may
+share. Q549 settles how that shared labour reaches the individual items.
+
+### Q549 — Apportioning shared labour
+*Raised by Q492 together with Q493 and the shared cutlist; pending.*

@@ -491,6 +491,25 @@ project. After Q489 it creates a project **and its entire Joinery Item list**
 from the quote lines. A one-click action generating that much structure is
 worth a review screen.
 
+**§P round 1 + §I close (2026-09-18):** **Q532 = 3**, **Q533 = 2**,
+**Q534 = 1**, **Q492 = 1**.
+
+**Q532 = 3 and Q533 = 2 together weaken the case for the thing Q532 chose.**
+The strongest argument for native over responsive web is offline capture — and
+Q533 just downgraded that to "nice to have". Push is the second argument, and
+Q521 made notifications in-app-only for v1. So the native app's remaining
+justification is **Q534's scanning** plus offline and push *later*. That is a
+real justification, but it is a narrower one than it looks, and an online-first
+native app is close to a webview. Worth revisiting deliberately rather than by
+drift — noting it here so the decision is re-made on purpose.
+
+**Q492 = 1 plus Q493 = 1 plus Q438 leave labour cost with nowhere obvious to
+land.** Labour is derived from stage completions (Q493). Under Q438/Q445
+production stage completions belong to the **cutlist**, shared across every
+linked Joinery Item. But Q492 says cost lives at Project and **Item** level with
+no cutlist level. So one CNC completion produces one labour cost for a cutlist
+that five items share, and something must apportion it. Raised as **Q549**.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -1084,6 +1103,7 @@ Convert is currently one click.
 2. A separate `project_contract` table with a full value history.
 
 ### Q492 — Financial granularity
+**Option 1 confirmed (2026-09-18).** Project + Joinery Item only, as §16 states. No cutlist cost level.
 §16 says Project + Joinery Item level, not component level.
 1. Confirmed — item level, no part-level costing.
 2. Cutlist level too (if §B makes cutlist the workflow owner).
@@ -1389,6 +1409,7 @@ They are a general-purpose issue tracker.
 ## §P — Platform
 
 ### Q532 — Mobile: responsive web or native app?
+**Option 3 confirmed (2026-09-18).** A native app for site use.
 §14 wants offline work with sync; §30 wants push. Both are hard in a web app.
 The stack is server-rendered Next.js with no client cache by design.
 1. Responsive web only — drop offline and push.
@@ -1396,6 +1417,7 @@ The stack is server-rendered Next.js with no client cache by design.
 3. A native app for site use.
 
 ### Q533 — How important is offline (§14)?
+**Option 2 confirmed (2026-09-18).** Nice to have — build online-first, queue writes later if it proves painful.
 Offline-with-sync and conflict resolution is among the most expensive items in
 the document.
 1. Essential — site has no reception.
@@ -1403,10 +1425,23 @@ the document.
 3. Drop it.
 
 ### Q534 — QR/barcode (§15): what gets labelled?
+**Option 1 confirmed (2026-09-18).** Each Joinery Item — the unit every department already works in, and what installers physically handle.
 1. Each Joinery Item.
 2. Each cutlist.
 3. Each part/component.
 4. Each packed crate.
+
+### Q549 — How is shared cutlist labour apportioned to items? *(new — forced by Q492 + Q493 + Q438)*
+Labour cost derives from stage completions (Q493); those completions belong to
+the cutlist (Q438/Q445); but cost must land on the Joinery Item (Q492). One CNC
+completion on a cutlist shared by five items yields one labour figure needing a
+split.
+1. **Split evenly across the cutlist's items** — simple, defensible, wrong in
+   detail when items differ greatly in size.
+2. **Weight by each item's share of the parts** (count, area or value) on that
+   cutlist — closer to reality, and the nest already knows part areas.
+3. **Do not apportion** — hold labour at project level only, and let item cost
+   carry materials alone. Simplest, and §16 still gets a project figure.
 
 ### Q535 — Which integration is genuinely next (§33)?
 Cabinet Vision is built. §33 lists ~16 others, and §H already depends on
