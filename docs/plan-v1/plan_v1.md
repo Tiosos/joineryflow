@@ -1383,7 +1383,8 @@ Q467 = Option 2, Q469 = Option 3, Q470 = Option 1, Q472 = Option 1,
 Q473 = Option 1, Q479 = Option 1, Q481 = Option 1, Q482 = Option 1,
 Q485 = Option 2, Q515 = Option 1, Q516 = Option 2, Q517 = Option 2,
 Q518 = Option 2, Q521 = Option 1, Q522 = Option 1, Q524 = Option 1,
-Q520 = Search first.
+Q520 = Search first, Q525 = Option 2, Q526 = Option 1, Q527 = Option 2,
+Q468 = Option 1.
 
 **Next unanswered questions: Q432** (which roles may click Create Order),
 **Q434** (committed scope vs. wish list), **Q436** (production data today), and
@@ -1965,3 +1966,38 @@ this settles the mechanism ahead of the need.
 date and a status — not a view assembled from existing work. §10 requires tasks
 that are created manually, by configured rules, from changes and at another
 person's request, and none of those can be derived from work already tracked.
+
+
+### Q525 — How search is built
+**Option 2 confirmed.** Search is built on a **dedicated search service**
+rather than on the database's own text search, for better relevance, tolerance
+of misspelling, and filtering across the many kinds of record §13 lists.
+
+This is the first additional piece of infrastructure the system has needed. It
+brings an index that must be kept in step with the database, and a new
+component to run and monitor.
+
+### Q526 — Sharing reports outside the company
+**Option 1 confirmed.** Secure external links are built as §31 describes —
+unique link, password, expiry, revocation, a record of who viewed and when, and
+a choice of a fixed snapshot or live information.
+
+This is the first place the system shows a particular project's information to
+someone without an account, so the link itself carries the whole of the
+protection and warrants its own security review.
+
+### Q527 — How KPIs are defined
+**Option 2 confirmed.** KPIs are a **fixed catalogue of measures** built into
+the system, from which management chooses what to display. There is no formula
+editor.
+
+**This departs from §32**, which says IT defines KPI formulas. Adding a new KPI
+requires a change to the system rather than configuration. The trade is
+predictability: no formula can be written that is invalid, unsafe or ruinously
+slow.
+
+### Q468 — Today's roles and the new groups
+**Option 1 confirmed.** The seven existing roles become the **seven starting
+groups**, carrying exactly the access they grant today. Nobody's access changes
+when the new permission model arrives, and IT then creates
+department-shaped groups as they are needed.

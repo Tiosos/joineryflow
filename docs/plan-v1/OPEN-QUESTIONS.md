@@ -404,6 +404,39 @@ not rely on notification alone until email ships.
 tasks or notifications, and operates on data that already exists. Q525 (how to
 implement it) is therefore the next live question.
 
+**§N close + §F close (2026-09-18):** **Q525 = 2**, **Q526 = 1**,
+**Q527 = 2**, **Q468 = 1**. §N and §F are now complete.
+
+**Q525 = 2 adds the first new infrastructure since Postgres.** `docker-compose.yml`
+currently runs exactly **three services** — `db`, `api`, `web`. A search service
+makes four, and brings an index to populate, keep in sync with Postgres, and
+reason about when it is stale or down. `make up` and the dev loop in `CLAUDE.md`
+both change. That is a real ops step up from Q525's option 1, taken knowingly.
+
+**Q526 = 1 is the first unauthenticated surface serving project content.** To be
+precise: it is *not* the first unauthenticated endpoint — `GET /public/stats`
+already serves with no auth. But that returns aggregate counts, whereas a secure
+report link serves **a specific project's data to someone with no account**.
+`proxy.ts` treats `/login`, `/api`, `/_next` and `/favicon.ico` as public and
+FastAPI is the real gate behind `/api`; secure links need their own gate —
+token, password, expiry and revocation — since none of the existing session
+machinery applies. Worth a security review of its own when built.
+
+**Q527 = 2 is the third deliberate departure from Plan V1's text.** §32 states
+*"IT defines KPI formulas"*. Hard-coded KPIs mean formulas are defined by
+developers and a new one needs a deploy — exactly what §32 says IT should not
+need. Joining **Q499** (PM confirmation advisory, against §20) and **Q513**
+(no rollback, against §11).
+
+> Three departures now. All three are recorded in both documents. In each case
+> the code will disagree with Plan V1's prose, and in each case the code is
+> right.
+
+**Q468 = 1 completes §F coherently.** Seven roles become seven groups with
+today's grants, so the migration is behaviour-preserving on day one — which is
+what Q435's data-preserving rule asks for — and IT grows department-shaped
+groups from there.
+
 **Consequence to design against.** Q539 = 2 means `item_stages` may legitimately
 disagree with the cutlist-level completion log for a late-linked item, and
 Q441's repeated strip will therefore show *different* strips for items on the
@@ -774,6 +807,7 @@ most-permissive-wins.
 2. No — departments are a label; groups do the work.
 
 ### Q468 — How do today's 7 auth roles map onto Plan V1's ~21 departments?
+**Option 1 confirmed (2026-09-18).** The 7 roles become 7 seed groups carrying today's grants; departments stay labels (Q467). Nothing changes behaviour on day one; IT adds department-shaped groups as needed.
 1. The 7 roles become 7 groups; departments are added alongside as labels.
 2. Roles are retired entirely in favour of groups.
 3. Supply an explicit mapping table.
@@ -1219,17 +1253,20 @@ Nothing is configured today.
 2. A derived view over stages, defects and approvals.
 
 ### Q525 — Search implementation
+**Option 2 confirmed (2026-09-18).** A dedicated search service — better relevance, fuzzy matching and faceting across §13's ~18 object types.
 1. Postgres full-text search (no new infrastructure).
 2. A search service (Elastic/Meili) — new container.
 3. Per-module filters are enough; drop global search.
 
 ### Q526 — External report sharing (§31)
+**Option 1 confirmed (2026-09-18).** Build secure links as specified — unique link, password, expiry, revoke, view history, snapshot or live.
 Secure links with password, expiry, revoke and access tracking, for recipients
 with no accounts.
 1. Build it as specified.
 2. PDF email attachments only for v1.
 
 ### Q527 — Are KPIs formulas-as-data (§32: "IT defines KPI formulas")?
+**Option 2 confirmed (2026-09-18).** Hard-coded KPIs from a fixed catalogue; management chooses which to display. No expression evaluator.
 1. Yes — a formula engine IT edits at runtime.
 2. Hard-coded KPIs, management chooses which to show.
 
