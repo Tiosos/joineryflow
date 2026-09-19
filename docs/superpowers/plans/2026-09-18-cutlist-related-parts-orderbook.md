@@ -364,8 +364,44 @@ hand-edited predicates.
       three-item mixed-flag fixture. New `tests/test_shop_floor_cutlist.py`
       (6 cases). **Correction:** recorded as unrunnable here; it was not. Running
       the suite found **8 real failures from these changes** — see the E1 entry.
-- [ ] **B4** Related-part routes — create (drafter or PM, Q423), reparent with
-      audit (Q452), own status (Q450). **No workflow stages** (Q419).
+- [x] **B4** — **done.** `apps/api/app/related_parts/`, 7 endpoints. **No
+      migration needed** — `0028` already carries every structural rule; this
+      module adds the ones a CHECK cannot express and turns the rest into clean
+      409s instead of raw constraint violations.
+      - **Q423** — the Drafter or PM may create. That is exactly what the
+        existing `require_drafter()` allows (`drafter`/`manager`/`admin`), so
+        mutations pair it with `("tracking","write")`, the same combination
+        every item mutation already uses. No matrix change.
+      - **Q449** — a related part cannot be a parent. `0028`'s composite FK
+        would refuse it anyway; the route answers `PARENT_IS_RELATED_PART`.
+      - **Q450** — its own `status`, an ordinary editable field never copied
+        from the parent.
+      - **Q419** — **no `item_stages` rows, enforced by absence.** Nothing here
+        writes to that table and B1 keeps related parts off every Shop Floor
+        surface. The query layer says so, so a later reader does not "fix" it.
+      - **Q416/Q453** — `group_id` is the **parent's** Item ID, set on create
+        and moved on reparent; never an input.
+
+      **Q452 is why this waited for B6.** Reparenting moves three things at
+      once: `parent_item_id`, `group_id`, and — via B6's
+      `sync_orders_for_item` — the CUTLIST NO. on every linked supplier order.
+      That last part is the "Q431-style order reference updates" Q452 asks for,
+      and it could not be built before orders existed. Cross-project moves are
+      refused: nothing in Plan V1 contemplates one, and the order already
+      carries the old project's name and location.
+
+      Delete is a hard delete — a related part has no cutlist, no stages and no
+      production history — but `0029` made `purchase_orders.item_id`
+      ON DELETE SET NULL, so **an order already sent to a supplier outlives the
+      row it was raised for**, and the audit payload names the orphaned ids.
+
+      → **verified**: `tests/test_related_part_routes.py` (10 cases), run and
+      passing, including the full reparent chain — the order's reference
+      follows the new parent's cutlist.
+
+      **Found while building:** I assumed `related_part_type` had an
+      `archived_at` column (copying `order_category`'s shape from `0031`); it
+      does not. Caught immediately by running the tests.
 - [ ] **B5** `supplier` CRUD; repoint catalog reads/writes (Q506).
 - [x] **B6** — **done.** `apps/api/app/orders/`, 8 endpoints gated
       `("orderbook", action)` (Q432 — no matrix change), at top-level paths and

@@ -175,7 +175,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (57 test files, 582 tests)
+make test         # pytest in api container (58 test files, 592 tests)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
