@@ -31,7 +31,9 @@ export default function ListClient({ projects, items, selectedProjectId }: Props
             </option>
           ))}
         </select>
-        <span className="ml-auto text-xs text-h-muted">{items.length} items</span>
+        <span className="ml-auto text-xs text-h-muted">
+          {items.filter((i) => i.row_type !== "related_part").length} items
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface p-2">

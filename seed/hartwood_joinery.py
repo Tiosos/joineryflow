@@ -377,6 +377,32 @@ def main() -> None:
                     },
                 ).scalar()
 
+                # --- Cutlist (Q540: one per existing item, carrying its own
+                #     number).  0027 minted these for items that existed when it
+                #     ran; items created afterwards — like these — need their own,
+                #     and worker_assignment.cutlist_id is NOT NULL since 0030.
+                db.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO cutlist (project_id, cutlist_no, name)
+                            VALUES (:pid, :num, :name)
+                            ON CONFLICT (cutlist_no) DO NOTHING
+                            RETURNING cutlist_id
+                        ), picked AS (
+                            SELECT cutlist_id FROM ins
+                            UNION ALL
+                            SELECT cutlist_id FROM cutlist WHERE cutlist_no = :num
+                            LIMIT 1
+                        )
+                        UPDATE items SET cutlist_id = (SELECT cutlist_id FROM picked)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": proj_id, "num": item_num, "iid": item_id,
+                     "name": description},
+                )
+
                 # --- Module (1 per item) ---
                 mod_id = db.execute(
                     text(
@@ -1070,7 +1096,10 @@ def main() -> None:
                     text(
                         """
                         SELECT item_id FROM items
-                        WHERE project_id = :p ORDER BY item_id LIMIT 6
+                        WHERE project_id = :p
+                          AND row_type = 'joinery_item'
+                          AND cutlist_id IS NOT NULL
+                        ORDER BY item_id LIMIT 6
                         """
                     ),
                     {"p": _alf_pid_8},
@@ -1860,6 +1889,30 @@ def main() -> None:
                 {"n": num},
             ).scalar()
             if iid is not None:
+                # Q540: every Joinery Item carries its own cutlist, numbered as
+                # itself.  Shop Floor keys on it and worker_assignment.cutlist_id
+                # is NOT NULL since 0030, so an item without one breaks a re-run
+                # of this seed the moment the shop-floor block reaches it.
+                s.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO cutlist (project_id, cutlist_no, name)
+                            VALUES (:pid, :num, :name)
+                            ON CONFLICT (cutlist_no) DO NOTHING
+                            RETURNING cutlist_id
+                        ), picked AS (
+                            SELECT cutlist_id FROM ins
+                            UNION ALL
+                            SELECT cutlist_id FROM cutlist WHERE cutlist_no = :num
+                            LIMIT 1
+                        )
+                        UPDATE items SET cutlist_id = (SELECT cutlist_id FROM picked)
+                         WHERE item_id = :iid AND cutlist_id IS NULL
+                        """
+                    ),
+                    {"pid": alf_pid, "num": num, "iid": iid, "name": desc},
+                )
                 for sk, due_off, done_off in [
                     ("REQ",    -25, -20),
                     ("SM",     -15, -12),

@@ -1700,6 +1700,40 @@ its own before §L can be called done. Scope here is `PATCH /items/{id}` alone,
 the one surface that emitted the override event; `PATCH /items/{id}/status` and
 `/lifecycle/{stage_key}` never consulted the lock and still do not.
 
+### Q567 — What makes a related part's order "issued"? *(new — raised while building C1)*
+**Confirmed 2026-09-19: `date_ordered IS NOT NULL`, and the most recent one wins.**
+The Tracking list returns `issued_order_no` / `issued_order_po_id` for the
+latest order on a row that carries a `date_ordered`; a draft leaves the cell
+blank.
+
+*Why this had to be asked.* **Q417** says the order number appears *"once an
+order … has been **issued** to its supplier"*. Nothing records that:
+`purchase_orders.status` is CHECKed to `Draft / Pending / Approved / Rejected /
+Delivered / Cancelled / Hold / Quote / Next` (migration `0002`, untouched by
+`0029` and `0031`) — **there is no `Issued`** — and B6 built no issue action.
+`date_ordered` is the column that literally records the day the order went out,
+so it is the test. Adding a real `Issued` status was considered and not taken:
+it would invent a workflow state Plan V1 never asked for.
+
+**A second under-specification in the same sentence.** Q417 says "the order
+number", but `purchase_orders.item_id` has no unique constraint —
+`list_orders_for_item` already returns many, newest first. A part with two
+issued orders shows the **most recent** (`date_ordered DESC, po_id DESC`).
+
+**Consequence — filling `date_ordered` is now a display act, not just a record.**
+Nothing sets it automatically; a user patches it through
+`PATCH /orders/{po_id}`. Until they do, an existing order is invisible on the
+Tracking row, which is the intent of Q417's wording but is worth knowing when a
+row looks empty.
+
+**Q418 is only half-honoured, and deliberately.** Clicking the number navigates
+to Orderbook — `/orderbook?order=<po_number>` — but that page still renders
+procurement **batches** (`procurement_v1`), not `purchase_orders`, so it cannot
+yet *locate* the order the way Q418's second clause asks. **No task in the plan
+rebuilds it**: C4 adds an O/BOOK subtab to *Tracking*, which is a different
+surface. The param is carried so the link works the moment Orderbook reads
+orders; until then the user lands on the page but must find the order by eye.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

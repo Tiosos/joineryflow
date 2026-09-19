@@ -1,12 +1,15 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
-> **Status: not started.** Migrations reserved `0026`–`0029`. This is a
-> **forward plan**, not a shipped-state record. Current state stays in
-> `CLAUDE.md`; the checkboxes below are not a progress signal (see
-> `docs/superpowers/plans/README.md`).
+> **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1
+> are done**; C2–C6, D and E are not. Unusually for this repo the checkboxes
+> below *are* being kept current, and each finished task carries a `→` note
+> recording what shipped and how it was verified — so read them, but treat
+> `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q551) and is mirrored in
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q567 — Q552 onward were raised while
+> building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
 > §7 — three departures are deliberate.
@@ -515,10 +518,55 @@ hand-edited predicates.
 
 ### C. Web
 
-- [ ] **C1** `ItemsTable` — nest related parts under their parent, collapsed by
+- [x] **C1** `ItemsTable` — nest related parts under their parent, collapsed by
       default (Q420–Q422); **empty stage-strip area** for them (Q419); leftmost
       column shows cutlist number for an item, **issued order number** for a
       related part (Q417), linking to Orderbook (Q418).
+
+      → **Q567 raised and answered first**: Q417's "issued" named a state that
+      does not exist (`purchase_orders.status` has no `Issued`), so the test is
+      **`date_ordered IS NOT NULL`**, and the most recent such order wins since
+      `item_id` is not unique on `purchase_orders`. The list query gained a
+      `LEFT JOIN LATERAL` serving `issued_order_no` + `issued_order_po_id`;
+      **`TrackingItemRow` had no order field at all**, so C1 was not a
+      web-only task.
+
+      Web: `ItemsTable` filters and sorts **Joinery Items only** and renders
+      each parent's related parts beneath it, so no sort order can separate a
+      child from its parent. Disclosure control lives inside the CUTLIST cell
+      (no new column, so the header/filter `colSpan` arithmetic is untouched).
+      A related part gets **blank** stage cells — not em dashes, which read as
+      "recorded but empty" — the type chip beside its description, and no
+      editor link or ▶ detail button, because `GET /items/{id}` 404s on it
+      (Q559).
+
+      → **Three consumers corrected in the same pass**, all of them wrong the
+      moment Q558 put two row kinds in one response: `TrackingMetrics` counted
+      related parts in "Items in job" *and* in the installed-percentage
+      denominator; `/list` counted them in its "N items" label; and
+      `TrackingClient`'s quick filters judged them on stages they can never
+      have, orphaning children from a parent that survived the filter.
+
+      → **verified**: 4 new cases in `test_related_part_routes.py` (14 total,
+      passing) pin the issued/not-issued boundary, the most-recent rule, that a
+      Joinery Item keeps its own number, and the parent-child ordering.
+      **`npx tsc --noEmit` is clean across the web app** — which also surfaced
+      6 pre-existing errors in `StationClient.tsx` left by **B3**'s re-key
+      (`code`, `room_no`, `room_desc` no longer exist on a cutlist-keyed
+      `StationCard`); fixed here to show `item_count` instead. Driven in a real
+      browser against a seeded DB: collapsed by default, expanding reveals the
+      children, `PO-2026-0001` renders and links, the un-issued order's row
+      stays blank, and the metric still reads 12. Full suite **612 passed, 1
+      skipped**.
+
+      → **Seed bug found and fixed** (it blocked all of this): `make seed` had
+      been **broken on a fresh database since B3** — `worker_assignment.cutlist_id`
+      is NOT NULL since `0030`, but the seed creates items without cutlists,
+      which `0027` only minted for items that existed when it ran. Every
+      seeded Joinery Item now gets its own cutlist numbered as itself (Q540),
+      and the shop-floor block selects only cutlisted `joinery_item` rows, so a
+      re-run cannot pick up a later-seeded item that has none. Verified across
+      four consecutive runs.
 - [ ] **C2** Stage strip repeats on every item row (Q441) — reads `item_stages`
       directly, no join to cutlist.
 - [ ] **C3** `/list` becomes the **Cutlist module workspace** (Q474). Opens as a

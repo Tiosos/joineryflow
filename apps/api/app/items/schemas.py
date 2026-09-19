@@ -50,6 +50,11 @@ class TrackingItemRow(BaseModel):
     row_type: str                   # 'joinery_item' | 'related_part'
     parent_item_id: int | None
     related_part_type_key: str | None
+    # Q417/Q567: the most recent ISSUED supplier order for this row
+    # (`date_ordered IS NOT NULL`), which the Tracking grid shows in place of a
+    # cutlist number on a related part.  None until an order is issued.
+    issued_order_no: str | None
+    issued_order_po_id: int | None
 
 
 class TrackingGridOut(BaseModel):

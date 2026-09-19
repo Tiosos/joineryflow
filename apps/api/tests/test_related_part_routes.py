@@ -282,3 +282,91 @@ def test_delete_keeps_an_issued_order(ctx):
         s.close()
     assert row is not None
     assert row["item_id"] is None
+
+
+# ── C1: the Tracking reference column (Q417 / Q418 / Q567) ────────────────────
+
+
+def _tracking_rows(ctx) -> list[dict]:
+    r = ctx["drafter"].get(f"/projects/{ctx['pid']}/items")
+    assert r.status_code == 200, r.text
+    return r.json()["items"]
+
+
+def _row(rows: list[dict], item_id: int) -> dict:
+    match = [r for r in rows if r["id"] == item_id]
+    assert match, f"item {item_id} missing from the tracking list"
+    return match[0]
+
+
+def test_tracking_shows_no_order_number_until_one_is_issued(ctx):
+    """Q417 + Q567: an order only counts as issued once it carries date_ordered."""
+    part = _create(ctx).json()["item_id"]
+
+    # No order at all
+    assert _row(_tracking_rows(ctx), part)["issued_order_no"] is None
+
+    # A draft order — raised, but never sent to the supplier
+    po = ctx["drafter"].post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "rail", "category": "Metal",
+        "item_id": part,
+    }).json()
+    assert _row(_tracking_rows(ctx), part)["issued_order_no"] is None, (
+        "an order with no date_ordered has not been issued"
+    )
+
+    # Issue it
+    assert ctx["drafter"].patch(
+        f"/orders/{po['po_id']}", json={"date_ordered": "2026-09-19"}
+    ).status_code == 200
+
+    row = _row(_tracking_rows(ctx), part)
+    assert row["issued_order_no"] == po["po_number"]
+    assert row["issued_order_po_id"] == po["po_id"]
+
+
+def test_tracking_shows_the_most_recent_issued_order(ctx):
+    """Q567: item_id is not unique on purchase_orders — the latest one wins."""
+    part = _create(ctx).json()["item_id"]
+    issued = []
+    for day in ("2026-09-10", "2026-09-17"):
+        po = ctx["drafter"].post("/orders", json={
+            "vendor_id": ctx["vendor"], "description": f"rail {day}",
+            "category": "Metal", "item_id": part,
+        }).json()
+        ctx["drafter"].patch(f"/orders/{po['po_id']}", json={"date_ordered": day})
+        issued.append(po["po_number"])
+
+    row = _row(_tracking_rows(ctx), part)
+    assert row["issued_order_no"] == issued[1], "the later date_ordered wins"
+
+
+def test_a_joinery_item_keeps_its_cutlist_number_not_an_order(ctx):
+    """Q417: the reference depends on the row type, and an order raised against
+    a Joinery Item never displaces its own number."""
+    po = ctx["drafter"].post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "direct", "category": "Metal",
+        "item_id": ctx["parent_a"],
+    }).json()
+    ctx["drafter"].patch(f"/orders/{po['po_id']}", json={"date_ordered": "2026-09-19"})
+
+    row = _row(_tracking_rows(ctx), ctx["parent_a"])
+    assert row["row_type"] == "joinery_item"
+    assert row["item_number"] == _num(ctx["parent_a"]), "its own number stands"
+
+
+def test_related_parts_sort_directly_beneath_their_parent(ctx):
+    """Q420: with one shared number sequence (Q541) a child's num is nowhere
+    near its parent's, so the list must order on the parent."""
+    child_a = _create(ctx, parent=ctx["parent_a"]).json()["item_id"]
+    # a second parent's row is minted between the two, which is the case that
+    # ordering by num alone got wrong
+    child_b = _create(ctx, parent=ctx["parent_b"]).json()["item_id"]
+    child_a2 = _create(ctx, parent=ctx["parent_a"], type_key="cushion").json()["item_id"]
+
+    order = [r["id"] for r in _tracking_rows(ctx)]
+    assert order.index(ctx["parent_a"]) < order.index(child_a) < order.index(ctx["parent_b"])
+    assert order.index(child_a2) < order.index(ctx["parent_b"]), (
+        "both of parent A's children belong above parent B"
+    )
+    assert order.index(ctx["parent_b"]) < order.index(child_b)

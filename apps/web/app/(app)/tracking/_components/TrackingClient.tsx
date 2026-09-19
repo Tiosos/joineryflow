@@ -71,7 +71,7 @@ export function TrackingClient({
 
   const visibleItems = useMemo(() => {
     if (!quick) return items;
-    return items.filter((it) => {
+    const matches = (it: TrackingItemRow) => {
       switch (quick) {
         case "my":
           return me ? it.cutlist_owner_id === me.id : false;
@@ -88,7 +88,19 @@ export function TrackingClient({
         case "orders":
           return false;
       }
-    });
+    };
+    // The quick filters judge Joinery Items. A related part rides with its
+    // parent (Q420) instead of being tested on stages it can never have
+    // (Q419) or on a cutlist owner it never gets — so the list stays
+    // self-consistent and no child is left without its parent row.
+    const kept = new Set(
+      items.filter((it) => it.row_type !== "related_part" && matches(it)).map((it) => it.id),
+    );
+    return items.filter((it) =>
+      it.row_type === "related_part"
+        ? it.parent_item_id != null && kept.has(it.parent_item_id)
+        : kept.has(it.id),
+    );
   }, [items, quick, me, today]);
 
   function refresh() {

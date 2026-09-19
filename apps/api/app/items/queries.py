@@ -68,6 +68,14 @@ _ITEM_COLS = """
     i.cutlist_owner_id,
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
+    -- Q417 + Q567: the leftmost Tracking reference is the cutlist number for a
+    -- Joinery Item and the ISSUED supplier-order number for a related part.
+    -- "Issued" is `date_ordered IS NOT NULL` -- the column that records the day
+    -- the order went to the supplier -- because no order status means issued
+    -- (0002's CHECK has Draft/Pending/Approved/... and no Issued).  A part may
+    -- carry several orders, so the most recent issued one wins.
+    ord.po_number                                   AS issued_order_no,
+    ord.po_id                                       AS issued_order_po_id,
     (
         SELECT COUNT(DISTINCT hl.line_id)
         FROM item_hardware_lines hl
@@ -118,6 +126,14 @@ def list_items_for_project(
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN items parent ON parent.item_id = i.parent_item_id
+            LEFT JOIN LATERAL (
+                SELECT po.po_id, po.po_number
+                  FROM purchase_orders po
+                 WHERE po.item_id = i.item_id
+                   AND po.date_ordered IS NOT NULL
+                 ORDER BY po.date_ordered DESC, po.po_id DESC
+                 LIMIT 1
+            ) ord ON true
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
@@ -198,6 +214,8 @@ def list_items_for_project(
                 "row_type": r["row_type"],
                 "parent_item_id": r["parent_item_id"],
                 "related_part_type_key": r["related_part_type_key"],
+                "issued_order_no": r["issued_order_no"],
+                "issued_order_po_id": r["issued_order_po_id"],
                 "stages": stages_by_item.get(item_id, {}),
                 "availability": {
                     "ready": int(r["ready"]),

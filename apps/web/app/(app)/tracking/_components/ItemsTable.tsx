@@ -111,6 +111,9 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
   const [sortKey, setSortKey] = useState<SortKey>("num");
   const [sortAsc, setSortAsc] = useState(true);
   const [subTab, setSubTab] = useState<SubTab>("DATE");
+  // Q422: related parts are collapsed when Tracking first opens. The set holds
+  // the parent ids the user has opened.
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const savedScrollLeft = useRef(0);
 
@@ -120,16 +123,35 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
     }
   }, [subTab]);
 
-  const levels  = useMemo(() => uniqStrings(items.map((i) => i.level)), [items]);
-  const rooms   = useMemo(() => uniqStrings(items.map((i) => i.room_no)), [items]);
-  const descs   = useMemo(() => uniqStrings(items.map((i) => i.room_desc)), [items]);
-  const codes   = useMemo(() => uniqStrings(items.map((i) => i.code)), [items]);
-  const listers = useMemo(() => uniqStrings(items.map((i) => i.cutlist_owner_name)), [items]);
+  // Q420: related parts are not free-standing rows — they hang off a parent.
+  // Everything the grid does (filter, sort, the filter dropdowns' options) runs
+  // over the Joinery Items alone; each parent's related parts follow it, so no
+  // sort order can separate a child from its parent.
+  const parents = useMemo(
+    () => items.filter((i) => i.row_type !== "related_part"),
+    [items],
+  );
+  const childrenByParent = useMemo(() => {
+    const m = new Map<number, TrackingItemRow[]>();
+    for (const it of items) {
+      if (it.row_type !== "related_part" || it.parent_item_id == null) continue;
+      const kids = m.get(it.parent_item_id);
+      if (kids) kids.push(it);
+      else m.set(it.parent_item_id, [it]);
+    }
+    return m;
+  }, [items]);
+
+  const levels  = useMemo(() => uniqStrings(parents.map((i) => i.level)), [parents]);
+  const rooms   = useMemo(() => uniqStrings(parents.map((i) => i.room_no)), [parents]);
+  const descs   = useMemo(() => uniqStrings(parents.map((i) => i.room_desc)), [parents]);
+  const codes   = useMemo(() => uniqStrings(parents.map((i) => i.code)), [parents]);
+  const listers = useMemo(() => uniqStrings(parents.map((i) => i.cutlist_owner_name)), [parents]);
 
   const filtered = useMemo(() => {
     const cq = cutlistQuery.trim();
     const fq = freeQuery.trim().toLowerCase();
-    return items.filter((it) => {
+    return parents.filter((it) => {
       if (filters.stage && it.stage !== filters.stage) return false;
       if (filters.zone && it.zone !== filters.zone) return false;
       if (filters.level && it.level !== filters.level) return false;
@@ -148,7 +170,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       }
       return true;
     });
-  }, [items, filters, cutlistQuery, freeQuery]);
+  }, [parents, filters, cutlistQuery, freeQuery]);
 
   const sorted = useMemo(() => sortRows(filtered, sortKey, sortAsc), [filtered, sortKey, sortAsc]);
 
@@ -163,6 +185,15 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
 
   function patch<K extends keyof FilterState>(k: K, v: FilterState[K]) {
     setFilters((s) => ({ ...s, [k]: v }));
+  }
+
+  function toggleRelated(parentId: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
   }
 
   function clearFilters() {
@@ -298,17 +329,40 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
               </td>
             </tr>
           ) : (
-            sorted.map((it) => (
-              <Row
-                key={it.id}
-                row={it}
-                isDate={isDate}
-                subColCount={subCols?.length ?? 0}
-                today={today}
-                onOpen={() => onOpenItem(it.id)}
-                onOpenStatus={() => onOpenStatus(it.id)}
-              />
-            ))
+            sorted.flatMap((it) => {
+              const kids = childrenByParent.get(it.id) ?? [];
+              const isOpen = expanded.has(it.id);
+              const rows = [
+                <Row
+                  key={it.id}
+                  row={it}
+                  isDate={isDate}
+                  subColCount={subCols?.length ?? 0}
+                  today={today}
+                  relatedCount={kids.length}
+                  relatedOpen={isOpen}
+                  onToggleRelated={() => toggleRelated(it.id)}
+                  onOpen={() => onOpenItem(it.id)}
+                  onOpenStatus={() => onOpenStatus(it.id)}
+                />,
+              ];
+              if (isOpen) {
+                for (const kid of kids) {
+                  rows.push(
+                    <Row
+                      key={kid.id}
+                      row={kid}
+                      isDate={isDate}
+                      subColCount={subCols?.length ?? 0}
+                      today={today}
+                      onOpen={() => onOpenItem(kid.id)}
+                      onOpenStatus={() => onOpenStatus(kid.id)}
+                    />,
+                  );
+                }
+              }
+              return rows;
+            })
           )}
         </tbody>
       </table>
@@ -321,6 +375,9 @@ function Row({
   isDate,
   subColCount,
   today,
+  relatedCount = 0,
+  relatedOpen = false,
+  onToggleRelated,
   onOpen,
   onOpenStatus,
 }: {
@@ -328,29 +385,60 @@ function Row({
   isDate: boolean;
   subColCount: number;
   today: string;
+  relatedCount?: number;
+  relatedOpen?: boolean;
+  onToggleRelated?: () => void;
   onOpen: () => void;
   onOpenStatus: () => void;
 }) {
+  const isRelated = row.row_type === "related_part";
   return (
-    <tr className="border-t border-h-line hover:bg-h-bg">
+    <tr className={`border-t border-h-line hover:bg-h-bg ${isRelated ? "bg-h-bg/60" : ""}`}>
       <td className="px-1 py-1 text-center text-h-muted" title="Omit (mock-only)">
         <input type="checkbox" disabled className="opacity-30" />
       </td>
       <td className="px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="rounded p-0.5 text-h-muted transition hover:bg-h-bg hover:text-h-accent"
-          title="Open item details"
-          aria-label="Open item details"
-        >
-          ▶
-        </button>
+        {isRelated ? (
+          // Q559: GET /items/{id} 404s on a related part — it has no Cutlist,
+          // Hardware or Board tab to open. Related parts are edited in Tracking.
+          <span
+            className="inline-block p-0.5 text-h-line"
+            title="A related part has no item editor (Q559)"
+          >
+            ▪
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="rounded p-0.5 text-h-muted transition hover:bg-h-bg hover:text-h-accent"
+            title="Open item details"
+            aria-label="Open item details"
+          >
+            ▶
+          </button>
+        )}
       </td>
-      <td className="px-2 py-1 font-mono text-h-ink">
-        <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
-          {row.item_number ?? row.id}
-        </Link>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-h-ink">
+        <span className="flex items-center gap-1">
+          {isRelated ? (
+            <span className="w-3.5 shrink-0" />
+          ) : relatedCount > 0 ? (
+            <button
+              type="button"
+              onClick={onToggleRelated}
+              className="w-3.5 shrink-0 rounded text-[9px] text-h-muted transition hover:text-h-accent"
+              title={`${relatedOpen ? "Hide" : "Show"} ${relatedCount} related part${relatedCount === 1 ? "" : "s"}`}
+              aria-expanded={relatedOpen}
+              aria-label={`${relatedOpen ? "Hide" : "Show"} related parts`}
+            >
+              {relatedOpen ? "▼" : "▶"}
+            </button>
+          ) : (
+            <span className="w-3.5 shrink-0" />
+          )}
+          <ReferenceCell row={row} />
+        </span>
       </td>
       <td className="px-2 py-1 text-h-ink">{row.stage ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.zone ?? "—"}</td>
@@ -358,7 +446,18 @@ function Row({
       <td className="px-2 py-1 text-h-muted">{row.room_no ?? "—"}</td>
       <td className="px-2 py-1 text-h-ink">{row.room_desc ?? "—"}</td>
       <td className="px-2 py-1 font-mono text-h-ink">{row.code ?? "—"}</td>
-      <td className="px-2 py-1 text-h-ink">{row.description ?? "—"}</td>
+      <td className="px-2 py-1 text-h-ink">
+        {isRelated ? (
+          <span className="flex items-center gap-1.5 pl-4">
+            <span className="rounded bg-h-line/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-h-muted">
+              {row.related_part_type_key ?? "part"}
+            </span>
+            {row.description ?? "—"}
+          </span>
+        ) : (
+          row.description ?? "—"
+        )}
+      </td>
       <td className="px-2 py-1">
         <button
           type="button"
@@ -374,7 +473,14 @@ function Row({
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">{row.qty ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted" title="Assembler (mock-only)">—</td>
       <td className="px-2 py-1 text-h-muted">{row.cutlist_owner_name ?? "—"}</td>
-      {isDate ? (
+      {isRelated ? (
+        // Q419: show NO workflow stages for a related part — leave the whole
+        // stage area blank rather than borrowing the parent's dates. Blank
+        // cells, not em dashes: an em dash reads as "recorded, but empty".
+        Array.from({ length: isDate ? STAGE_KEYS.length : subColCount }).map((_, i) => (
+          <td key={i} className="px-2 py-1" />
+        ))
+      ) : isDate ? (
         STAGE_KEYS.map((sk) => (
           <StageCell key={sk} stage={row.stages[sk]} today={today} />
         ))
@@ -385,6 +491,45 @@ function Row({
       )}
       <td className="px-2 py-1 font-mono text-[10px] text-h-muted">{row.id}</td>
     </tr>
+  );
+}
+
+/**
+ * Q417: the leftmost reference depends on the row type — a Joinery Item shows
+ * its cutlist number, a related part shows the supplier-order number, because
+ * a related part never receives a cutlist number at all.
+ *
+ * Q567 fixes what "issued" means: the API returns `issued_order_no` only once
+ * that order carries a `date_ordered`, so a draft order leaves the cell blank.
+ *
+ * Q418: clicking the order number navigates to Orderbook. Locating the order
+ * *within* that page needs the Orderbook rework — `/orderbook` still renders
+ * procurement batches, not `purchase_orders`, so the `order` param is carried
+ * but not yet honoured there.
+ */
+function ReferenceCell({ row }: { row: TrackingItemRow }) {
+  if (row.row_type !== "related_part") {
+    return (
+      <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
+        {row.item_number ?? row.id}
+      </Link>
+    );
+  }
+  if (!row.issued_order_no) {
+    return (
+      <span className="text-h-muted" title="No supplier order issued yet">
+        —
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={`/orderbook?order=${encodeURIComponent(row.issued_order_no)}`}
+      className="text-h-accent hover:underline"
+      title="Open this order in Orderbook"
+    >
+      {row.issued_order_no}
+    </Link>
   );
 }
 

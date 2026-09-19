@@ -138,18 +138,13 @@ export function StationClient({ me, workerId }: Props) {
             <span className="font-mono text-sm text-h-muted">
               {active.project_code} · Cutlist #{active.cutlist_no}
             </span>
-            {active.code && (
-              <span className="font-mono text-sm text-h-ink">{active.code}</span>
-            )}
           </div>
           <div className="mt-3 text-3xl font-medium leading-tight text-h-ink">
             {active.cutlist_name ?? "—"}
           </div>
-          {(active.room_no || active.room_desc) && (
-            <div className="mt-1 text-sm text-h-muted">
-              {active.room_no} · {active.room_desc}
-            </div>
-          )}
+          <div className="mt-1 text-sm text-h-muted">
+            {active.item_count} item{active.item_count === 1 ? "" : "s"} on this cutlist
+          </div>
           {active.note && (
             <div className="mt-3 rounded border border-h-line bg-h-bg p-3 text-sm text-h-ink">
               {active.note}

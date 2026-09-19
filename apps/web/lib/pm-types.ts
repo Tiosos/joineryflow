@@ -74,6 +74,16 @@ export interface TrackingItemRow {
   item_locked: boolean;
   stages: Record<string, StageDates>; // keyed by stage_key: REQ..INST
   availability: AvailabilityRollup;
+  // Q420/Q422: related parts arrive in the SAME list, directly beneath their
+  // parent, and the grid nests on these. A related part has no stages at all
+  // (Q419), so `stages` is empty for it — that is not "nothing recorded yet".
+  row_type: "joinery_item" | "related_part";
+  parent_item_id: number | null;
+  related_part_type_key: string | null;
+  // Q417: the leftmost reference is the cutlist number for a Joinery Item and
+  // the most recent ISSUED supplier-order number for a related part.
+  issued_order_no: string | null;
+  issued_order_po_id: number | null;
 }
 
 export interface TrackingGridOut {
