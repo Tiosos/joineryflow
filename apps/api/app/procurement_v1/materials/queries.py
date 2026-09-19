@@ -12,15 +12,20 @@ Schema notes (real columns, see migrations 0001 + 0007):
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ...row_types import joinery_items_only
+
+# The project material rollup covers cutlist demand. A related part is procured
+# through an order of its own (Plan V1 Q424), not through batches.
+_JOINERY_ITEM = joinery_items_only("i")
 
 _ROLLUP_SQL = text(
-    """
+    f"""
     WITH demand AS (
       SELECT phc.material_type, phc.material_id,
              SUM(ihl.qty) AS qty_demand
         FROM item_hardware_lines ihl
         JOIN project_hardware_catalog phc ON phc.catalog_id = ihl.catalog_id
-        JOIN items i                      ON i.item_id      = ihl.item_id
+        JOIN items i                      ON i.item_id      = ihl.item_id AND {_JOINERY_ITEM}
        WHERE i.project_id = :pid
        GROUP BY phc.material_type, phc.material_id
 
@@ -29,7 +34,7 @@ _ROLLUP_SQL = text(
       SELECT 'BOARD', p.board_material_id, SUM(p.qty)
         FROM parts p
         JOIN modules m ON m.module_id = p.module_id
-        JOIN items   i ON i.item_id   = m.item_id
+        JOIN items   i ON i.item_id   = m.item_id AND {_JOINERY_ITEM}
        WHERE i.project_id = :pid
          AND p.board_material_id IS NOT NULL
        GROUP BY p.board_material_id

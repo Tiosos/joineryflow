@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.sessions import AuthUser
+from ..row_types import joinery_items_only
 from .schemas import (
     DeliveryToday,
     FavouriteProject,
@@ -27,6 +28,10 @@ from .schemas import (
     MyDayItem,
     TeamActivityRow,
 )
+
+# Related parts are never counted in dashboard metrics (Plan V1 Q419 gives
+# them no workflow stages, so every metric below is meaningless for them).
+_JOINERY_ITEM = joinery_items_only("i")
 
 # Workspace filter for items (items has no workspace_id; projects does, since 0014).
 _ITEM_WORKSPACE_EXISTS = """
@@ -95,6 +100,7 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             SELECT COUNT(DISTINCT i.item_id) AS cnt
             FROM items i
             WHERE {_ITEM_WORKSPACE_EXISTS}
+              AND {_JOINERY_ITEM}
               {scope_clause}
               AND EXISTS (
                   SELECT 1 FROM item_stages s
@@ -115,6 +121,7 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             SELECT COUNT(DISTINCT i.item_id) AS cnt
             FROM items i
             WHERE {_ITEM_WORKSPACE_EXISTS}
+              AND {_JOINERY_ITEM}
               {scope_clause}
               AND EXISTS (
                   SELECT 1 FROM item_stages s
@@ -137,6 +144,7 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             SELECT COUNT(DISTINCT i.item_id) AS cnt
             FROM items i
             WHERE {_ITEM_WORKSPACE_EXISTS}
+              AND {_JOINERY_ITEM}
               {scope_clause}
               AND EXISTS (
                   SELECT 1 FROM item_stages s
@@ -363,6 +371,7 @@ def _my_day(db: Session, *, user: AuthUser, today: date) -> list[MyDayItem]:
             JOIN projects pr ON pr.project_id = i.project_id
             JOIN item_stages s ON s.item_id = i.item_id
             WHERE {_ITEM_WORKSPACE_EXISTS}
+              AND {_JOINERY_ITEM}
               {scope_clause}
               AND s.due_date <= :horizon
               AND s.due_date IS NOT NULL

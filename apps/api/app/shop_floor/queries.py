@@ -12,7 +12,16 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..row_types import joinery_items_only
 from .lifecycle import later_stages, prior_stages, shop_floor_order
+
+# Shop Floor is production-only: a related part has no workflow stages at all
+# (Plan V1 Q419), so it must never reach a board, a queue or an assignment.
+# Applied to the enumerations and to the assign/complete guard. The three
+# by-assignment-id / by-log-id lookups are deliberately left unfiltered — they
+# are reachable only through a row the guard already refused to create, and B3
+# re-keys those two tables to (cutlist_id, stage_key) anyway.
+_JOINERY_ITEM = joinery_items_only("i")
 
 
 # ============================================================================
@@ -116,13 +125,14 @@ def active_assignments_for_worker(
     uniq_active_assignment index then blocks anyone else from taking over."""
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT wa.assignment_id, wa.item_id, wa.stage_key, wa.status
             FROM worker_assignment wa
             JOIN items i    ON i.item_id    = wa.item_id
             JOIN projects p ON p.project_id = i.project_id
             WHERE wa.worker_id = :wid
               AND p.workspace_id = :w
+              AND {_JOINERY_ITEM}
               AND wa.status IN ('assigned', 'in_progress')
             ORDER BY wa.assignment_id
             """
@@ -157,12 +167,13 @@ def item_for_workspace(
 ) -> dict | None:
     row = db.execute(
         text(
-            """
+            f"""
             SELECT i.item_id, i.project_id, i.painting_req,
                    i.paint_after_assembly, i.deleted, p.project_code
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :iid AND p.workspace_id = :w
+              AND {_JOINERY_ITEM}
             """
         ),
         {"iid": item_id, "w": workspace_id},
@@ -413,7 +424,7 @@ def board_cards(
     """
     rows = db.execute(
         text(
-            """
+            f"""
             WITH item_pool AS (
                 SELECT
                     i.item_id, i.num AS item_number, i.code, i.description,
@@ -457,6 +468,7 @@ def board_cards(
                 JOIN projects p ON p.project_id = i.project_id
                 WHERE p.project_id = :pid
                   AND p.workspace_id = :w
+                  AND {_JOINERY_ITEM}
                   AND i.deleted = false
             )
             SELECT ip.item_id, ip.item_number, ip.code, ip.description,
@@ -486,7 +498,7 @@ def worker_queue(
 ) -> list[dict]:
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT wa.assignment_id, wa.item_id, i.num AS item_number,
                    i.code, i.description, i.rm_no AS room_no,
                    i.rm_desc AS room_desc, p.project_code,
@@ -496,6 +508,7 @@ def worker_queue(
             JOIN items i    ON i.item_id    = wa.item_id
             JOIN projects p ON p.project_id = i.project_id
             WHERE wa.worker_id = :wid AND p.workspace_id = :w
+              AND {_JOINERY_ITEM}
               AND wa.status IN ('assigned', 'in_progress')
             ORDER BY CASE wa.status
                        WHEN 'in_progress' THEN 0 ELSE 1 END,
@@ -520,6 +533,7 @@ def recent_completions_for_worker(
             JOIN projects p ON p.project_id = i.project_id
             WHERE scl.worker_id = :wid
               AND p.workspace_id = :w
+              AND {_JOINERY_ITEM}
               AND scl.undone_at IS NULL
               AND scl.completed_at > now() - interval '{int(minutes)} minutes'
             ORDER BY scl.completed_at DESC

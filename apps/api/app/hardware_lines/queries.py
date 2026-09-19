@@ -24,6 +24,11 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log, write_edit_log_many
 from .schemas import AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn
+from ..row_types import joinery_items_only
+
+# Hardware lines belong to Joinery Items. A related part is procured through an
+# order of its own (Q417/Q424), never through a hardware line.
+_JOINERY_ITEM = joinery_items_only("i")
 
 # Maps source_table name -> (material_type DB value, pk column name)
 _SOURCE_TABLE_MAP: dict[str, tuple[str, str]] = {
@@ -217,10 +222,11 @@ def _item_project_in_workspace(
     """Return project_id if item belongs to a workspace project, else None."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT i.project_id
             FROM items i
             WHERE i.item_id = :iid
+              AND {_JOINERY_ITEM}
               AND EXISTS (
                   SELECT 1 FROM projects p
                   WHERE p.project_id = i.project_id
@@ -239,10 +245,10 @@ def _line_item_in_workspace(
     """Return {line_id, item_id, qty, note, catalog_id} if line is in workspace, else None."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT ihl.line_id, ihl.item_id, ihl.qty, ihl.note, ihl.catalog_id
             FROM item_hardware_lines ihl
-            JOIN items i ON i.item_id = ihl.item_id
+            JOIN items i ON i.item_id = ihl.item_id AND {_JOINERY_ITEM}
             WHERE ihl.line_id = :lid
               AND EXISTS (
                   SELECT 1 FROM projects p
@@ -405,7 +411,7 @@ def get_hardware_line(
     """Return HardwareLineOut-shaped dict for a single line, or None if not visible."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT
                 ihl.line_id                 AS id,
                 ihl.catalog_id,
@@ -416,7 +422,7 @@ def get_hardware_line(
                 ihl.note
             FROM item_hardware_lines ihl
             JOIN project_hardware_catalog phc ON phc.catalog_id = ihl.catalog_id
-            JOIN items i ON i.item_id = ihl.item_id
+            JOIN items i ON i.item_id = ihl.item_id AND {_JOINERY_ITEM}
             LEFT JOIN LATERAL (
                 SELECT description, supplier FROM board_materials
                 WHERE material_id = phc.material_id AND phc.material_type = 'BOARD'

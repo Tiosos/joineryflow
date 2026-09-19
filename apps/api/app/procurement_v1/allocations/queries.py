@@ -6,17 +6,22 @@ was unsafe for projects with NULL pm_id and is no longer used.
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ...row_types import joinery_items_only
+
+# Allocations answer "is this item blocked on a material?" for cutlist work.
+# A related part has no hardware lines to allocate against (Plan V1 Q447).
+_JOINERY_ITEM = joinery_items_only("i")
 
 
 def list_allocations_for_batch(db: Session, *, batch_id: int) -> list[dict]:
     sql = text(
-        """
+        f"""
         SELECT ba.allocation_id, ba.batch_id, ba.item_hardware_line_id,
                ba.qty_allocated, ba.created_at,
                i.code AS item_code, i.description AS item_description
           FROM batch_allocations ba
           JOIN item_hardware_lines ihl ON ihl.line_id = ba.item_hardware_line_id
-          JOIN items i                 ON i.item_id   = ihl.item_id
+          JOIN items i                 ON i.item_id   = ihl.item_id AND {_JOINERY_ITEM}
          WHERE ba.batch_id = :bid
          ORDER BY ba.allocation_id
         """
@@ -41,11 +46,11 @@ def batch_capacity(db: Session, *, batch_id: int) -> tuple:
 
 def line_belongs_to_batch_project(db: Session, *, batch_id: int, line_id: int) -> bool:
     sql = text(
-        """
+        f"""
         SELECT EXISTS(
           SELECT 1
             FROM item_hardware_lines ihl
-            JOIN items i                ON i.item_id     = ihl.item_id
+            JOIN items i                ON i.item_id     = ihl.item_id AND {_JOINERY_ITEM}
             JOIN procurement_batches pb ON pb.project_id = i.project_id
            WHERE pb.batch_id = :bid AND ihl.line_id = :lid
         )
@@ -76,7 +81,7 @@ def patch_allocation(db: Session, *, allocation_id: int, qty: float) -> int:
 
 def get_allocation(db: Session, *, allocation_id: int, workspace_id: int) -> dict | None:
     sql = text(
-        """
+        f"""
         SELECT ba.allocation_id, ba.batch_id, ba.item_hardware_line_id,
                ba.qty_allocated, ba.created_at,
                i.code AS item_code, i.description AS item_description
@@ -84,7 +89,7 @@ def get_allocation(db: Session, *, allocation_id: int, workspace_id: int) -> dic
           JOIN procurement_batches pb  ON pb.batch_id  = ba.batch_id
           JOIN projects p              ON p.project_id = pb.project_id
           JOIN item_hardware_lines ihl ON ihl.line_id  = ba.item_hardware_line_id
-          JOIN items i                 ON i.item_id    = ihl.item_id
+          JOIN items i                 ON i.item_id    = ihl.item_id AND {_JOINERY_ITEM}
          WHERE ba.allocation_id = :aid AND p.workspace_id = :w
         """
     )

@@ -642,12 +642,19 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
 
 
 def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
-    """Fetch bare item columns for mutation helpers.  Returns None if 404."""
+    """Fetch bare item columns for mutation helpers.  Returns None if 404.
+
+    Deliberately **not** filtered to Joinery Items: the related-part routes
+    (Q450 own status, Q452 reparent) reach their rows through this helper.
+    It returns `row_type` so each caller can decide — see `patch_lifecycle`
+    and `claim_or_release_lock`, which refuse related parts.
+    """
     row = db.execute(
         text(
             f"""
             SELECT
                 i.item_id,
+                i.row_type,
                 i.project_id,
                 i.description,
                 i.qty,
@@ -974,6 +981,12 @@ def patch_lifecycle(
     if current is None:
         return "NOT_FOUND"
 
+    # Q419: a related part shows no workflow stages at all, so it has no
+    # lifecycle to patch.  NOT_FOUND rather than a new sentinel — the stage
+    # genuinely does not exist for this row.
+    if current["row_type"] != "joinery_item":
+        return "NOT_FOUND"
+
     # Fetch current stage row (if any) to capture old values for edit_log
     existing = db.execute(
         text(
@@ -1062,6 +1075,11 @@ def claim_or_release_lock(
     """
     current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
     if current is None:
+        return "NOT_FOUND"
+
+    # The soft-lock guards cutlist ownership, and a related part has no
+    # cutlist (Q417), so it can neither be claimed nor assigned.
+    if current["row_type"] != "joinery_item":
         return "NOT_FOUND"
 
     prior_owner: int | None = current["cutlist_owner_id"]

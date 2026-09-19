@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..row_types import joinery_items_only
 from .schemas import CreateProjectIn, PatchProjectIn
 
 
@@ -46,7 +47,7 @@ _SELECT_COLS = """
     (f.user_id IS NOT NULL)               AS is_favourite
 """
 
-_FROM_JOINS = """
+_FROM_JOINS = f"""
     FROM projects p
     LEFT JOIN app_user u
         ON u.id = p.pm_id
@@ -55,6 +56,7 @@ _FROM_JOINS = """
     LEFT JOIN (
         SELECT project_id, COUNT(*) AS cnt
         FROM items
+        WHERE {joinery_items_only("items")}
         GROUP BY project_id
     ) ic ON ic.project_id = p.project_id
 """
