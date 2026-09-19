@@ -281,3 +281,86 @@ def test_list_is_scoped_to_the_project(ctx):
     two = ctx["client"].get(f"/projects/{ctx['pid2']}/cutlists").json()
     assert len(one["cutlists"]) == 2
     assert len(two["cutlists"]) == 1
+
+
+# ── C2: what the Tracking CUTLIST column actually shows (Q438 / Q568) ─────────
+
+
+def _tracking(ctx) -> dict[int, dict]:
+    r = ctx["client"].get(f"/projects/{ctx['pid']}/items")
+    assert r.status_code == 200, r.text
+    return {row["id"]: row for row in r.json()["items"]}
+
+
+def test_tracking_shows_the_shared_cutlist_number_not_the_item_id(ctx):
+    """Q438/Q568 — the bug this task existed to fix.
+
+    Q540 gave every migrated item a cutlist numbered as itself, so reading
+    `items.num` into the CUTLIST column looked correct until a cutlist was
+    genuinely shared.  Then the second item's row showed its own Item ID.
+    """
+    cl = _create(ctx)
+    for iid in (ctx["item_a"], ctx["item_b"]):
+        assert ctx["client"].post(
+            f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": iid}
+        ).status_code == 200
+
+    rows = _tracking(ctx)
+    a, b = rows[ctx["item_a"]], rows[ctx["item_b"]]
+
+    assert a["cutlist_no"] == b["cutlist_no"] == cl["cutlist_no"], (
+        "both rows carry the shared cutlist's number"
+    )
+    assert a["item_number"] != b["item_number"], "their Item IDs stay distinct"
+    assert b["item_number"] != b["cutlist_no"], (
+        "the second item's own number is NOT its cutlist number"
+    )
+    assert a["cutlist_id"] == b["cutlist_id"] == cl["cutlist_id"]
+
+
+def test_tracking_leaves_the_cutlist_number_empty_until_one_is_assigned(ctx):
+    """Q440: an item may hold no cutlist indefinitely."""
+    row = _tracking(ctx)[ctx["item_a"]]
+    assert row["cutlist_no"] is None
+    assert row["cutlist_id"] is None
+    assert row["item_number"] is not None, "it still has an Item ID"
+
+
+def test_the_stage_strip_stays_per_item_on_a_shared_cutlist(ctx):
+    """Q441 + Q539: one shared cutlist, but each row's strip is its own.
+
+    The late joiner's earlier stages stay blank (Q539), so two rows on the same
+    cutlist legitimately differ — which is only visible because Tracking reads
+    `item_stages` per row rather than joining the cutlist.
+    """
+    cl = _create(ctx)
+    assert ctx["client"].post(
+        f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": ctx["item_a"]}
+    ).status_code == 200
+
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("INSERT INTO stages(stage_key, label, sort_order)"
+                 " VALUES('DOWN','Down',4) ON CONFLICT DO NOTHING")
+        )
+        db.execute(
+            text("INSERT INTO item_stages(item_id, stage_key, done_date)"
+                 " VALUES(:i, 'DOWN', CURRENT_DATE)"),
+            {"i": ctx["item_a"]},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    assert ctx["client"].post(
+        f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": ctx["item_b"]}
+    ).status_code == 200
+
+    rows = _tracking(ctx)
+    a, b = rows[ctx["item_a"]], rows[ctx["item_b"]]
+    assert a["cutlist_no"] == b["cutlist_no"], "same cutlist"
+    assert a["stages"].get("DOWN", {}).get("done_date") is not None
+    assert "DOWN" not in b["stages"], (
+        "the late joiner's strip is blank — it is not borrowed from the cutlist"
+    )

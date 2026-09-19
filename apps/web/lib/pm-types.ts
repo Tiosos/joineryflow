@@ -80,6 +80,11 @@ export interface TrackingItemRow {
   row_type: "joinery_item" | "related_part";
   parent_item_id: number | null;
   related_part_type_key: string | null;
+  // Q438: the cutlist this item belongs to. SHARED — several rows carry the
+  // same number — and null until one is assigned, which Q440 allows
+  // indefinitely. Not the same as item_number, which is the Item ID (Q541).
+  cutlist_id: number | null;
+  cutlist_no: number | null;
   // Q417: the leftmost reference is the cutlist number for a Joinery Item and
   // the most recent ISSUED supplier-order number for a related part.
   issued_order_no: string | null;

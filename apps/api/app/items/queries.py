@@ -68,6 +68,13 @@ _ITEM_COLS = """
     i.cutlist_owner_id,
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
+    -- Q438 + Q568: the CUTLIST column is the *cutlist's* number, which several
+    -- items share, not the item's own `num`.  Q540 made the two equal for every
+    -- migrated item, which is why reading `num` looked right until a cutlist was
+    -- actually shared.  NULL while an item has no cutlist, which Q440 permits
+    -- indefinitely.
+    i.cutlist_id,
+    cl.cutlist_no,
     -- Q417 + Q567: the leftmost Tracking reference is the cutlist number for a
     -- Joinery Item and the ISSUED supplier-order number for a related part.
     -- "Issued" is `date_ordered IS NOT NULL` -- the column that records the day
@@ -126,6 +133,7 @@ def list_items_for_project(
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN items parent ON parent.item_id = i.parent_item_id
+            LEFT JOIN cutlist cl ON cl.cutlist_id = i.cutlist_id
             LEFT JOIN LATERAL (
                 SELECT po.po_id, po.po_number
                   FROM purchase_orders po
@@ -214,6 +222,8 @@ def list_items_for_project(
                 "row_type": r["row_type"],
                 "parent_item_id": r["parent_item_id"],
                 "related_part_type_key": r["related_part_type_key"],
+                "cutlist_id": r["cutlist_id"],
+                "cutlist_no": r["cutlist_no"],
                 "issued_order_no": r["issued_order_no"],
                 "issued_order_po_id": r["issued_order_po_id"],
                 "stages": stages_by_item.get(item_id, {}),

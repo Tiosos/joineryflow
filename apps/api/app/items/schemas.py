@@ -50,6 +50,11 @@ class TrackingItemRow(BaseModel):
     row_type: str                   # 'joinery_item' | 'related_part'
     parent_item_id: int | None
     related_part_type_key: str | None
+    # Q438: the cutlist this item belongs to — SHARED, so several rows carry
+    # the same number.  None while the item has no cutlist (Q440).  Distinct
+    # from `item_number`, which is the item's own Item ID (Q541).
+    cutlist_id: int | None
+    cutlist_no: int | None
     # Q417/Q567: the most recent ISSUED supplier order for this row
     # (`date_ordered IS NOT NULL`), which the Tracking grid shows in place of a
     # cutlist number on a related part.  None until an order is issued.

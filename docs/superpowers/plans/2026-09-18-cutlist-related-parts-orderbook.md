@@ -1,14 +1,14 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1
-> are done**; C2–C6, D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7, C1
+> and C2 are done**; C3–C6, D and E are not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q567 — Q552 onward were raised while
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q568 — Q552 onward were raised while
 > building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
@@ -567,8 +567,37 @@ hand-edited predicates.
       and the shop-floor block selects only cutlisted `joinery_item` rows, so a
       re-run cannot pick up a later-seeded item that has none. Verified across
       four consecutive runs.
-- [ ] **C2** Stage strip repeats on every item row (Q441) — reads `item_stages`
+- [x] **C2** Stage strip repeats on every item row (Q441) — reads `item_stages`
       directly, no join to cutlist.
+
+      → **This task as written was already satisfied** by B1/B3:
+      `list_items_for_project` fetches stages in a second query over
+      `item_stages` and never joined `cutlist`, and the grid draws all ten
+      cells on every row. Nothing to build.
+
+      → **Q568 raised and answered**: the column *labelled* CUTLIST was showing
+      `items.num` — the **Item ID**, not the cutlist number. Q540 gave every
+      migrated item a cutlist numbered as itself, so the two matched and it
+      looked right until a cutlist was genuinely shared, which is the point of
+      Q438. Demonstrated on real rows: items 11 and 12 both on cutlist
+      `290001`, and item 12's row read `290002`.
+
+      `TrackingItemRow` now carries `cutlist_no` + `cutlist_id`; the CUTLIST
+      column renders the shared number (blank when none, per Q440) and the
+      far-right **Item ID** column takes over `items.num` (Q541/Q416) in place
+      of the internal row key it was showing, keeping the editor link. Sorting
+      the CUTLIST header orders by `cutlist_no`; the `Cutlist #` box matches
+      either number, since Q541's one sequence means they cannot collide. The
+      cutlist number is **plain text** — the workspace it should open is C3.
+
+      → **verified**: 3 new cases in `test_cutlist_routes.py` (15 total,
+      passing) pin the shared number against distinct Item IDs, the
+      no-cutlist-yet blank, and that two rows on one cutlist still carry
+      **different** stage strips when one joined late (Q441 + Q539 together —
+      the property that only holds because Tracking reads `item_stages` per
+      row). `npx tsc --noEmit` clean. Confirmed in a browser against a real
+      shared cutlist: rows 1 and 2 read CUTLIST `290001` with Item IDs
+      `290001` and `290002`. Full suite **615 passed, 1 skipped**.
 - [ ] **C3** `/list` becomes the **Cutlist module workspace** (Q474). Opens as a
       `target="_blank"` tab (Q545), deep-linkable (Q478).
 - [ ] **C4** Tracking **O/BOOK subtab** with **Create Order** (Q425) opening the

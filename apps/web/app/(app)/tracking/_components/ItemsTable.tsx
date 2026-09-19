@@ -160,7 +160,14 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       if (filters.code && it.code !== filters.code) return false;
       if (filters.status && it.status !== filters.status) return false;
       if (filters.lister && it.cutlist_owner_name !== filters.lister) return false;
-      if (cq && !(it.item_number != null && String(it.item_number).includes(cq))) return false;
+      // The box is labelled "Cutlist #", so it matches the cutlist number — but
+      // Q541 draws Item IDs and cutlist numbers from ONE sequence, so the two
+      // can never collide and matching either keeps a six-digit number typed
+      // from a printed sheet finding its row whichever kind it is.
+      if (cq) {
+        const nums = [it.cutlist_no, it.item_number].filter((n) => n != null);
+        if (!nums.some((n) => String(n).includes(cq))) return false;
+      }
       if (fq) {
         const hay = [it.code, it.description, it.room_desc, it.room_no, it.stage]
           .filter(Boolean)
@@ -489,7 +496,19 @@ function Row({
           <td key={i} className="px-2 py-1 text-h-muted">—</td>
         ))
       )}
-      <td className="px-2 py-1 font-mono text-[10px] text-h-muted">{row.id}</td>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-[10px] text-h-muted">
+        {/* Q541/Q416: the Item ID is the six-digit `num`, not the internal row
+            key. It moved here from the CUTLIST column, which now carries the
+            cutlist's own number, and keeps the click-through to the editor —
+            except on a related part, which has no editor (Q559). */}
+        {isRelated ? (
+          <span>{row.item_number ?? row.id}</span>
+        ) : (
+          <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
+            {row.item_number ?? row.id}
+          </Link>
+        )}
+      </td>
     </tr>
   );
 }
@@ -509,10 +528,14 @@ function Row({
  */
 function ReferenceCell({ row }: { row: TrackingItemRow }) {
   if (row.row_type !== "related_part") {
-    return (
-      <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
-        {row.item_number ?? row.id}
-      </Link>
+    // Q438/Q568: the cutlist's number, which several items share — not this
+    // item's own. Plain text for now: the cutlist workspace it should open is
+    // C3's job (Q474). Blank while the item has no cutlist, which Q440 allows
+    // indefinitely; its Item ID still identifies the row.
+    return row.cutlist_no != null ? (
+      <span>{row.cutlist_no}</span>
+    ) : (
+      <span className="text-h-muted" title="No cutlist assigned yet">—</span>
     );
   }
   if (!row.issued_order_no) {
@@ -640,7 +663,8 @@ function compareRows(a: TrackingItemRow, b: TrackingItemRow, key: SortKey): numb
     return cmp(av, bv);
   }
   switch (key as Exclude<SortKey, `stage:${string}`>) {
-    case "num":    return cmp(a.item_number ?? 0, b.item_number ?? 0);
+    // "num" is the CUTLIST column, which now carries the cutlist's number.
+    case "num":    return cmp(a.cutlist_no ?? 0, b.cutlist_no ?? 0);
     case "stage":  return cmp(a.stage ?? "", b.stage ?? "");
     case "zone":   return cmp(a.zone ?? "", b.zone ?? "");
     case "level":  return cmp(a.level ?? "", b.level ?? "");
@@ -653,7 +677,7 @@ function compareRows(a: TrackingItemRow, b: TrackingItemRow, key: SortKey): numb
     case "qty":    return cmp(a.qty ?? 0, b.qty ?? 0);
     case "assem":  return 0;
     case "lister": return cmp(a.cutlist_owner_name ?? "", b.cutlist_owner_name ?? "");
-    case "itemId": return cmp(a.id, b.id);
+    case "itemId": return cmp(a.item_number ?? a.id, b.item_number ?? b.id);
   }
 }
 

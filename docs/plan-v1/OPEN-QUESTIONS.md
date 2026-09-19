@@ -1734,6 +1734,34 @@ rebuilds it**: C4 adds an O/BOOK subtab to *Tracking*, which is a different
 surface. The param is carried so the link works the moment Orderbook reads
 orders; until then the user lands on the page but must find the order by eye.
 
+### Q568 — What does Tracking's CUTLIST column actually show? *(new — raised while building C2)*
+**Confirmed 2026-09-19: the cutlist's own number.** `TrackingItemRow` now
+carries `cutlist_no` + `cutlist_id` from a `LEFT JOIN cutlist`, and the column
+renders that — blank when the item holds none, which **Q440** permits
+indefinitely. The far-right **Item ID** column takes over `items.num` (the
+six-digit Item ID of **Q541**/Q416, in place of the internal row key it was
+showing) and keeps the click-through to the editor.
+
+*Why this had to be asked.* The plan's **C2** reads "stage strip repeats on
+every item row (Q441) — reads `item_stages` directly, no join to cutlist". That
+was **already true**: `list_items_for_project` fetches stages in a second query
+over `item_stages` and never joined `cutlist`, and the grid draws all ten cells
+per row. C2 as written was a no-op.
+
+**The column underneath it was wrong.** `_ITEM_COLS` selected `i.num AS
+item_number` into a column *labelled* CUTLIST. **Q540** gave every migrated
+item a cutlist numbered as itself, so the two matched and it looked right —
+until a cutlist is genuinely shared, which is the entire point of **Q438**.
+Demonstrated on real rows: with items 11 and 12 both on cutlist `290001`, item
+12's row read `290002`, its own Item ID.
+
+**Consequences.** Sorting the CUTLIST header now orders by `cutlist_no`, and
+items awaiting one sort together at the top. The `Cutlist #` search box matches
+**either** number: Q541 draws Item IDs and cutlist numbers from one sequence so
+they cannot collide, and a six-digit number copied off a printed sheet should
+find its row whichever kind it is. The cutlist number is **plain text, not a
+link** — the cutlist workspace it should open is **Q474**, built in C3.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*
