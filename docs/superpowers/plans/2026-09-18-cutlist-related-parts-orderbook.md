@@ -313,14 +313,57 @@ hand-edited predicates.
       run here** — the container has no `sqlalchemy` and pip is network-blocked
       — so each test's SQL was executed directly against the real schema
       instead; all four pass. Run `make test` to confirm the Python wiring.
-- [ ] **B3** Rework `shop_floor` — re-key `worker_assignment` and
-      `stage_completion_log` to `(cutlist_id, stage_key)` for production and
-      `(item_id, 'INST')` for install (Q445); rebuild the partial unique index;
-      **fan out** `item_stages.done_date` to every linked item on complete
-      (Q439); undo reverses the whole cutlist (Q446); a late-linked item is a
-      no-op on undo (Q539).
-      → verify: complete CNC on a 3-item cutlist → 3 `item_stages` rows; undo →
-      0. Late-linked 4th item gains nothing on either.
+- [x] **B3** — **done**, via **migration `0030_shop_floor_cutlist`** (the
+      A-series reserved only `0026`–`0029`; the re-key needs schema).
+      **Scope corrected — see Q561.** The task said "(item_id, 'INST') for
+      install", but **Shop Floor has never been able to hold DEL or INST**:
+      both tables CHECK `stage_key IN ('DOWN','CNC','EDGED','PAINTED','MADE')`
+      since `0020`, neither stage appears in `app/shop_floor/`, and the board
+      is five columns. The install half was unbuilt functionality, not a
+      re-key. Q561 confirmed **the five production stages only**; Q413's shared
+      delivery and Q415's per-item install remain unimplemented, and Q415's
+      "Site Installation Manager" still has no matching auth role.
+
+      **The two tables are treated differently, on purpose.**
+      `worker_assignment` is mutable current state, so it is fully re-keyed —
+      `item_id` dropped, `cutlist_id NOT NULL`. `stage_completion_log` is
+      append-only history and Q435 requires data-preserving migrations, so its
+      `item_id` is **kept, nullable**, as the provenance of each pre-`0030`
+      completion; new rows write `cutlist_id` and leave it NULL.
+
+      **Why the backfill cannot collide:** `0027` minted one cutlist per
+      existing item (Q540), so every pre-existing item maps to a distinct
+      cutlist and each unique `(item_id, stage_key)` becomes a unique
+      `(cutlist_id, stage_key)`. Demonstrated on fixture data — three active
+      `DOWN` assignments on three items all survived.
+
+      **Q562 made the fan-out selective.** `painting_req` and
+      `paint_after_assembly` are per item, so one cutlist can carry three
+      different orders at once. `cutlist_prior_stages_done` unions each item's
+      missing priors (one lagging item blocks the whole cutlist) and
+      `fan_out_stage_done` writes `done_date` only to items whose **own** order
+      contains the stage — a `painting_req = false` item never receives a
+      PAINTED date from a painted sibling.
+
+      **Also updated, because the contract changed:** the seed's shop-floor
+      block, two existing test files (their fixtures now mint a cutlist per
+      item, as `0027` does), the TypeScript types, and the **kiosk**
+      (`StationClient.tsx`), which showed an item number and now shows the
+      cutlist number plus its item count. The Foreman board is unchanged —
+      `BoardCard` is still per item (Q441 repeats the strip on every row); only
+      its `assignment` is now shared.
+
+      → **verified** against a real Postgres 16: full `0001`–`0030` chain clean
+      on a virgin DB; backfill loses **nothing** (4 assignments → 4, 1 log → 1)
+      and the rebuilt partial unique index refuses a second active assignment
+      on the same `(cutlist, stage)` while still allowing a cancelled row
+      beside an active one; downgrade → re-upgrade is **byte-identical** across
+      columns and indexes; all 18 `shop_floor` queries and all 170 test/seed
+      statements parse against the re-keyed schema; the selective fan-out,
+      the union gate and the cutlist-wide undo were each exercised on the
+      three-item mixed-flag fixture. New `tests/test_shop_floor_cutlist.py`
+      (6 cases). **`pytest` could not be run here** (no `sqlalchemy`) — run
+      `make test`.
 - [ ] **B4** Related-part routes — create (drafter or PM, Q423), reparent with
       audit (Q452), own status (Q450). **No workflow stages** (Q419).
 - [ ] **B5** `supplier` CRUD; repoint catalog reads/writes (Q506).

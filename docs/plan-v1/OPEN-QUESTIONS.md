@@ -1503,6 +1503,53 @@ stuck — exactly the case **Q450** gives it its own status to surface.
 Showing the linked order's status here instead was considered and **not**
 taken: it depends on B6 and widens B1. Revisit once orders exist.
 
+### Q561 — How far does B3's Shop Floor re-key reach? *(new — raised while building B3)*
+**Option 1 confirmed (2026-09-19): the five production stages only.**
+`DOWN · CNC · EDGED · PAINTED · MADE` re-key to `cutlist_id`. **DEL and INST
+stay out of Shop Floor entirely** and remain recordable per item through the
+item editor's lifecycle PATCH, exactly as today.
+
+*Why this had to be asked.* Q445 option 3 reads "(cutlist_id, stage_key) for
+production, (item_id, 'INST') for install" — but **Shop Floor cannot hold
+either DEL or INST**. Both `worker_assignment` and `stage_completion_log` carry
+`CHECK (stage_key IN ('DOWN','CNC','EDGED','PAINTED','MADE'))` from migration
+`0020`; neither stage appears anywhere in `app/shop_floor/`; and the board is
+five columns (`ShopFloorClient.tsx:37`). Q413 additionally makes **delivery
+shared** across the cutlist, which the plan's B3 text omitted altogether. So
+the install half of Q445 was never a re-key — it was unbuilt functionality.
+
+**Consequences.** Q445 is now **partially deferred**: its production half ships
+in B3, its `(item_id, 'INST')` half is not built. Q413's shared delivery and
+Q415's per-item install completion both remain **unimplemented**, and Q415's
+"Site Installation Manager" still has no matching auth role among the seven —
+that gap must be closed before install tracking can be built.
+
+### Q562 — Whose stage order governs a shared cutlist? *(new — raised while building B3)*
+**Option 1 confirmed (2026-09-19): check per item, gate on all linked items.**
+`painting_req` and `paint_after_assembly` stay on `items`. Completing a stage on
+a cutlist requires **every** linked item's prior stages to be done, and the
+fan-out writes `done_date` only to those items whose **own** order contains that
+stage.
+
+*The collision, demonstrated on the real schema.* Both flags are per-item, so
+one cutlist can carry three different orders at once:
+
+| item | `painting_req` | `paint_after_assembly` | order |
+| --- | --- | --- | --- |
+| painted door | true | false | DOWN · CNC · EDGED · **PAINTED** · MADE |
+| raw carcass | false | — | DOWN · CNC · EDGED · MADE *(no PAINTED)* |
+| paint-last top | true | true | DOWN · CNC · EDGED · MADE · **PAINTED** |
+
+`prior_stages_done()` reads both flags per item, so once assignment keys off the
+cutlist it has no single answer.
+
+**Consequence — the fan-out is selective, not blanket.** Q439 says completion
+writes the same `done_date` to every linked item; under this answer it writes to
+every linked item **for which that stage exists**. `raw carcass` never receives
+a `PAINTED` date. Moving the flags onto the cutlist was considered and not
+taken: it needs a migration and a rule for collapsing per-item values that
+already disagree.
+
 ---
 
 ## §L — Locking, concurrency and rollback *(Plan V1 §11–§12, §39)*

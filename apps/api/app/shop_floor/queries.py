@@ -126,13 +126,13 @@ def active_assignments_for_worker(
     rows = db.execute(
         text(
             f"""
-            SELECT wa.assignment_id, wa.item_id, wa.stage_key, wa.status
+            SELECT wa.assignment_id, wa.cutlist_id, c.cutlist_no,
+                   wa.stage_key, wa.status
             FROM worker_assignment wa
-            JOIN items i    ON i.item_id    = wa.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE wa.worker_id = :wid
               AND p.workspace_id = :w
-              AND {_JOINERY_ITEM}
               AND wa.status IN ('assigned', 'in_progress')
             ORDER BY wa.assignment_id
             """
@@ -168,7 +168,7 @@ def item_for_workspace(
     row = db.execute(
         text(
             f"""
-            SELECT i.item_id, i.project_id, i.painting_req,
+            SELECT i.item_id, i.project_id, i.cutlist_id, i.painting_req,
                    i.paint_after_assembly, i.deleted, p.project_code
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
@@ -179,6 +179,111 @@ def item_for_workspace(
         {"iid": item_id, "w": workspace_id},
     ).mappings().first()
     return dict(row) if row else None
+
+
+# ============================================================================
+# Cutlist resolution — Shop Floor keys on the cutlist (Q412, migration 0030)
+# ============================================================================
+
+def cutlist_items(db: Session, *, cutlist_id: int) -> list[dict]:
+    """Every Joinery Item on a cutlist, with the two flags that set its order.
+
+    This is the unit Shop Floor now works in: one assignment, one completion,
+    N items. Related parts are excluded — they have no workflow at all (Q419).
+    """
+    rows = db.execute(
+        text(
+            f"""
+            SELECT i.item_id, i.num, i.painting_req, i.paint_after_assembly
+            FROM items i
+            WHERE i.cutlist_id = :cid
+              AND {_JOINERY_ITEM}
+              AND i.deleted = false
+            ORDER BY COALESCE(i.num, CAST(i.item_id AS integer))
+            """
+        ),
+        {"cid": cutlist_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def cutlist_for_workspace(
+    db: Session, *, cutlist_id: int, workspace_id: int
+) -> dict | None:
+    row = db.execute(
+        text(
+            """
+            SELECT c.cutlist_id, c.cutlist_no, c.project_id, p.project_code
+            FROM cutlist c
+            JOIN projects p ON p.project_id = c.project_id
+            WHERE c.cutlist_id = :cid AND p.workspace_id = :w
+            """
+        ),
+        {"cid": cutlist_id, "w": workspace_id},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def cutlist_prior_stages_done(
+    db: Session, *, cutlist_id: int, stage_key: str
+) -> list[str]:
+    """Priors still outstanding across **every** item on the cutlist (Q562).
+
+    `painting_req` and `paint_after_assembly` are per item, so one cutlist can
+    carry several different stage orders at once. The cutlist's stage is only
+    reachable when it is reachable for all of them, so this unions each item's
+    own missing priors. An item whose order excludes PAINTED never contributes
+    PAINTED to the result.
+    """
+    missing: list[str] = []
+    for item in cutlist_items(db, cutlist_id=cutlist_id):
+        if stage_key not in shop_floor_order(bool(item["paint_after_assembly"])):
+            continue
+        for s in prior_stages_done(
+            db,
+            item_id=item["item_id"],
+            stage_key=stage_key,
+            painting_req=bool(item["painting_req"]),
+            paint_after_assembly=bool(item["paint_after_assembly"]),
+        ):
+            if s not in missing:
+                missing.append(s)
+    return missing
+
+
+def fan_out_stage_done(
+    db: Session, *, cutlist_id: int, stage_key: str
+) -> list[int]:
+    """Q439 — write the completion onto every linked item. Returns the ids hit.
+
+    **Selective, not blanket** (Q562): an item whose own order does not contain
+    this stage is skipped, so a `painting_req = false` item never receives a
+    PAINTED date just because a sibling on the same cutlist needed painting.
+    """
+    touched: list[int] = []
+    for item in cutlist_items(db, cutlist_id=cutlist_id):
+        if stage_key not in shop_floor_order(bool(item["paint_after_assembly"])):
+            continue
+        if stage_key == "PAINTED" and not item["painting_req"]:
+            continue
+        upsert_item_stage_done(db, item_id=item["item_id"], stage_key=stage_key)
+        touched.append(item["item_id"])
+    return touched
+
+
+def fan_in_stage_undone(
+    db: Session, *, cutlist_id: int, stage_key: str
+) -> list[int]:
+    """Q446 — undo reverses the whole cutlist, not one item.
+
+    Q539's late joiner is a no-op here for free: it has no `item_stages` row
+    for the stage, so clearing its `done_date` changes nothing.
+    """
+    touched: list[int] = []
+    for item in cutlist_items(db, cutlist_id=cutlist_id):
+        clear_item_stage_done(db, item_id=item["item_id"], stage_key=stage_key)
+        touched.append(item["item_id"])
+    return touched
 
 
 # ============================================================================
@@ -193,7 +298,11 @@ def prior_stages_done(
     painting_req: bool,
     paint_after_assembly: bool,
 ) -> list[str]:
-    """Return the list of priors that are NOT done yet. Empty list -> ok."""
+    """Return the list of priors that are NOT done yet. Empty list -> ok.
+
+    Still per item: Q562 keeps both flags on `items`, and
+    `cutlist_prior_stages_done` above unions this across a cutlist.
+    """
     priors = prior_stages(
         stage_key,
         painting_req=painting_req,
@@ -251,6 +360,30 @@ def later_stages_done(
     return [s for s in after if s in done]
 
 
+def cutlist_later_stages_done(
+    db: Session, *, cutlist_id: int, stage_key: str
+) -> list[str]:
+    """Stages after `stage_key` already done on ANY item of the cutlist.
+
+    The undo guard's cutlist form (Q446): undoing a stage whose successor is
+    done anywhere on the cutlist would leave the shared workflow out of order.
+    """
+    blockers: list[str] = []
+    for item in cutlist_items(db, cutlist_id=cutlist_id):
+        if stage_key not in shop_floor_order(bool(item["paint_after_assembly"])):
+            continue
+        for s in later_stages_done(
+            db,
+            item_id=item["item_id"],
+            stage_key=stage_key,
+            painting_req=bool(item["painting_req"]),
+            paint_after_assembly=bool(item["paint_after_assembly"]),
+        ):
+            if s not in blockers:
+                blockers.append(s)
+    return blockers
+
+
 def next_open_stage(
     db: Session,
     *,
@@ -284,13 +417,28 @@ def next_open_stage(
 # Assignment CRUD
 # ============================================================================
 
+# `0030` dropped worker_assignment.item_id — an assignment belongs to the
+# cutlist. Callers that used to show an item number now show the cutlist
+# number plus how many items ride on it.
 _ASSIGNMENT_SELECT = """
-    SELECT wa.assignment_id, wa.item_id, wa.stage_key, wa.worker_id,
+    SELECT wa.assignment_id, wa.cutlist_id, wa.stage_key, wa.worker_id,
            wa.status, wa.note, wa.assigned_by, wa.assigned_at,
            wa.started_at, wa.ended_at, wa.cancelled_at,
-           u.full_name AS worker_name
+           u.full_name AS worker_name,
+           c.cutlist_no,
+           c.name AS cutlist_name,
+           (SELECT COUNT(*) FROM items li
+             WHERE li.cutlist_id = wa.cutlist_id
+               AND li.row_type = 'joinery_item'
+               AND li.deleted = false) AS item_count
     FROM worker_assignment wa
     LEFT JOIN app_user u ON u.id = wa.worker_id
+    JOIN cutlist c ON c.cutlist_id = wa.cutlist_id
+"""
+
+# The workspace path for an assignment now runs through its cutlist.
+_ASSIGNMENT_WORKSPACE_JOIN = """
+    JOIN projects p ON p.project_id = c.project_id
 """
 
 
@@ -302,8 +450,7 @@ def get_assignment(
         text(
             _ASSIGNMENT_SELECT
             + """
-            JOIN items i ON i.item_id = wa.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE wa.assignment_id = :aid AND p.workspace_id = :w
             """
         ),
@@ -313,19 +460,19 @@ def get_assignment(
 
 
 def get_active_assignment(
-    db: Session, *, item_id: int, stage_key: str
+    db: Session, *, cutlist_id: int, stage_key: str
 ) -> dict | None:
-    """Return the live (assigned/in_progress) row for the (item, stage)
+    """Return the live (assigned/in_progress) row for the (cutlist, stage)
     if any. Used to surface assignment_id on a 409."""
     row = db.execute(
         text(
             _ASSIGNMENT_SELECT
             + """
-            WHERE wa.item_id = :iid AND wa.stage_key = :sk
+            WHERE wa.cutlist_id = :cid AND wa.stage_key = :sk
               AND wa.status IN ('assigned', 'in_progress')
             """
         ),
-        {"iid": item_id, "sk": stage_key},
+        {"cid": cutlist_id, "sk": stage_key},
     ).mappings().first()
     return dict(row) if row else None
 
@@ -333,24 +480,30 @@ def get_active_assignment(
 def insert_assignment(
     db: Session,
     *,
-    item_id: int,
+    cutlist_id: int,
     stage_key: str,
     worker_id: int,
     note: str | None,
     assigned_by: int,
 ) -> int:
+    """One assignment per (cutlist, stage) — 0030 re-keyed this off the item.
+
+    The partial unique index `uniq_active_assignment` raises IntegrityError
+    when an active assignment already exists for the pair; the route catches
+    it and surfaces the holder.
+    """
     sid = db.execute(
         text(
             """
             INSERT INTO worker_assignment(
-                item_id, stage_key, worker_id, status, note, assigned_by
+                cutlist_id, stage_key, worker_id, status, note, assigned_by
             )
-            VALUES (:iid, :sk, :wid, 'assigned', :note, :ab)
+            VALUES (:cid, :sk, :wid, 'assigned', :note, :ab)
             RETURNING assignment_id
             """
         ),
         {
-            "iid": item_id, "sk": stage_key, "wid": worker_id,
+            "cid": cutlist_id, "sk": stage_key, "wid": worker_id,
             "note": note, "ab": assigned_by,
         },
     ).scalar()
@@ -394,12 +547,12 @@ def lock_assignment(
     row = db.execute(
         text(
             """
-            SELECT wa.assignment_id, wa.item_id, wa.stage_key, wa.worker_id,
-                   wa.status, wa.note, wa.started_at,
-                   i.painting_req, i.paint_after_assembly
+            SELECT wa.assignment_id, wa.cutlist_id, c.cutlist_no,
+                   wa.stage_key, wa.worker_id,
+                   wa.status, wa.note, wa.started_at
             FROM worker_assignment wa
-            JOIN items i ON i.item_id = wa.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE wa.assignment_id = :aid AND p.workspace_id = :w
             FOR UPDATE OF wa
             """
@@ -429,6 +582,7 @@ def board_cards(
                 SELECT
                     i.item_id, i.num AS item_number, i.code, i.description,
                     i.painting_req, i.paint_after_assembly, i.project_id,
+                    i.cutlist_id,
                     (
                         -- Candidates are the full canonical stage list, not
                         -- just item_stages rows that happen to exist: the
@@ -473,16 +627,22 @@ def board_cards(
             )
             SELECT ip.item_id, ip.item_number, ip.code, ip.description,
                    ip.painting_req, ip.paint_after_assembly,
-                   ip.next_stage_key,
+                   ip.cutlist_id, ip.next_stage_key,
                    wa.assignment_id, wa.worker_id, wa.status,
                    wa.note, wa.assigned_by, wa.assigned_at,
                    wa.started_at, wa.ended_at, wa.cancelled_at,
-                   u.full_name AS worker_name
+                   u.full_name AS worker_name,
+                   c.cutlist_no, c.name AS cutlist_name,
+                   (SELECT COUNT(*) FROM items li
+                     WHERE li.cutlist_id = ip.cutlist_id
+                       AND li.row_type = 'joinery_item'
+                       AND li.deleted = false) AS item_count
             FROM item_pool ip
             LEFT JOIN worker_assignment wa
-              ON wa.item_id = ip.item_id
+              ON wa.cutlist_id = ip.cutlist_id
              AND wa.stage_key = ip.next_stage_key
              AND wa.status IN ('assigned', 'in_progress')
+            LEFT JOIN cutlist c ON c.cutlist_id = ip.cutlist_id
             LEFT JOIN app_user u ON u.id = wa.worker_id
             WHERE ip.next_stage_key IS NOT NULL
             ORDER BY ip.next_stage_key, ip.item_number
@@ -499,16 +659,18 @@ def worker_queue(
     rows = db.execute(
         text(
             f"""
-            SELECT wa.assignment_id, wa.item_id, i.num AS item_number,
-                   i.code, i.description, i.rm_no AS room_no,
-                   i.rm_desc AS room_desc, p.project_code,
+            SELECT wa.assignment_id, wa.cutlist_id, c.cutlist_no,
+                   c.name AS cutlist_name, p.project_code,
+                   (SELECT COUNT(*) FROM items li
+                     WHERE li.cutlist_id = wa.cutlist_id
+                       AND li.row_type = 'joinery_item'
+                       AND li.deleted = false) AS item_count,
                    wa.stage_key, wa.status, wa.note,
                    wa.assigned_at, wa.started_at
             FROM worker_assignment wa
-            JOIN items i    ON i.item_id    = wa.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE wa.worker_id = :wid AND p.workspace_id = :w
-              AND {_JOINERY_ITEM}
               AND wa.status IN ('assigned', 'in_progress')
             ORDER BY CASE wa.status
                        WHEN 'in_progress' THEN 0 ELSE 1 END,
@@ -526,14 +688,13 @@ def recent_completions_for_worker(
     rows = db.execute(
         text(
             f"""
-            SELECT scl.log_id, scl.item_id, i.num AS item_number,
+            SELECT scl.log_id, scl.cutlist_id, c.cutlist_no,
                    scl.stage_key, scl.completed_at, scl.note
             FROM stage_completion_log scl
-            JOIN items i    ON i.item_id    = scl.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE scl.worker_id = :wid
               AND p.workspace_id = :w
-              AND {_JOINERY_ITEM}
               AND scl.undone_at IS NULL
               AND scl.completed_at > now() - interval '{int(minutes)} minutes'
             ORDER BY scl.completed_at DESC
@@ -551,23 +712,29 @@ def recent_completions_for_worker(
 def insert_completion_log(
     db: Session,
     *,
-    item_id: int,
+    cutlist_id: int,
     stage_key: str,
     assignment_id: int,
     worker_id: int,
     note: str | None,
 ) -> int:
+    """One log row per (cutlist, stage) completion — Q412 says the completion
+    belongs to the cutlist, and every linked item shares its time.
+
+    `item_id` is left NULL: since `0030` it holds provenance for pre-re-key
+    rows only (see that migration's docstring).
+    """
     log_id = db.execute(
         text(
             """
             INSERT INTO stage_completion_log(
-                item_id, stage_key, assignment_id, worker_id, note
+                cutlist_id, stage_key, assignment_id, worker_id, note
             )
-            VALUES (:iid, :sk, :aid, :wid, :note)
+            VALUES (:cid, :sk, :aid, :wid, :note)
             RETURNING log_id
             """
         ),
-        {"iid": item_id, "sk": stage_key, "aid": assignment_id,
+        {"cid": cutlist_id, "sk": stage_key, "aid": assignment_id,
          "wid": worker_id, "note": note},
     ).scalar()
     db.flush()
@@ -615,13 +782,12 @@ def get_completion_log(
     row = db.execute(
         text(
             """
-            SELECT scl.log_id, scl.item_id, scl.stage_key,
+            SELECT scl.log_id, scl.cutlist_id, c.cutlist_no, scl.stage_key,
                    scl.assignment_id, scl.worker_id, scl.completed_at,
-                   scl.note, scl.undone_at, scl.undone_by,
-                   i.painting_req, i.paint_after_assembly
+                   scl.note, scl.undone_at, scl.undone_by
             FROM stage_completion_log scl
-            JOIN items i    ON i.item_id    = scl.item_id
-            JOIN projects p ON p.project_id = i.project_id
+            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id
+            JOIN projects p ON p.project_id = c.project_id
             WHERE scl.log_id = :lid AND p.workspace_id = :w
             """
         ),

@@ -40,7 +40,12 @@ class WorkerToggleIn(BaseModel):
 
 class AssignmentOut(BaseModel):
     assignment_id: int
-    item_id: int
+    # 0030: an assignment is the CUTLIST's, not the item's (Q412). `item_count`
+    # is how many items advance together when this one is completed.
+    cutlist_id: int
+    cutlist_no: int
+    cutlist_name: str | None = None
+    item_count: int = 0
     stage_key: ShopFloorStage
     worker_id: int
     worker_name: str | None = None
@@ -61,12 +66,16 @@ class WorkerOut(BaseModel):
 
 
 class BoardCard(BaseModel):
+    """Still one card per item — the board shows items (Q441 repeats the strip
+    on every row). Its `assignment`, though, is the cutlist's, so sibling
+    cards on the same cutlist share it."""
     item_id: int
     item_number: int
     code: str | None = None
     description: str | None = None
     painting_req: bool
     paint_after_assembly: bool
+    cutlist_id: int | None = None
     next_stage_key: ShopFloorStage
     assignment: AssignmentOut | None = None  # null = unassigned
 
@@ -79,12 +88,10 @@ class BoardOut(BaseModel):
 
 class StationCard(BaseModel):
     assignment_id: int
-    item_id: int
-    item_number: int
-    code: str | None = None
-    description: str | None = None
-    room_no: str | None = None
-    room_desc: str | None = None
+    cutlist_id: int
+    cutlist_no: int
+    cutlist_name: str | None = None
+    item_count: int
     project_code: str
     stage_key: ShopFloorStage
     status: AssignmentStatus
@@ -101,8 +108,8 @@ class StationOut(BaseModel):
 
 class RecentCompletionOut(BaseModel):
     log_id: int
-    item_id: int
-    item_number: int
+    cutlist_id: int
+    cutlist_no: int
     stage_key: ShopFloorStage
     completed_at: datetime
     note: str | None = None
@@ -118,5 +125,6 @@ class CompleteOut(BaseModel):
 class UndoOut(BaseModel):
     log_id: int
     assignment_id: int
-    item_id: int
+    cutlist_id: int
+    cutlist_no: int
     stage_key: ShopFloorStage

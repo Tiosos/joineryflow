@@ -17,6 +17,32 @@ from app.main import app
 from .conftest import TRUNCATE_TABLES
 
 
+def _link_cutlist(db, *, project_id: int, item_id: int) -> int:
+    """Mint a cutlist for one item and link it.
+
+    Since migration `0030` Shop Floor keys on `(cutlist_id, stage_key)`, so an
+    item with no cutlist cannot be assigned work. One cutlist per item keeps
+    these fixtures behaving as they did before the re-key; the shared-cutlist
+    cases live in `test_shop_floor_cutlist.py`.
+    """
+    cid = db.execute(
+        text(
+            """
+            INSERT INTO cutlist(project_id, cutlist_no)
+            VALUES (:p, nextval('joinery_number_seq'))
+            RETURNING cutlist_id
+            """
+        ),
+        {"p": project_id},
+    ).scalar()
+    db.execute(
+        text("UPDATE items SET cutlist_id = :c WHERE item_id = :i"),
+        {"c": cid, "i": item_id},
+    )
+    return cid
+
+
+
 @pytest.fixture(autouse=True)
 def _cleanup():
     yield
@@ -93,6 +119,9 @@ def _bootstrap(role: str = "editor", *, with_worker: bool = True):
                 {"n": wid * 1000 + i + 1, "p": pid,
                  "c": f"ITEM-{i + 1}", "d": f"Demo {i + 1}"},
             ).scalar()
+            # 0030 keys Shop Floor on the cutlist, so an assignable item needs
+            # one. One per item here, matching what 0027 did for existing rows.
+            _link_cutlist(s, project_id=pid, item_id=iid)
             item_ids.append(iid)
             for stage in ("DOWN", "CNC", "EDGED", "PAINTED", "MADE"):
                 s.execute(
@@ -431,6 +460,7 @@ def _add_item(
             {"p": pid, "c": code, "d": code,
              "pr": painting_req, "paa": paint_after_assembly},
         ).scalar()
+        _link_cutlist(s, project_id=pid, item_id=iid)
         for sk, done in stages.items():
             s.execute(
                 text(

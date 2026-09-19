@@ -15,7 +15,10 @@ export type AssignmentStatus =
 
 export interface AssignmentOut {
   assignment_id: number;
-  item_id: number;
+  cutlist_id: number;
+  cutlist_no: number;
+  cutlist_name: string | null;
+  item_count: number;
   stage_key: ShopFloorStage;
   worker_id: number;
   worker_name: string | null;
@@ -38,6 +41,8 @@ export interface WorkerOut {
 export interface BoardCard {
   item_id: number;
   item_number: number;
+  /** 0030: the card's assignment belongs to this cutlist, shared with siblings. */
+  cutlist_id: number | null;
   code: string | null;
   description: string | null;
   painting_req: boolean;
@@ -52,14 +57,13 @@ export interface BoardOut {
   columns: Record<ShopFloorStage, BoardCard[]>;
 }
 
+/** 0030: the kiosk's unit is the CUTLIST — one job may cover several items. */
 export interface StationCard {
   assignment_id: number;
-  item_id: number;
-  item_number: number;
-  code: string | null;
-  description: string | null;
-  room_no: string | null;
-  room_desc: string | null;
+  cutlist_id: number;
+  cutlist_no: number;
+  cutlist_name: string | null;
+  item_count: number;
   project_code: string;
   stage_key: ShopFloorStage;
   status: AssignmentStatus;
@@ -76,8 +80,8 @@ export interface StationOut {
 
 export interface RecentCompletionOut {
   log_id: number;
-  item_id: number;
-  item_number: number;
+  cutlist_id: number;
+  cutlist_no: number;
   stage_key: ShopFloorStage;
   completed_at: string;
   note: string | null;
@@ -93,7 +97,8 @@ export interface CompleteOut {
 export interface UndoOut {
   log_id: number;
   assignment_id: number;
-  item_id: number;
+  cutlist_id: number;
+  cutlist_no: number;
   stage_key: ShopFloorStage;
 }
 

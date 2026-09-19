@@ -1097,7 +1097,10 @@ def main() -> None:
                     text(
                         """
                         DELETE FROM stage_completion_log
-                        WHERE item_id = ANY(:items)
+                        WHERE cutlist_id IN (
+                            SELECT cutlist_id FROM items
+                            WHERE item_id = ANY(:items) AND cutlist_id IS NOT NULL
+                        )
                         """
                     ),
                     {"items": _alf_items},
@@ -1106,7 +1109,10 @@ def main() -> None:
                     text(
                         """
                         DELETE FROM worker_assignment
-                        WHERE item_id = ANY(:items)
+                        WHERE cutlist_id IN (
+                            SELECT cutlist_id FROM items
+                            WHERE item_id = ANY(:items) AND cutlist_id IS NOT NULL
+                        )
                         """
                     ),
                     {"items": _alf_items},
@@ -1134,10 +1140,11 @@ def main() -> None:
                         text(
                             """
                             INSERT INTO worker_assignment(
-                                item_id, stage_key, worker_id, status,
+                                cutlist_id, stage_key, worker_id, status,
                                 assigned_by, started_at, ended_at
                             )
-                            VALUES (:i, :s, :w, 'done', :a,
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :w, 'done', :a,
                                     now() - interval '1 day',
                                     now() - interval '1 day' + interval '2 hours')
                             RETURNING assignment_id
@@ -1149,10 +1156,11 @@ def main() -> None:
                         text(
                             """
                             INSERT INTO stage_completion_log(
-                                item_id, stage_key, assignment_id, worker_id,
+                                cutlist_id, stage_key, assignment_id, worker_id,
                                 completed_at, note
                             )
-                            VALUES (:i, :s, :a, :w,
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :a, :w,
                                     now() - interval '1 day' + interval '2 hours',
                                     'auto-seeded done')
                             """
@@ -1182,10 +1190,11 @@ def main() -> None:
                         text(
                             f"""
                             INSERT INTO worker_assignment(
-                                item_id, stage_key, worker_id, status,
+                                cutlist_id, stage_key, worker_id, status,
                                 assigned_by, started_at
                             )
-                            VALUES (:i, :s, :w, :st, :a, {started})
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :w, :st, :a, {started})
                             """
                         ),
                         {"i": iid, "s": stage, "w": wkr,

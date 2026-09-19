@@ -80,7 +80,10 @@ def get_board_route(
         if r.get("assignment_id") is not None:
             assignment = AssignmentOut(
                 assignment_id=r["assignment_id"],
-                item_id=r["item_id"],
+                cutlist_id=r["cutlist_id"],
+                cutlist_no=r["cutlist_no"],
+                cutlist_name=r.get("cutlist_name"),
+                item_count=int(r.get("item_count") or 0),
                 stage_key=r["next_stage_key"],
                 worker_id=r["worker_id"],
                 worker_name=r.get("worker_name"),
@@ -95,6 +98,7 @@ def get_board_route(
         card = BoardCard(
             item_id=r["item_id"],
             item_number=r["item_number"],
+            cutlist_id=r.get("cutlist_id"),
             code=r.get("code"),
             description=r.get("description"),
             painting_req=bool(r["painting_req"]),
@@ -192,10 +196,21 @@ def create_assignment_route(
             422,
             {"code": "NOT_A_SHOP_WORKER", "worker_id": body.worker_id},
         )
+    # Q412: the production workflow belongs to the CUTLIST, so this assigns
+    # every item that shares it — not item `iid` alone. The route stays
+    # item-scoped because that is how the board addresses a card; `0030`
+    # re-keyed what it writes.
+    if item.get("cutlist_id") is None:
+        raise HTTPException(
+            409,
+            {"code": "ITEM_HAS_NO_CUTLIST", "item_id": iid,
+             "message": "link this item to a cutlist before assigning work"},
+        )
+    cid = item["cutlist_id"]
     try:
         aid = q.insert_assignment(
             db,
-            item_id=iid,
+            cutlist_id=cid,
             stage_key=body.stage_key,
             worker_id=body.worker_id,
             note=body.note,
@@ -204,7 +219,7 @@ def create_assignment_route(
     except IntegrityError:
         db.rollback()
         existing = q.get_active_assignment(
-            db, item_id=iid, stage_key=body.stage_key
+            db, cutlist_id=cid, stage_key=body.stage_key
         )
         if existing is not None:
             raise HTTPException(
@@ -415,12 +430,10 @@ def complete_assignment_route(
     if user.id != locked["worker_id"] and not _is_admin_or_manager(user.auth_role):
         raise HTTPException(403, {"code": "NOT_THE_WORKER"})
 
-    missing = q.prior_stages_done(
-        db,
-        item_id=locked["item_id"],
-        stage_key=locked["stage_key"],
-        painting_req=bool(locked["painting_req"]),
-        paint_after_assembly=bool(locked["paint_after_assembly"]),
+    # Q562: every item on the cutlist must be ready, because they all advance
+    # together. An item whose own order skips this stage is not consulted.
+    missing = q.cutlist_prior_stages_done(
+        db, cutlist_id=locked["cutlist_id"], stage_key=locked["stage_key"],
     )
     if missing:
         raise HTTPException(
@@ -430,25 +443,35 @@ def complete_assignment_route(
 
     log_id = q.insert_completion_log(
         db,
-        item_id=locked["item_id"],
+        cutlist_id=locked["cutlist_id"],
         stage_key=locked["stage_key"],
         assignment_id=aid,
         worker_id=locked["worker_id"],
         note=body.note,
     )
-    q.upsert_item_stage_done(
-        db, item_id=locked["item_id"], stage_key=locked["stage_key"]
+    # Q439: one completion, N item_stages rows — the projection the Tracking
+    # strip reads per row without joining the cutlist (Q441).
+    fanned = q.fan_out_stage_done(
+        db, cutlist_id=locked["cutlist_id"], stage_key=locked["stage_key"]
     )
     q.update_assignment(
         db, assignment_id=aid,
         fields={"status": "done", "ended_at": _now()},
     )
 
-    next_stage = q.next_open_stage(
-        db,
-        item_id=locked["item_id"],
-        painting_req=bool(locked["painting_req"]),
-        paint_after_assembly=bool(locked["paint_after_assembly"]),
+    # `next_open_stage` is per item; with a shared cutlist the kiosk shows the
+    # first linked item's next stage. They only diverge where the items'
+    # painting flags differ (Q562).
+    cl_items = q.cutlist_items(db, cutlist_id=locked["cutlist_id"])
+    next_stage = (
+        q.next_open_stage(
+            db,
+            item_id=cl_items[0]["item_id"],
+            painting_req=bool(cl_items[0]["painting_req"]),
+            paint_after_assembly=bool(cl_items[0]["paint_after_assembly"]),
+        )
+        if cl_items
+        else None
     )
 
     write_audit(
@@ -457,7 +480,9 @@ def complete_assignment_route(
         payload={
             "assignment_id": aid,
             "log_id": log_id,
-            "item_id": locked["item_id"],
+            "cutlist_id": locked["cutlist_id"],
+            "cutlist_no": locked["cutlist_no"],
+            "fanned_out_to_item_ids": fanned,
             "stage_key": locked["stage_key"],
             "worker_id": locked["worker_id"],
             "note": body.note,
@@ -503,12 +528,8 @@ def undo_completion_route(
     # out-of-order lifecycle (earlier stage open, later stage done) that
     # /complete's prior-stages check forbids. Make the later stage be undone
     # first.
-    blockers = q.later_stages_done(
-        db,
-        item_id=log["item_id"],
-        stage_key=log["stage_key"],
-        painting_req=bool(log["painting_req"]),
-        paint_after_assembly=bool(log["paint_after_assembly"]),
+    blockers = q.cutlist_later_stages_done(
+        db, cutlist_id=log["cutlist_id"], stage_key=log["stage_key"],
     )
     if blockers:
         raise HTTPException(
@@ -517,8 +538,10 @@ def undo_completion_route(
         )
 
     q.mark_completion_undone(db, log_id=log_id, undone_by=user.id)
-    q.clear_item_stage_done(
-        db, item_id=log["item_id"], stage_key=log["stage_key"]
+    # Q446: the undo reverses the whole cutlist, not one item. Q539's late
+    # joiner is a no-op for free — it has no row for this stage to clear.
+    cleared = q.fan_in_stage_undone(
+        db, cutlist_id=log["cutlist_id"], stage_key=log["stage_key"]
     )
     if log["assignment_id"] is not None:
         q.update_assignment(
@@ -531,7 +554,9 @@ def undo_completion_route(
         event="shop_floor.stage_undo", target=str(log_id),
         payload={
             "log_id": log_id,
-            "item_id": log["item_id"],
+            "cutlist_id": log["cutlist_id"],
+            "cutlist_no": log["cutlist_no"],
+            "cleared_item_ids": cleared,
             "stage_key": log["stage_key"],
             "undone_by": user.id,
             "original_worker_id": log["worker_id"],
@@ -544,6 +569,7 @@ def undo_completion_route(
     return UndoOut(
         log_id=log_id,
         assignment_id=log["assignment_id"] or 0,
-        item_id=log["item_id"],
+        cutlist_id=log["cutlist_id"],
+        cutlist_no=log["cutlist_no"],
         stage_key=log["stage_key"],
     )

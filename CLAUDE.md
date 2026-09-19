@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0029`. Head is `0029_orderbook`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
+- `db/` — Alembic migrations `0001` → `0030`. Head is `0030_shop_floor_cutlist`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
@@ -175,7 +175,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (55 test files, ~490 tests)
+make test         # pytest in api container (56 test files, ~500 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
@@ -695,6 +695,16 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   `MAX(id)`), CutSchedule export to PDF.
 
 ## Shop Floor Ops (sub-project #8)
+
+> **Re-keyed by migration `0030` (B3).** `worker_assignment` and
+> `stage_completion_log` now key on **`(cutlist_id, stage_key)`**, not the
+> item — the production workflow belongs to the cutlist (Plan V1 Q412).
+> `worker_assignment.item_id` is **gone**; `stage_completion_log.item_id`
+> survives nullable as pre-`0030` provenance only. Completing a stage fans
+> `item_stages.done_date` out to every linked item whose own order contains it
+> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope is the five
+> production stages only — **DEL and INST are still not assignable** (Q561).
+> The notes below otherwise stand.
 
 - Migration 0020 adds `app_user.is_shop_worker` (bool default false),
   `items.paint_after_assembly` (bool default false; when true the

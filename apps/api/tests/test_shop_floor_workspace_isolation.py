@@ -77,12 +77,21 @@ def _seed_two_workspaces_one_assignment(truncate_all):
             ),
             {"n": wid_a * 1000 + 1, "p": pid_a},
         ).scalar()
+        # 0030: Shop Floor keys on the cutlist, so the item needs one.
+        cl_a = s.execute(
+            text("INSERT INTO cutlist(project_id, cutlist_no)"
+                 " VALUES (:p, nextval('joinery_number_seq')) RETURNING cutlist_id"),
+            {"p": pid_a},
+        ).scalar()
+        s.execute(text("UPDATE items SET cutlist_id = :c WHERE item_id = :i"),
+                  {"c": cl_a, "i": iid_a})
         aid_a = s.execute(
             text(
                 """
-                INSERT INTO worker_assignment(item_id, stage_key, worker_id,
+                INSERT INTO worker_assignment(cutlist_id, stage_key, worker_id,
                                               status, assigned_by)
-                VALUES (:i, 'DOWN', :w, 'assigned', :ab)
+                VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                        'DOWN', :w, 'assigned', :ab)
                 RETURNING assignment_id
                 """
             ),
