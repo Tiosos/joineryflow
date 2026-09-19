@@ -175,7 +175,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (52 files, ~470 tests)
+make test         # pytest in api container (54 test files, ~470 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
@@ -215,6 +215,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 - **ProjectHardwareCatalog** is a project-scoped link layer; item hardware lines reference materials *through* it. Log-only governance (no approval step; every add/remove writes an audit row).
 - **ProcurementBatch → Allocations → item_hardware_line_id** answers "is this item blocked on a material?" as a single join — no second window needed.
 - **CutPlan ≠ CutSchedule.** Optimisation output vs. Machine team's daily ordering. Keep as two entities.
+- **`items.num` comes from `joinery_number_seq` alone** (migration `0027`, Plan V1 Q541) — one company-wide counter shared by Item IDs, cutlist numbers and related parts, so a six-digit number never means two things. Allocate it **inside** the INSERT (`nextval('joinery_number_seq')`); never read `MAX(num)` and insert the result, which is the race B2a removed. The sequence has no owning table, so `TRUNCATE ... RESTART IDENTITY` does not reset it. `make seed` writes **fixed** numbers for idempotency and then advances the sequence past them — keep that step if you add seeded items.
 - **Terminology pins** (critical, legacy-FileMaker-era collisions):
   - `Stage` = site location/area (e.g. `Joinery Lab`, `Block B`).
   - `Zone` = numeric sub-division of Stage.

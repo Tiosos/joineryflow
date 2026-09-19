@@ -423,7 +423,7 @@ def _add_item(
                 """
                 INSERT INTO items(num, project_id, code, description,
                                   painting_req, paint_after_assembly, deleted)
-                VALUES (nextval('items_item_id_seq') + 100000, :p, :c, :d,
+                VALUES (nextval('joinery_number_seq'), :p, :c, :d,
                         :pr, :paa, false)
                 RETURNING item_id
                 """

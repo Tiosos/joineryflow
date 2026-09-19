@@ -235,18 +235,48 @@ hand-edited predicates.
       second parent between the first parent and its own child.
 - [ ] **B2** `apps/api/app/cutlists/` — CRUD, number allocation from the shared
       sequence, link/unlink an item, 409 on linking a second cutlist (Q411).
-- [ ] **B2a** **Repoint both existing `items.num` allocators at
-      `joinery_number_seq`** — this fixes a live pre-existing bug, found while
-      building A2. The tree has **two** inconsistent schemes for one UNIQUE
-      column:
-      `items/queries.py` uses `nextval('items_item_id_seq') + 100000`, and
-      `estimating/queries.py` uses `SELECT COALESCE(MAX(num), 0) + 1`. The
-      second is a read-then-insert with no lock, so two concurrent estimate
-      conversions pick the same number and the loser fails on `items_num_key`.
-      **Reproduced directly against the real schema.** Q541's single sequence
-      is the fix; `0027` already seeds it above both watermarks so nothing
-      either scheme issued can collide.
-      → verify: a test that two conversions in flight both succeed.
+- [x] **B2a** — **done.** Both `items.num` allocators now draw from
+      `joinery_number_seq`, and `num` is allocated **inside** each INSERT, so
+      there is no read-then-insert window left to lose.
+      - `items/queries.py`: `nextval('items_item_id_seq') + 100000` →
+        `nextval('joinery_number_seq')`. The old form borrowed the PK sequence
+        and burned **two** values per insert (the explicit `nextval`, plus the
+        column DEFAULT for `item_id`); `item_id` and `num` are now independent.
+      - `estimating/queries.py`: the `SELECT COALESCE(MAX(num), 0) + 1` is
+        gone entirely — it ran **once per estimate line**, so the fix also
+        removes a round-trip per line.
+      - `tests/test_shop_floor_routes.py` carried the retired form in a
+        fixture; repointed, so no reference to it survives.
+
+      **A third problem this exposed, and fixed.** `make seed` inserts items
+      with **fixed** numbers (`290001..`, `297830..`) so it stays idempotent —
+      and it runs **after** `make migrate`. `0027` seeds the sequence from
+      whatever `items` holds at migrate time, which on a fresh database is
+      nothing. Measured: the sequence sat at **100001** while seeded rows
+      reached **297988** — ~198k behind the data it is supposed to lead. The
+      seed now ends with a monotonic `setval(GREATEST(last_value, MAX(num)))`,
+      which is idempotent across re-runs.
+
+      **Two facts worth knowing.** `joinery_number_seq` has no owning table, so
+      `TRUNCATE ... RESTART IDENTITY` does **not** reset it — numbers keep
+      climbing across the test suite, which is correct for a company-wide
+      counter. And `purchase_orders` now appears in `TRUNCATE items CASCADE`'s
+      dependent list, because `0029` gave it an `item_id` FK; harmless while
+      the legacy tables are empty, but B6 should not seed POs and then let
+      another test truncate `items`.
+
+      → **verified** against a real Postgres 16 at `0029`. The bug was
+      **reproduced first**: two conversions each reading `MAX(num) + 1` before
+      either inserted both picked `297991`, and the second died on
+      `items_num_key`. With the fix, the same interleaving allocates `297989`
+      and `297990` and both commit; three genuinely overlapping transactions
+      all commit with distinct numbers; `create_item` and the estimate
+      converter draw from **one** counter (298025-298027 then 298028-298030,
+      contiguous), which is Q541's whole point. New regression test
+      `tests/test_item_number_allocation.py` (4 cases). **`pytest` could not be
+      run here** — the container has no `sqlalchemy` and pip is network-blocked
+      — so each test's SQL was executed directly against the real schema
+      instead; all four pass. Run `make test` to confirm the Python wiring.
 - [ ] **B3** Rework `shop_floor` — re-key `worker_assignment` and
       `stage_completion_log` to `(cutlist_id, stage_key)` for production and
       `(item_id, 'INST')` for install (Q445); rebuild the partial unique index;

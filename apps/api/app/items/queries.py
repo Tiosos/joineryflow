@@ -713,9 +713,14 @@ def create_item(
 ) -> int | None:
     """INSERT a new item.  Returns new item_id, or None if project not in workspace.
 
-    items.num has a global UNIQUE constraint (legacy FK artefact).  We generate
-    it as nextval('items_item_id_seq') + 100_000 to ensure uniqueness without
-    colliding with the PK sequence.
+    `items.num` has a global UNIQUE constraint (legacy FK artefact) and is
+    allocated from **`joinery_number_seq`** (migration `0027`), the single
+    company-wide counter Q541 requires: Item IDs, cutlist numbers and related
+    parts all draw from it, so a six-digit number never means two things.
+
+    This replaced `nextval('items_item_id_seq') + 100000`, which borrowed the
+    PK sequence and therefore burned two values per insert (the explicit
+    nextval here, plus the column DEFAULT for `item_id`).
     """
     if not _project_in_workspace(db, project_id=project_id, workspace_id=workspace_id):
         return None
@@ -729,7 +734,7 @@ def create_item(
                 rm_no, rm_desc, zone, item_locked
             )
             VALUES (
-                nextval('items_item_id_seq') + 100000,
+                nextval('joinery_number_seq'),
                 :pid, 'CLEAR',
                 :desc, :qty, :stage, :code, :level,
                 :room_no, :room_desc, :zone, false

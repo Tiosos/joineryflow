@@ -2143,6 +2143,31 @@ def main() -> None:
             "(Schiavello + Mitchell Laminates)"
         )
 
+        # ── Advance the shared number sequence past the seeded fixtures ────────
+        #
+        # Every item above is inserted with a FIXED `num` (290001.. and
+        # 297830..) so the seed stays idempotent and demo numbers stay stable.
+        # Migration 0027 seeds `joinery_number_seq` from whatever `items` holds
+        # AT MIGRATE TIME — which is nothing, because `make migrate` runs before
+        # `make seed`. The sequence would therefore sit at 100000 while seeded
+        # rows reach 297988, and every runtime allocation would start ~198k
+        # below the demo data.
+        #
+        # setval() is idempotent and monotonic here: GREATEST() never moves the
+        # sequence backwards, so re-running the seed is safe.
+        seq_row = s.execute(
+            text(
+                """
+                SELECT setval('joinery_number_seq', GREATEST(
+                    (SELECT last_value FROM joinery_number_seq),
+                    COALESCE((SELECT MAX(num) FROM items), 0)
+                ))
+                """
+            )
+        ).scalar()
+        s.commit()
+        print(f"advanced joinery_number_seq to {seq_row}")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

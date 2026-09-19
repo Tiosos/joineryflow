@@ -1800,21 +1800,24 @@ def convert_to_project(
     hw_lines_created = 0
 
     for line in detail["lines"]:
-        new_num = db.execute(
-            text("SELECT COALESCE(MAX(num), 0) + 1 FROM items")
-        ).scalar()
+        # `num` comes from the shared `joinery_number_seq` (0027 / Q541).
+        #
+        # This replaced `SELECT COALESCE(MAX(num), 0) + 1 FROM items`, a
+        # read-then-insert with no lock: two conversions running at once both
+        # read the same maximum and the loser died on `items_num_key`.
+        # Allocating inside the INSERT removes both the race and a round-trip
+        # per line.
         item_id = db.execute(
             text(
                 """
                 INSERT INTO items(
                     num, project_id, description, qty, status
                 )
-                VALUES (:n, :p, :d, :q, 'LIVE')
+                VALUES (nextval('joinery_number_seq'), :p, :d, :q, 'LIVE')
                 RETURNING item_id
                 """
             ),
             {
-                "n": int(new_num),
                 "p": int(new_project_id),
                 "d": line["description"],
                 "q": int(Decimal(str(line["qty"])).quantize(Decimal("1"))),
