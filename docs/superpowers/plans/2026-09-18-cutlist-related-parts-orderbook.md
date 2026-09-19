@@ -367,11 +367,43 @@ hand-edited predicates.
 - [ ] **B4** Related-part routes — create (drafter or PM, Q423), reparent with
       audit (Q452), own status (Q450). **No workflow stages** (Q419).
 - [ ] **B5** `supplier` CRUD; repoint catalog reads/writes (Q506).
-- [ ] **B6** Order + PO routes on the revived namespace — create from Tracking's
-      O/BOOK subtab (Q425), prefill PROJECT / LOCATION / CUTLIST NO. from the
-      parent (Q427, Q428), allow blank cutlist (Q429), backfill when the parent
-      gains one (Q430), update all linked orders on replacement (Q431).
-      Gated `("orderbook", …)` — Q432, no matrix change.
+- [x] **B6** — **done.** `apps/api/app/orders/`, 8 endpoints gated
+      `("orderbook", action)` (Q432 — no matrix change), at top-level paths and
+      **separate from the untouched legacy `/procurement/*` namespace**.
+      Needed **migration `0031`** first: three inherited office-procurement
+      requirements blocked *creating* a joinery order at all.
+      - **Q563** — `cost_center_id` becomes nullable. It is budget-holder
+        accounting; §16 is unscoped and Q543 deferred item cost, so forcing one
+        meant inventing a placeholder on every order.
+      - **Q557** — resolved here rather than in the C-series, because
+        `category` is NOT NULL and so blocks creation, not just rendering. The
+        frozen CHECK (`IT / Office / …`) becomes an `order_category` lookup,
+        seeded with the six legacy values **plus** eight joinery ones, so §21's
+        supplier comparison has something real to group on.
+      - **Q564** — PO numbers keep the legacy `PO-{year}-{0000}` format but not
+        its generator: `legacy/procurement_api.py:274` does `MAX(...) + 1`, the
+        identical race **B2a** removed from `items.num`. A `po_number_seq`
+        replaces it, seeded above anything the old format already issued.
+
+      **The Q427→Q431 chain is the substance of this task.** Creating an order
+      against a row carries PROJECT / LOCATION / CUTLIST NO. across (Q427); for
+      a **related part** the cutlist number comes from its **parent** (Q428),
+      since a related part never holds one (Q417); blank is legal (Q429); and
+      `sync_orders_for_item` keeps every reference in step — filling blanks
+      (Q430) and following a replacement (Q431). Q430 and Q431 are the *same*
+      UPDATE; the only extra work Q431 needs is capturing the **previous**
+      value, which `UPDATE ... RETURNING` cannot give, so the statement uses a
+      `before` CTE and each changed order gets an audit row carrying it.
+      The sync lives in `orders/` (it owns the column) and is called from
+      `cutlists/` link **and** unlink — the reference follows the item in both
+      directions rather than going stale.
+
+      → **verified**: full `0001`–`0031` chain clean; `0031` accepts a joinery
+      category and still refuses a bogus one; the allocator yields
+      `PO-2026-0001` on a virgin DB and `PO-2026-0043` on one already holding
+      `PO-2026-0042`; downgrade leaves columns identical to a fresh `0001`–`0030`.
+      New `tests/test_order_routes.py` (10 cases) covering the whole chain —
+      **run, and passing**.
 - [ ] **B7** Item soft-lock → Controlled Lock: a non-owner's save becomes a
       **request requiring approval** instead of succeeding with an
       `item.lock_overridden` audit row (Q509). Item and project scope only

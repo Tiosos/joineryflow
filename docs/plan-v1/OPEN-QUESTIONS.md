@@ -1430,8 +1430,16 @@ free-text `supplier` / `default_supplier` columns rather than replacing them.
 Keeping the text is required by **Q435** (shipped behaviour changes only behind
 data-preserving migrations) and lets the repoint happen incrementally.
 
-### Q557 — Do the legacy `category` CHECKs need widening for joinery? *(new — raised while building A4; OPEN)*
-**Not decided. A4 deliberately does not touch them.**
+### Q557 — Do the legacy `category` CHECKs need widening for joinery? *(raised in A4; RESOLVED 2026-09-19 in B6)*
+**Option 2 confirmed: a lookup table.** Deferring this to the C-series turned
+out to be wrong — `category` is `NOT NULL`, so it blocks **creating** an order,
+not just rendering one. Migration `0031` replaces the CHECK on
+`purchase_orders.category` and `vendors.category` with an
+`order_category` lookup, seeded with the six legacy values **plus** joinery
+categories, so §21's supplier comparison has something real to group on.
+The original A4 framing follows.
+
+**A4 deliberately did not touch them.**
 
 `vendors.category` and `purchase_orders.category` both CHECK against
 `('IT','Office','Logistics','Facilities','Services','Other')` — an
@@ -1452,6 +1460,31 @@ actually rendered. The options when it is taken:
    configurable related-part types.
 3. Leave them; category stays an office-procurement field and joinery grouping
    happens on `supplier_id` instead.
+
+### Q563 — Does a joinery order need a cost centre? *(new — raised while building B6)*
+**Option 1 confirmed (2026-09-19): no — `cost_center_id` becomes nullable.**
+`cost_centers` is budget-holder accounting inherited from the FileMaker-era
+office-procurement system. Plan V1's financial model (§16) is **unscoped**, and
+**Q543** deferred item-level cost entirely; nothing in Q425–Q432 mentions a cost
+centre. Forcing one would mean inventing a placeholder on every order and later
+being unable to tell it from a real choice.
+
+Migration `0031` drops the NOT NULL. The column, the table and
+`budget_transactions` all stay — if §16 is ever scoped they are the natural
+home for it.
+
+### Q564 — How is a PO number allocated? *(new — raised while building B6)*
+**Ported from the legacy convention, with its race removed.**
+`legacy/procurement_api.py:274` formats `PO-{year}-{seq:04d}`, and that format
+is kept. Its **generator is not**: `_generate_po_number` does
+`SELECT MAX(...) + 1` and inserts the result — the identical read-then-insert
+race **B2a** removed from `items.num`, where two concurrent callers both read
+the same maximum and the loser dies on a unique violation.
+
+`0031` adds a `po_number_seq` per the same rule now recorded in `CLAUDE.md`:
+allocate inside the INSERT, never from `MAX(...)`. The sequence resets per year
+in the formatting only — the counter itself is monotonic, so two orders never
+share a number even across a year boundary.
 
 ### Q558 — Does the Tracking list API return related parts inline? *(new — raised while building B1)*
 **Option 1 confirmed (2026-09-19): inline, with `row_type` on every row.**

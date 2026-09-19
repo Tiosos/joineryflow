@@ -13,6 +13,7 @@ from .parts.routes import router as parts_router
 from .home.routes import router as home_router
 from .item_attachments.routes import router as item_attachments_router
 from .items.routes import router as items_router
+from .orders.routes import router as orders_router
 from .printing.routes import router as printing_router
 from .procurement.routes import router as proc_router
 from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
@@ -36,6 +37,7 @@ app.include_router(auth_router)
 app.include_router(catalog_router)
 app.include_router(cut_floor_router)
 app.include_router(cutlists_router)
+app.include_router(orders_router)
 app.include_router(cv_router)
 app.include_router(files_router)
 app.include_router(item_attachments_router)

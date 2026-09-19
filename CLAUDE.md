@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0030`. Head is `0030_shop_floor_cutlist`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
+- `db/` — Alembic migrations `0001` → `0031`. Head is `0031_order_categories`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
@@ -175,7 +175,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (56 test files, 572 tests)
+make test         # pytest in api container (57 test files, 582 tests)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
@@ -221,6 +221,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 - **ProcurementBatch → Allocations → item_hardware_line_id** answers "is this item blocked on a material?" as a single join — no second window needed.
 - **CutPlan ≠ CutSchedule.** Optimisation output vs. Machine team's daily ordering. Keep as two entities.
 - **`items.num` comes from `joinery_number_seq` alone** (migration `0027`, Plan V1 Q541) — one company-wide counter shared by Item IDs, cutlist numbers and related parts, so a six-digit number never means two things. Allocate it **inside** the INSERT (`nextval('joinery_number_seq')`); never read `MAX(num)` and insert the result, which is the race B2a removed. The sequence has no owning table, so `TRUNCATE ... RESTART IDENTITY` does not reset it. `make seed` writes **fixed** numbers for idempotency and then advances the sequence past them — keep that step if you add seeded items.
+- **`purchase_orders.po_number` comes from `po_number_seq`** (migration `0031`, Q564), formatted `PO-{year}-{0000}`. The legacy generator in `legacy/procurement_api.py:274` used `MAX(...) + 1` and carried the same race B2a removed — do not reinstate it. Like `joinery_number_seq` this sequence has **no owning table**, so `TRUNCATE ... RESTART IDENTITY` does not reset it: never assert an absolute PO number in a test, only the format and that numbers advance.
 - **Terminology pins** (critical, legacy-FileMaker-era collisions):
   - `Stage` = site location/area (e.g. `Joinery Lab`, `Block B`).
   - `Zone` = numeric sub-division of Stage.

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log
+from ..orders.queries import sync_orders_for_item
 from ..row_types import joinery_items_only
 from .schemas import CreateCutlistIn, PatchCutlistIn
 
@@ -282,6 +283,14 @@ def link_item(
     db.flush()
 
     # Q539: no item_stages backfill. The item catches up at the next completion.
+    #
+    # Q430/Q431: the item now has a cutlist number, so every order that
+    # references it — its own, and its related parts' (Q428) — is brought into
+    # step. Blank references get filled (Q430); existing ones follow a
+    # replacement (Q431), each with its previous value kept in the audit row.
+    synced = sync_orders_for_item(
+        db, item_id=item_id, workspace_id=workspace_id, actor_id=actor_id
+    )
     write_edit_log(
         db, item_id=item_id, actor_id=actor_id,
         field="cutlist_id", old_value=None, new_value=str(cutlist["cutlist_no"]),
@@ -292,7 +301,8 @@ def link_item(
         actor_id=actor_id,
         event="cutlist.link_item",
         target=str(cutlist_id),
-        payload={"item_id": item_id, "cutlist_no": cutlist["cutlist_no"]},
+        payload={"item_id": item_id, "cutlist_no": cutlist["cutlist_no"],
+                 "orders_synced": [o["po_id"] for o in synced]},
     )
     return "OK", _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
 
@@ -316,6 +326,11 @@ def unlink_item(
     )
     db.flush()
 
+    # The reference follows the item in both directions (Q431): losing the
+    # cutlist blanks the order's CUTLIST NO. rather than leaving it stale.
+    synced = sync_orders_for_item(
+        db, item_id=item_id, workspace_id=workspace_id, actor_id=actor_id
+    )
     write_edit_log(
         db, item_id=item_id, actor_id=actor_id,
         field="cutlist_id", old_value=str(cutlist["cutlist_no"]), new_value=None,
@@ -326,6 +341,7 @@ def unlink_item(
         actor_id=actor_id,
         event="cutlist.unlink_item",
         target=str(cutlist_id),
-        payload={"item_id": item_id, "cutlist_no": cutlist["cutlist_no"]},
+        payload={"item_id": item_id, "cutlist_no": cutlist["cutlist_no"],
+                 "orders_synced": [o["po_id"] for o in synced]},
     )
     return "OK"
