@@ -175,7 +175,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (54 test files, ~470 tests)
+make test         # pytest in api container (55 test files, ~490 tests)
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 

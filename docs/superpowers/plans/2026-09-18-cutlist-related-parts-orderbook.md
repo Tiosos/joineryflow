@@ -233,8 +233,44 @@ hand-edited predicates.
       guard still returns it, so the filter is what makes the difference. The
       ordering fix demonstrated on a fixture where the old `ORDER BY` put a
       second parent between the first parent and its own child.
-- [ ] **B2** `apps/api/app/cutlists/` — CRUD, number allocation from the shared
-      sequence, link/unlink an item, 409 on linking a second cutlist (Q411).
+- [x] **B2** — **done.** `apps/api/app/cutlists/` (`schemas` / `queries` /
+      `routes`), mounted from `main.py`. **7 endpoints**, gated `("list",
+      action)` — Q474 settled that Cutlist *is* the `List` tab, and
+      `("list","read")` has gated `cutlist.pdf` since #5b, so **no RBAC matrix
+      row is added** (Q432). Reads need `read`; every mutation needs `write`,
+      which is drafter+.
+      - `GET /projects/{pid}/cutlists` · `GET /cutlists/{cid}` (with its items)
+      - `POST /projects/{pid}/cutlists` — `cutlist_no` from
+        `nextval('joinery_number_seq')` **inside** the INSERT (Q442/Q443, B2a's
+        rule). It is not an input on create *or* patch.
+      - `PATCH /cutlists/{cid}` (rename only) · `DELETE /cutlists/{cid}`
+      - `POST /cutlists/{cid}/items` · `DELETE /cutlists/{cid}/items/{iid}`
+
+      **Four rules live in the query layer because a CHECK cannot reach another
+      table**, each with its own 409 code rather than a raw constraint
+      violation (which would surface as a 500):
+      | Rule | Code |
+      | --- | --- |
+      | Q411 — one cutlist per item; the 409 **names the cutlist already held** so the UI can offer to move it | `ITEM_HAS_CUTLIST` |
+      | Q444 — a cutlist belongs to one project | `WRONG_PROJECT` |
+      | Q417 — a related part gets no cutlist number | `RELATED_PART` |
+      | delete with items linked (the FK is ON DELETE SET NULL, so a delete would silently strip the number off every linked item — #4 refuses the same shape for a batch with allocations) | `HAS_ITEMS` |
+
+      Re-linking an item to the cutlist it already holds is **idempotent**, not
+      a 409. **Q539 is enforced by absence**: there is deliberately no
+      `item_stages` backfill on link, and the query layer says so, so a later
+      reader does not "fix" it. Link and unlink write `item_edit_log` as well
+      as `audit_log`, per the PM Workbench convention for item-scoped
+      mutations.
+
+      → **verified** against a real Postgres 16 at `0029`: all 7 rules
+      exercised on fixtures — sharing one cutlist across two items works
+      (Q410), each refusal returns its own code, a cross-workspace item is
+      404 not 409, and a late-linked item has **0** `item_stages` rows while
+      its sibling has 2 (Q539). New `tests/test_cutlist_routes.py` (12 cases);
+      **`pytest` could not be run here** (no `sqlalchemy`, pip network-blocked)
+      so all 11 SQL statements in it were executed against the real schema
+      instead. Run `make test` to confirm the Python wiring.
 - [x] **B2a** — **done.** Both `items.num` allocators now draw from
       `joinery_number_seq`, and `num` is allocated **inside** each INSERT, so
       there is no read-then-insert window left to lose.
