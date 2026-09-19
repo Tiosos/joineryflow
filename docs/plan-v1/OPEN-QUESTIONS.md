@@ -1486,6 +1486,34 @@ allocate inside the INSERT, never from `MAX(...)`. The sequence resets per year
 in the formatting only — the counter itself is monotonic, so two orders never
 share a number even across a year boundary.
 
+### Q565 — What happens to the legacy vendor endpoints? *(new — raised while building B5)*
+**Option 1 confirmed (2026-09-19): retire them; B5 owns suppliers.**
+The four `/procurement/vendors*` endpoints are removed. `/suppliers` (B5)
+becomes the single surface over `vendors`, workspace-scoped and gated
+`("orderbook", action)`. The **rest** of the legacy namespace is untouched.
+
+*Two problems forced this, one of them mine.*
+
+1. **`0029` broke `POST /procurement/vendors`.** Q555 added
+   `workspace_id NOT NULL` to `vendors`; the legacy insert at
+   `procurement/queries.py:662` names eight columns and not that one, so the
+   endpoint raised a NotNullViolation from the moment `0029` applied.
+   **No test covered it** — that namespace has 32 endpoints and the suite
+   exercises almost none, which is why 592 tests stayed green through the
+   break.
+2. **The reads were never workspace-scoped.** `workspace` appears **zero
+   times** in `procurement/queries.py`. Harmless while `vendors` had no
+   workspace column; a cross-workspace leak once it did.
+
+*Precedent:* this is exactly what **#7a** did when `/catalogs/*` and
+`/catalog/*` both served the six catalog tables — the duplicate surface was
+retired rather than kept in step. Keeping both here would leave B5's write
+path and the legacy one free to disagree about the same rows.
+
+**Consequence — `v_po_summary` still joins `vendors`.** The view is unchanged
+and stays unscoped; it is read by the surviving legacy order endpoints, which
+remain outside the v1 surface. Scoping those is not in B5.
+
 ### Q558 — Does the Tracking list API return related parts inline? *(new — raised while building B1)*
 **Option 1 confirmed (2026-09-19): inline, with `row_type` on every row.**
 `list_items_for_project` is the one `items` enumeration that is **not**

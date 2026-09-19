@@ -402,7 +402,44 @@ hand-edited predicates.
       **Found while building:** I assumed `related_part_type` had an
       `archived_at` column (copying `order_category`'s shape from `0031`); it
       does not. Caught immediately by running the tests.
-- [ ] **B5** `supplier` CRUD; repoint catalog reads/writes (Q506).
+- [x] **B5** — **done.** `apps/api/app/suppliers/`, 6 endpoints gated
+      `("orderbook", action)` like orders. **No new table** — `vendors` *is*
+      the supplier entity (Q506 + Q556), and `0029` already added
+      `supplier_id` / `default_supplier_id` to all six catalog tables beside
+      their retained free text.
+
+      **Two live defects found first, one of them mine.**
+      1. **`0029` broke `POST /procurement/vendors`.** Q555 added
+         `workspace_id NOT NULL` to `vendors`; the legacy insert
+         (`procurement/queries.py:662`) never named the column, so the endpoint
+         raised NotNullViolation from the moment `0029` applied. **No test
+         covered it** — that namespace has 32 endpoints and the suite exercises
+         almost none, which is why 592 tests stayed green through the break.
+      2. **`0029` also left three `/procurement/inventory*` endpoints reading
+         dropped objects.** Q544 said those endpoints "belong to the half of
+         the namespace this migration retires" — but A4 never removed them, so
+         they had been 500ing on `v_inventory_status` and `inventory_movements`
+         ever since.
+
+      **Q565** settles both: the four `/procurement/vendors*` endpoints are
+      **retired** in favour of `/suppliers`, and the three `/inventory*` ones
+      are removed as Q544 already intended. Nine dead query functions went with
+      them. This is the #7a precedent — that sub-project retired `/catalogs/*`
+      rather than keep two surfaces over the same tables in step. **The rest of
+      the legacy namespace is untouched** (25 endpoints remain).
+
+      What `/suppliers` does that the retired pair never did: **workspace
+      isolation on every read and write** (`workspace` appeared *zero* times in
+      `procurement/queries.py`), and the Q506 catalog repoint —
+      `POST /suppliers/{id}/materials` points a catalog row at a supplier while
+      **leaving the free-text name in place** (Q435), so an unmatched name
+      stays readable. `equipment_hire` keys on `hire_id`, so the module carries
+      a per-table PK map for the same reason `0029` carries a supplier-column
+      one.
+
+      → **verified**: `tests/test_supplier_routes.py` (9 cases), run and
+      passing, including cross-workspace isolation, the `hire_id` path, and a
+      guard that the retired endpoints stay 404.
 - [x] **B6** — **done.** `apps/api/app/orders/`, 8 endpoints gated
       `("orderbook", action)` (Q432 — no matrix change), at top-level paths and
       **separate from the untouched legacy `/procurement/*` namespace**.
