@@ -1663,6 +1663,43 @@ all 181 existing endpoints.
 1. Every significant object.
 2. Items and drawings only.
 
+### Q566 — How much of §L does B7 actually build? *(new — raised while building B7)*
+**Option 1 confirmed (2026-09-19): the item Controlled Lock only.** A non-owner's
+save on a locked item becomes a request the lock owner — or a manager/admin —
+approves or rejects. New `item_lock_request` table (migration `0032`),
+`PATCH /items/{id}` answering `409 LOCK_REQUEST_CREATED`, and
+`POST /lock-requests/{rid}/{approve,reject}`. Approving replays the stored body
+through the ordinary save path; the edit log credits the **requester**, the
+audit row names the **approver**.
+
+*Why this had to be asked.* The plan's **B7** is one paragraph citing Q509 and
+Q510. Measured against §L's five confirmed answers, it covers **one**:
+
+| answer | in the plan? |
+| --- | --- |
+| **Q509** item soft-lock → Controlled Lock | yes — this is B7 |
+| **Q510** item *and project* granularity | half — see below |
+| **Q508** all three lock types (Hard / Controlled / Approval) | **no task anywhere** |
+| **Q511** optimistic concurrency on item / cutlist / orders | **no task anywhere** |
+| **Q512** true field-level, per-field versioning | **no task anywhere** |
+
+**Q510 has the Q561 problem again.** It says locking applies at item *and
+project* scope — but `projects` carries **no lock column of any kind** (verified
+against the schema at `0031`: no `locked`, no `lock_owner`, nothing). The item
+lock is a conversion of something that exists; a project lock would be new
+functionality with no UI, no owner semantics and no answer for what it blocks.
+So Q510 is read here as a **ceiling** — do not build field, tab, Area, revision
+or department locks — not as a requirement to add project locking in B7.
+
+**Consequences.** `item.lock_overridden` is **retired**: no code path emits it
+any more, and the three events `item.lock_request.{create,approve,reject}`
+replace it. Existing rows stay in `audit_log` as the history of how the old
+advisory lock behaved (Q435). **Q508**'s Hard and Approval locks, **Q511** and
+**Q512** remain unbuilt and now have nowhere to be built — each needs a task of
+its own before §L can be called done. Scope here is `PATCH /items/{id}` alone,
+the one surface that emitted the override event; `PATCH /items/{id}/status` and
+`/lifecycle/{stage_key}` never consulted the lock and still do not.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

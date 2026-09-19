@@ -1,5 +1,13 @@
 # PM Workbench — Design Spec
 
+> **Later change — the soft-lock is gone (2026-09-19, migration `0032`).**
+> §2's "Non-owner saves are permitted", §5's "Never blocks save" and all of
+> §6.4 *Soft-lock mechanics* no longer describe the code: a non-owner's save on
+> a locked item is held as an `item_lock_request` for the owner or a manager to
+> approve or reject (Plan V1 Q509 / Q566), and `item.lock_overridden` is
+> retired. Everything else in this spec stands; `CLAUDE.md` is the statement of
+> current state.
+
 **Date:** 2026-04-25
 **Sub-project:** #2 + #3 (merged) of the JoineryFlow build, per `legacy/trackingv2.md` v1 grouping.
 **Depends on:** Foundation (sub-project #1, branch `feat/foundation`, migrations 0001-0007).

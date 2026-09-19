@@ -1,8 +1,13 @@
-"""Tests for soft-lock semantics on items (spec §6.4, T15 Step 4).
+"""Tests for lock semantics on items (spec §6.4 T15, re-cut by B7 / Q509).
 
-7 test cases covering:
+11 test cases covering:
   - First-save claim (unlocked + unowned item gets claimed on PATCH)
-  - Lock-overridden audit (non-owner PATCH emits audit row, doesn't steal lock)
+  - Controlled Lock: a non-owner's save is held as a request, not applied
+  - Re-saving revises your own pending request instead of stacking a second
+  - Owner approves → the change lands, credited to the requester
+  - Owner rejects → the item is untouched
+  - A manager may decide; an unrelated drafter may not
+  - Deciding twice → 409 ALREADY_DECIDED
   - Release keeps owner_id (sticky claim)
   - Transfer by owner
   - Transfer by non-owner → 403
@@ -49,6 +54,7 @@ def _cleanup():
             "item_stages",
             "item_hardware_lines",
             "project_hardware_catalog",
+            "item_lock_request",
             "items",
             "hardware_materials",
             "board_materials",
@@ -117,7 +123,9 @@ def _login_user(*, workspace_slug: str, email: str, password: str) -> TestClient
     return c
 
 
-def _setup_workspace_and_project(role_a: str = "drafter") -> dict:
+def _setup_workspace_and_project(
+    role_a: str = "drafter", project_name: str = "Lock Project"
+) -> dict:
     """Create workspace + project + primary user A.  Returns context dict."""
     suffix = uuid.uuid4().hex[:8]
     slug = f"ws-{suffix}"
@@ -134,9 +142,9 @@ def _setup_workspace_and_project(role_a: str = "drafter") -> dict:
         pid = db.execute(
             text(
                 "INSERT INTO projects(project_code, name, pm_id, workspace_id)"
-                " VALUES(:code, 'Lock Project', :uid, :wid) RETURNING project_id"
+                " VALUES(:code, :pname, :uid, :wid) RETURNING project_id"
             ),
-            {"code": f"LP-{suffix}", "uid": uid_a, "wid": wid},
+            {"code": f"LP-{suffix}", "pname": project_name, "uid": uid_a, "wid": wid},
         ).scalar()
         db.commit()
     finally:
@@ -203,8 +211,12 @@ def test_first_save_claims_ownership_and_locks():
 # ── Test 2 ─────────────────────────────────────────────────────────────────────
 
 
-def test_second_save_by_other_writes_lock_overridden_audit():
-    """Non-owner PATCH succeeds but emits audit row 'item.lock_overridden'; lock stays with A."""
+def test_second_save_by_other_becomes_a_lock_request():
+    """Controlled Lock (Q509): a non-owner PATCH is held, not applied.
+
+    Replaces the pre-B7 behaviour, where the save went through and only left an
+    `item.lock_overridden` audit row behind it.
+    """
     ctx = _setup_workspace_and_project()
     db = SessionLocal()
     try:
@@ -220,42 +232,55 @@ def test_second_save_by_other_writes_lock_overridden_audit():
     # A patches first → claims lock
     r = ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"})
     assert r.status_code == 200, r.text
+    assert _get_item_state(iid)["cutlist_owner_id"] == ctx["uid_a"]
 
-    state_after_a = _get_item_state(iid)
-    assert state_after_a["cutlist_owner_id"] == ctx["uid_a"]
-
-    # B patches → should succeed (200), not 403
-    r2 = c_b.patch(f"/items/{iid}", json={"description": "B edits despite lock"})
-    assert r2.status_code == 200, (
-        f"Non-owner PATCH should succeed (200), got {r2.status_code}: {r2.text}"
+    # B patches → held as a request, not applied
+    r2 = c_b.patch(f"/items/{iid}", json={"description": "B's proposal"})
+    assert r2.status_code == 409, (
+        f"Non-owner PATCH should be held (409), got {r2.status_code}: {r2.text}"
     )
+    detail = r2.json()["detail"]
+    assert detail["code"] == "LOCK_REQUEST_CREATED"
+    assert detail["owner_id"] == ctx["uid_a"]
+    assert detail["fields"] == ["description"]
 
-    # Audit log must have item.lock_overridden row
+    # The item itself is untouched, and the lock is still A's
     db2 = SessionLocal()
     try:
-        audit_row = db2.execute(
-            text(
-                """
-                SELECT payload FROM audit_log
-                WHERE event = 'item.lock_overridden'
-                  AND target = :target
-                ORDER BY id DESC LIMIT 1
-                """
-            ),
-            {"target": str(iid)},
-        ).mappings().first()
+        desc = db2.execute(
+            text("SELECT description FROM items WHERE item_id = :iid"), {"iid": iid}
+        ).scalar()
     finally:
         db2.close()
+    assert desc == "A's edit", "B's save must not reach the item"
+    assert _get_item_state(iid)["cutlist_owner_id"] == ctx["uid_a"]
 
-    assert audit_row is not None, "Expected an 'item.lock_overridden' audit row"
-    payload = audit_row["payload"]
-    assert payload["prior_owner_id"] == ctx["uid_a"]
-    assert payload["new_owner_id"] == uid_b
+    # The request is visible on the item, pending, carrying B's body
+    r3 = ctx["c_a"].get(f"/items/{iid}/lock-requests?status=pending")
+    assert r3.status_code == 200, r3.text
+    reqs = r3.json()
+    assert len(reqs) == 1
+    assert reqs[0]["requested_by"] == uid_b
+    assert reqs[0]["requested_changes"] == {"description": "B's proposal"}
+    assert reqs[0]["status"] == "pending"
 
-    # Lock still belongs to A (not stolen)
-    state_final = _get_item_state(iid)
-    assert state_final["cutlist_owner_id"] == ctx["uid_a"], (
-        "owner should remain A after B's override"
+    # ...and audited as a request, not an override
+    db3 = SessionLocal()
+    try:
+        events = [
+            row[0]
+            for row in db3.execute(
+                text(
+                    "SELECT event FROM audit_log WHERE target = :t ORDER BY id"
+                ),
+                {"t": str(iid)},
+            ).all()
+        ]
+    finally:
+        db3.close()
+    assert "item.lock_request.create" in events
+    assert "item.lock_overridden" not in events, (
+        "the override event is retired by the Controlled Lock"
     )
 
 
@@ -420,3 +445,153 @@ def test_lock_warning_in_get_item_response():
     assert lw["owner_id"] == uid_b
     assert lw["owner_name"] == "Drafter B Full Name"
     assert isinstance(lw["last_edit_minutes_ago"], int)
+
+
+# ── Controlled Lock: request lifecycle (B7 / Q509) ────────────────────────────
+
+
+def _locked_item_with_request(role_b: str = "drafter") -> dict:
+    """A owns the lock on an item; B's save is held as a pending request."""
+    ctx = _setup_workspace_and_project()
+    db = SessionLocal()
+    try:
+        uid_b, email_b, pw_b = _make_user(
+            db, workspace_id=ctx["wid"], role=role_b, name="Drafter B"
+        )
+        iid = _insert_unlocked_item(db, project_id=ctx["pid"], num=2001)
+    finally:
+        db.close()
+
+    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+    assert ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"}).status_code == 200
+
+    r = c_b.patch(f"/items/{iid}", json={"description": "B's proposal", "qty": 7})
+    assert r.status_code == 409, r.text
+    ctx.update(
+        uid_b=uid_b, c_b=c_b, iid=iid, rid=r.json()["detail"]["request_id"]
+    )
+    return ctx
+
+
+def _item_field(iid: int, col: str):
+    db = SessionLocal()
+    try:
+        return db.execute(
+            text(f"SELECT {col} FROM items WHERE item_id = :iid"), {"iid": iid}
+        ).scalar()
+    finally:
+        db.close()
+
+
+def test_resaving_revises_the_same_pending_request():
+    """uniq_pending_lock_request: one live proposal per person, not a queue."""
+    ctx = _locked_item_with_request()
+
+    r = ctx["c_b"].patch(f"/items/{ctx['iid']}", json={"description": "B, second thoughts"})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["request_id"] == ctx["rid"], "should revise, not create"
+
+    rows = ctx["c_a"].get(f"/items/{ctx['iid']}/lock-requests?status=pending").json()
+    assert len(rows) == 1
+    assert rows[0]["requested_changes"] == {"description": "B, second thoughts"}, (
+        "the latest proposal replaces the earlier one"
+    )
+
+
+def test_owner_approves_and_the_change_lands_credited_to_requester():
+    ctx = _locked_item_with_request()
+
+    r = ctx["c_a"].post(f"/lock-requests/{ctx['rid']}/approve", json={"note": "fine"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "approved"
+    assert body["decided_by"] == ctx["uid_a"]
+    assert body["decision_note"] == "fine"
+
+    assert _item_field(ctx["iid"], "description") == "B's proposal"
+    assert _item_field(ctx["iid"], "qty") == 7
+    # The lock does not move: approving is not handing the item over.
+    assert _get_item_state(ctx["iid"])["cutlist_owner_id"] == ctx["uid_a"]
+
+    db = SessionLocal()
+    try:
+        authors = {
+            row[0]
+            for row in db.execute(
+                text("SELECT actor_id FROM item_edit_log WHERE item_id = :iid"),
+                {"iid": ctx["iid"]},
+            ).all()
+        }
+        approve_payload = db.execute(
+            text(
+                "SELECT payload FROM audit_log WHERE event = 'item.lock_request.approve'"
+                " AND target = :t ORDER BY id DESC LIMIT 1"
+            ),
+            {"t": str(ctx["iid"])},
+        ).scalar()
+    finally:
+        db.close()
+
+    assert ctx["uid_b"] in authors, "the edit log credits the requester"
+    assert approve_payload["requested_by"] == ctx["uid_b"]
+    assert sorted(approve_payload["applied_fields"]) == ["description", "qty"]
+
+
+def test_owner_rejects_and_the_item_is_untouched():
+    ctx = _locked_item_with_request()
+
+    r = ctx["c_a"].post(f"/lock-requests/{ctx['rid']}/reject", json={"note": "no"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "rejected"
+
+    assert _item_field(ctx["iid"], "description") == "A's edit"
+    assert _item_field(ctx["iid"], "qty") != 7
+
+
+def test_manager_may_decide_but_an_unrelated_drafter_may_not():
+    ctx = _locked_item_with_request()
+    db = SessionLocal()
+    try:
+        _, email_c, pw_c = _make_user(
+            db, workspace_id=ctx["wid"], role="drafter", name="Drafter C"
+        )
+        _, email_m, pw_m = _make_user(
+            db, workspace_id=ctx["wid"], role="manager", name="Manager M"
+        )
+    finally:
+        db.close()
+
+    c_c = _login_user(workspace_slug=ctx["slug"], email=email_c, password=pw_c)
+    r = c_c.post(f"/lock-requests/{ctx['rid']}/approve")
+    assert r.status_code == 403, f"a bystander must not decide: {r.text}"
+
+    c_m = _login_user(workspace_slug=ctx["slug"], email=email_m, password=pw_m)
+    r2 = c_m.post(f"/lock-requests/{ctx['rid']}/approve")
+    assert r2.status_code == 200, r2.text
+    assert _item_field(ctx["iid"], "description") == "B's proposal"
+
+
+def test_deciding_twice_conflicts():
+    ctx = _locked_item_with_request()
+    assert ctx["c_a"].post(f"/lock-requests/{ctx['rid']}/approve").status_code == 200
+    r = ctx["c_a"].post(f"/lock-requests/{ctx['rid']}/reject")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "ALREADY_DECIDED"
+
+
+def test_lock_request_is_workspace_isolated():
+    """A decider in another workspace cannot even see the request."""
+    ctx = _locked_item_with_request()
+    other = _setup_workspace_and_project(role_a="manager", project_name="Other Project")
+
+    r = other["c_a"].post(f"/lock-requests/{ctx['rid']}/approve")
+    assert r.status_code == 404, r.text
+    assert _item_field(ctx["iid"], "description") == "A's edit"
+
+
+def test_owner_save_still_applies_directly():
+    """The lock only holds *other* people's saves."""
+    ctx = _locked_item_with_request()
+    r = ctx["c_a"].patch(f"/items/{ctx['iid']}", json={"description": "A again"})
+    assert r.status_code == 200, r.text
+    assert _item_field(ctx["iid"], "description") == "A again"

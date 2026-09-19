@@ -126,9 +126,17 @@ export function ItemMetadataPanel({ item }: Props) {
         body: JSON.stringify({ [field]: value }),
       });
       if (!res.ok) {
+        // Controlled Lock: a non-owner's save is held for approval, not lost.
+        // The field still reverts, because the item itself has not changed.
+        const held =
+          res.status === 409 &&
+          (await res.json().catch(() => null))?.detail?.code ===
+            "LOCK_REQUEST_CREATED";
         setErrors((e) => ({
           ...e,
-          [field as string]: `Save failed (${res.status})`,
+          [field as string]: held
+            ? "Held for the lock owner to approve"
+            : `Save failed (${res.status})`,
         }));
         return false;
       }

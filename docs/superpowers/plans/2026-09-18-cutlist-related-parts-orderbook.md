@@ -477,10 +477,41 @@ hand-edited predicates.
       `PO-2026-0042`; downgrade leaves columns identical to a fresh `0001`–`0030`.
       New `tests/test_order_routes.py` (10 cases) covering the whole chain —
       **run, and passing**.
-- [ ] **B7** Item soft-lock → Controlled Lock: a non-owner's save becomes a
+- [x] **B7** Item soft-lock → Controlled Lock: a non-owner's save becomes a
       **request requiring approval** instead of succeeding with an
       `item.lock_overridden` audit row (Q509). Item and project scope only
       (Q510).
+
+      → Migration **`0032`** adds `item_lock_request` (the `PatchItemIn` body
+      held as jsonb, `pending → approved | rejected`), with
+      `uniq_pending_lock_request` on `(item_id, requested_by) WHERE status =
+      'pending'` so saving again **revises your own proposal** rather than
+      queueing a stale one behind it.
+
+      `PATCH /items/{id}` no longer applies a non-owner's save: it answers
+      `409 {code: "LOCK_REQUEST_CREATED", request_id, owner_id, fields}`.
+      `GET /items/{id}/lock-requests` lists them;
+      `POST /lock-requests/{rid}/{approve,reject}` decides, restricted to the
+      **lock owner or a manager/admin** — the same rule
+      `claim_or_release_lock` already applies to transferring the lock.
+      Approval replays the stored body through the ordinary save path, so a
+      field the owner has meanwhile set to the requested value is a silent
+      no-op; the edit log credits the **requester**, the audit the
+      **approver**. `item.lock_overridden` is retired.
+
+      → **Q566 raised and answered**: B7 covers Q509 and half of Q510.
+      **`projects` has no lock column of any kind**, so Q510's project scope is
+      read as a ceiling, not a mandate. **Q508**'s Hard and Approval locks and
+      **Q511 / Q512** (optimistic concurrency, per-field versioning) have no
+      task anywhere in this plan and remain unbuilt.
+
+      → **verified**: `0032` upgrades and downgrades cleanly on the full
+      `0001`–`0032` chain. `tests/test_lock_semantics.py` re-cut from 7 cases
+      to 14 — the override test is now a *held-request* test — covering revise,
+      approve (item changed, requester credited), reject (item untouched),
+      manager-decides / bystander-403, double-decide 409, cross-workspace 404
+      and the owner's own save still applying. Full suite **608 passed, 1
+      skipped**.
 
 ### C. Web
 

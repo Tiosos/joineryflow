@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0031`. Head is `0031_order_categories`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
+- `db/` — Alembic migrations `0001` → `0032`. Head is `0032_item_lock_request`. Each sub-project section below names the migration(s) it introduced. **`0026`–`0029` are schema only** — they are the A-series of the Cutlist + related-parts sub-project, applied ahead of any backend or UI work, so no code reads the new tables yet. Everything the sub-project sections below describe still runs on the pre-`0026` shape.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
@@ -129,8 +129,10 @@ not a description of this tree. Nothing in it has been implemented.
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q551, continuing Plan V1's own
-  numbering. **115 of 118 resolved; every answerable question is answered.**
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q566, continuing Plan V1's own
+  numbering. **131 of 134 resolved; every answerable question is answered.**
+  Q552–Q566 were raised *while building* the Cutlist sub-project, each where a
+  document and the code disagreed.
   The three left are **inputs only the customer can supply**: the SharePoint
   site URL (Q480), a real drawing filename (Q547), and what the Cars / OH&S
   tabs hold (Q550). The first two block §H entirely.
@@ -261,7 +263,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
 - `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — **forward plan** for the next sub-project (Plan V1 #10): cutlist entity, related-part rows, Area/Room rename, and the Orderbook rework. Migrations `0026`–`0029` **applied** (the A-series is done and verified); the B/C/D/E backend and UI tasks are not started.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q551, **115 of 118 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q566, **131 of 134 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
@@ -297,7 +299,21 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
 - Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`, now defaulted to `1` in `.env.example` (it was absent, so the button was off in every fresh dev setup even though #4 shipped). A `.env` copied before that fix won't have it.
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
-- Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
+- **Controlled Lock** (migration `0032`, Q509 — replaces the advisory
+  soft-lock). First save still claims ownership. A non-owner's save on a locked
+  item is **no longer applied**: `PATCH /items/{id}` answers
+  `409 {code: "LOCK_REQUEST_CREATED", …}` and the body is held as an
+  `item_lock_request` row. `GET /items/{id}/lock-requests` lists them;
+  `POST /lock-requests/{rid}/{approve,reject}` decides, restricted to the lock
+  owner or a manager/admin. Approval replays the stored body through the
+  ordinary save path — the **edit log credits the requester**, the audit row
+  names the approver. Saving again revises your own pending request rather than
+  queueing a second (`uniq_pending_lock_request`).
+  `event='item.lock_overridden'` is **retired**: nothing emits it, and existing
+  rows are history only. Scope is `PATCH /items/{id}` alone —
+  `/status` and `/lifecycle/{stage_key}` never consulted the lock and still do
+  not, and **there is no project-level lock** (Q566: `projects` has no lock
+  column).
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)

@@ -23,6 +23,7 @@ Strategy: Two queries rather than one giant GROUP BY + window function:
 This avoids GROUP BY fan-out complications with the jsonb_object_agg approach
 when combined with the availability correlated subqueries.
 """
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -794,30 +795,27 @@ _PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
 ]
 
 
-def patch_item(
+def _apply_item_changes(
     db: Session,
     *,
     item_id: int,
-    workspace_id: int,
+    current: dict,
     payload: PatchItemIn,
-    actor_id: int,
-) -> dict | None:
-    """Apply a partial update to an item.  Returns the row dict via get_item_detail
-    or None if item not found/out-of-workspace.
+    author_id: int,
+    extra_updates: dict[str, object] | None = None,
+) -> list[tuple[str, str | None, str | None]]:
+    """Write the fields of `payload` that actually differ from `current`.
 
-    Soft-lock semantics (spec §6.4):
-    - If cutlist_owner_id IS NULL:  set item_locked=true and cutlist_owner_id=actor.
-    - If item_locked AND cutlist_owner_id != actor:  emit 'item.lock_overridden'
-      audit row WITHOUT changing ownership.
-    Edit log: one row per changed field.
+    Shared by the owner's own save and by the approval of someone else's
+    Controlled-Lock request, so an approved request lands exactly as a direct
+    save would.  `author_id` is who gets credited in `item_edit_log` — the
+    person whose change it is, which on an approval is the *requester*, not the
+    approver (the approver is named in the audit row instead).
+
+    Returns the (field, old, new) tuples it logged.
     """
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
-    if current is None:
-        return None
-
-    # ── Collect changed fields (skip None values — partial update) ────────────
-    updates: dict[str, object] = {}   # col -> new_value
-    changes: list[tuple[str, str | None, str | None]] = []   # (field, old, new)
+    updates: dict[str, object] = dict(extra_updates or {})
+    changes: list[tuple[str, str | None, str | None]] = []
 
     for attr, col, row_key in _PATCH_FIELD_MAP:
         new_val = getattr(payload, attr)
@@ -828,40 +826,89 @@ def patch_item(
             updates[col] = new_val
             changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
 
-    # ── Soft-lock: claim ownership if unowned; warn on override ──────────────
-    owner_id: int | None = current["cutlist_owner_id"]
-    is_locked: bool = bool(current["item_locked"])
-
-    if owner_id is None:
-        # First-save claim
-        updates["item_locked"] = True
-        updates["cutlist_owner_id"] = actor_id
-    elif is_locked and owner_id != actor_id:
-        # Non-owner editing a locked item — audit warning only, don't steal lock
-        write_audit(
-            db,
-            workspace_id=workspace_id,
-            actor_id=actor_id,
-            event="item.lock_overridden",
-            target=str(item_id),
-            payload={"prior_owner_id": owner_id, "new_owner_id": actor_id},
-        )
-
-    # ── Build UPDATE if anything changed ─────────────────────────────────────
     if updates:
         set_clauses = ", ".join(f"{col} = :{col}" for col in updates)
-        params = {"iid": item_id, **{col: val for col, val in updates.items()}}
         db.execute(
             text(f"UPDATE items SET {set_clauses}, updated_at = now() WHERE item_id = :iid"),
-            params,
+            {"iid": item_id, **updates},
         )
         db.flush()
 
-    # ── Edit log rows ─────────────────────────────────────────────────────────
     if changes:
-        write_edit_log_many(db, item_id=item_id, actor_id=actor_id, changes=changes)
+        write_edit_log_many(db, item_id=item_id, actor_id=author_id, changes=changes)
 
-    return current   # caller re-fetches via get_item_detail for the full payload
+    return changes
+
+
+def _changed_fields(payload: PatchItemIn, current: dict) -> dict[str, object]:
+    """The submitted fields that would actually change `current`, as a jsonb body."""
+    out: dict[str, object] = {}
+    for attr, _col, row_key in _PATCH_FIELD_MAP:
+        new_val = getattr(payload, attr)
+        if new_val is None:
+            continue
+        if new_val != current.get(row_key):
+            out[attr] = new_val
+    return out
+
+
+def patch_item(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    payload: PatchItemIn,
+    actor_id: int,
+) -> dict | None:
+    """Apply a partial update to an item.  None if not found/out-of-workspace.
+
+    Controlled Lock (Q509, replacing the advisory soft-lock of spec §6.4):
+    - cutlist_owner_id IS NULL:      first save claims — item_locked=true, owner=actor.
+    - item_locked AND owner != actor: the save does **not** apply.  It is held as
+      a pending `item_lock_request` for the owner or a manager to decide, and
+      the caller gets 409.  Saving again revises your own pending request
+      rather than stacking a second one (uniq_pending_lock_request).
+    - otherwise:                     applies directly.
+
+    Returns `{"outcome": "applied"}` or `{"outcome": "lock_request", "request": {...}}`.
+    Edit log: one row per changed field.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return None
+
+    owner_id: int | None = current["cutlist_owner_id"]
+    is_locked: bool = bool(current["item_locked"])
+
+    if is_locked and owner_id is not None and owner_id != actor_id:
+        proposed = _changed_fields(payload, current)
+        if not proposed:
+            # Nothing would change — no request to raise, and nothing applied.
+            return {"outcome": "applied"}
+        request = _upsert_lock_request(
+            db,
+            item_id=item_id,
+            workspace_id=workspace_id,
+            requester_id=actor_id,
+            owner_id=owner_id,
+            proposed=proposed,
+        )
+        return {"outcome": "lock_request", "request": request}
+
+    extra: dict[str, object] = {}
+    if owner_id is None:
+        # First-save claim
+        extra = {"item_locked": True, "cutlist_owner_id": actor_id}
+
+    _apply_item_changes(
+        db,
+        item_id=item_id,
+        current=current,
+        payload=payload,
+        author_id=actor_id,
+        extra_updates=extra,
+    )
+    return {"outcome": "applied"}
 
 
 def delete_item(
@@ -1198,3 +1245,191 @@ def claim_or_release_lock(
         )
 
     return "OK"
+
+
+# ── Controlled Lock: requests (B7 / Q509) ─────────────────────────────────────
+
+_LOCK_REQUEST_COLS = """
+    r.request_id,
+    r.item_id,
+    r.requested_by,
+    ru.full_name                    AS requested_by_name,
+    r.requested_changes,
+    r.status,
+    r.created_at,
+    r.updated_at,
+    r.decided_by,
+    du.full_name                    AS decided_by_name,
+    r.decided_at,
+    r.decision_note
+"""
+
+
+def _lock_request_row(db: Session, *, request_id: int, workspace_id: int) -> dict | None:
+    """One request, scoped to the caller's workspace through its item's project."""
+    row = db.execute(
+        text(
+            f"""
+            SELECT {_LOCK_REQUEST_COLS}, i.cutlist_owner_id
+              FROM item_lock_request r
+              JOIN items i    ON i.item_id = r.item_id
+              JOIN projects p ON p.project_id = i.project_id
+              JOIN app_user ru ON ru.id = r.requested_by
+         LEFT JOIN app_user du ON du.id = r.decided_by
+             WHERE r.request_id = :rid
+               AND p.workspace_id = :wid
+            """
+        ),
+        {"rid": request_id, "wid": workspace_id},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def _upsert_lock_request(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    requester_id: int,
+    owner_id: int,
+    proposed: dict,
+) -> dict:
+    """Record (or revise) the requester's pending request on this item.
+
+    `uniq_pending_lock_request` makes this an upsert: a second save by the same
+    person replaces their own undecided proposal, so the owner always decides
+    on the latest version rather than a queue of stale ones.
+    """
+    rid = db.execute(
+        text(
+            """
+            INSERT INTO item_lock_request (item_id, requested_by, requested_changes)
+            VALUES (:iid, :uid, CAST(:changes AS jsonb))
+            ON CONFLICT (item_id, requested_by) WHERE status = 'pending'
+            DO UPDATE SET requested_changes = EXCLUDED.requested_changes,
+                          updated_at = now()
+            RETURNING request_id
+            """
+        ),
+        {"iid": item_id, "uid": requester_id, "changes": json.dumps(proposed)},
+    ).scalar()
+    db.flush()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=requester_id,
+        event="item.lock_request.create",
+        target=str(item_id),
+        payload={
+            "request_id": rid,
+            "owner_id": owner_id,
+            "fields": sorted(proposed),
+        },
+    )
+    return _lock_request_row(db, request_id=rid, workspace_id=workspace_id) or {}
+
+
+def list_lock_requests(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    status: str | None = None,
+) -> list[dict] | None:
+    """Requests on an item, newest first.  None if the item is out of workspace."""
+    if _item_row(db, item_id=item_id, workspace_id=workspace_id) is None:
+        return None
+    rows = db.execute(
+        text(
+            f"""
+            SELECT {_LOCK_REQUEST_COLS}
+              FROM item_lock_request r
+              JOIN app_user ru ON ru.id = r.requested_by
+         LEFT JOIN app_user du ON du.id = r.decided_by
+             WHERE r.item_id = :iid
+               AND (CAST(:status AS varchar) IS NULL OR r.status = :status)
+          ORDER BY r.request_id DESC
+            """
+        ),
+        {"iid": item_id, "status": status},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def decide_lock_request(
+    db: Session,
+    *,
+    request_id: int,
+    workspace_id: int,
+    actor: AuthUser,
+    decision: str,
+    note: str | None,
+) -> str | dict:
+    """Approve or reject a pending request.  decision ∈ {'approved', 'rejected'}.
+
+    Returns 'NOT_FOUND', 'FORBIDDEN', 'ALREADY_DECIDED', or the decided row.
+
+    Who may decide: the current lock owner, or a manager/admin — the same rule
+    `claim_or_release_lock` already applies to transferring the lock, since
+    both amount to overriding the owner.
+
+    Approval replays the stored body through the ordinary save path, so fields
+    the owner has since changed to the requested value are simply no-ops and
+    the edit log still credits the requester.
+    """
+    row = _lock_request_row(db, request_id=request_id, workspace_id=workspace_id)
+    if row is None:
+        return "NOT_FOUND"
+    if row["status"] != "pending":
+        return "ALREADY_DECIDED"
+    if row["cutlist_owner_id"] != actor.id and actor.auth_role not in ("manager", "admin"):
+        return "FORBIDDEN"
+
+    item_id = row["item_id"]
+    applied: list[str] = []
+
+    if decision == "approved":
+        current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+        if current is None:          # item deleted between request and decision
+            return "NOT_FOUND"
+        changes = _apply_item_changes(
+            db,
+            item_id=item_id,
+            current=current,
+            payload=PatchItemIn(**row["requested_changes"]),
+            author_id=row["requested_by"],
+        )
+        applied = [field for field, _old, _new in changes]
+
+    db.execute(
+        text(
+            """
+            UPDATE item_lock_request
+               SET status = :status,
+                   decided_by = :actor,
+                   decided_at = now(),
+                   decision_note = :note,
+                   updated_at = now()
+             WHERE request_id = :rid
+            """
+        ),
+        {"status": decision, "actor": actor.id, "note": note, "rid": request_id},
+    )
+    db.flush()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor.id,
+        event=f"item.lock_request.{'approve' if decision == 'approved' else 'reject'}",
+        target=str(item_id),
+        payload={
+            "request_id": request_id,
+            "requested_by": row["requested_by"],
+            "fields": sorted(row["requested_changes"]),
+            "applied_fields": applied,
+            "note": note,
+        },
+    )
+    return _lock_request_row(db, request_id=request_id, workspace_id=workspace_id) or {}

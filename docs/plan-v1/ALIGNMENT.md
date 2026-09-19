@@ -296,7 +296,7 @@ strip against Plan V1's stated arrangement.
 | Every significant object records who/what/when | `audit_log` (workspace governance, every authenticated mutation) + `item_edit_log` (per-item field history, written in the same transaction). Genuinely solid. | `SHIPPED` |
 | Formal revisions coexisting with automatic history | Only `shop_drawing_revision` and `estimate_revision` — two entities, not a general mechanism. | `PARTIAL` |
 | **Retain last 20 change states for rollback; rollback creates a restorative revision** | `item_edit_log` stores `old_value`/`new_value` as `varchar(255)` per field — enough to *display* history, **not** enough to reconstruct and restore an object state. No rollback anywhere. | `ABSENT` |
-| Three lock types (Hard / Controlled / Approval), applicable to fields, components, items, areas, projects, tabs, revisions | `items.item_locked` + `items.cutlist_owner_id` soft-lock: first save claims ownership, non-owner saves are **permitted** and write an `item.lock_overridden` audit row. That is an *advisory* lock — closest to none of the three types. | `PARTIAL` |
+| Three lock types (Hard / Controlled / Approval), applicable to fields, components, items, areas, projects, tabs, revisions | **One of the three ships** (`0032`, B7): the item lock is now a **Controlled Lock** — a non-owner's save is held as an `item_lock_request` for the owner or a manager to approve or reject (Q509), and `item.lock_overridden` is retired. Hard and Approval locks are not built, nor is any lock below or above item scope: **`projects` has no lock column** (Q566). | `PARTIAL` |
 
 ### Plan V1 §13–§15 — Search, mobile, QR
 

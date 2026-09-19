@@ -221,3 +221,27 @@ class PatchLifecycleIn(BaseModel):
     """
     due_date: date | None = None
     done_date: date | None = None
+
+
+# ── Controlled Lock (B7 / Q509) ───────────────────────────────────────────────
+
+
+class LockRequestOut(BaseModel):
+    """A non-owner's held save on a locked item."""
+    request_id: int
+    item_id: int
+    requested_by: int
+    requested_by_name: str | None = None
+    requested_changes: dict
+    status: Literal["pending", "approved", "rejected"]
+    created_at: datetime
+    updated_at: datetime
+    decided_by: int | None = None
+    decided_by_name: str | None = None
+    decided_at: datetime | None = None
+    decision_note: str | None = None
+
+
+class LockRequestDecisionIn(BaseModel):
+    """Payload for POST /lock-requests/{rid}/{approve,reject}.  Note is optional."""
+    note: str | None = None
