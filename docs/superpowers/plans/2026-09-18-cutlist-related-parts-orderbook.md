@@ -190,14 +190,49 @@ hand-edited predicates.
 
 ### B. Backend
 
-- [ ] **B1** **Do this first.** One `visible_items()` helper (or a SQL
-      fragment constant) encoding `row_type = 'joinery_item'`, and apply it to
-      all **50 call sites across 13 modules** — `items` (13), `shop_floor` (8),
-      `procurement_v1` (5), `parts` (5), `home` (4), `item_attachments` (3),
-      `hardware_lines` (3), `estimating` (2), `cv` (2), `cut_floor` (2), and
-      one each in `public`, `projects`, `printing`.
-      → verify: a test asserting a seeded related part appears in **no**
-      shop-floor board, cut-plan, print or estimating query.
+- [x] **B1** — **done.** `apps/api/app/row_types.py` holds the one definition
+      (`joinery_items_only(alias)`); **35 of the 50 call sites** carry it. The
+      count in the original task assumed all 50 take the filter. They do not —
+      three kinds of site exist, and the classification is the deliverable:
+      1. **Enumerations and guards → filtered** (35). Lists, counts, rollups,
+         and the "does item :iid exist here?" checks that gate a child entity
+         a related part cannot have.
+      2. **By-id mutation helpers → deliberately unfiltered.** `_item_row` and
+         the UPDATE/DELETE paths beneath it, because B4's related-part routes
+         (Q450 status, Q452 reparent) reach their rows through them.
+         `_item_row` now returns `row_type` so callers decide:
+         `patch_lifecycle` refuses a related part (Q419 — no stages) and
+         `claim_or_release_lock` refuses it (Q417 — no cutlist to lock).
+      3. **The Tracking list → deliberately unfiltered** (Q558), which forced
+         an ordering fix; see below.
+      Two more left alone on purpose: both `INSERT INTO items` sites (0028
+      gave `row_type` a DEFAULT of `joinery_item`, so they already produce
+      correct rows) and estimating's `SELECT MAX(num) FROM items`, which
+      **must** see every row since `num` is UNIQUE across both kinds — B2a
+      replaces that allocator anyway.
+
+      **Three questions this raised, now answered** — Q558 (Tracking list
+      returns related parts **inline**, with `row_type` per row), Q559 (the
+      drafter editor **404s** on one), Q560 (the availability drawer **404s**).
+      Q558 forced a change the task did not anticipate: the list ordered by
+      `COALESCE(num, item_id)`, but Q541's shared sequence puts a child's
+      number nowhere near its parent's, so children scattered. The list now
+      self-joins the parent and orders by `(parent.num, is_related_part, num)`.
+
+      **Found while verifying:** `/public/stats` selected
+      `custom_made.supplier`, a column that has never existed (the table names
+      it `vendor`), so the endpoint raised `UndefinedColumn` on every call.
+      Same root cause as the catalog-interface error corrected in `0029`.
+      Fixed, since the query was already being edited here.
+
+      → **verified** against a real Postgres 16 at `0029`: all 33
+      predicate-bearing statements in the API tree render and parse; a seeded
+      related part is excluded from the project item count, the shop-floor
+      board, every patched guard, the item detail and the availability gate,
+      while its parent is still found — and the **unpatched** form of the same
+      guard still returns it, so the filter is what makes the difference. The
+      ordering fix demonstrated on a fixture where the old `ORDER BY` put a
+      second parent between the first parent and its own child.
 - [ ] **B2** `apps/api/app/cutlists/` — CRUD, number allocation from the shared
       sequence, link/unlink an item, 409 on linking a second cutlist (Q411).
 - [ ] **B2a** **Repoint both existing `items.num` allocators at

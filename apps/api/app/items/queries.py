@@ -31,7 +31,14 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
+from ..row_types import joinery_items_only
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
+
+# The drafter editor and the availability drawer are cutlist surfaces: neither
+# means anything for a related part (Q417/Q447), so both 404 on its id.  The
+# Tracking LIST is deliberately different — it returns related parts inline,
+# nested under their parent (Q420/Q422) — and so carries no filter.
+_JOINERY_I = joinery_items_only("i")
 
 # Workspace isolation clause (items -> projects.workspace_id direct FK, since 0014).
 _WORKSPACE_FILTER = """
@@ -45,6 +52,9 @@ _WORKSPACE_FILTER = """
 _ITEM_COLS = """
     i.item_id                                       AS id,
     i.num                                           AS item_number,
+    i.row_type,
+    i.parent_item_id,
+    i.related_part_type_key,
     i.status,
     i.stage,
     i.zone,
@@ -106,6 +116,7 @@ def list_items_for_project(
             SELECT {_ITEM_COLS}
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
+            LEFT JOIN items parent ON parent.item_id = i.parent_item_id
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
@@ -124,7 +135,13 @@ def list_items_for_project(
                   OR i.description ILIKE '%' || :q || '%'
                   OR i.code ILIKE '%' || :q || '%'
               )
-            ORDER BY COALESCE(i.num, CAST(i.item_id AS integer))
+            -- Q420: a related part sorts with its PARENT, directly beneath it —
+            -- not at its own number's position.  Q541 draws Item IDs and cutlist
+            -- numbers from one shared sequence, so a child's `num` is nowhere
+            -- near its parent's and ordering by `num` alone would scatter them.
+            ORDER BY COALESCE(parent.num, i.num, CAST(i.item_id AS integer)),
+                     CASE WHEN i.row_type = 'related_part' THEN 1 ELSE 0 END,
+                     COALESCE(i.num, CAST(i.item_id AS integer))
             """
         ),
         params,
@@ -212,6 +229,11 @@ def get_item_availability(
     Returns None if the item does not exist or belongs to a different workspace.
     """
     # Workspace visibility check: same EXISTS chain as _WORKSPACE_FILTER.
+    #
+    # Joinery Items only.  Availability is computed from hardware lines joined
+    # to procurement batches; a related part has no hardware lines (Q447) and
+    # is procured through its own supplier order (Q424).  Serving it an empty
+    # drawer would read identically to "nothing outstanding", so it 404s.
     exists_row = db.execute(
         text(
             f"""
@@ -219,6 +241,7 @@ def get_item_availability(
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+              AND {joinery_items_only("i")}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -240,7 +263,7 @@ def get_item_availability(
     #   - qty_allocated_to_line             SUM(qty_allocated) for this specific line
     line_rows = db.execute(
         text(
-            """
+            f"""
             WITH lines AS (
                 SELECT hl.line_id, hl.item_id, hl.seq, hl.qty AS qty_needed,
                        hl.catalog_id
@@ -287,7 +310,7 @@ def get_item_availability(
                 COALESCE(alloc.qty_allocated_to_line, 0)                AS qty_allocated_to_line
             FROM lines l
             JOIN base b USING (line_id)
-            JOIN items i ON i.item_id = l.item_id
+            JOIN items i ON i.item_id = l.item_id AND {_JOINERY_I}
             LEFT JOIN project_hardware_catalog phc
                    ON phc.catalog_id = l.catalog_id
             LEFT JOIN LATERAL (
@@ -389,6 +412,7 @@ def get_item_detail(
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+              AND {_JOINERY_I}
             """
         ),
         {"iid": item_id, "wid": workspace_id},

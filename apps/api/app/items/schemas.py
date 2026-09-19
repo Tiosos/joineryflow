@@ -44,6 +44,12 @@ class TrackingItemRow(BaseModel):
     item_locked: bool
     stages: dict[str, StageDates]   # keyed by stage_key (REQ..INST)
     availability: AvailabilityRollup
+    # Plan V1 Q420/Q422: related parts come back in the SAME list, directly
+    # beneath their parent, collapsed by default.  The web nests on these two.
+    # A related part has no stages at all (Q419), so `stages` is empty for it.
+    row_type: str                   # 'joinery_item' | 'related_part'
+    parent_item_id: int | None
+    related_part_type_key: str | None
 
 
 class TrackingGridOut(BaseModel):

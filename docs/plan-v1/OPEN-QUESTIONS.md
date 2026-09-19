@@ -1453,6 +1453,56 @@ actually rendered. The options when it is taken:
 3. Leave them; category stays an office-procurement field and joinery grouping
    happens on `supplier_id` instead.
 
+### Q558 — Does the Tracking list API return related parts inline? *(new — raised while building B1)*
+**Option 1 confirmed (2026-09-19): inline, with `row_type` on every row.**
+`list_items_for_project` is the one `items` enumeration that is **not**
+filtered. One response carries Joinery Items and their related parts together;
+each row exposes `row_type`, `parent_item_id` and `related_part_type_key`, and
+the web nests on those (Q420/Q422).
+
+*Why this was not already settled:* Q420 says related-part rows display
+directly beneath their parent and Q422 collapses them by default. Both are
+**display** rules — neither says whether one response carries both row kinds or
+the children are fetched on expand. Both shapes satisfy the prose.
+
+**Consequence — an ordering change this forces.** The list ordered by
+`COALESCE(num, item_id)`. Under **Q541** Item IDs and cutlist numbers draw from
+one shared sequence, so a child's `num` is nowhere near its parent's and
+ordering by `num` alone scatters children away from their parent — breaking
+Q420. The list now self-joins the parent and orders by
+`(parent.num, is_related_part, num)`. Demonstrated: with parent 900001 owning
+children 900002 and 900009, and a second parent at 900003, the old ordering put
+the second parent *between* the first parent and its own child.
+
+**Consequence — every consumer of this endpoint now sees two row kinds.**
+`TrackingItemRow.stages` is empty for a related part (Q419); nothing should
+read it as "no stages recorded yet".
+
+### Q559 — Does the drafter editor open a related part? *(new — raised while building B1)*
+**Option 1 confirmed (2026-09-19): no — `GET /items/{id}` 404s on a related part.**
+The editor's tabs are Cutlist, Hardware, Board, Attachments and Log; a related
+part has none of the first four (Q417/Q447), so `get_item_detail` takes the
+filter like the other guards.
+
+Related parts are therefore edited **in Tracking** — inline or in a small
+drawer. That is B4's surface to build. The fields involved are few: description,
+qty, status (Q450), type (Q448) and parent (Q452).
+
+**Note the deliberate asymmetry with Q558:** the Tracking *list* serves a
+related part, the item *detail* does not. That is not an inconsistency — the
+list is a register of rows, the detail is a cutlist workbench.
+
+### Q560 — What does the availability drawer do for a related part? *(new — raised while building B1)*
+**Option 1 confirmed (2026-09-19): 404 — a related part has no availability.**
+Availability is computed from hardware lines joined to procurement batches. A
+related part has no hardware lines (Q447); it is procured through its own
+supplier order (Q424). An empty drawer would read identically to "nothing
+outstanding", which is the opposite of the truth for a part whose order is
+stuck — exactly the case **Q450** gives it its own status to surface.
+
+Showing the linked order's status here instead was considered and **not**
+taken: it depends on B6 and widens B1. Revisit once orders exist.
+
 ---
 
 ## §L — Locking, concurrency and rollback *(Plan V1 §11–§12, §39)*
