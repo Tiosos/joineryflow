@@ -193,6 +193,10 @@ def list_items_for_project(
                 "cutlist_owner_id": r["cutlist_owner_id"],
                 "cutlist_owner_name": r["cutlist_owner_name"],
                 "item_locked": bool(r["item_locked"]),
+                # Q558: the list carries both row kinds; the web nests on these.
+                "row_type": r["row_type"],
+                "parent_item_id": r["parent_item_id"],
+                "related_part_type_key": r["related_part_type_key"],
                 "stages": stages_by_item.get(item_id, {}),
                 "availability": {
                     "ready": int(r["ready"]),

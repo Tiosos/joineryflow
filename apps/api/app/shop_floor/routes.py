@@ -273,7 +273,9 @@ def patch_assignment_route(
     payload = body.model_dump(exclude_unset=True)
     fields: dict = {}
     audit_event = None
-    audit_payload: dict = {"assignment_id": aid, "item_id": current["item_id"],
+    audit_payload: dict = {"assignment_id": aid,
+                           "cutlist_id": current["cutlist_id"],
+                           "cutlist_no": current["cutlist_no"],
                            "stage_key": current["stage_key"]}
 
     if "worker_id" in payload and payload["worker_id"] is not None:
@@ -349,7 +351,8 @@ def cancel_assignment_route(
         event="shop_floor.unassign", target=str(aid),
         payload={
             "assignment_id": aid,
-            "item_id": current["item_id"],
+            "cutlist_id": current["cutlist_id"],
+            "cutlist_no": current["cutlist_no"],
             "stage_key": current["stage_key"],
             "cancelled_by": user.id,
             "from_status": current["status"],

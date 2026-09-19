@@ -175,7 +175,12 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0025
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (56 test files, ~500 tests)
+make test         # pytest in api container (56 test files, 572 tests)
+                  # Runnable WITHOUT Docker too, which is worth knowing when the
+                  # container is unavailable: `pyproject.toml` needs Python >=3.12
+                  # (the shell default may be older), so make a 3.12 venv, run
+                  # `pip install -e ".[dev]"`, point DATABASE_URL at any Postgres
+                  # migrated to head, and run pytest. Takes ~2 minutes.
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 

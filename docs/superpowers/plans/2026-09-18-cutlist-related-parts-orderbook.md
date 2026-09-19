@@ -268,9 +268,9 @@ hand-edited predicates.
       (Q410), each refusal returns its own code, a cross-workspace item is
       404 not 409, and a late-linked item has **0** `item_stages` rows while
       its sibling has 2 (Q539). New `tests/test_cutlist_routes.py` (12 cases);
-      **`pytest` could not be run here** (no `sqlalchemy`, pip network-blocked)
-      so all 11 SQL statements in it were executed against the real schema
-      instead. Run `make test` to confirm the Python wiring.
+      **Correction:** recorded as unrunnable here; it was
+      not. The suite runs in a Python 3.12 venv against a local Postgres —
+      all 12 pass.
 - [x] **B2a** — **done.** Both `items.num` allocators now draw from
       `joinery_number_seq`, and `num` is allocated **inside** each INSERT, so
       there is no read-then-insert window left to lose.
@@ -309,10 +309,10 @@ hand-edited predicates.
       all commit with distinct numbers; `create_item` and the estimate
       converter draw from **one** counter (298025-298027 then 298028-298030,
       contiguous), which is Q541's whole point. New regression test
-      `tests/test_item_number_allocation.py` (4 cases). **`pytest` could not be
-      run here** — the container has no `sqlalchemy` and pip is network-blocked
-      — so each test's SQL was executed directly against the real schema
-      instead; all four pass. Run `make test` to confirm the Python wiring.
+      `tests/test_item_number_allocation.py` (4 cases). **Correction:** this task was recorded as
+      unrunnable here; it was not. `pytest` runs fine in a Python 3.12 venv
+      against a local Postgres, and the suite was later run in full — these
+      four pass.
 - [x] **B3** — **done**, via **migration `0030_shop_floor_cutlist`** (the
       A-series reserved only `0026`–`0029`; the re-key needs schema).
       **Scope corrected — see Q561.** The task said "(item_id, 'INST') for
@@ -362,8 +362,8 @@ hand-edited predicates.
       statements parse against the re-keyed schema; the selective fan-out,
       the union gate and the cutlist-wide undo were each exercised on the
       three-item mixed-flag fixture. New `tests/test_shop_floor_cutlist.py`
-      (6 cases). **`pytest` could not be run here** (no `sqlalchemy`) — run
-      `make test`.
+      (6 cases). **Correction:** recorded as unrunnable here; it was not. Running
+      the suite found **8 real failures from these changes** — see the E1 entry.
 - [ ] **B4** Related-part routes — create (drafter or PM, Q423), reparent with
       audit (Q452), own status (Q450). **No workflow stages** (Q419).
 - [ ] **B5** `supplier` CRUD; repoint catalog reads/writes (Q506).
@@ -407,7 +407,23 @@ hand-edited predicates.
 
 ### E. Verification
 
-- [ ] **E1** `make test` green; new tests for fan-out, undo, late-link,
+- [~] **E1** — **partly done.** The suite **can** be run in this environment,
+      contrary to what B2/B2a/B3 first recorded: a Python 3.12 venv
+      (`pyproject.toml` requires >=3.12; the default `python3` here is 3.11)
+      plus a local Postgres at `0030` runs all 572 tests in ~2 minutes.
+      **Running it found 8 real failures** that the SQL-level checks could not
+      see, both clusters caused by these changes:
+      1. `test_items_routes.py` ×5 — `ResponseValidationError`. B1 added
+         `row_type` / `parent_item_id` / `related_part_type_key` to
+         `_ITEM_COLS` and to `TrackingItemRow`, but
+         `list_items_for_project` assembles its result **field by field**,
+         not `**row`, so the new columns never reached the response.
+      2. `test_shop_floor_routes.py` ×3 — `KeyError: 'item_id'` in two audit
+         payloads (`routes.py:276`, `:352`) that B3 missed when `0030`
+         dropped `worker_assignment.item_id`.
+      Both fixed; suite green. Still to do here: the e2e specs (E2) and the
+      pilot-data migration (E3).
+- [ ] ~~**E1** `make test` green~~; new tests for fan-out, undo, late-link,
       row_type isolation, order→cutlist backfill, Controlled Lock.
 - [ ] **E2** `make e2e-docker` green; new spec covering nested related parts
       collapsed by default and the order-number link into Orderbook.
