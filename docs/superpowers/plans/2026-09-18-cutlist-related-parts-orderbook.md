@@ -2,11 +2,40 @@
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
 > not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7, C1–C6
-> and D1 are done** — the whole B and C series, plus the seed; D2–D3 and E are
-> not. Unusually for this repo the checkboxes
-> below *are* being kept current, and each finished task carries a `→` note
-> recording what shipped and how it was verified — so read them, but treat
-> `CLAUDE.md` as the statement of current state.
+> and the whole D series are done**; only the E verification series is left.
+> Unusually for this repo the checkboxes below *are* being kept current, and
+> each finished task carries a `→` note recording what shipped and how it was
+> verified — so read them, but treat `CLAUDE.md` as the statement of current
+> state.
+
+> **Later change:** seven things in the body below were superseded while
+> building. The task notes record each in place; this is the list, so a reader
+> does not have to mine them.
+>
+> 1. **Migrations `0026`–`0029` was not enough.** `0030` (Shop Floor re-key),
+>    `0031` (order schema) and `0032` (Controlled Lock) were each needed once
+>    the code met the schema.
+> 2. **A4's task text was wrong and was corrected in place** — unusually, in
+>    the body rather than here, because it described a schema that contradicted
+>    the decision record. It said "add `order` + `order_line`" (there is no new
+>    order table — `purchase_orders` + `po_line_items` *are* it, **Q553**) and
+>    "add `workspace_id` to the 9 legacy procurement tables" (only two lack a
+>    join path, **Q555**).
+> 3. **B3's `(item_id, 'INST')` half of Q445 is unreachable.** Shop Floor has
+>    never been able to hold DEL or INST, so there was nothing to re-key
+>    (**Q561**).
+> 4. **B1's "50 call sites" overcounted.** Only **35** take the `row_type`
+>    filter; the other 15 are item-scoped by id or deliberately want both
+>    kinds. The classification became the deliverable.
+> 5. **C2 was already satisfied** by B1 and B3 before it was reached — the
+>    stage strip reads `item_stages` directly and never joined to cutlist.
+> 6. **Conflict 6 was not the pure rename Q455 anticipated.** `items.stage` /
+>    `rm_no` / `rm_desc` are **kept and still written** beside the new FKs
+>    (Q435), so **D2 does not retire the bare-"stage" terminology pin** — Q456
+>    retires it only once the column is gone, and it is not.
+> 7. **Scope widened before it started.** Q437 selected "cutlist + related
+>    parts"; **Q542** added the whole Orderbook, which is where `0029`, `0031`,
+>    `suppliers/` and `orders/` come from.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
 > `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q573 — Q552 onward were raised while
@@ -800,11 +829,44 @@ hand-edited predicates.
       where a cutlist number would be and the other showing `—`; the O/BOOK
       sub-tab populates Order # / Supplier / Status / ETA on that one row
       alone; `/list` lists `297830 SS Bench run (shared) · 3 items`.
-- [ ] **D2** Update `CLAUDE.md` — new sub-project section, migrations `0026`–
+- [x] **D2** Update `CLAUDE.md` — new sub-project section, migrations `0026`–
       `0029`, and **retire the bare-"stage" terminology pin** once `items.stage`
       is gone (Q456).
-- [ ] **D3** Add a `> **Later change:**` note to this plan's own header if
+      → **done, except the pin — the condition did not fire.** `items.stage`,
+      `rm_no` and `rm_desc` are all still present at head and still written on
+      every save: `_resolve_area_room` dual-writes `area_id` + `stage` and
+      `room_id` + `rm_no` + `rm_desc`, because Q435 requires the change to be
+      data-preserving. Q456 retires the pin once the column is *gone*, and it
+      is not, so the pin stands and now says why. A later migration drops the
+      three columns; the pin retires then.
+      → The section covers all **seven** migrations, not just `0026`–`0029`:
+      `0030`–`0032` belong to this sub-project too. Also corrected as stale:
+      the `db/` layout line claimed `0026`–`0029` were "schema only" with "no
+      code reads the new tables yet"; the Plan V1 section claimed "nothing in
+      it has been implemented"; conflicts 1, 2 and 6 in the conflict table
+      still read "next to build"; and the plan's own reference entry said the
+      B/C/D/E tasks were "not started".
+      → Two **known gaps recorded rather than quietly left**: `/orderbook`
+      still renders the #4 procurement-batch queue, so the
+      `/orderbook?order=…` links C1 writes go nowhere and the "locate the
+      order" half of Q418 is unhonoured; and the item editor's hardware query
+      still reads the catalog `supplier` column alone, which `0017` left empty.
+      → Numbers verified against the tree, not copied: 3/7/7/6/8 endpoints for
+      `areas` / `cutlists` / `related_parts` / `suppliers` / `orders`; 8 areas
+      and 13 rooms across the two demo projects (6 and 9 on ALF-001). B1's
+      "35 of 50" is a count of **SQL** call sites — grep finds fewer, because
+      16 modules bind the helper's result to a module constant.
+- [x] **D3** Add a `> **Later change:**` note to this plan's own header if
       anything is superseded in flight (`plans/README.md` convention).
+      → **done.** Seven supersessions listed in the header: the three extra
+      migrations, A4's corrected task text (Q553/Q555), B3's unreachable
+      `(item_id, 'INST')` (Q561), B1's 50→35 overcount, C2 arriving already
+      satisfied, conflict 6 not being the pure rename Q455 anticipated, and
+      Q542 widening the scope to the whole Orderbook before work started.
+      A4's correction was made in the *body* rather than the header — a
+      departure from `plans/README.md`, taken because the body described a
+      schema that contradicted the decision record and would have misled
+      anyone reading it as the design of record.
 
 ### E. Verification
 
