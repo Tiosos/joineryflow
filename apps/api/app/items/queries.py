@@ -83,6 +83,15 @@ _ITEM_COLS = """
     -- carry several orders, so the most recent issued one wins.
     ord.po_number                                   AS issued_order_no,
     ord.po_id                                       AS issued_order_po_id,
+    -- Q425: Tracking's O/BOOK sub-tab shows this row's order state, which is a
+    -- different question from Q417's reference column above.  It takes the
+    -- latest order in ANY state, because a freshly raised Draft is exactly what
+    -- the sub-tab exists to surface; `issued_order_no` stays issued-only.
+    obook.po_id                                     AS order_po_id,
+    obook.po_number                                 AS order_no,
+    obook.status                                    AS order_status,
+    obook.vendor_name                               AS order_supplier,
+    obook.due_date                                  AS order_due_date,
     (
         SELECT COUNT(DISTINCT hl.line_id)
         FROM item_hardware_lines hl
@@ -142,6 +151,15 @@ def list_items_for_project(
                  ORDER BY po.date_ordered DESC, po.po_id DESC
                  LIMIT 1
             ) ord ON true
+            LEFT JOIN LATERAL (
+                SELECT po.po_id, po.po_number, po.status, po.due_date,
+                       v.name AS vendor_name
+                  FROM purchase_orders po
+                  LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
+                 WHERE po.item_id = i.item_id
+                 ORDER BY po.po_id DESC
+                 LIMIT 1
+            ) obook ON true
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
@@ -226,6 +244,11 @@ def list_items_for_project(
                 "cutlist_no": r["cutlist_no"],
                 "issued_order_no": r["issued_order_no"],
                 "issued_order_po_id": r["issued_order_po_id"],
+                "order_po_id": r["order_po_id"],
+                "order_no": r["order_no"],
+                "order_status": r["order_status"],
+                "order_supplier": r["order_supplier"],
+                "order_due_date": r["order_due_date"],
                 "stages": stages_by_item.get(item_id, {}),
                 "availability": {
                     "ready": int(r["ready"]),

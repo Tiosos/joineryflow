@@ -129,9 +129,9 @@ not a description of this tree. Nothing in it has been implemented.
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q569, continuing Plan V1's own
-  numbering. **134 of 137 resolved; every answerable question is answered.**
-  Q552–Q569 were raised *while building* the Cutlist sub-project, each where a
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q570, continuing Plan V1's own
+  numbering. **135 of 138 resolved; every answerable question is answered.**
+  Q552–Q570 were raised *while building* the Cutlist sub-project, each where a
   document and the code disagreed.
   The three left are **inputs only the customer can supply**: the SharePoint
   site URL (Q480), a real drawing filename (Q547), and what the Cars / OH&S
@@ -177,7 +177,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0032
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (59 test files, 620 tests)
+make test         # pytest in api container (59 test files, 623 tests)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
@@ -263,7 +263,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
 - `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — **forward plan** for the next sub-project (Plan V1 #10): cutlist entity, related-part rows, Area/Room rename, and the Orderbook rework. Migrations `0026`–`0029` **applied** (the A-series is done and verified); the B/C/D/E backend and UI tasks are not started.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q569, **134 of 137 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q570, **135 of 138 resolved**. Every answerable question is answered; the three left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.

@@ -60,6 +60,14 @@ class TrackingItemRow(BaseModel):
     # cutlist number on a related part.  None until an order is issued.
     issued_order_no: str | None
     issued_order_po_id: int | None
+    # Q425: the O/BOOK sub-tab's columns — the latest order on this row in ANY
+    # state, so a Draft raised a moment ago is visible. Distinct from
+    # `issued_order_no`, which Q567 restricts to orders actually sent.
+    order_po_id: int | None
+    order_no: str | None
+    order_status: str | None
+    order_supplier: str | None
+    order_due_date: date | None
 
 
 class TrackingGridOut(BaseModel):

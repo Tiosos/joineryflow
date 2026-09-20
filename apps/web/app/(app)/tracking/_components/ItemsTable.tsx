@@ -4,10 +4,14 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
 
-export type SubTab = "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC";
+// Q425 adds O/BOOK to the strip the legacy mock established. It swaps the
+// right-hand columns like every other entry — one row per item stays Tracking's
+// spine — and carries the Create Order button.
+export type SubTab =
+  | "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC" | "O/BOOK";
 
 export const SUB_TABS: SubTab[] = [
-  "DATE", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC",
+  "DATE", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC", "O/BOOK",
 ];
 
 const STAGE_KEYS = [
@@ -46,6 +50,12 @@ const SUB_TAB_COLUMNS: Record<Exclude<SubTab, "DATE">, { key: string; label: str
     { key: "result", label: "Result" },
     { key: "rework", label: "Rework" },
   ],
+  "O/BOOK": [
+    { key: "orderno", label: "Order #" },
+    { key: "supplier", label: "Supplier" },
+    { key: "ostatus", label: "Status" },
+    { key: "eta", label: "ETA" },
+  ],
 };
 
 type SortKey =
@@ -77,6 +87,9 @@ interface Props {
   freeQuery: string;
   onOpenItem: (id: number) => void;
   onOpenStatus: (id: number) => void;
+  /** Q432: the orderbook write holders — admin, manager, drafter, purchase_officer. */
+  canCreateOrder?: boolean;
+  onCreateOrder?: () => void;
 }
 
 function statusClasses(status: string | null): string {
@@ -115,6 +128,8 @@ export function ItemsTable({
   freeQuery,
   onOpenItem,
   onOpenStatus,
+  canCreateOrder = false,
+  onCreateOrder,
 }: Props) {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
@@ -250,6 +265,15 @@ export function ItemsTable({
                   {st}
                 </button>
               ))}
+              {subTab === "O/BOOK" && canCreateOrder && (
+                <button
+                  type="button"
+                  onClick={onCreateOrder}
+                  className="ml-2 rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white"
+                >
+                  + Create Order
+                </button>
+              )}
             </th>
           </tr>
           <tr>
@@ -354,6 +378,7 @@ export function ItemsTable({
                   row={it}
                   projectId={projectId}
                   isDate={isDate}
+                  subTab={subTab}
                   subColCount={subCols?.length ?? 0}
                   today={today}
                   relatedCount={kids.length}
@@ -371,6 +396,7 @@ export function ItemsTable({
                       row={kid}
                       projectId={projectId}
                       isDate={isDate}
+                      subTab={subTab}
                       subColCount={subCols?.length ?? 0}
                       today={today}
                       onOpen={() => onOpenItem(kid.id)}
@@ -392,6 +418,7 @@ function Row({
   row,
   projectId,
   isDate,
+  subTab,
   subColCount,
   today,
   relatedCount = 0,
@@ -403,6 +430,7 @@ function Row({
   row: TrackingItemRow;
   projectId: number;
   isDate: boolean;
+  subTab: SubTab;
   subColCount: number;
   today: string;
   relatedCount?: number;
@@ -493,17 +521,24 @@ function Row({
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">{row.qty ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted" title="Assembler (mock-only)">—</td>
       <td className="px-2 py-1 text-h-muted">{row.cutlist_owner_name ?? "—"}</td>
-      {isRelated ? (
+      {isRelated && isDate ? (
         // Q419: show NO workflow stages for a related part — leave the whole
         // stage area blank rather than borrowing the parent's dates. Blank
         // cells, not em dashes: an em dash reads as "recorded, but empty".
-        Array.from({ length: isDate ? STAGE_KEYS.length : subColCount }).map((_, i) => (
+        //
+        // Scoped to the DATE strip alone. Q419 blanks the *workflow-stage*
+        // area; the other sub-tabs are not stages, and O/BOOK especially must
+        // render for a related part — an order raised against one is the
+        // normal case (Q424), which is half of why that sub-tab exists.
+        Array.from({ length: STAGE_KEYS.length }).map((_, i) => (
           <td key={i} className="px-2 py-1" />
         ))
       ) : isDate ? (
         STAGE_KEYS.map((sk) => (
           <StageCell key={sk} stage={row.stages[sk]} today={today} />
         ))
+      ) : subTab === "O/BOOK" ? (
+        <OrderCells row={row} />
       ) : (
         Array.from({ length: subColCount }).map((_, i) => (
           <td key={i} className="px-2 py-1 text-h-muted">—</td>
@@ -577,6 +612,47 @@ function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: nu
     >
       {row.issued_order_no}
     </Link>
+  );
+}
+
+/**
+ * Q425's O/BOOK columns: this row's latest order, whatever its state — a Draft
+ * raised moments ago is precisely what the sub-tab is for. Related parts get
+ * these columns too: an order against a related part is the normal case (Q424).
+ */
+function OrderCells({ row }: { row: TrackingItemRow }) {
+  if (row.order_no == null) {
+    return (
+      <>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-h-ink">
+        <Link
+          href={`/orderbook?order=${encodeURIComponent(row.order_no)}`}
+          target="_blank"
+          className="hover:text-h-accent hover:underline"
+          title="Open this order in Orderbook"
+        >
+          {row.order_no}
+        </Link>
+      </td>
+      <td className="px-2 py-1 text-h-ink">{row.order_supplier ?? "—"}</td>
+      <td className="px-2 py-1">
+        <span className="rounded-full bg-h-line/50 px-2 py-0.5 text-[10px] font-semibold text-h-ink">
+          {row.order_status ?? "—"}
+        </span>
+      </td>
+      <td className="px-2 py-1 font-mono text-[10px] tabular-nums text-h-muted">
+        {row.order_due_date ? row.order_due_date.slice(5) : "—"}
+      </td>
+    </>
   );
 }
 

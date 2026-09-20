@@ -1792,6 +1792,47 @@ catalog tables' other invariant bites here too — `custom_made` names it
 alone** (`items/queries.py`, the `src` CTE) and so shows the same blank; that
 is pre-existing and untouched here.
 
+### Q570 — What shape is Tracking's O/BOOK sub-tab? *(new — raised while building C4)*
+**Confirmed 2026-09-20: a seventh column-set in the existing sub-tab strip.**
+`O/BOOK` joins `DATE · iTIME · HARDWARE · SITE MEASURE · INVOICE · QC`. The grid
+keeps one row per item and its right-hand columns become **ORDER # · SUPPLIER ·
+STATUS · ETA**; the strip carries the **Create Order** button (Q425).
+
+*Why this had to be asked.* Q425 says only *"Tracking has an O/BOOK subtab …
+click its Create Order button"*. The legacy mock `tracking_dashboard.html` has
+exactly the six existing sub-tabs and **no order tab**, so nothing showed the
+shape. The alternative — a pane replacing the grid with the project's orders —
+fits the prose equally and was **not** taken: it puts a second list of a
+different entity inside a page whose spine is items, and duplicates what
+`/orderbook` becomes.
+
+**The cost, accepted.** `purchase_orders.item_id` is nullable and **Q507** makes
+orders cover *all* procurement, so an order with no item has no row to appear
+on. It is visible in Orderbook only. The Create Order form therefore offers
+*"No item — a project-level order"* so such an order can still be raised here.
+
+**A second order field, deliberately.** The row already carried
+`issued_order_no`, which **Q567** restricts to orders actually sent
+(`date_ordered IS NOT NULL`) because it feeds Q417's reference column. The
+O/BOOK columns take the latest order in **any** state — a Draft raised moments
+ago is precisely what the sub-tab exists to surface. Both are on the row and
+they legitimately differ.
+
+**A C1 bug this exposed.** C1 blanked a related part's whole trailing column
+block for **Q419**. Q419 blanks the *workflow-stage* area; the other sub-tabs
+are not stages, and O/BOOK above all must render for a related part, since an
+order raised against one is the normal case (**Q424**). The blanking is now
+scoped to the DATE strip.
+
+**Q426's screenshots were not needed.** It cites "Orderbook Details screenshots
+(07–09)", which are not in this repo — but **Q503** already settled the form:
+one generic form with fixed fields (project, location, cutlist no., quantity,
+cost, supplier, comments) plus a free `attributes` store for the type-specific
+ones. Project, location and cutlist number are **not inputs**: the server
+derives all three from `item_id` (Q427/Q428), taking the cutlist number from the
+parent when the row is a related part. The form shows what will be carried
+rather than letting it be typed.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

@@ -1,14 +1,14 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C3
-> are done**; C4–C6, D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C4
+> are done**; C5, C6, D and E are not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q569 — Q552 onward were raised while
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q570 — Q552 onward were raised while
 > building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
@@ -642,8 +642,44 @@ hand-edited predicates.
       `/list?project_id=3&cutlist=1` whose panel is that cutlist; the panes
       read `Items (2) · Parts (6) · Hardware (4)` across both linked items,
       with suppliers resolving. Full suite **619 passed, 1 skipped**.
-- [ ] **C4** Tracking **O/BOOK subtab** with **Create Order** (Q425) opening the
+- [x] **C4** Tracking **O/BOOK subtab** with **Create Order** (Q425) opening the
       generic order form (Q426, Q503).
+
+      → **Q570 raised and answered**: `O/BOOK` is a **seventh column-set** in
+      the existing sub-tab strip, not a pane replacing the grid. The row keeps
+      its place and its right-hand columns become **ORDER # · SUPPLIER ·
+      STATUS · ETA**; the strip carries **Create Order**, shown to the Q432
+      write holders via `can(me, "orderbook", "write")`. The legacy mock has
+      the six existing sub-tabs and no order tab, so nothing showed the shape.
+
+      → **Q426's screenshots were not needed.** They are not in this repo, but
+      **Q503** already settles the form: one generic form with fixed fields
+      plus a free `attributes` store for the type-specific ones. Project,
+      location and cutlist number are **not inputs** — B6's `_prefill_from_item`
+      derives all three from `item_id` (Q427/Q428), taking the cutlist number
+      from the parent when the row is a related part. The dialog *shows* what
+      will be carried instead of letting it be typed, and offers "No item — a
+      project-level order" so Q507's item-less orders can still be raised.
+
+      → **A second order field, deliberately.** `issued_order_no` stays
+      issued-only for Q417's reference column (Q567); the O/BOOK columns take
+      the latest order in **any** state, because a Draft raised moments ago is
+      what the sub-tab is for. Visible in one screenshot: a related part whose
+      reference cell reads "—" while its ORDER # reads `PO-2026-0002`.
+
+      → **A C1 bug this exposed and fixed.** C1 blanked a related part's whole
+      trailing column block for Q419. Q419 blanks the *workflow-stage* area;
+      O/BOOK above all must render for a related part, since an order against
+      one is the normal case (Q424). Now scoped to the DATE strip.
+
+      → **verified**: 3 new cases in `test_related_part_routes.py` (17 total,
+      passing) pin that a Draft shows in the O/BOOK columns while the reference
+      column hides it, that the latest order wins, and the empty case.
+      `npx tsc --noEmit` clean. Driven in a browser: the headers read
+      `ORDER # · SUPPLIER · STATUS · ETA`, three related-part rows show
+      `PO-2026-0001/2/3` with supplier and status, Create Order is present and
+      its dialog lists every row plus the project-level option. Full suite
+      **622 passed, 1 skipped**.
 - [ ] **C5** Project Details modal gains `Project Stats` + `Scope` (Q476).
       **Cars and OH&S are omitted** pending Q550.
 - [ ] **C6** Area / Room selectors replace the free-text fields; item may move

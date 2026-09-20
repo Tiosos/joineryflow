@@ -11,6 +11,8 @@ import { ItemsTable } from "./ItemsTable";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { ProjectDetailModal } from "./ProjectDetailModal";
 import { StatusPopup } from "./StatusPopup";
+import { CreateOrderDialog } from "./CreateOrderDialog";
+import { can } from "@/lib/permissions";
 
 interface Props {
   project: ProjectOut;
@@ -45,6 +47,8 @@ export function TrackingClient({
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [itemModalId, setItemModalId] = useState<number | null>(null);
   const [statusPopupId, setStatusPopupId] = useState<number | null>(null);
+  // Q425: raised from the O/BOOK sub-tab's Create Order button.
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
 
   const drawerKind = sp.get("drawer");
   const drawerItemIdRaw = sp.get("itemId");
@@ -159,6 +163,8 @@ export function TrackingClient({
       <ItemsTable
         items={visibleItems}
         projectId={project.id}
+        canCreateOrder={can(me, "orderbook", "write")}
+        onCreateOrder={() => setCreateOrderOpen(true)}
         cutlistQuery={cutlistQuery}
         freeQuery={freeQuery}
         onOpenItem={(id) => setItemModalId(id)}
@@ -209,6 +215,13 @@ export function TrackingClient({
         onClose={() => setStatusPopupId(null)}
         onUpdated={refresh}
       />
+      {createOrderOpen && (
+        <CreateOrderDialog
+          projectId={project.id}
+          items={items}
+          onClose={() => setCreateOrderOpen(false)}
+        />
+      )}
     </div>
   );
 }

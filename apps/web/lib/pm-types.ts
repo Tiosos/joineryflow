@@ -89,6 +89,14 @@ export interface TrackingItemRow {
   // the most recent ISSUED supplier-order number for a related part.
   issued_order_no: string | null;
   issued_order_po_id: number | null;
+  // Q425: the O/BOOK sub-tab's columns — the latest order on this row in ANY
+  // state, so a Draft raised a moment ago shows. Distinct from
+  // issued_order_no, which Q567 restricts to orders actually sent.
+  order_po_id: number | null;
+  order_no: string | null;
+  order_status: string | null;
+  order_supplier: string | null;
+  order_due_date: string | null;
 }
 
 export interface TrackingGridOut {

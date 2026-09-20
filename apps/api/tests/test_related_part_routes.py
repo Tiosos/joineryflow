@@ -370,3 +370,48 @@ def test_related_parts_sort_directly_beneath_their_parent(ctx):
         "both of parent A's children belong above parent B"
     )
     assert order.index(ctx["parent_b"]) < order.index(child_b)
+
+
+# ── C4: the O/BOOK sub-tab's columns (Q425) ──────────────────────────────────
+
+
+def test_obook_columns_show_a_draft_order_the_reference_column_hides(ctx):
+    """Q425 vs Q567 — the two order fields answer different questions.
+
+    `issued_order_no` is the Q417 reference and stays empty until the order is
+    actually sent. The O/BOOK columns show the latest order in ANY state,
+    because a Draft raised a moment ago is exactly what that sub-tab is for.
+    """
+    part = _create(ctx).json()["item_id"]
+    po = ctx["drafter"].post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "brass rail",
+        "category": "Metal", "item_id": part,
+    }).json()
+
+    row = _row(_tracking_rows(ctx), part)
+    assert row["issued_order_no"] is None, "not issued — the reference stays blank"
+    assert row["order_no"] == po["po_number"], "but the O/BOOK columns show it"
+    assert row["order_status"] == "Draft"
+    assert row["order_supplier"] == "Metalworks"
+    assert row["order_po_id"] == po["po_id"]
+
+
+def test_obook_columns_take_the_latest_order(ctx):
+    part = _create(ctx).json()["item_id"]
+    numbers = [
+        ctx["drafter"].post("/orders", json={
+            "vendor_id": ctx["vendor"], "description": f"rail {n}",
+            "category": "Metal", "item_id": part,
+        }).json()["po_number"]
+        for n in (1, 2)
+    ]
+    assert _row(_tracking_rows(ctx), part)["order_no"] == numbers[1]
+
+
+def test_obook_columns_are_empty_without_an_order(ctx):
+    part = _create(ctx).json()["item_id"]
+    row = _row(_tracking_rows(ctx), part)
+    assert row["order_no"] is None
+    assert row["order_status"] is None
+    assert row["order_supplier"] is None
+    assert row["order_due_date"] is None
