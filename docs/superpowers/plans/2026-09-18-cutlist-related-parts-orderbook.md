@@ -1,8 +1,9 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C6
-> are done** — the whole B and C series; D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7, C1–C6
+> and D1 are done** — the whole B and C series, plus the seed; D2–D3 and E are
+> not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
@@ -763,9 +764,42 @@ hand-edited predicates.
 
 ### D. Seed + docs
 
-- [ ] **D1** Seed: areas + rooms from existing values; one shared cutlist across
+- [x] **D1** Seed: areas + rooms from existing values; one shared cutlist across
       2 ALF-001 items to exercise fan-out; 1 late-linked item for Q539; 2
       related parts (one ordered, one not) for Q417/Q429; 1 supplier; 1 PO.
+      → **done.** Areas + rooms already landed with C1/C6 (8 areas, 13 rooms,
+      every seeded Joinery Item placed); this task added the rest as one final
+      `seed/hartwood_joinery.py` block. It works on the seven `legacy_items`,
+      not the five `ITEMS_PER_PROJECT` ones, because the shop-floor block (#8)
+      wipes `stage_completion_log` for every cutlist the first six ALF items
+      touch — a fan-out written there would not survive its own seed. It also
+      runs after the `joinery_number_seq` setval, so the related parts draw
+      their numbers from `nextval()` exactly as the API allocates them (Q541),
+      landing at 297989/297990 instead of ~198k below the fixtures.
+      Shipped: cutlist **297830 "SS Bench run (shared)"** carrying JO-SS01 +
+      JO-SS02 with one `DOWN` completion fanned out to both (Q439), then
+      JL-BE01a linked **after** it, whose `DOWN` cell stays blank (Q539);
+      two related parts under ST-CT01 — a `benchtop` one with an issued order
+      and a `metal` one with none (Q417/Q429), both carrying the parent's
+      Group ID and no cutlist of their own; supplier `Corian Stoneworks`
+      (Q506/Q556 — `vendors` *is* the supplier entity); and one PO whose
+      `cutlist_no` is the **parent's** 297975 (Q428), `date_ordered` set so
+      Tracking reads it as issued (Q567).
+      → *Trap paid twice more.* The per-item cutlist blocks re-INSERT a cutlist
+      numbered as the item on every run (their idempotency guard is on `items`,
+      not `cutlist`), so moving an item onto the shared cutlist has to drop the
+      vacated row **unconditionally**, not as a consequence of the move —
+      otherwise run 2 leaves two empty cutlists in `/list`.
+      → Verified: `alembic upgrade head` + seed on a virgin database, then
+      five consecutive re-runs — related parts 2, vendors 1, POs 1, shared
+      cutlist 3 items, empty cutlists 0, items without an area 0, every run.
+      (`po_number_seq` advances one value per run; it is unowned and numbers
+      are never asserted absolutely.) Driven in a browser: `/tracking` shows
+      three rows on cutlist 297830 with `DOWN` 09-18 on the first two and `—`
+      on the late joiner, the ordered related part showing `PO-2026-0002`
+      where a cutlist number would be and the other showing `—`; the O/BOOK
+      sub-tab populates Order # / Supplier / Status / ETA on that one row
+      alone; `/list` lists `297830 SS Bench run (shared) · 3 items`.
 - [ ] **D2** Update `CLAUDE.md` — new sub-project section, migrations `0026`–
       `0029`, and **retire the bare-"stage" terminology pin** once `items.stage`
       is gone (Q456).
