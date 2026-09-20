@@ -1762,6 +1762,36 @@ they cannot collide, and a six-digit number copied off a printed sheet should
 find its row whichever kind it is. The cutlist number is **plain text, not a
 link** — the cutlist workspace it should open is **Q474**, built in C3.
 
+### Q569 — What does the Cutlist workspace show, and which tabs open in their own window? *(new — raised while building C3)*
+**Confirmed 2026-09-20, in two parts.**
+
+**(a) The detail panel rolls up the real parts and hardware.** `plan_v1.md`
+§1218 says clicking a cutlist number opens details *"including individual parts
+and components, design instructions, and hardware"* — not merely which items
+are on the list. `GET /cutlists/{cid}` now returns `parts[]` and `hardware[]`
+alongside `items[]`, and the panel carries three sub-panes. Both roll-ups are
+**flat across the cutlist**, each row naming its own item, rather than nested
+per item: several Joinery Items share one cutlist (Q410) and the whole sheet is
+cut in one go, so cut order is the useful order. The per-item view already
+exists in the drafter editor. "Design instructions" is read as the part's
+`paint_instruction`, `colour` and free-text `comment` — the three fields that
+carry instructions today.
+
+**(b) Tracking, List and Orderbook each open in their own browser tab.** C3's
+text named only `/list`, but **Q475** named all three, and **Q545** defined
+"separate window" as `target="_blank"`. All three carry it, marked with a ↗ so
+the behaviour is not a surprise. A tab you are already on navigates in place —
+cloning the window you are standing on serves nobody, and Q475 wants two
+*different* modules side by side.
+
+**A trap worth recording.** The roll-up's supplier column read "—" on every
+seeded row until it coalesced `supplier` with `default_supplier`: `0017` put
+the real value in the latter and left the free-text `supplier` empty. The six
+catalog tables' other invariant bites here too — `custom_made` names it
+`vendor`. **The item editor's own hardware query still reads `supplier`
+alone** (`items/queries.py`, the `src` CTE) and so shows the same blank; that
+is pre-existing and untouched here.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

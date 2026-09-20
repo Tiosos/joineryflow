@@ -76,13 +76,13 @@ def ctx():
             {"s": f"{slug}-other"},
         ).scalar()
         email, pw = f"d-{suffix}@example.com", "pw"
-        db.execute(
+        uid = db.execute(
             text(
                 "INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
-                " VALUES (:w, :e, 'Drafter', :p, 'drafter')"
+                " VALUES (:w, :e, 'Drafter', :p, 'drafter') RETURNING id"
             ),
             {"w": wid, "e": email, "p": hash_password(pw)},
-        )
+        ).scalar()
         pid = db.execute(
             text("INSERT INTO projects(project_code, name, workspace_id)"
                  " VALUES(:c, 'Project One', :w) RETURNING project_id"),
@@ -115,7 +115,7 @@ def ctx():
                json={"workspace_slug": slug, "email": email, "password": pw})
     assert r.status_code == 200, r.text
     return {
-        "client": c, "pid": pid, "pid2": pid2,
+        "client": c, "pid": pid, "pid2": pid2, "uid": uid,
         "item_a": item_a, "item_b": item_b,
         "item_other_project": item_other_project,
         "item_other_ws": item_other_ws, "related": related,
@@ -364,3 +364,148 @@ def test_the_stage_strip_stays_per_item_on_a_shared_cutlist(ctx):
     assert "DOWN" not in b["stages"], (
         "the late joiner's strip is blank — it is not borrowed from the cutlist"
     )
+
+
+# ── C3: the cutlist detail rolls up parts and hardware (§1218 / Q569) ─────────
+
+
+def _give_item_parts_and_hardware(
+    item_id: int, project_id: int, *, part_names: list[str], actor_id: int
+) -> None:
+    """One module with N parts, plus one hardware line, on `item_id`."""
+    db = SessionLocal()
+    try:
+        bm = db.execute(
+            text("""INSERT INTO board_materials(workspace_id, code, sku, description, supplier)
+                    SELECT p.workspace_id, :c, :c, '18mm MDF', 'Boardco'
+                      FROM projects p WHERE p.project_id = :pid
+                    RETURNING material_id"""),
+            {"c": f"BM-{uuid.uuid4().hex[:6]}", "pid": project_id},
+        ).scalar()
+        mid = db.execute(
+            text("INSERT INTO modules(item_id, module_no, name)"
+                 " VALUES(:i, '1', 'Carcass') RETURNING module_id"),
+            {"i": item_id},
+        ).scalar()
+        for seq, name in enumerate(part_names, start=1):
+            db.execute(
+                text("""INSERT INTO parts(module_id, seq, qty, part_name, len_mm, wid_mm,
+                                          board_material_id, paint_instruction)
+                        VALUES(:m, :s, 2, :n, 800, 400, :bm, 'NONE')"""),
+                {"m": mid, "s": seq, "n": name, "bm": bm},
+            )
+        hm = db.execute(
+            text("""INSERT INTO hardware_materials(workspace_id, sku, description, supplier)
+                    SELECT p.workspace_id, :sku, 'Blum hinge', 'Blum'
+                      FROM projects p WHERE p.project_id = :pid
+                    RETURNING material_id"""),
+            {"sku": f"HM-{uuid.uuid4().hex[:6]}", "pid": project_id},
+        ).scalar()
+        cat = db.execute(
+            text("""INSERT INTO project_hardware_catalog(project_id, material_type,
+                                                        material_id, added_by)
+                    VALUES(:p, 'HARDWARE', :m, :by) RETURNING catalog_id"""),
+            {"p": project_id, "m": hm, "by": actor_id},
+        ).scalar()
+        db.execute(
+            text("INSERT INTO item_hardware_lines(item_id, catalog_id, qty, note)"
+                 " VALUES(:i, :c, 4, 'soft close')"),
+            {"i": item_id, "c": cat},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_detail_rolls_up_parts_and_hardware_across_the_cutlist(ctx):
+    """§1218: the cutlist shows the parts and hardware themselves.
+
+    Two items on one cutlist — the roll-up must span both, and each row must
+    name the item it came from, since the sheet is cut in one go (Q410).
+    """
+    cl = _create(ctx)
+    for iid in (ctx["item_a"], ctx["item_b"]):
+        assert ctx["client"].post(
+            f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": iid}
+        ).status_code == 200
+    _give_item_parts_and_hardware(ctx["item_a"], ctx["pid"],
+                                  part_names=["Side L", "Side R"], actor_id=ctx["uid"])
+    _give_item_parts_and_hardware(ctx["item_b"], ctx["pid"],
+                                  part_names=["Shelf"], actor_id=ctx["uid"])
+
+    detail = ctx["client"].get(f"/cutlists/{cl['cutlist_id']}").json()
+
+    assert [p["part_name"] for p in detail["parts"]] == ["Side L", "Side R", "Shelf"]
+    assert {p["item_id"] for p in detail["parts"]} == {ctx["item_a"], ctx["item_b"]}
+    assert detail["parts"][0]["board_material"] == "18mm MDF"
+    assert detail["parts"][0]["qty"] == 2
+    assert detail["parts"][0]["module_name"] == "Carcass"
+
+    assert len(detail["hardware"]) == 2
+    assert detail["hardware"][0]["catalog_description"] == "Blum hinge"
+    assert detail["hardware"][0]["catalog_supplier"] == "Blum"
+    assert detail["hardware"][0]["catalog_source_table"] == "HARDWARE"
+    assert detail["hardware"][0]["qty"] == 4
+
+
+def test_the_roll_up_is_empty_for_a_cutlist_with_no_items(ctx):
+    cl = _create(ctx)
+    detail = ctx["client"].get(f"/cutlists/{cl['cutlist_id']}").json()
+    assert detail["items"] == []
+    assert detail["parts"] == []
+    assert detail["hardware"] == []
+
+
+def test_the_roll_up_follows_an_unlink(ctx):
+    """Unlinking an item takes its parts off the cutlist with it."""
+    cl = _create(ctx)
+    ctx["client"].post(f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": ctx["item_a"]})
+    _give_item_parts_and_hardware(ctx["item_a"], ctx["pid"],
+                                  part_names=["Side L"], actor_id=ctx["uid"])
+    assert len(ctx["client"].get(f"/cutlists/{cl['cutlist_id']}").json()["parts"]) == 1
+
+    assert ctx["client"].delete(
+        f"/cutlists/{cl['cutlist_id']}/items/{ctx['item_a']}"
+    ).status_code == 204
+    after = ctx["client"].get(f"/cutlists/{cl['cutlist_id']}").json()
+    assert after["parts"] == []
+    assert after["hardware"] == []
+
+
+def test_hardware_supplier_falls_back_to_default_supplier(ctx):
+    """The six catalog tables' free-text `supplier` is mostly empty — `0017` put
+    the real value in `default_supplier`, which is why the roll-up coalesces.
+
+    Reading `supplier` alone showed "no supplier" on every seeded row while a
+    supplier was plainly recorded.
+    """
+    cl = _create(ctx)
+    ctx["client"].post(f"/cutlists/{cl['cutlist_id']}/items", json={"item_id": ctx["item_a"]})
+
+    db = SessionLocal()
+    try:
+        hm = db.execute(
+            text("""INSERT INTO hardware_materials(workspace_id, sku, description,
+                                                   supplier, default_supplier)
+                    SELECT p.workspace_id, :sku, 'Damper', NULL, 'Hettich Australia'
+                      FROM projects p WHERE p.project_id = :pid
+                    RETURNING material_id"""),
+            {"sku": f"HM-{uuid.uuid4().hex[:6]}", "pid": ctx["pid"]},
+        ).scalar()
+        cat = db.execute(
+            text("""INSERT INTO project_hardware_catalog(project_id, material_type,
+                                                        material_id, added_by)
+                    VALUES(:p, 'HARDWARE', :m, :by) RETURNING catalog_id"""),
+            {"p": ctx["pid"], "m": hm, "by": ctx["uid"]},
+        ).scalar()
+        db.execute(
+            text("INSERT INTO item_hardware_lines(item_id, catalog_id, qty)"
+                 " VALUES(:i, :c, 1)"),
+            {"i": ctx["item_a"], "c": cat},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    hardware = ctx["client"].get(f"/cutlists/{cl['cutlist_id']}").json()["hardware"]
+    assert [h["catalog_supplier"] for h in hardware] == ["Hettich Australia"]

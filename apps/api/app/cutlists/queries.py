@@ -115,6 +115,105 @@ def get_cutlist(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | No
         {"cid": cutlist_id},
     ).mappings().all()
     row["items"] = [dict(r) for r in items]
+
+    # `plan_v1.md` §1218 (Q569): the cutlist details show the parts, components
+    # and hardware themselves, not just which items are on the list — a cutlist
+    # is what the shop cuts, so its contents are the point of opening it.
+    #
+    # Rolled up FLAT across the cutlist's items, each row naming its own item,
+    # rather than nested per item: several Joinery Items share one cutlist
+    # (Q410) and the whole sheet is cut in one go, so the useful order is the
+    # cut order. The per-item view already exists in the drafter editor.
+    row["parts"] = [
+        dict(r)
+        for r in db.execute(
+            text(
+                f"""
+                SELECT p.part_id,
+                       i.item_id,
+                       i.num            AS item_number,
+                       m.name           AS module_name,
+                       p.part_name,
+                       p.qty,
+                       p.len_mm,
+                       p.wid_mm,
+                       bm.description   AS board_material,
+                       p.edge,
+                       p.colour,
+                       p.paint_instruction,
+                       p.comment
+                FROM items i
+                JOIN modules m         ON m.item_id = i.item_id
+                JOIN parts p           ON p.module_id = m.module_id
+                LEFT JOIN board_materials bm ON bm.material_id = p.board_material_id
+                WHERE i.cutlist_id = :cid
+                  AND {_JOINERY_I}
+                ORDER BY COALESCE(i.num, CAST(i.item_id AS integer)),
+                         m.module_id, p.part_id
+                """
+            ),
+            {"cid": cutlist_id},
+        ).mappings().all()
+    ]
+
+    # Hardware resolves through project_hardware_catalog exactly as the item
+    # editor does — the six source tables keep their own PK and supplier column
+    # names, which is why this CTE exists rather than a plain join.
+    row["hardware"] = [
+        dict(r)
+        for r in db.execute(
+            text(
+                f"""
+                -- Two traps here, both documented as invariants in CLAUDE.md:
+                -- `custom_made` names its supplier column `vendor`, and the six
+                -- tables' free-text `supplier` is mostly empty because `0017`
+                -- put the real value in `default_supplier`. COALESCE, or every
+                -- row reads as "no supplier" when one is plainly recorded.
+                WITH src AS (
+                    SELECT 'BOARD' AS t, material_id AS sid, description,
+                           COALESCE(supplier, default_supplier) AS supplier
+                    FROM board_materials
+                    UNION ALL
+                    SELECT 'HARDWARE', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM hardware_materials
+                    UNION ALL
+                    SELECT 'CUSTOM', material_id, description,
+                           COALESCE(vendor, default_supplier)
+                    FROM custom_made
+                    UNION ALL
+                    SELECT 'BENCHTOP', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM benchtop_materials
+                    UNION ALL
+                    SELECT 'APPLIANCE', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM appliances
+                    UNION ALL
+                    SELECT 'HIRE', hire_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM equipment_hire
+                )
+                SELECT hl.line_id,
+                       i.item_id,
+                       i.num              AS item_number,
+                       src.description    AS catalog_description,
+                       src.supplier       AS catalog_supplier,
+                       phc.material_type  AS catalog_source_table,
+                       hl.qty,
+                       hl.note
+                FROM items i
+                JOIN item_hardware_lines hl ON hl.item_id = i.item_id
+                LEFT JOIN project_hardware_catalog phc ON phc.catalog_id = hl.catalog_id
+                LEFT JOIN src ON src.t = phc.material_type AND src.sid = phc.material_id
+                WHERE i.cutlist_id = :cid
+                  AND {_JOINERY_I}
+                ORDER BY COALESCE(i.num, CAST(i.item_id AS integer)), hl.line_id
+                """
+            ),
+            {"cid": cutlist_id},
+        ).mappings().all()
+    ]
     return row
 
 

@@ -31,8 +31,44 @@ class CutlistOut(BaseModel):
     updated_at: datetime
 
 
+class CutlistPartRow(BaseModel):
+    """A part on the cutlist, naming the item it belongs to.
+
+    `plan_v1.md` §1218 (Q569): the cutlist details show the parts themselves.
+    Flat across the cutlist rather than nested per item, because several items
+    share one cutlist (Q410) and the whole sheet is cut together.
+    """
+    part_id: int
+    item_id: int
+    item_number: int | None
+    module_name: str | None
+    part_name: str | None
+    qty: int | None
+    len_mm: int | None
+    wid_mm: int | None
+    board_material: str | None
+    edge: str | None
+    colour: str | None
+    paint_instruction: str | None
+    comment: str | None
+
+
+class CutlistHardwareRow(BaseModel):
+    """A hardware line on the cutlist, resolved through project_hardware_catalog."""
+    line_id: int
+    item_id: int
+    item_number: int | None
+    catalog_description: str | None
+    catalog_supplier: str | None
+    catalog_source_table: str | None
+    qty: int | None
+    note: str | None
+
+
 class CutlistDetailOut(CutlistOut):
     items: list[CutlistItemRow]
+    parts: list[CutlistPartRow]
+    hardware: list[CutlistHardwareRow]
 
 
 class CutlistListOut(BaseModel):

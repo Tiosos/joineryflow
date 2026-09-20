@@ -71,6 +71,8 @@ const EMPTY_FILTERS: FilterState = {
 
 interface Props {
   items: TrackingItemRow[];
+  /** Needed for the cutlist deep link — a row carries no project of its own. */
+  projectId: number;
   cutlistQuery: string;
   freeQuery: string;
   onOpenItem: (id: number) => void;
@@ -106,7 +108,14 @@ function dateCellColor(dueIso: string | null, doneIso: string | null, todayIso: 
   return "text-h-muted";
 }
 
-export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenStatus }: Props) {
+export function ItemsTable({
+  items,
+  projectId,
+  cutlistQuery,
+  freeQuery,
+  onOpenItem,
+  onOpenStatus,
+}: Props) {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
   const [sortAsc, setSortAsc] = useState(true);
@@ -343,6 +352,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
                 <Row
                   key={it.id}
                   row={it}
+                  projectId={projectId}
                   isDate={isDate}
                   subColCount={subCols?.length ?? 0}
                   today={today}
@@ -359,6 +369,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
                     <Row
                       key={kid.id}
                       row={kid}
+                      projectId={projectId}
                       isDate={isDate}
                       subColCount={subCols?.length ?? 0}
                       today={today}
@@ -379,6 +390,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
 
 function Row({
   row,
+  projectId,
   isDate,
   subColCount,
   today,
@@ -389,6 +401,7 @@ function Row({
   onOpenStatus,
 }: {
   row: TrackingItemRow;
+  projectId: number;
   isDate: boolean;
   subColCount: number;
   today: string;
@@ -444,7 +457,7 @@ function Row({
           ) : (
             <span className="w-3.5 shrink-0" />
           )}
-          <ReferenceCell row={row} />
+          <ReferenceCell row={row} projectId={projectId} />
         </span>
       </td>
       <td className="px-2 py-1 text-h-ink">{row.stage ?? "—"}</td>
@@ -526,16 +539,27 @@ function Row({
  * procurement batches, not `purchase_orders`, so the `order` param is carried
  * but not yet honoured there.
  */
-function ReferenceCell({ row }: { row: TrackingItemRow }) {
+function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: number }) {
   if (row.row_type !== "related_part") {
     // Q438/Q568: the cutlist's number, which several items share — not this
-    // item's own. Plain text for now: the cutlist workspace it should open is
-    // C3's job (Q474). Blank while the item has no cutlist, which Q440 allows
+    // item's own. Blank while the item has no cutlist, which Q440 allows
     // indefinitely; its Item ID still identifies the row.
-    return row.cutlist_no != null ? (
-      <span>{row.cutlist_no}</span>
-    ) : (
-      <span className="text-h-muted" title="No cutlist assigned yet">—</span>
+    //
+    // `plan_v1.md` §1218: "Clicking that number opens a separate window
+    // containing the cutlist details" — Q545 defines "separate window" as a
+    // target="_blank" tab, and Q474 puts those details on /list.
+    if (row.cutlist_no == null) {
+      return <span className="text-h-muted" title="No cutlist assigned yet">—</span>;
+    }
+    return (
+      <Link
+        href={`/list?project_id=${projectId}&cutlist=${row.cutlist_id}`}
+        target="_blank"
+        className="hover:text-h-accent hover:underline"
+        title="Open this cutlist in a new tab"
+      >
+        {row.cutlist_no}
+      </Link>
     );
   }
   if (!row.issued_order_no) {

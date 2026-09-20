@@ -158,6 +158,7 @@ export function TrackingClient({
 
       <ItemsTable
         items={visibleItems}
+        projectId={project.id}
         cutlistQuery={cutlistQuery}
         freeQuery={freeQuery}
         onOpenItem={(id) => setItemModalId(id)}

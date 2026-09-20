@@ -1,14 +1,14 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7, C1
-> and C2 are done**; C3–C6, D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C3
+> are done**; C4–C6, D and E are not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q568 — Q552 onward were raised while
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q569 — Q552 onward were raised while
 > building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
@@ -598,8 +598,50 @@ hand-edited predicates.
       row). `npx tsc --noEmit` clean. Confirmed in a browser against a real
       shared cutlist: rows 1 and 2 read CUTLIST `290001` with Item IDs
       `290001` and `290002`. Full suite **615 passed, 1 skipped**.
-- [ ] **C3** `/list` becomes the **Cutlist module workspace** (Q474). Opens as a
+- [x] **C3** `/list` becomes the **Cutlist module workspace** (Q474). Opens as a
       `target="_blank"` tab (Q545), deep-linkable (Q478).
+
+      → `/list` no longer mirrors Tracking's item grid. `CutlistClient` (which
+      replaces `ListClient`) lists the project's cutlists — number, name, item
+      count, creator — with search, **+ New cutlist** (Q442: the number is
+      allocated server-side, never supplied), and a detail panel carrying
+      rename, delete, link and unlink. The link picker needs no new endpoint:
+      an item holds at most one cutlist (Q411), so the candidates are the
+      project's Joinery Items whose `cutlist_id` is null — the column **C2**
+      added. Mutations are gated in the UI on `can(me, "list", "write")`,
+      mirroring the route's own gate rather than a hardcoded role list.
+
+      → **Q569 raised and answered, in two parts.** (a) `plan_v1.md` §1218
+      wants the cutlist details to include *the parts and hardware themselves*,
+      so `GET /cutlists/{cid}` now returns `parts[]` and `hardware[]` and the
+      panel has three sub-panes. Both are **flat across the cutlist**, each row
+      naming its item — several items share one cutlist (Q410) and the sheet is
+      cut in one go. (b) C3 named only `/list`, but **Q475** named Tracking,
+      Orderbook *and* Cutlist; all three now carry `target="_blank"` with a ↗
+      marker, and a tab you are already on still navigates in place.
+
+      → Tracking's cutlist number is now a link, closing what **C2** left
+      plain: `plan_v1.md` §1218 says clicking it "opens a separate window
+      containing the cutlist details", which Q545 makes a `target="_blank"` tab
+      onto `/list?project_id=…&cutlist=…`.
+
+      → **A trap caught by running it**: the hardware roll-up's supplier column
+      read "—" on every seeded row, because `0017` put the real value in
+      `default_supplier` and left the free-text `supplier` empty. Coalesced,
+      with `custom_made`'s `vendor` handled as CLAUDE.md's invariant requires,
+      and pinned by a test. **The item editor's own hardware query still reads
+      `supplier` alone and shows the same blank** — pre-existing, untouched,
+      and now recorded in Q569.
+
+      → **verified**: 5 new cases in `test_cutlist_routes.py` (19 total,
+      passing) cover the roll-up spanning two items, the empty cutlist, the
+      roll-up following an unlink, and the `default_supplier` fallback.
+      `npx tsc --noEmit` clean. Driven in a browser: the tab strip reports
+      `target="_blank"` on exactly Tracking, List and Orderbook; clicking
+      cutlist `290001` in Tracking opens a new tab at
+      `/list?project_id=3&cutlist=1` whose panel is that cutlist; the panes
+      read `Items (2) · Parts (6) · Hardware (4)` across both linked items,
+      with suppliers resolving. Full suite **619 passed, 1 skipped**.
 - [ ] **C4** Tracking **O/BOOK subtab** with **Create Order** (Q425) opening the
       generic order form (Q426, Q503).
 - [ ] **C5** Project Details modal gains `Project Stats` + `Scope` (Q476).

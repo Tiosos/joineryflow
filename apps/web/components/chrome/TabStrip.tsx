@@ -8,15 +8,23 @@ interface Tab {
   label: string;
   /** Matrix module gating this tab; `read` is required to see it at all. */
   module: Module;
+  /**
+   * Q475 + Q545: Tracking, Cutlist (the `List` tab, per Q474) and Orderbook
+   * open as their own browser tab, so two of them can sit side by side on two
+   * monitors the way the reference system's separate windows did. Q545 chose a
+   * plain `target="_blank"` over `window.open` — no popup blockers, no second
+   * auth path, and the deep links Q478 preserves still work.
+   */
+  newTab?: true;
 }
 
 const TABS: Tab[] = [
   { href: "/dashboard",  label: "Dashboard", module: "dashboard" },
-  { href: "/tracking",   label: "Tracking",  module: "tracking" },
-  { href: "/list",       label: "List",      module: "list" },
+  { href: "/tracking",   label: "Tracking",  module: "tracking",  newTab: true },
+  { href: "/list",       label: "List",      module: "list",      newTab: true },
   { href: "/shop-dwgs",  label: "Shop Dwgs", module: "shop_dwgs" },
   { href: "/isample",    label: "iSample",   module: "isample" },
-  { href: "/orderbook",  label: "Orderbook", module: "orderbook" },
+  { href: "/orderbook",  label: "Orderbook", module: "orderbook", newTab: true },
 ];
 
 const SECONDARY_TABS: Tab[] = [
@@ -36,6 +44,10 @@ export function TabStrip({ user }: { user: Me }) {
       <Link
         key={t.href}
         href={t.href}
+        // Already looking at it? Navigate in place rather than cloning the tab
+        // you are standing on — Q475 wants two modules side by side, not two
+        // copies of one.
+        target={t.newTab && !active ? "_blank" : undefined}
         className={`px-4 py-2 text-sm transition ${
           active
             ? "border-b-2 border-h-accent text-h-ink font-medium"
@@ -43,6 +55,9 @@ export function TabStrip({ user }: { user: Me }) {
         }`}
       >
         {t.label}
+        {t.newTab && !active && (
+          <span aria-hidden className="ml-1 text-[9px] align-super opacity-60">↗</span>
+        )}
       </Link>
     );
   }
