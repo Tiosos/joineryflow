@@ -35,6 +35,10 @@ class ProjectOut(BaseModel):
     install_start: date | None
     is_favourite: bool
     created_at: datetime
+    # Q408's Project Details tiles (C5) — existing columns, newly served.
+    created_by: str | None = None
+    tg_solid: bool | None = None
+    total_line_items: int | None = None
 
 
 class ProjectListOut(BaseModel):

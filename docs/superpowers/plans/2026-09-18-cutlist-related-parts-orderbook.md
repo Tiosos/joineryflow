@@ -1,14 +1,14 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C4
-> are done**; C5, C6, D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C5
+> are done**; C6, D and E are not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q570 — Q552 onward were raised while
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q572 — Q552 onward were raised while
 > building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
@@ -680,8 +680,43 @@ hand-edited predicates.
       `PO-2026-0001/2/3` with supplier and status, Create Order is present and
       its dialog lists every row plus the project-level option. Full suite
       **622 passed, 1 skipped**.
-- [ ] **C5** Project Details modal gains `Project Stats` + `Scope` (Q476).
+- [x] **C5** Project Details modal gains `Project Stats` + `Scope` (Q476).
       **Cars and OH&S are omitted** pending Q550.
+
+      → **Project Stats** ships. `legacy/tracking_dashboard.html:850` turns out
+      to *be* the window Q408 describes, and its meta tiles map onto real
+      `projects` columns — `created_by`, `tg_solid` and `total_line_items` were
+      there all along, just never carried by `ProjectOut`.
+
+      → **Q571 raised and answered.** The tab's other two blocks — ADMIN STATS
+      and PRODUCTION / INSTALL — are **hours from TGPAY**, an external payroll
+      system. Nothing here records hours: no `time_record` table (#8 put one out
+      of scope) and `estimate_line_labour` / `workspace_labour_rate` are
+      estimating-side *rates*. Both tables render their row labels with **no
+      values**, captioned "Data from TGPAY — not integrated", so the gap is
+      visible in the product rather than only in a document.
+
+      → **Q572 raised — `Scope` is NOT built, against this task's own text.**
+      The task assumed Scope was specified while omitting only Cars and OH&S. It
+      is not: the mock shows `SCOPE` as a **tab label with no contents**, and
+      `projects` has **no scope column**. That is exactly Q550's position for
+      Cars and OH&S, so Scope joins them as customer input. Guessing was
+      rejected twice — a free-text column would need re-migrating if Scope is a
+      structured list of works, and relabelling `classification` as "Scope"
+      would invent a meaning no document gives.
+
+      All three blocked tabs render **disabled with a tooltip naming the
+      question**, rather than being hidden: the window's real shape stays
+      visible.
+
+      → **verified**: a new case in `test_projects_routes.py` (13 total,
+      passing) pins the three tile columns through both `GET /projects/{pid}`
+      and the list the Info button actually renders from, and that a fresh
+      project leaves them null. `npx tsc --noEmit` clean. Driven in a browser:
+      the strip reads `Project stats · Cars [disabled] · OH&S [disabled] ·
+      Scope [disabled]`, the tiles show `CREATED BY DAVIDM · TG SOLID ✓ ·
+      TOTAL LINE ITEMS 241`, and both hours tables show labels with dashes.
+      Full suite **623 passed, 1 skipped**.
 - [ ] **C6** Area / Room selectors replace the free-text fields; item may move
       room, audited (Q458).
 

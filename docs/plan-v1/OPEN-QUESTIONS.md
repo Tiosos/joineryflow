@@ -1833,6 +1833,50 @@ derives all three from `item_id` (Q427/Q428), taking the cutlist number from the
 parent when the row is a related part. The form shows what will be carried
 rather than letting it be typed.
 
+### Q571 — The Project Stats hours come from TGPAY, which is not integrated *(new — raised while building C5)*
+**Confirmed 2026-09-20: show the rows, leave the values blank, labelled.**
+`legacy/tracking_dashboard.html:850` **is** the Project Details window Q408
+describes, and its Project Stats tab holds three things:
+
+| block | buildable? |
+| --- | --- |
+| **Meta tiles** — Created, Status, Installation Start, Total Value, Created By, TG Solid, Total Line Items | **yes** — all seven are real `projects` columns |
+| **ADMIN STATS** — hours per activity (Project Manage 40, Shop Drawing 56, Listing 241.5 …) | **no** |
+| **PRODUCTION / INSTALL** — Assembly 207, Site Install 131.5, marked *"Data from TGPAY"* | **no** |
+
+Both hours blocks come from **TGPAY**, an external payroll system. Nothing in
+this schema records hours: there is no `time_record` table — sub-project #8 put
+one explicitly out of scope — and `estimate_line_labour` / `workspace_labour_rate`
+are estimating-side *rates*, not time recorded against a project.
+
+The tiles are built from the real columns (`created_by`, `tg_solid` and
+`total_line_items` were on `projects` all along; `ProjectOut` simply never
+carried them). The two hours tables render their **row labels with no values**,
+captioned *"Data from TGPAY — not integrated"*, so the gap is visible in the
+product rather than only in this file. Hiding them was considered and not
+taken: it would make the window look complete when a third of it is missing.
+
+**What closing this needs:** a TGPAY integration, or a decision to record hours
+in JoineryFlow itself — which is the `time_record` table #8 deferred.
+
+### Q572 — What does the Scope tab hold? *(new — customer input, raised while building C5)*
+**Unanswerable here.** Plan V1 **Q408** lists `Project Stats / Cars / OH&S /
+Scope` as the Project Details tabs, and the plan's **C5** task assumed Scope was
+specified while omitting only Cars and OH&S. It is not: the reference mock shows
+`SCOPE` as a **tab label with no contents** (only Project Stats is rendered), and
+`projects` has **no scope column** — verified against the schema at `0032`.
+
+That is precisely the position **Q550** put Cars and OH&S in, so Scope joins
+them: shown in the tab strip, disabled, pending the customer. Guessing was
+considered and rejected twice over — a free-text `projects.scope` column would
+need re-migrating if Scope turns out to be a structured list of works, and
+dressing up `classification` / `builder` / site address as "Scope" would invent
+a meaning the documents never give.
+
+**Needed from the customer:** what a project's Scope records (a description? a
+list of works or areas? a document reference?), who maintains it, and whether it
+is per project or per area.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

@@ -43,6 +43,13 @@ _SELECT_COLS = """
     p.installation_start                  AS install_start,
     p.total_value,
     p.created_at,
+    -- Q408's Project Details tiles (C5). All three are real columns the
+    -- serializer simply never carried; the mock's hours tables are NOT here,
+    -- because those come from TGPAY and nothing in this schema records hours
+    -- (Q571).
+    p.created_by,
+    p.tg_solid,
+    p.total_line_items,
     COALESCE(ic.cnt, 0)                   AS item_count,
     (f.user_id IS NOT NULL)               AS is_favourite
 """

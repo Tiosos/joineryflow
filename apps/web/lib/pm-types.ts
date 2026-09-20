@@ -22,6 +22,10 @@ export interface ProjectOut {
   install_start: string | null; // date → ISO 8601 YYYY-MM-DD
   is_favourite: boolean;
   created_at: string; // datetime → ISO 8601 timestamp
+  // Q408's Project Details tiles (C5) — existing columns, newly served.
+  created_by: string | null;
+  tg_solid: boolean | null;
+  total_line_items: number | null;
 }
 
 export interface ProjectListOut {
