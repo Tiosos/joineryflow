@@ -172,6 +172,8 @@ class ItemOut(BaseModel):
     painting_required: bool | None    # DB col: painting_req
     solid_surface_required: bool | None  # DB col: solid_surface_req
     group_id: str | None
+    area_id: int | None = None
+    room_id: int | None = None
     stages: dict[str, StageDates]
     modules: list[ModuleOut]
     hardware_lines: list[HardwareLineOut]
@@ -211,6 +213,13 @@ class PatchItemIn(BaseModel):
     estimator_notes: str | None = None
     painting_required: bool | None = None    # DB col: painting_req
     solid_surface_required: bool | None = None  # DB col: solid_surface_req
+    # Q454/Q455 — Area and Room as real entities (`0026`). Setting either also
+    # writes the legacy `stage` / `rm_no` / `rm_desc` columns, which stay
+    # populated until a later migration drops them (Q435), so the 25 read sites
+    # that still use them keep working. Room is nested under Area (Q552), so a
+    # room without an area is refused rather than silently unset.
+    area_id: int | None = None
+    room_id: int | None = None
 
 
 class LockTransferIn(BaseModel):

@@ -179,6 +179,11 @@ export interface ItemOut {
   painting_required: boolean | null; // DB col: painting_req
   solid_surface_required: boolean | null; // DB col: solid_surface_req
   group_id: string | null;
+  // Q454/Q455 — Area and Room as entities (0026). The legacy stage / room_no /
+  // room_desc above stay populated alongside these until a later migration
+  // drops them (Q435).
+  area_id: number | null;
+  room_id: number | null;
   stages: Record<string, StageDates>;
   modules: ModuleOut[];
   hardware_lines: HardwareLineOut[];
@@ -222,6 +227,8 @@ export interface CreateItemIn {
 }
 
 export interface PatchItemIn {
+  area_id?: number | null;
+  room_id?: number | null;
   description?: string | null;
   qty?: number | null;
   stage?: string | null;

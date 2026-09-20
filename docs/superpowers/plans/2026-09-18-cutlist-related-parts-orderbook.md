@@ -1,14 +1,14 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C5
-> are done**; C6, D and E are not. Unusually for this repo the checkboxes
+> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7 and C1–C6
+> are done** — the whole B and C series; D and E are not. Unusually for this repo the checkboxes
 > below *are* being kept current, and each finished task carries a `→` note
 > recording what shipped and how it was verified — so read them, but treat
 > `CLAUDE.md` as the statement of current state.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
-> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q572 — Q552 onward were raised while
+> `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q573 — Q552 onward were raised while
 > building, each where this plan and the code disagreed) and is mirrored in
 > `docs/plan-v1/plan_v1.md` §43. Where this plan and those disagree, the
 > questions are right. Where the code and Plan V1's prose disagree, see
@@ -717,8 +717,49 @@ hand-edited predicates.
       Scope [disabled]`, the tiles show `CREATED BY DAVIDM · TG SOLID ✓ ·
       TOTAL LINE ITEMS 241`, and both hours tables show labels with dashes.
       Full suite **623 passed, 1 skipped**.
-- [ ] **C6** Area / Room selectors replace the free-text fields; item may move
+- [x] **C6** Area / Room selectors replace the free-text fields; item may move
       room, audited (Q458).
+
+      → **The first code to touch `0026`'s tables.** New
+      `apps/api/app/areas/` — `GET /projects/{pid}/areas` (areas with rooms
+      nested per Q552, each carrying an item count), `POST
+      /projects/{pid}/areas`, `POST /areas/{aid}/rooms`. Gated
+      `("tracking", action)` plus `require_drafter()` on the writes, matching
+      every other item-shaping mutation.
+
+      → **Q573 raised and answered, in two parts.** (a) Scope is the **edit
+      sites only**: `PatchItemIn` gains `area_id` / `room_id`, and setting
+      either **also writes** `stage` / `rm_no` / `rm_desc`, so the **25 API
+      references across 5 files** and 7 web files that still read them keep
+      working — Q435's "kept and still populated". (b) Rows are created
+      **inline from the selector**; a duplicate returns 409 **carrying the
+      existing id**, so a racing create just selects it.
+
+      → **The tables were empty and would have stayed empty.** `0026`
+      backfilled from the items that existed *when it ran*; the seed inserts
+      items afterwards, so a fresh database had **0 areas, 0 rooms, 0 of 20
+      items with an `area_id`** — the same trap that broke `make seed` in C1.
+      The seed now creates both and links every item: 8 areas, 13 rooms,
+      **17 of 17** items placed, idempotent across repeated runs.
+
+      → **Two rules the API enforces rather than the schema**, because a raw
+      composite-FK violation surfaces as a 500: a room from another area is
+      `409 BAD_ROOM`, a room with no area is `ROOM_WITHOUT_AREA`. And **moving
+      area clears the room left behind** — it belonged to the old area, so the
+      pair would be invalid — with the clear logged like any other change.
+
+      → **Q458 needed no new mechanism**: the move writes an `item_edit_log`
+      row reading `room · "K1 · Kitchen" → "B1 · Bathroom"`.
+
+      → **verified**: new `test_area_room_routes.py` (10 cases, passing) pins
+      project scoping, room nesting, the dual-write, all three refusals, the
+      audited move, the area-move room clear, and that counts see Joinery Items
+      only. `npx tsc --noEmit` clean. Driven in a browser: the Area selector
+      lists the project's six areas plus "+ New area…", the Room selector only
+      that area's rooms, the free-text Stage field is gone, a move from
+      `K1 · Kitchen` to `B1 · Bathroom` persisted with `stage/rm_no/rm_desc`
+      dual-written, and the move appears in the item's log. Full suite
+      **633 passed, 1 skipped**.
 
 ### D. Seed + docs
 

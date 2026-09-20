@@ -1877,6 +1877,45 @@ a meaning the documents never give.
 list of works or areas? a document reference?), who maintains it, and whether it
 is per project or per area.
 
+### Q573 — How far do the Area / Room selectors reach, and who creates the rows? *(new — raised while building C6)*
+**Confirmed 2026-09-20, in two parts.**
+
+**(a) The edit sites only.** The item editor's free-text `Stage` / `Room #` /
+`Room Description` inputs become an **Area** selector plus a **Room** selector
+filtered to that area. Setting either **also writes** `items.stage` / `rm_no` /
+`rm_desc` from the chosen rows, so the **25 API references across 5 files** and
+the 7 web files that still read those columns keep working untouched — which is
+what Q435's "kept and still populated" requires. Tracking's filter dropdowns
+still derive their options from the loaded item rows; moving them onto the
+entities is part of the full repoint, not this task.
+
+**(b) Created inline from the selector.** Each selector carries a **"+ New…"**
+option that creates the row against this project (Q457) and selects it, backed
+by `POST /projects/{pid}/areas` and `POST /areas/{aid}/rooms` with the
+`area.create` / `room.create` audit events the plan's §5 already listed. No
+separate management page — none was asked for, and a drafter meeting a missing
+room should not have to leave the item to add it. A duplicate name returns
+`409 AREA_EXISTS` / `ROOM_EXISTS` **carrying the existing id**, so a racing
+create just selects what is already there.
+
+**The tables were empty, and would have stayed empty.** `0026` backfilled `area`
+and `room` from the items that existed *when it ran*; `make seed` inserts items
+afterwards, so a freshly migrated-and-seeded database had **0 areas, 0 rooms and
+0 of 20 items carrying `area_id`** — the same trap that broke `make seed` in C1.
+The seed now creates both and links every item.
+
+**Two rules the API enforces rather than the schema.** Room is nested under Area
+(Q552) via the composite FK `items (area_id, room_id) → room`, so a room from
+another area is refused as `409 BAD_ROOM` and a room with no area as
+`ROOM_WITHOUT_AREA` — named reasons instead of a raw constraint violation
+surfacing as a 500. And **moving area clears the room left behind**: that room
+belonged to the old area, so the pair would be invalid. The clear is logged like
+any other change.
+
+**Q458 needed no new mechanism.** Moving room writes an `item_edit_log` row
+reading `room · "057 · Dirty Utilities" → "102 · PC2 Holding"`, which is the
+audit that question asked for.
+
 ---
 
 ## §M — QC, rework, delivery, packing *(Plan V1 §26–§28)*

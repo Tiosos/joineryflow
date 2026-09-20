@@ -377,6 +377,48 @@ def main() -> None:
                     },
                 ).scalar()
 
+                # --- Area + Room (Q454/Q455, migration 0026).  Same trap as
+                #     the cutlist below: 0026 backfilled these from the items
+                #     that existed when it ran, so items seeded afterwards get
+                #     none and the C6 selectors would have nothing to offer.
+                #     Area comes from the site location, Room from rm_no.
+                db.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO area (project_id, name)
+                            VALUES (:pid, :area)
+                            ON CONFLICT (project_id, name) DO NOTHING
+                            RETURNING area_id
+                        ), picked_area AS (
+                            SELECT area_id FROM ins
+                            UNION ALL
+                            SELECT area_id FROM area
+                             WHERE project_id = :pid AND name = :area
+                            LIMIT 1
+                        ), ins_room AS (
+                            INSERT INTO room (area_id, rm_no, rm_desc)
+                            SELECT area_id, :rm_no, :rm_desc FROM picked_area
+                            ON CONFLICT (area_id, rm_no) DO NOTHING
+                            RETURNING room_id, area_id
+                        ), picked_room AS (
+                            SELECT room_id FROM ins_room
+                            UNION ALL
+                            SELECT r.room_id FROM room r
+                              JOIN picked_area pa ON pa.area_id = r.area_id
+                             WHERE r.rm_no = :rm_no
+                            LIMIT 1
+                        )
+                        UPDATE items
+                           SET area_id = (SELECT area_id FROM picked_area),
+                               room_id = (SELECT room_id FROM picked_room)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": proj_id, "area": stage_site, "rm_no": rm_no,
+                     "rm_desc": rm_desc, "iid": item_id},
+                )
+
                 # --- Cutlist (Q540: one per existing item, carrying its own
                 #     number).  0027 minted these for items that existed when it
                 #     ran; items created afterwards — like these — need their own,
@@ -1889,6 +1931,45 @@ def main() -> None:
                 {"n": num},
             ).scalar()
             if iid is not None:
+                # Areas and Rooms for these too — the C6 selectors read them,
+                # and 0026's backfill never saw a row seeded after it ran.
+                s.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO area (project_id, name)
+                            VALUES (:pid, :area)
+                            ON CONFLICT (project_id, name) DO NOTHING
+                            RETURNING area_id
+                        ), picked_area AS (
+                            SELECT area_id FROM ins
+                            UNION ALL
+                            SELECT area_id FROM area
+                             WHERE project_id = :pid AND name = :area
+                            LIMIT 1
+                        ), ins_room AS (
+                            INSERT INTO room (area_id, rm_no, rm_desc)
+                            SELECT area_id, :rm_no, :rm_desc FROM picked_area
+                            ON CONFLICT (area_id, rm_no) DO NOTHING
+                            RETURNING room_id
+                        ), picked_room AS (
+                            SELECT room_id FROM ins_room
+                            UNION ALL
+                            SELECT r.room_id FROM room r
+                              JOIN picked_area pa ON pa.area_id = r.area_id
+                             WHERE r.rm_no = :rm_no
+                            LIMIT 1
+                        )
+                        UPDATE items
+                           SET area_id = (SELECT area_id FROM picked_area),
+                               room_id = (SELECT room_id FROM picked_room)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": alf_pid, "area": stage, "rm_no": rm_no,
+                     "rm_desc": rm_desc, "iid": iid},
+                )
+
                 # Q540: every Joinery Item carries its own cutlist, numbered as
                 # itself.  Shop Floor keys on it and worker_assignment.cutlist_id
                 # is NOT NULL since 0030, so an item without one breaks a re-run

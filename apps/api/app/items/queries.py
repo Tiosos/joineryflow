@@ -463,7 +463,9 @@ def get_item_detail(
                 i.estimator_notes,
                 i.painting_req              AS painting_required,
                 i.solid_surface_req         AS solid_surface_required,
-                i.group_id
+                i.group_id,
+                i.area_id,
+                i.room_id
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             WHERE i.item_id = :iid
@@ -696,6 +698,8 @@ def get_item_detail(
         "painting_required": row["painting_required"],
         "solid_surface_required": row["solid_surface_required"],
         "group_id": row["group_id"],
+        "area_id": row["area_id"],
+        "room_id": row["room_id"],
         "stages": stages,
         "modules": modules,
         "hardware_lines": hardware_lines,
@@ -748,7 +752,9 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.painting_req,
                 i.solid_surface_req,
                 i.item_locked,
-                i.cutlist_owner_id
+                i.cutlist_owner_id,
+                i.area_id,
+                i.room_id
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
@@ -846,6 +852,88 @@ _PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
 ]
 
 
+def _resolve_area_room(
+    db: Session,
+    *,
+    current: dict,
+    payload: PatchItemIn,
+) -> tuple[str, dict[str, object], list[tuple[str, str | None, str | None]]]:
+    """Turn `area_id` / `room_id` into column writes, or explain the refusal.
+
+    Returns ('OK', updates, changes) | ('BAD_AREA'|'BAD_ROOM'|'ROOM_WITHOUT_AREA', {}, []).
+
+    Two things make this more than an assignment:
+
+    * **The legacy columns keep being written.** `items.stage` / `rm_no` /
+      `rm_desc` stay populated until a later migration drops them (Q435), and
+      25 read sites across printing, orders, cutlists and Tracking still read
+      them. Picking an area writes its name into `stage`; picking a room writes
+      its `rm_no` / `rm_desc`. Nothing downstream has to know this shipped.
+    * **Room is nested under Area** (Q552), enforced by the composite FK
+      `items (area_id, room_id) → room`. Setting a room therefore needs an area
+      that actually owns it — validated here, so the caller gets a 409 naming
+      the problem rather than a raw constraint violation as a 500.
+    """
+    if payload.area_id is None and payload.room_id is None:
+        return "OK", {}, []
+
+    updates: dict[str, object] = {}
+    changes: list[tuple[str, str | None, str | None]] = []
+
+    # The area an item will be in after this patch: the one supplied, else the
+    # one it already holds.
+    area_id = payload.area_id if payload.area_id is not None else current["area_id"]
+    if payload.room_id is not None and area_id is None:
+        return "ROOM_WITHOUT_AREA", {}, []
+
+    if payload.area_id is not None and payload.area_id != current["area_id"]:
+        area = db.execute(
+            text("SELECT area_id, name FROM area WHERE area_id = :a AND project_id = :p"),
+            {"a": payload.area_id, "p": current["project_id"]},
+        ).mappings().first()
+        if area is None:
+            return "BAD_AREA", {}, []
+        updates["area_id"] = area["area_id"]
+        updates["stage"] = area["name"]
+        changes.append(("area", current["stage"], area["name"]))
+        # Moving area orphans the old room — it belonged to the area left
+        # behind, and the composite FK would refuse the pair. Cleared unless
+        # this same patch names a new one.
+        if payload.room_id is None and current["room_id"] is not None:
+            updates["room_id"] = None
+            updates["rm_no"] = None
+            updates["rm_desc"] = None
+            changes.append(("room", _room_label(current["rm_no"], current["rm_desc"]), None))
+
+    if payload.room_id is not None and payload.room_id != current["room_id"]:
+        room = db.execute(
+            text("SELECT room_id, area_id, rm_no, rm_desc FROM room"
+                 " WHERE room_id = :r AND area_id = :a"),
+            {"r": payload.room_id, "a": area_id},
+        ).mappings().first()
+        if room is None:
+            return "BAD_ROOM", {}, []
+        updates["room_id"] = room["room_id"]
+        updates["rm_no"] = room["rm_no"]
+        updates["rm_desc"] = room["rm_desc"]
+        # Q458: moving room is allowed and audited. `item_edit_log` already
+        # records field changes, so the move rides the existing mechanism.
+        changes.append((
+            "room",
+            _room_label(current["rm_no"], current["rm_desc"]),
+            _room_label(room["rm_no"], room["rm_desc"]),
+        ))
+
+    return "OK", updates, changes
+
+
+def _room_label(rm_no: str | None, rm_desc: str | None) -> str | None:
+    """How a room reads in the edit log — the number plus its description."""
+    if rm_no is None and rm_desc is None:
+        return None
+    return " · ".join(p for p in (rm_no, rm_desc) if p)
+
+
 def _apply_item_changes(
     db: Session,
     *,
@@ -854,7 +942,7 @@ def _apply_item_changes(
     payload: PatchItemIn,
     author_id: int,
     extra_updates: dict[str, object] | None = None,
-) -> list[tuple[str, str | None, str | None]]:
+) -> list[tuple[str, str | None, str | None]] | str:
     """Write the fields of `payload` that actually differ from `current`.
 
     Shared by the owner's own save and by the approval of someone else's
@@ -863,12 +951,27 @@ def _apply_item_changes(
     person whose change it is, which on an approval is the *requester*, not the
     approver (the approver is named in the audit row instead).
 
-    Returns the (field, old, new) tuples it logged.
+    Returns the (field, old, new) tuples it logged, or a refusal **code**
+    string when the payload's area/room pair cannot be resolved.
     """
     updates: dict[str, object] = dict(extra_updates or {})
     changes: list[tuple[str, str | None, str | None]] = []
 
+    # Area/Room first: they write three legacy columns between them, and the
+    # generic loop below must not then overwrite `stage` / `rm_no` / `rm_desc`
+    # with stale free text from the same payload.
+    outcome, ar_updates, ar_changes = _resolve_area_room(
+        db, current=current, payload=payload
+    )
+    if outcome != "OK":
+        return outcome
+    updates.update(ar_updates)
+    changes.extend(ar_changes)
+    _moved = {"stage", "rm_no", "rm_desc"} & set(ar_updates)
+
     for attr, col, row_key in _PATCH_FIELD_MAP:
+        if col in _moved:
+            continue
         new_val = getattr(payload, attr)
         if new_val is None:
             continue
@@ -899,6 +1002,13 @@ def _changed_fields(payload: PatchItemIn, current: dict) -> dict[str, object]:
         if new_val is None:
             continue
         if new_val != current.get(row_key):
+            out[attr] = new_val
+    # Area and Room are not in the field map — they resolve to three columns
+    # between them — but a held Controlled-Lock request has to carry them or
+    # approving it would silently drop the move.
+    for attr in ("area_id", "room_id"):
+        new_val = getattr(payload, attr)
+        if new_val is not None and new_val != current.get(attr):
             out[attr] = new_val
     return out
 
@@ -951,7 +1061,7 @@ def patch_item(
         # First-save claim
         extra = {"item_locked": True, "cutlist_owner_id": actor_id}
 
-    _apply_item_changes(
+    applied = _apply_item_changes(
         db,
         item_id=item_id,
         current=current,
@@ -959,6 +1069,9 @@ def patch_item(
         author_id=actor_id,
         extra_updates=extra,
     )
+    if isinstance(applied, str):
+        # The area/room pair does not resolve — see `_resolve_area_room`.
+        return {"outcome": applied}
     return {"outcome": "applied"}
 
 
@@ -1451,6 +1564,10 @@ def decide_lock_request(
             payload=PatchItemIn(**row["requested_changes"]),
             author_id=row["requested_by"],
         )
+        if isinstance(changes, str):
+            # The held request named an area or room that no longer resolves —
+            # deleted, or renamed out from under it while it waited.
+            return changes
         applied = [field for field, _old, _new in changes]
 
     db.execute(

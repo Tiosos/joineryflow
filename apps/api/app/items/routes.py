@@ -150,6 +150,10 @@ def patch_item_route(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="item not found")
+    if result["outcome"] in ("BAD_AREA", "BAD_ROOM", "ROOM_WITHOUT_AREA"):
+        # Q552: a room lives inside an area, enforced by the composite FK.
+        # Refused here so the caller gets a named reason, not a 500.
+        raise HTTPException(status_code=409, detail={"code": result["outcome"]})
     if result["outcome"] == "lock_request":
         req = result["request"]
         db.commit()

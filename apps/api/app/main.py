@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from .auth.routes import router as auth_router
 from .catalog.routes import router as catalog_router
 from .cut_floor.routes import router as cut_floor_router
+from .areas.routes import router as areas_router
 from .cutlists.routes import router as cutlists_router
 from .cv.routes import router as cv_router
 from .estimating.routes import router as estimating_router
@@ -38,6 +39,7 @@ app.include_router(public_router)
 app.include_router(auth_router)
 app.include_router(catalog_router)
 app.include_router(cut_floor_router)
+app.include_router(areas_router)
 app.include_router(cutlists_router)
 app.include_router(orders_router)
 app.include_router(related_parts_router)
