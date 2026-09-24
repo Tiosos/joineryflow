@@ -2010,6 +2010,28 @@ with no accounts.
 1. Yes — a formula engine IT edits at runtime.
 2. Hard-coded KPIs, management chooses which to show.
 
+**Search design round (2026-09-24):** **Q574 = 1**, **Q575 = 1**, **Q576 = 1**.
+Q525 chose a search service but named none; these three close what the Search
+sub-project needs before a spec can be written.
+
+### Q574 — Which search engine? *(new — raised planning Search, Q525 left it unnamed)*
+**Option 1 confirmed (2026-09-24).** Meilisearch — one small container, typo tolerance and facets built in; the scale that favours Elastic does not apply here.
+1. Meilisearch.
+2. OpenSearch / Elasticsearch — most capable, but a JVM service needing ~1–2 GB.
+3. Typesense.
+
+### Q575 — How does the index stay in step with Postgres? *(new — raised planning Search)*
+**Option 1 confirmed (2026-09-24).** A transactional outbox: every indexed mutation writes an outbox row in the same DB transaction, and a worker drains it into the index. A full rebuild command covers first load and recovery. No update is lost while the search service is down.
+1. Outbox table + worker, plus a full-reindex command.
+2. Inline calls to the search service from each mutation route.
+3. Periodic full reindex.
+
+### Q576 — What does Search v1 cover? *(new — raised planning Search)*
+**Option 1 confirmed (2026-09-24).** The object types that already exist as entities — items, related parts, cutlists, orders, suppliers, shop drawings, samples, customers, estimates and catalog rows. Results are filtered by workspace and by the existing module `read` grants; project scoping arrives with the §3.4 RBAC work (Q466), not before. §13's remaining types join as their entities are built.
+1. Existing core types, workspace-scoped, gated on module read grants.
+2. All ~18 §13 types now, stubbing the ones that do not exist yet.
+3. Defer Search behind small fixes.
+
 ---
 
 ## §O — Templates, validation, initiatives *(Plan V1 §7–§8, §35–§38)*
