@@ -26,4 +26,7 @@ build/
 # Playwright
 test-results/
 playwright-report/
+# Written by legacy-screenshots.spec.ts and screenshot-login.spec.ts. Generated
+# output, not visual baselines — nothing in the tree compares against them.
+apps/web/screenshots/
 .superpowers/
