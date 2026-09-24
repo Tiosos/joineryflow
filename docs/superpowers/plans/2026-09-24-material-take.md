@@ -1,6 +1,6 @@
 # Implementation Plan — Material Take → Material Summary (sub-project #12)
 
-> **Status: in progress** (A1, B1 done — local only). Migration `0034_material_take`; it follows
+> **Status: in progress** (A, B done; C–E open). Migration `0034_material_take`; it follows
 > `0033_search_outbox` (#11, PR #14), so **A1 cannot land before #14 merges**.
 > Design: `docs/superpowers/specs/2026-09-24-material-take-design.md`. As with
 > #10 and #11, checkboxes are kept current and each finished task gets a `→`
@@ -88,7 +88,7 @@ last among the take tasks because it reuses generation to compare.
   12 passed. Against the seed, ALF-001's MDF consolidates to **3** sheets
   (per-item rounding would have said 6) — the finding that raised **Q586**.
 
-- [ ] **B2** Generate + draft CRUD routes: `POST /items/{iid}/material-take/generate`
+- [x] **B2** Generate + draft CRUD routes: `POST /items/{iid}/material-take/generate`
   (`409 DRAFT_EXISTS`), `POST /material-takes/{tid}/regenerate`,
   `POST/PATCH/DELETE /material-takes/{tid}/lines[/{lid}]`. `("list","write")`
   + `require_drafter()`. Each writes `audit_log` + `item_edit_log`
@@ -96,13 +96,22 @@ last among the take tasks because it reuses generation to compare.
   *Done when:* route tests cover each call, `409 TAKE_NOT_DRAFT` on editing an
   approved take, a manual `OTHER` line with no `material_id`, and the two log
   rows landing in one transaction (a forced failure leaves neither).
-- [ ] **B3** `POST /material-takes/{tid}/approve` (`("list","approve")`):
+  → **done.** Also: a generated line's material / unit / description are
+  read-only (`409 GENERATED_FIELD_READ_ONLY`); changing its `wastage_pct`
+  without a `qty` re-derives `qty = qty_generated × (1 + w%)`, rounded up to
+  2 dp; an `OTHER` line with a `material_id` is a 422; regenerate replaces
+  generated lines and keeps manual ones; a related part is
+  `409 RELATED_PART_HAS_NO_TAKE` (Q424).
+- [x] **B3** `POST /material-takes/{tid}/approve` (`("list","approve")`):
   draft → approved, previous approved → superseded, version history via
   `GET /items/{iid}/material-takes`.
   *Done when:* approving v2 supersedes v1; a viewer / editor gets 403; the
   partial unique indexes reject a second draft or approved row inserted
   directly.
-- [ ] **B4** Drift + review: `GET /items/{iid}/material-take` returns
+  → **done.** Role matrix pinned: drafter / manager / admin approve; editor,
+  viewer, purchase officer 403; editing needs drafter+, reading is open to
+  every `list` reader including purchase officers.
+- [x] **B4** Drift + review: `GET /items/{iid}/material-take` returns
   `outdated: true` when `generate_lines` would now differ from the approved
   take's **generated** lines (manual lines and adjusted quantities are not
   drift); `POST /material-takes/{tid}/reviews` records No / Partial / Full,
@@ -110,9 +119,17 @@ last among the take tasks because it reuses generation to compare.
   *Done when:* adding a part flips `outdated`; editing only an approved take's
   wastage never does; a Full review yields a draft whose lines match the live
   generation.
-- [ ] **B5** Workspace isolation + role matrix tests for every take route
+  → **done.** Reviews are recorded when decided, so there is no separate
+  "open review" state; the take's `outdated` flag is the prompt. A Full or
+  Partial review opens v`n+1` while v`n` stays approved until the new one is.
+- [x] **B5** Workspace isolation + role matrix tests for every take route
   (the `test_*_workspace_isolation.py` pattern: another workspace's item is a
   404, never a 403).
+  → **done.** One test walks all seven take routes as an admin of another
+  workspace: every one is 404.
+  *Milestone 1 verified:* `test_material_take_generation.py` (12) +
+  `test_material_take_routes.py` (28); **full suite 753 passed, 1 skipped**
+  (the pre-existing skip) with real Meilisearch, as CI runs it.
 
 **Milestone push 1** — after B5, one push.
 
