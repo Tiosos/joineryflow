@@ -49,6 +49,21 @@ KINDS: tuple[str, ...] = (
 )
 
 
+# kind -> (source table, primary key); mirrors migration 0033's SOURCES.
+SOURCE_TABLES: dict[str, tuple[str, str]] = {
+    "project": ("projects", "project_id"),
+    "item": ("items", "item_id"),
+    "cutlist": ("cutlist", "cutlist_id"),
+    "order": ("purchase_orders", "po_id"),
+    "supplier": ("vendors", "vendor_id"),
+    "drawing": ("shop_drawing", "drawing_id"),
+    "sample": ("sample", "sample_id"),
+    "customer": ("customer", "customer_id"),
+    "estimate": ("estimate", "estimate_id"),
+    **{k: (k, v[1]) for k, v in MATERIALS.items()},
+}
+
+
 def doc_ids(kind: str, entity_id: int) -> list[str]:
     """Every document id an outbox row may stand for — used to delete."""
     if kind == "item":

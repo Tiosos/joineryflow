@@ -29,6 +29,15 @@ services:
       MEILI_ENV: development
       MEILI_NO_ANALYTICS: "true"
     volumes: ["meilidata:/meili_data"]
+  # Drains search_outbox into meili (Q577: its own service, so a crash or a
+  # retry loop cannot starve the api). Same image, different command; no
+  # --reload, so restart it after editing app/search/.
+  search-worker:
+    build: ./apps/api
+    env_file: .env
+    depends_on: [db, meili]
+    volumes: ["./apps/api:/code"]
+    command: python -m app.search.worker
   web:
     build: ./apps/web
     env_file: .env
