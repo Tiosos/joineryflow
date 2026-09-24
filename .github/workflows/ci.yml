@@ -1,7 +1,9 @@
 name: CI
 
 # Actions minutes are limited, so spend them only where code changed.
-# Docs-only commits (specs, plans, CLAUDE.md) skip CI entirely. If branch
+# Docs-only changes skip CI. For pull_request events GitHub applies the filter
+# to the PR's *whole* diff, not the latest push: a PR that touches any code runs
+# CI on every push, and only an all-docs PR skips. If branch
 # protection ever *requires* these checks, a skipped run leaves them pending
 # and blocks the merge — add an always-pass job for that case, don't drop this.
 on:

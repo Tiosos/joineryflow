@@ -17,7 +17,9 @@ the detail.
 verified locally — full `pytest` against a Postgres migrated to head, `tsc`,
 `pnpm build`, and e2e against a locally running stack — and pushed in **one
 batch per milestone** (after B, after C, after E), not per task. `ci.yml` now
-skips docs-only pushes and cancels superseded runs.
+skips docs-only *PRs* (for `pull_request` events the path filter sees the whole
+PR diff, so a PR containing code runs on every push — learned the hard way:
+this PR's docs-only commits still ran) and cancels superseded runs.
 
 ---
 
