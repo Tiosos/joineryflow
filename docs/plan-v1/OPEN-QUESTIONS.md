@@ -1294,35 +1294,41 @@ and never reserves or decrements it. §18 wants reservations.
 2. Material Take reserves stock.
 3. Cut-plan completion decrements stock.
 
-**Raised writing the Material Take spec (2026-09-24) — open.** Q581–Q585 are
-the gaps `docs/superpowers/specs/2026-09-24-material-take-design.md` found
-between §J's answers and what the schema and data actually hold. Each carries
-a recommendation; none is confirmed.
+**Raised writing the Material Take spec, answered same day (2026-09-24):**
+**Q581 = 1**, **Q582 = 1**, **Q583 = 1**, **Q584 = 1**, **Q585 = 1** — every
+recommendation taken. They are the gaps
+`docs/superpowers/specs/2026-09-24-material-take-design.md` found between §J's
+answers and what the schema and data actually hold.
 
-### Q581 — In what unit is a board line counted? *(new — open)*
+### Q581 — In what unit is a board line counted? *(new — raised writing the Material Take spec)*
+**Option 1 confirmed (2026-09-24).** Sheets from area, plus wastage %; m² when no sheet size is known.
 The existing project rollup counts boards as `SUM(parts.qty)` — a **part count**, not sheets (`apps/api/app/procurement_v1/materials/queries.py`). A take is something Procurement orders from, and boards are ordered in sheets.
 1. **Recommended.** Sheets, estimated as `ceil(Σ part area × qty / sheet area)` using the largest in-stock sheet for that material (the pick `/optimise` already makes), else the catalog row's `sheet_len_mm × sheet_wid_mm`, plus an adjustable wastage %. A board with no known sheet size generates in m² rather than being dropped.
 2. Square metres for every board, converted to sheets only at ordering.
 3. Keep the part count, as today.
 
-### Q582 — Where does the CutPlan nest's sheet count apply? *(new — open)*
+### Q582 — Where does the CutPlan nest's sheet count apply? *(new — raised writing the Material Take spec)*
+**Option 1 confirmed (2026-09-24).** The nest's count applies at the summary; per-item takes keep the area estimate. This narrows **Q496**'s "both".
 Q496 says the nest supplies real sheet counts, but a nest is **project-level and its sheets mix items** — the seeded `ALF-001 v1 nest` has one sheet carrying parts of two items — so no per-item sheet count exists to put in a per-item take.
 1. **Recommended.** At the **summary**: per-item takes keep the area estimate (Q581); a summary board line shows the nest's sheet count for that SKU beside the consolidated estimate and the PM confirms either.
 2. Apportion each nest sheet to items by area share (fractional sheets per item).
 3. Only accept a nest into a take when it covers that item alone.
 
-### Q583 — Shop drawings are not linked to items *(new — open)*
+### Q583 — Shop drawings are not linked to items *(new — raised writing the Material Take spec)*
+**Option 1 confirmed (2026-09-24).** Drift is detected from the take's own inputs (live parts / hardware lines); the drawing-triggered review and **Q497**'s warning wait for a drawing ↔ item link.
 §19's impact review is triggered by a *shop drawing* change, and Q497 warns the drawing approver when no take exists — but `shop_drawing` has only `project_id` and a free-text `room`; nothing relates a drawing to an item (checked at `0033`).
 1. **Recommended.** v1 detects drift from what a take is generated *from*: when an item's live parts / hardware lines would now generate different lines than its approved take, the take shows **Outdated** and a reviewer records No / Partial / Full Impact. The drawing-triggered review and Q497's warning wait for a drawing ↔ item link, a separate change to #5a.
 2. Add a drawing ↔ item link table now (the uploader picks items), and trigger on revisions.
 3. Match drawings to items on the room text.
 
-### Q584 — Are edging and finishing lines generated? *(new — open)*
+### Q584 — Are edging and finishing lines generated? *(new — raised writing the Material Take spec)*
+**Option 1 confirmed (2026-09-24).** Edging and finishing are manual take lines in v1.
 `parts.edge`, `edging_spec` and `colour` are free text with no catalog reference, and **empty on every seeded part (37 of 37)**; §19 lists edging and finishing among what the system can generate.
 1. **Recommended.** Not generated in v1 — added as manual take lines (unit `m` / `each`).
 2. Generate edging metres from part dimensions and the `edge` code, which needs an edge-code convention to be specified first.
 
-### Q585 — Can Procurement create an order from a summary line? *(new — open)*
+### Q585 — Can Procurement create an order from a summary line? *(new — raised writing the Material Take spec)*
+**Option 1 confirmed (2026-09-24).** No create-order-from-line in v1; the summary shows on-order / received read-only.
 Q499 lets Procurement "order against unconfirmed lines … flagged as such", which implies ordering *from* a line. Nothing links an order (`purchase_orders`) or batch to a summary line today.
 1. **Recommended.** Not in v1: the summary shows each line's quantity already on order / received from the existing batch rollup (read-only). Create-order-from-line and its "unconfirmed" flag follow with §21's required / ordered / received / outstanding design.
 2. Yes — a "Create order" action per line that prefills the order form and records the line (and whether it was confirmed) on the order.

@@ -4,10 +4,9 @@
 > reserved; it follows `0033_search_outbox` (sub-project #11, PR #14), so
 > implementation cannot start until #14 merges.
 >
-> **Blocked on five questions, Q581–Q585** (`docs/plan-v1/OPEN-QUESTIONS.md`
-> §J). Each is marked **(open — Q58x)** where it is used below, with the
-> recommended answer assumed so the rest of the design reads through. Nothing
-> gated on one should be built until it is answered.
+> **Fully decided.** Q581–Q585, raised by this spec, were answered 2026-09-24
+> with every recommendation taken (`docs/plan-v1/OPEN-QUESTIONS.md` §J). The
+> markers below cite them.
 
 **Plan V1 source:** §19 (Material Take) and §20 (Project Material Summary →
 Procurement). §18's stock depth and §21's supplier comparison, receiving and
@@ -152,7 +151,7 @@ DRAFT_EXISTS`; use regenerate. Lines:
   `item_hardware_lines → project_hardware_catalog`, unit `each`, `qty_generated`
   = Σ `qty`. This is the same join `/projects/{pid}/materials` uses, scoped to
   one item.
-- **Boards — (open — Q581).** One line per `board_material_id`, unit
+- **Boards — (Q581).** One line per `board_material_id`, unit
   **`sheet`**. The existing rollup's `SUM(parts.qty)` is a *part count*, not a
   sheet count, and nobody orders "12 parts" of 18mm particleboard. Recommended:
   `ceil(Σ(len × wid × qty) / sheet_area)`, where `sheet_area` is the largest
@@ -161,12 +160,12 @@ DRAFT_EXISTS`; use regenerate. Lines:
   records a default `wastage_pct` that the drafter adjusts. A board with no
   known sheet size generates with `unit = 'm2'` so it is visible, not
   silently dropped.
-- **Nest — (open — Q582).** Q496 wants the nest's real sheet counts. But a
+- **Nest — (Q582).** Q496 wants the nest's real sheet counts. But a
   nest is project-level and its sheets mix items: the seeded
   `ALF-001 v1 nest` has one sheet carrying parts of two items. Recommended:
   the nest's count applies at **summary** level (§5), where it is exact, and
   per-item takes keep the area estimate.
-- **Edging and finishing — (open — Q584).** `parts.edge`, `edging_spec` and
+- **Edging and finishing — (Q584).** `parts.edge`, `edging_spec` and
   `colour` are free text with no catalog reference, and all three are empty
   on every seeded part (37 of 37). Recommended: not generated in v1. The
   drafter adds them as manual `OTHER` lines, unit `m` or `each`.
@@ -196,7 +195,7 @@ listed as `missing_takes` in the response and on the page).
 - Each summary line keeps one `material_summary_source` row per contributing
   take line, with its `take_version`: that is §20's "retaining source Joinery
   Item breakdown".
-- **(open — Q582)** Where the project has a CutPlan whose sheets cover a board
+- **(Q582)** Where the project has a CutPlan whose sheets cover a board
   material, the line shows the nest's sheet count for that SKU beside the
   consolidated estimate, and the PM chooses which to confirm.
 - `PATCH …/lines/{lid}` sets `qty_confirmed` and `note`.
@@ -217,7 +216,7 @@ old one stays as history.
 `shop_drawing` carries `project_id` and a free-text `room`, and nothing points
 from a drawing to an item (checked against the schema at `0033`).
 
-**(open — Q583)** Recommended for v1: detect drift from the thing a take is
+**(Q583)** Recommended for v1: detect drift from the thing a take is
 actually generated from. When an item's live parts or hardware lines would
 now generate different lines from its current approved take (a
 generate-and-compare done on read), the take shows **Outdated**, and a
@@ -231,7 +230,7 @@ Original history is always preserved. The drawing-linked trigger, and Q497's
 "warn the approver that no take exists", wait for a drawing ↔ item link,
 which is its own change to #5a.
 
-## 7. Ordering from the summary — (open — Q585)
+## 7. Ordering from the summary — (Q585)
 
 Q499 says Procurement "may order against unconfirmed lines … flagged as
 such", which implies an order can come *from* a summary line. Today nothing
