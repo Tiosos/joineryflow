@@ -7,6 +7,7 @@ import { HardwareTab } from "./hardware/HardwareTab";
 import { LogTab } from "./LogTab";
 import AttachmentsTab from "./AttachmentsTab";
 import { BoardTab } from "./BoardTab";
+import { MaterialTakeTab } from "./MaterialTakeTab";
 
 interface EditorTabsProps {
   item: ItemOut;
@@ -14,13 +15,14 @@ interface EditorTabsProps {
   currentUserRole: string | null;
 }
 
-const TABS = ["cutlist", "hardware", "board", "attachments", "log"] as const;
+const TABS = ["cutlist", "hardware", "board", "take", "attachments", "log"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   cutlist: "Cutlist",
   hardware: "Hardware",
   board: "Board",
+  take: "Material Take",
   attachments: "Attachments",
   log: "Log",
 };
@@ -60,6 +62,9 @@ export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
         {current === "cutlist" && <CutlistTab item={item} />}
         {current === "hardware" && <HardwareTab item={item} />}
         {current === "board" && <BoardTab itemId={item.id} />}
+        {current === "take" && (
+          <MaterialTakeTab itemId={item.id} currentUserRole={currentUserRole} />
+        )}
         {current === "attachments" && (
           <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
         )}

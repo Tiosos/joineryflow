@@ -112,28 +112,30 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0033`. Head is `0033_search_outbox` (Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0034`. Head is `0034_material_take` (Material Take, #12; `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 14 Playwright specs / 42 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
+- `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
-## Plan V1 — target architecture (two sub-projects built)
+## Plan V1 — target architecture (three sub-projects built)
 
 `docs/plan-v1/` holds **Plan V1**, the customer's specification for a
 company-wide joinery workflow and control platform, with its interview
 questions answered through Q431 (supplied 2026-09-17). It is mostly a
-**target**, not a description of this tree — with two exceptions: **Plan V1 #10
-(Cutlist + related parts + Orderbook)** and **#11 (Global Search, §13)** are
-built, each with its own section below. Everything else in Plan V1 remains
+**target**, not a description of this tree — with three exceptions: **Plan V1 #10
+(Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)** and
+**#12 (Material Take → Summary, §19–§20)** are built, each with its own
+section below. Everything else in Plan V1 remains
 unimplemented.
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
-  the 2026-09-18 baseline, **not re-scored** after #10 or #11 (only the §13
-  search row has been moved, to `PARTIAL`).
+  the 2026-09-18 baseline, **not re-scored** after #10, #11 or #12 (only the
+  §13 search row and the §19 / §20 take and summary rows have been moved, to
+  `PARTIAL`).
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
   numbering. **150 of 154 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
@@ -157,7 +159,7 @@ unimplemented.
   and 2), built as one change. **Done** — widened by Q542 to take the whole
   Orderbook with it. See *Cutlist + related parts + Orderbook* below.
 
-Apart from #10 and #11, this section still describes a target, and `CLAUDE.md` remains
+Apart from #10, #11 and #12, this section still describes a target, and `CLAUDE.md` remains
 the record of what is actually true in the tree.
 
 **Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
@@ -184,9 +186,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0033
+make migrate      # apply Alembic 0001 -> 0034
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (66 test files, 714 tests; the `meili`-marked
+make test         # pytest in api container (69 test files, 771 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -298,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
-- `docs/superpowers/specs/2026-09-24-material-take-design.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Not started**; design fully decided (Q495–Q501, Q581–Q586); migration `0034` reserved, after #11's `0033`. Plan: `docs/superpowers/plans/2026-09-24-material-take.md` (15 tasks, three milestone pushes to save CI minutes).
+- `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
@@ -1322,4 +1324,66 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) have
   **`workspace_id` NULL**, so they are invisible on `/catalog` as well as in
   search. Pre-existing seed gap, not fixed here.
+
+## Material Take → Material Summary (sub-project #12)
+
+> Plan V1 §19–§20, step 3 of `ALIGNMENT.md` §6. Design:
+> `docs/superpowers/specs/2026-09-24-material-take-design.md`; plan with
+> per-task verification notes: `docs/superpowers/plans/2026-09-24-material-take.md`.
+> Every rule traces to Q80, Q495–Q501 or Q581–Q586.
+
+- **Migration `0034_material_take`** — `material_take` (per Joinery Item,
+  versioned; partial unique indexes allow **one draft and one approved** per
+  item), `material_take_line`, `material_take_review`, `material_summary`,
+  `material_summary_line`, `material_summary_source`. Not searchable (no
+  `0033` triggers). Source rows **cascade**: items can be hard-deleted, and a
+  lost source makes its line read stale.
+- **A take is generated, then owned by a person** (Q80). `material_takes/
+  generation.py` reads parts + hardware lines and never writes (Q501).
+  **Boards are fractional sheets per item** — part area ÷ sheet area, rounded
+  *up* to 2 dp — and the summary rounds up **once** over the project (Q586:
+  per-item whole sheets overcounted, 6 against 3 on the seed's MDF). Sheet
+  size: largest in-stock `board_inventory` size → largest recorded size →
+  catalog size → else the line is in **m²**. Hardware sums per material.
+  Edging and finishing are **manual** `OTHER` lines (Q584 — no data to
+  generate from). Related parts never get a take (Q424).
+- **Draft → approved → superseded.** Only a draft changes; an approved take is
+  immutable (`409 TAKE_NOT_DRAFT`) and a change means version `n + 1`. On a
+  generated line, material / unit / description are read-only and changing
+  `wastage_pct` re-derives `qty`. Every mutation writes `audit_log` **and**
+  `item_edit_log` in one transaction.
+- **Drift, not drawings (Q583).** A take reads **outdated** when its item's
+  live parts / hardware would now *generate* differently — manual lines and a
+  person's adjustments never count. The reviewer records No / Partial / Full
+  impact; Partial / Full opens the next version. Shop drawings are **not
+  linked to items**, so there is no drawing-triggered review and no warning at
+  drawing approval (Q497's advisory warning waits for that link).
+- **Summary** (`material_summaries/`) — consolidates each item's *current
+  approved* take, one line per material (`OTHER` by exact description), keeps
+  per-item sources with their take version, lists items with no approved take.
+  Computed on read, never stored: **stale** (a source item has a newer
+  approved version, or a source vanished), **nest sheets** from the latest
+  CutPlan (Q582 — `cut_sheet.material_sku` resolves through the catalog SKU
+  **or** `cv_material_mapping`, because the seed's nest is labelled by CV code
+  `18-PB`), and read-only **on order / received** from the existing
+  `procurement_v1` rollup. **Confirmation is advisory** (Q499) and freezes the
+  summary (`409 SUMMARY_CONFIRMED`); rebuild to revise. No ordering from a
+  line yet (Q585).
+- **RBAC — no matrix change.** Everything is `("list", …)`. Take edits and
+  summary build / edits also need `require_drafter()` (drafter / manager /
+  admin — §20's PM / Coordinator / Designer); approve and confirm need `list`
+  approve; purchase officers read. Workspace-isolated through
+  `items → projects.workspace_id`; another workspace gets 404.
+- **Web.** Item editor **Material Take** tab (`?tab=take`, `MaterialTakeTab`);
+  Procurement page **Summary** tab (`/projects/[id]/procurement?tab=summary`,
+  `MaterialSummaryPanel`). Quantities are **strings** in
+  `lib/material-take-types.ts` (the `orders-types.ts` lesson).
+  **JSX whitespace trap, hit twice here:** text that continues onto a second
+  line after a `{…}` expression or an element lost its leading space in the
+  build ("4 linesmay be outdated") — build such sentences as one template
+  string or add an explicit `{" "}`.
+- **Seed.** On ALF-001: approved takes on every item with parts except one
+  (left as a draft, so it is listed as missing), one built summary, then one
+  item at v2 — so the summary opens with stale lines. Built through the same
+  query functions the API uses, so audit / edit-log rows are real. Idempotent.
 

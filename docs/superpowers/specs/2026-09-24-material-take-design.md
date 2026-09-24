@@ -1,8 +1,8 @@
 # Material Take → Material Summary — design spec (sub-project #12)
 
-> **Status: not started.** Design only. Migration `0034_material_take` is
-> reserved; it follows `0033_search_outbox` (sub-project #11, PR #14), so
-> implementation cannot start until #14 merges.
+> **Status: shipped** (migration `0034_material_take`, stacked on #11's `0033`).
+> Current state lives in `CLAUDE.md`; the plan records per task what shipped
+> and where it departed from this spec (notably Q586's fractional sheets).
 >
 > **Fully decided.** Q581–Q585, raised by this spec, were answered 2026-09-24
 > with every recommendation taken (`docs/plan-v1/OPEN-QUESTIONS.md` §J). The

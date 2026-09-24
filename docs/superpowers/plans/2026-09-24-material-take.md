@@ -1,6 +1,7 @@
 # Implementation Plan — Material Take → Material Summary (sub-project #12)
 
-> **Status: in progress** (A–C done; D–E open). Migration `0034_material_take`; it follows
+> **Status: shipped.** Migration `0034_material_take`. Current state lives in
+> `## Material Take → Material Summary (sub-project #12)` in `CLAUDE.md`. it follows
 > `0033_search_outbox` (#11, PR #14), so **A1 cannot land before #14 merges**.
 > Design: `docs/superpowers/specs/2026-09-24-material-take-design.md`. As with
 > #10 and #11, checkboxes are kept current and each finished task gets a `→`
@@ -179,31 +180,49 @@ last among the take tasks because it reuses generation to compare.
 
 ### D. Web
 
-- [ ] **D1** Item editor **Material Take** tab (`?tab=take`, added to
+- [x] **D1** Item editor **Material Take** tab (`?tab=take`, added to
   `EditorTabs` `TABS` / `TAB_LABELS`): generate, the line grid (generated vs
   adjusted qty, wastage, unit, note), add / remove, approve, version history,
   *Outdated* banner with the review action. `lib/material-take-types.ts`
   types numeric columns as **strings** (the `orders-types.ts` lesson —
   Pydantic `Decimal` arrives as JSON strings).
-- [ ] **D2** Procurement page **Summary** tab
+- [x] **D2** Procurement page **Summary** tab
   (`/projects/[id]/procurement?tab=summary`): build, consolidated lines with an
   expandable per-item breakdown, stale badges, missing-takes list, nest sheet
   count beside board estimates, on-order / received, confirm.
-- [ ] **D3** `tests/e2e/material_take.spec.ts`: generate a take on a seeded
+- [x] **D3** `tests/e2e/material_take.spec.ts`: generate a take on a seeded
   item, bump a wastage %, approve, build the project summary, see the line.
   *Done when (D1–D3):* `tsc --noEmit` + `pnpm build` clean; e2e passes against
   a local stack.
+  → **done.** `MaterialTakeTab` (generate / regenerate, inline wastage / qty /
+  note, manual lines, approve, version list, *Outdated* banner with No /
+  Partial / Full) and `MaterialSummaryPanel` (build / rebuild, expandable
+  per-item sources, stale banner, missing-takes list linking to each item's
+  take, nest sheets, on-order / received, confirm). *Verified:* `tsc` and
+  `pnpm build` clean; `material_take.spec.ts` **passes** against a local api +
+  Meilisearch + `next start` on a fresh seed, with `search.spec.ts` still
+  green. **Bug found by screenshot, not by any test:** the build dropped the
+  space in "4 lines may be outdated" (JSX text continuing after a `{…}` on a
+  new line) — fixed with a template string, and the take tab's *Outdated*
+  banner guarded the same way; both confirmed from the live DOM.
 
 ### E. Seed + close
 
-- [ ] **E1** Seed on ALF-001: one item with an **approved** take (v1) and a
+- [x] **E1** Seed on ALF-001: one item with an **approved** take (v1) and a
   **newer approved** v2 so a pre-built summary shows a stale line; one item
   with only a draft (appears under missing takes); one built summary.
   Idempotent, and — per CLAUDE.md's recurring trap — created *by the seed*,
   not assumed from a migration backfill.
-- [ ] **E2** Docs: a *Material Take (sub-project #12)* section in `CLAUDE.md`
+  → **done.** Uses the API's own query functions, so seeded takes carry real
+  audit / edit-log rows. A v2 stales **every** summary line that item
+  contributes to (4 on the seed), not one. Re-running the seed gives the same
+  counts (5 approved, 1 superseded, 1 draft, 1 summary).
+- [x] **E2** Docs: a *Material Take (sub-project #12)* section in `CLAUDE.md`
   (dev-loop numbers, migration head `0034`), `ALIGNMENT.md` §19 / §20 rows →
   `PARTIAL`, this plan's and the spec's status headers.
+  → **done.** Also records the JSX whitespace trap in `CLAUDE.md`.
+  *Final verification:* full suite **770 passed, 1 skipped** (unchanged since
+  milestone 2 — D and E touched only web, seed and docs); e2e green locally.
 
 **Milestone push 3** — after E2, one push.
 

@@ -325,8 +325,8 @@ strip against Plan V1's stated arrangement.
 | Substitution proposed by Procurement, **approved by Designer/Draftsperson**, with impact analysis | Nothing. | `ABSENT` |
 | Offcuts, reservations, partial consumption, min stock, reorder alerts, forecasting, batch/lot, expiry, FEFO, quarantine, recall | Nothing. **`/optimise` deliberately reads stock and never reserves or decrements it** — the pure-function invariant from #9. | `ABSENT` |
 | Multi-location stock, transfers, stocktake, cycle counting, variance investigation | `board_inventory.location` is a free-text label on the row, not a location entity. | `ABSENT` |
-| **Material Take** before Shop Drawing Approved, system-generated + manual adjust, audited, impact review on later drawing change (Q80) | Nothing. Today material demand is expressed directly as `item_hardware_lines` and `parts`; there is no take-off artefact and no approval step. | `ABSENT` |
-| **Project Material Summary** consolidating approved takes, PM confirms, only then released to Procurement, stale-line flagging | Nothing. `/procurement-queue` and the `/orderbook` supplier grouping are the nearest surface, but they aggregate live item lines with **no confirm-and-release gate**. | `ABSENT` |
+| **Material Take** before Shop Drawing Approved, system-generated + manual adjust, audited, impact review on later drawing change (Q80) | **Sub-project #12 (2026-09-24):** versioned per-item take (`0034`), generated from parts + hardware (boards in fractional sheets, Q586), adjusted, approved, audited; impact review triggered by drift in the take's own inputs. **Not** triggered by drawing changes and no warning at drawing approval — drawings are not linked to items (Q583). | `PARTIAL` |
+| **Project Material Summary** consolidating approved takes, PM confirms, only then released to Procurement, stale-line flagging | **Sub-project #12:** consolidates approved takes with per-item breakdown, stale lines, nest sheet counts and read-only on-order / received; PM confirmation is **advisory** (Q499, a deliberate departure). No ordering from summary lines yet (Q585). | `PARTIAL` |
 | Split across suppliers/POs with required/ordered/received/outstanding | `procurement_batches` + `batch_allocations` track ordered/received and over-commit 409s. Genuinely close in spirit; no PO entity on the v1 surface. | `PARTIAL` |
 | Supplier comparison, performance tracking, statuses (Approved/Conditional/Trial/Suspended/Blocked) | Supplier is a **free-text string** on catalog rows (`supplier`, `default_supplier`). No vendor entity on the v1 surface. The legacy `/procurement/*` namespace has vendors and POs but is unused by v1. | `ABSENT` |
 | Price history, purchase history, quote validity with no silent fallback, evidence thresholds | Nothing. Catalog rows hold one current cost. | `ABSENT` |
@@ -402,7 +402,7 @@ The lists are not a relabelling of each other:
 ## 5. Tally
 
 > **Later change (2026-09-24):** the §13 search row moved `ABSENT` → `PARTIAL`
-> with sub-project #11. **The counts below were not re-scored** — they also
+> with sub-project #11, and the §19 / §20 Material Take and Summary rows with #12. **The counts below were not re-scored** — they also
 > predate #10 (Cutlist + related parts + Orderbook), which moved several rows,
 > so treat them as the 2026-09-18 baseline, not current state.
 
