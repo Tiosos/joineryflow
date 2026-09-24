@@ -63,7 +63,9 @@ container and a worker that keeps it in step with the database.
 
 One Meilisearch index, `jf_search`, holding every type, so relevance ranks
 across types and one query returns a type facet. Document id is
-`"{type}-{pk}"` (Meili ids allow `a-z A-Z 0-9 - _` only; a colon is illegal).
+`"{type}-{pk}"` (Meili ids allow `a-z A-Z 0-9 - _` only; a colon is illegal)
+— except `material`, whose six source tables have overlapping PKs, so its id
+is `"material-{table}-{pk}"` (e.g. `material-board_materials-5`).
 
 | `type` | Source | Workspace reached via | Gated on | Opens |
 | --- | --- | --- | --- | --- |
@@ -168,8 +170,10 @@ CREATE TABLE search_outbox (
   entity_id   bigint NOT NULL,
   enqueued_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_search_outbox_order ON search_outbox (outbox_id);
 ```
+
+(`entity_type` is CHECK-constrained to the 15 source kinds; the primary key
+already orders the worker's scan, so no extra index.)
 
 The outbox carries **identity only, never a payload**. The worker always
 reads the row's *current* state. That makes processing idempotent and
