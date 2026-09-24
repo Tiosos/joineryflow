@@ -13,6 +13,7 @@ import { ProjectDetailModal } from "./ProjectDetailModal";
 import { StatusPopup } from "./StatusPopup";
 import { CreateOrderDialog } from "./CreateOrderDialog";
 import { can } from "@/lib/permissions";
+import { BulkStatusDialog } from "./BulkStatusDialog";
 
 interface Props {
   project: ProjectOut;
@@ -49,6 +50,9 @@ export function TrackingClient({
   const [statusPopupId, setStatusPopupId] = useState<number | null>(null);
   // Q425: raised from the O/BOOK sub-tab's Create Order button.
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkBanner, setBulkBanner] = useState<string | null>(null);
 
   const drawerKind = sp.get("drawer");
   const drawerItemIdRaw = sp.get("itemId");
@@ -111,6 +115,33 @@ export function TrackingClient({
     router.refresh();
   }
 
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectVisible(ids: number[], select: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
   return (
     <div className="grid gap-3">
       <ProjectInfoBar
@@ -160,6 +191,38 @@ export function TrackingClient({
         />
       </div>
 
+      {canEdit ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface px-3 py-1.5 text-xs text-h-muted">
+          <span>
+            {selectedIds.size === 0
+              ? "Tip: tick rows to apply a bulk status."
+              : `${selectedIds.size} selected`}
+          </span>
+          <button
+            type="button"
+            onClick={() => setBulkDialogOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-40"
+          >
+            Apply status…
+          </button>
+          {selectedIds.size > 0 ? (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="rounded border border-h-line bg-h-bg px-2 py-0.5 text-[11px] text-h-muted hover:text-h-ink"
+            >
+              Clear selection
+            </button>
+          ) : null}
+          {bulkBanner ? (
+            <span className="ml-auto rounded bg-[#e4efe5] px-2 py-0.5 text-[11px] text-[#3f7d48]">
+              {bulkBanner}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <ItemsTable
         items={visibleItems}
         projectId={project.id}
@@ -170,6 +233,9 @@ export function TrackingClient({
         onOpenItem={(id) => setItemModalId(id)}
         onOpenStatus={(id) => setStatusPopupId(id)}
         onOpenAvailability={(id) => setDrawerItemId(id)}
+        selectedIds={canEdit ? selectedIds : undefined}
+        onToggleSelect={canEdit ? toggleSelect : undefined}
+        onToggleSelectVisible={canEdit ? toggleSelectVisible : undefined}
       />
 
       <div className="flex items-center gap-2 text-xs text-h-muted">
@@ -223,6 +289,21 @@ export function TrackingClient({
           onClose={() => setCreateOrderOpen(false)}
         />
       )}
+
+      <BulkStatusDialog
+        open={bulkDialogOpen}
+        itemIds={Array.from(selectedIds)}
+        onClose={() => setBulkDialogOpen(false)}
+        onApplied={(result) => {
+          const parts: string[] = [`${result.updated} updated`];
+          if (result.not_found.length > 0) parts.push(`${result.not_found.length} not found`);
+          if (result.cross_workspace.length > 0)
+            parts.push(`${result.cross_workspace.length} skipped (workspace)`);
+          setBulkBanner(parts.join(" · "));
+          clearSelection();
+          refresh();
+        }}
+      />
     </div>
   );
 }

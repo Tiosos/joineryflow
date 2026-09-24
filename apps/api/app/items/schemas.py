@@ -12,9 +12,9 @@ Column aliasing note (legacy FileMaker schema -> API contract):
 """
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class StageDates(BaseModel):
@@ -25,6 +25,10 @@ class StageDates(BaseModel):
 class AvailabilityRollup(BaseModel):
     ready: int
     blocked: int
+
+
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
+VarBoq = Literal["BOQ", "VAR"]
 
 
 class TrackingItemRow(BaseModel):
@@ -68,6 +72,27 @@ class TrackingItemRow(BaseModel):
     order_status: str | None
     order_supplier: str | None
     order_due_date: date | None
+    # Tracking 2.0 enrichment (#10)
+    jid_code: str | None = None
+    jid_color: str | None = None
+    var_boq: VarBoq = "BOQ"
+    contractor_id: int | None = None
+    contractor_name: str | None = None
+    total_amount: Decimal | None = None
+    site_measure_notes: str | None = None
+    site_measure_attachment_id: int | None = None
+    # Existing items.* columns surfaced for legacy-parity grid (#10)
+    floor_plan: str | None = None
+    rls: str | None = None
+    joiery_details: str | None = None
+    painting_required: bool | None = None
+    solid_surface_required: bool | None = None
+    cutlist_printed: bool | None = None
+    group_id: str | None = None
+    item_code: str | None = None
+    assembler: str | None = None
+    lister: str | None = None
+    hardware_line_count: int = 0
 
 
 class TrackingGridOut(BaseModel):
@@ -179,6 +204,14 @@ class ItemOut(BaseModel):
     hardware_lines: list[HardwareLineOut]
     edit_log: list[EditLogRow]
     lock_warning: LockWarning | None
+    # Tracking 2.0 enrichment (#10)
+    jid_code: str | None = None
+    jid_color: str | None = None
+    var_boq: VarBoq = "BOQ"
+    contractor_id: int | None = None
+    contractor_name: str | None = None
+    total_amount: Decimal | None = None
+    site_measure_notes: str | None = None
 
 
 # ── Write input models (T15) ───────────────────────────────────────────────────
@@ -220,6 +253,13 @@ class PatchItemIn(BaseModel):
     # room without an area is refused rather than silently unset.
     area_id: int | None = None
     room_id: int | None = None
+    # Tracking 2.0 enrichment (#10)
+    jid_code: str | None = None
+    jid_color: HexColor | None = None
+    var_boq: VarBoq | None = None
+    contractor_id: int | None = None
+    total_amount: Decimal | None = None
+    site_measure_notes: str | None = None
 
 
 class LockTransferIn(BaseModel):
@@ -230,15 +270,39 @@ class LockTransferIn(BaseModel):
 # ── T16 write input models ─────────────────────────────────────────────────────
 
 
+StatusKey = Literal["CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"]
+
+
 class PatchItemStatusIn(BaseModel):
     """Payload for PATCH /items/{id}/status.
 
     Valid values match status_options.status_key rows seeded by tests and
     migrations. The spec names are CLEAR | VOID | NOTE! | LIVE | APPROVED | HOLD.
     No transition graph is enforced (spec §6.2 v1).
+
+    note is REQUIRED (matches item_status_log.note NOT NULL).
     """
-    status: Literal["CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"]
-    note: str | None = None
+    status: StatusKey
+    note: str = Field(min_length=1)
+
+
+class BulkItemStatusIn(BaseModel):
+    """Payload for POST /items/bulk-status.  Bulk status change with shared note."""
+    item_ids: list[int] = Field(min_length=1, max_length=500)
+    status: StatusKey
+    note: str = Field(min_length=1)
+
+
+class BulkItemStatusOut(BaseModel):
+    """Response from POST /items/bulk-status.
+
+    not_found: ids that don't exist in the workspace.
+    cross_workspace: ids that exist but belong to another workspace
+      (returned distinct from not_found so the caller can show a clearer error).
+    """
+    updated: int
+    not_found: list[int] = []
+    cross_workspace: list[int] = []
 
 
 class PatchLifecycleIn(BaseModel):

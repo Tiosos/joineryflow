@@ -527,6 +527,85 @@ def main() -> None:
                         },
                     )
 
+        # --- Tracking 2.0 enrichment (sub-project #10) -----------------------
+        # JID code + colour swatch, VAR/BOQ flag, contractor link, totals,
+        # site-measure notes, and a workspace_counter row so future sub-projects
+        # (#12 PO #, #13 invoice/var #) start from a clean slate.
+        db.execute(
+            text(
+                """
+                INSERT INTO workspace_counter(workspace_id, name, next_value)
+                VALUES (:w, '_test', 1)
+                ON CONFLICT (workspace_id, name) DO NOTHING
+                """
+            ),
+            {"w": wid},
+        )
+
+        contractor_ids = db.execute(
+            text(
+                """
+                SELECT id FROM app_user
+                WHERE workspace_id = :w
+                  AND email IN ('noa.lindqvist@hartwood.test', 'rin.park@hartwood.test')
+                ORDER BY id
+                """
+            ),
+            {"w": wid},
+        ).scalars().all()
+
+        jid_palette = ["#3F7D48", "#C48A2E", "#A84F31", "#5C7AA3", "#7D5BA6", "#3B6E91"]
+
+        alfred_pid = db.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if alfred_pid is not None:
+            alfred_items = db.execute(
+                text(
+                    """
+                    SELECT item_id, code, num FROM items
+                    WHERE project_id = :p
+                    ORDER BY item_id
+                    """
+                ),
+                {"p": alfred_pid},
+            ).mappings().all()
+
+            for idx, row in enumerate(alfred_items):
+                jid_color = jid_palette[idx % len(jid_palette)]
+                jid_code = f"JO-{(row['code'] or 'X').replace(' ', '').upper()[:8]}"
+                var_boq = "VAR" if idx == 0 else "BOQ"
+                contractor_id = contractor_ids[idx % len(contractor_ids)] if contractor_ids else None
+                total_amount = 1500.00 + 250 * idx
+                site_measure_notes = (
+                    "Confirm 1500mm clear span behind splashback before fabrication"
+                    if idx == 0
+                    else None
+                )
+                db.execute(
+                    text(
+                        """
+                        UPDATE items
+                           SET jid_code           = :jc,
+                               jid_color          = :col,
+                               var_boq            = :vb,
+                               contractor_id      = :cid,
+                               total_amount       = :amt,
+                               site_measure_notes = COALESCE(:notes, site_measure_notes)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {
+                        "jc":    jid_code,
+                        "col":   jid_color,
+                        "vb":    var_boq,
+                        "cid":   contractor_id,
+                        "amt":   total_amount,
+                        "notes": site_measure_notes,
+                        "iid":   row["item_id"],
+                    },
+                )
+
         # --- procurement_v1 demo: 1 delivered + 1 in-transit batch + 1 allocation ---
         proj_alfred_id = db.execute(
             text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
