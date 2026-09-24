@@ -111,4 +111,5 @@ if __name__ == "__main__":  # pragma: no cover
     from .index import get_index
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per Meili call otherwise
     run(SessionLocal, get_index())
