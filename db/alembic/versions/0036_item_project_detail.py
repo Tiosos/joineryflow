@@ -9,15 +9,15 @@ Adds:
 - item_attachment kind CHECK widened to (cv_drawing, sketchup, cabvision, floor_plan, site_measure)
 - project_labour_hours_view (returns zero; #14 populates)
 
-Revision ID: 0025
-Revises: 0024
+Revision ID: 0036
+Revises: 0035
 Create Date: 2026-05-27
 """
 from alembic import op
 
 
-revision = "0025"
-down_revision = "0024"
+revision = "0036"
+down_revision = "0035"
 branch_labels = None
 depends_on = None
 

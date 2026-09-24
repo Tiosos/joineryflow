@@ -8,15 +8,15 @@ Adds:
 
 items.num stays as the legacy 6-digit cutlist# (already global UNIQUE).
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0035
+Revises: 0034
 Create Date: 2026-05-27
 """
 from alembic import op
 
 
-revision = "0024"
-down_revision = "0023"
+revision = "0035"
+down_revision = "0034"
 branch_labels = None
 depends_on = None
 
