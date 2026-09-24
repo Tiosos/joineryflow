@@ -10,11 +10,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .catalog_enrich import group_hardware_for_print
+from ..row_types import joinery_items_only
+
+# Printing renders a cutlist. A related part has none (Plan V1 Q417), so the
+# print routes 404 on its id rather than emitting an empty PDF.
+_JOINERY_ITEM = joinery_items_only("i")
 
 
 def build_context(item_id: int, db: Session, *, workspace_id: int) -> dict | None:
     """Return the template context for printing this item, or None if not found / not in workspace."""
-    item = db.execute(text("""
+    item = db.execute(text(f"""
         SELECT i.item_id, i.num, i.description, i.code, i.item_code,
                i.rm_no, i.rm_desc, i.stage, i.zone, i.level,
                i.lister, i.assembler,
@@ -22,6 +27,7 @@ def build_context(item_id: int, db: Session, *, workspace_id: int) -> dict | Non
           FROM items i
           JOIN projects p ON p.project_id = i.project_id
          WHERE i.item_id = :i
+           AND {_JOINERY_ITEM}
            AND p.workspace_id = :w
     """), {"i": item_id, "w": workspace_id}).mappings().first()
     if not item:

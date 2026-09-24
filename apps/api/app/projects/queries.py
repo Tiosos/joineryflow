@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..row_types import joinery_items_only
 from .schemas import CreateProjectIn, PatchProjectIn
 
 
@@ -42,11 +43,18 @@ _SELECT_COLS = """
     p.installation_start                  AS install_start,
     p.total_value,
     p.created_at,
+    -- Q408's Project Details tiles (C5). All three are real columns the
+    -- serializer simply never carried; the mock's hours tables are NOT here,
+    -- because those come from TGPAY and nothing in this schema records hours
+    -- (Q571).
+    p.created_by,
+    p.tg_solid,
+    p.total_line_items,
     COALESCE(ic.cnt, 0)                   AS item_count,
     (f.user_id IS NOT NULL)               AS is_favourite
 """
 
-_FROM_JOINS = """
+_FROM_JOINS = f"""
     FROM projects p
     LEFT JOIN app_user u
         ON u.id = p.pm_id
@@ -55,6 +63,7 @@ _FROM_JOINS = """
     LEFT JOIN (
         SELECT project_id, COUNT(*) AS cnt
         FROM items
+        WHERE {joinery_items_only("items")}
         GROUP BY project_id
     ) ic ON ic.project_id = p.project_id
 """

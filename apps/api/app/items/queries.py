@@ -23,6 +23,7 @@ Strategy: Two queries rather than one giant GROUP BY + window function:
 This avoids GROUP BY fan-out complications with the jsonb_object_agg approach
 when combined with the availability correlated subqueries.
 """
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -31,7 +32,14 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
+from ..row_types import joinery_items_only
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
+
+# The drafter editor and the availability drawer are cutlist surfaces: neither
+# means anything for a related part (Q417/Q447), so both 404 on its id.  The
+# Tracking LIST is deliberately different — it returns related parts inline,
+# nested under their parent (Q420/Q422) — and so carries no filter.
+_JOINERY_I = joinery_items_only("i")
 
 # Workspace isolation clause (items -> projects.workspace_id direct FK, since 0014).
 _WORKSPACE_FILTER = """
@@ -45,6 +53,9 @@ _WORKSPACE_FILTER = """
 _ITEM_COLS = """
     i.item_id                                       AS id,
     i.num                                           AS item_number,
+    i.row_type,
+    i.parent_item_id,
+    i.related_part_type_key,
     i.status,
     i.stage,
     i.zone,
@@ -57,6 +68,30 @@ _ITEM_COLS = """
     i.cutlist_owner_id,
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
+    -- Q438 + Q568: the CUTLIST column is the *cutlist's* number, which several
+    -- items share, not the item's own `num`.  Q540 made the two equal for every
+    -- migrated item, which is why reading `num` looked right until a cutlist was
+    -- actually shared.  NULL while an item has no cutlist, which Q440 permits
+    -- indefinitely.
+    i.cutlist_id,
+    cl.cutlist_no,
+    -- Q417 + Q567: the leftmost Tracking reference is the cutlist number for a
+    -- Joinery Item and the ISSUED supplier-order number for a related part.
+    -- "Issued" is `date_ordered IS NOT NULL` -- the column that records the day
+    -- the order went to the supplier -- because no order status means issued
+    -- (0002's CHECK has Draft/Pending/Approved/... and no Issued).  A part may
+    -- carry several orders, so the most recent issued one wins.
+    ord.po_number                                   AS issued_order_no,
+    ord.po_id                                       AS issued_order_po_id,
+    -- Q425: Tracking's O/BOOK sub-tab shows this row's order state, which is a
+    -- different question from Q417's reference column above.  It takes the
+    -- latest order in ANY state, because a freshly raised Draft is exactly what
+    -- the sub-tab exists to surface; `issued_order_no` stays issued-only.
+    obook.po_id                                     AS order_po_id,
+    obook.po_number                                 AS order_no,
+    obook.status                                    AS order_status,
+    obook.vendor_name                               AS order_supplier,
+    obook.due_date                                  AS order_due_date,
     (
         SELECT COUNT(DISTINCT hl.line_id)
         FROM item_hardware_lines hl
@@ -106,6 +141,25 @@ def list_items_for_project(
             SELECT {_ITEM_COLS}
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
+            LEFT JOIN items parent ON parent.item_id = i.parent_item_id
+            LEFT JOIN cutlist cl ON cl.cutlist_id = i.cutlist_id
+            LEFT JOIN LATERAL (
+                SELECT po.po_id, po.po_number
+                  FROM purchase_orders po
+                 WHERE po.item_id = i.item_id
+                   AND po.date_ordered IS NOT NULL
+                 ORDER BY po.date_ordered DESC, po.po_id DESC
+                 LIMIT 1
+            ) ord ON true
+            LEFT JOIN LATERAL (
+                SELECT po.po_id, po.po_number, po.status, po.due_date,
+                       v.name AS vendor_name
+                  FROM purchase_orders po
+                  LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
+                 WHERE po.item_id = i.item_id
+                 ORDER BY po.po_id DESC
+                 LIMIT 1
+            ) obook ON true
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
@@ -124,7 +178,13 @@ def list_items_for_project(
                   OR i.description ILIKE '%' || :q || '%'
                   OR i.code ILIKE '%' || :q || '%'
               )
-            ORDER BY COALESCE(i.num, CAST(i.item_id AS integer))
+            -- Q420: a related part sorts with its PARENT, directly beneath it —
+            -- not at its own number's position.  Q541 draws Item IDs and cutlist
+            -- numbers from one shared sequence, so a child's `num` is nowhere
+            -- near its parent's and ordering by `num` alone would scatter them.
+            ORDER BY COALESCE(parent.num, i.num, CAST(i.item_id AS integer)),
+                     CASE WHEN i.row_type = 'related_part' THEN 1 ELSE 0 END,
+                     COALESCE(i.num, CAST(i.item_id AS integer))
             """
         ),
         params,
@@ -176,6 +236,19 @@ def list_items_for_project(
                 "cutlist_owner_id": r["cutlist_owner_id"],
                 "cutlist_owner_name": r["cutlist_owner_name"],
                 "item_locked": bool(r["item_locked"]),
+                # Q558: the list carries both row kinds; the web nests on these.
+                "row_type": r["row_type"],
+                "parent_item_id": r["parent_item_id"],
+                "related_part_type_key": r["related_part_type_key"],
+                "cutlist_id": r["cutlist_id"],
+                "cutlist_no": r["cutlist_no"],
+                "issued_order_no": r["issued_order_no"],
+                "issued_order_po_id": r["issued_order_po_id"],
+                "order_po_id": r["order_po_id"],
+                "order_no": r["order_no"],
+                "order_status": r["order_status"],
+                "order_supplier": r["order_supplier"],
+                "order_due_date": r["order_due_date"],
                 "stages": stages_by_item.get(item_id, {}),
                 "availability": {
                     "ready": int(r["ready"]),
@@ -212,6 +285,11 @@ def get_item_availability(
     Returns None if the item does not exist or belongs to a different workspace.
     """
     # Workspace visibility check: same EXISTS chain as _WORKSPACE_FILTER.
+    #
+    # Joinery Items only.  Availability is computed from hardware lines joined
+    # to procurement batches; a related part has no hardware lines (Q447) and
+    # is procured through its own supplier order (Q424).  Serving it an empty
+    # drawer would read identically to "nothing outstanding", so it 404s.
     exists_row = db.execute(
         text(
             f"""
@@ -219,6 +297,7 @@ def get_item_availability(
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+              AND {joinery_items_only("i")}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -240,7 +319,7 @@ def get_item_availability(
     #   - qty_allocated_to_line             SUM(qty_allocated) for this specific line
     line_rows = db.execute(
         text(
-            """
+            f"""
             WITH lines AS (
                 SELECT hl.line_id, hl.item_id, hl.seq, hl.qty AS qty_needed,
                        hl.catalog_id
@@ -287,7 +366,7 @@ def get_item_availability(
                 COALESCE(alloc.qty_allocated_to_line, 0)                AS qty_allocated_to_line
             FROM lines l
             JOIN base b USING (line_id)
-            JOIN items i ON i.item_id = l.item_id
+            JOIN items i ON i.item_id = l.item_id AND {_JOINERY_I}
             LEFT JOIN project_hardware_catalog phc
                    ON phc.catalog_id = l.catalog_id
             LEFT JOIN LATERAL (
@@ -384,11 +463,14 @@ def get_item_detail(
                 i.estimator_notes,
                 i.painting_req              AS painting_required,
                 i.solid_surface_req         AS solid_surface_required,
-                i.group_id
+                i.group_id,
+                i.area_id,
+                i.room_id
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+              AND {_JOINERY_I}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -616,6 +698,8 @@ def get_item_detail(
         "painting_required": row["painting_required"],
         "solid_surface_required": row["solid_surface_required"],
         "group_id": row["group_id"],
+        "area_id": row["area_id"],
+        "room_id": row["room_id"],
         "stages": stages,
         "modules": modules,
         "hardware_lines": hardware_lines,
@@ -642,12 +726,19 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
 
 
 def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
-    """Fetch bare item columns for mutation helpers.  Returns None if 404."""
+    """Fetch bare item columns for mutation helpers.  Returns None if 404.
+
+    Deliberately **not** filtered to Joinery Items: the related-part routes
+    (Q450 own status, Q452 reparent) reach their rows through this helper.
+    It returns `row_type` so each caller can decide — see `patch_lifecycle`
+    and `claim_or_release_lock`, which refuse related parts.
+    """
     row = db.execute(
         text(
             f"""
             SELECT
                 i.item_id,
+                i.row_type,
                 i.project_id,
                 i.description,
                 i.qty,
@@ -661,7 +752,9 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.painting_req,
                 i.solid_surface_req,
                 i.item_locked,
-                i.cutlist_owner_id
+                i.cutlist_owner_id,
+                i.area_id,
+                i.room_id
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
@@ -682,9 +775,14 @@ def create_item(
 ) -> int | None:
     """INSERT a new item.  Returns new item_id, or None if project not in workspace.
 
-    items.num has a global UNIQUE constraint (legacy FK artefact).  We generate
-    it as nextval('items_item_id_seq') + 100_000 to ensure uniqueness without
-    colliding with the PK sequence.
+    `items.num` has a global UNIQUE constraint (legacy FK artefact) and is
+    allocated from **`joinery_number_seq`** (migration `0027`), the single
+    company-wide counter Q541 requires: Item IDs, cutlist numbers and related
+    parts all draw from it, so a six-digit number never means two things.
+
+    This replaced `nextval('items_item_id_seq') + 100000`, which borrowed the
+    PK sequence and therefore burned two values per insert (the explicit
+    nextval here, plus the column DEFAULT for `item_id`).
     """
     if not _project_in_workspace(db, project_id=project_id, workspace_id=workspace_id):
         return None
@@ -698,7 +796,7 @@ def create_item(
                 rm_no, rm_desc, zone, item_locked
             )
             VALUES (
-                nextval('items_item_id_seq') + 100000,
+                nextval('joinery_number_seq'),
                 :pid, 'CLEAR',
                 :desc, :qty, :stage, :code, :level,
                 :room_no, :room_desc, :zone, false
@@ -754,32 +852,126 @@ _PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
 ]
 
 
-def patch_item(
+def _resolve_area_room(
+    db: Session,
+    *,
+    current: dict,
+    payload: PatchItemIn,
+) -> tuple[str, dict[str, object], list[tuple[str, str | None, str | None]]]:
+    """Turn `area_id` / `room_id` into column writes, or explain the refusal.
+
+    Returns ('OK', updates, changes) | ('BAD_AREA'|'BAD_ROOM'|'ROOM_WITHOUT_AREA', {}, []).
+
+    Two things make this more than an assignment:
+
+    * **The legacy columns keep being written.** `items.stage` / `rm_no` /
+      `rm_desc` stay populated until a later migration drops them (Q435), and
+      25 read sites across printing, orders, cutlists and Tracking still read
+      them. Picking an area writes its name into `stage`; picking a room writes
+      its `rm_no` / `rm_desc`. Nothing downstream has to know this shipped.
+    * **Room is nested under Area** (Q552), enforced by the composite FK
+      `items (area_id, room_id) → room`. Setting a room therefore needs an area
+      that actually owns it — validated here, so the caller gets a 409 naming
+      the problem rather than a raw constraint violation as a 500.
+    """
+    if payload.area_id is None and payload.room_id is None:
+        return "OK", {}, []
+
+    updates: dict[str, object] = {}
+    changes: list[tuple[str, str | None, str | None]] = []
+
+    # The area an item will be in after this patch: the one supplied, else the
+    # one it already holds.
+    area_id = payload.area_id if payload.area_id is not None else current["area_id"]
+    if payload.room_id is not None and area_id is None:
+        return "ROOM_WITHOUT_AREA", {}, []
+
+    if payload.area_id is not None and payload.area_id != current["area_id"]:
+        area = db.execute(
+            text("SELECT area_id, name FROM area WHERE area_id = :a AND project_id = :p"),
+            {"a": payload.area_id, "p": current["project_id"]},
+        ).mappings().first()
+        if area is None:
+            return "BAD_AREA", {}, []
+        updates["area_id"] = area["area_id"]
+        updates["stage"] = area["name"]
+        changes.append(("area", current["stage"], area["name"]))
+        # Moving area orphans the old room — it belonged to the area left
+        # behind, and the composite FK would refuse the pair. Cleared unless
+        # this same patch names a new one.
+        if payload.room_id is None and current["room_id"] is not None:
+            updates["room_id"] = None
+            updates["rm_no"] = None
+            updates["rm_desc"] = None
+            changes.append(("room", _room_label(current["rm_no"], current["rm_desc"]), None))
+
+    if payload.room_id is not None and payload.room_id != current["room_id"]:
+        room = db.execute(
+            text("SELECT room_id, area_id, rm_no, rm_desc FROM room"
+                 " WHERE room_id = :r AND area_id = :a"),
+            {"r": payload.room_id, "a": area_id},
+        ).mappings().first()
+        if room is None:
+            return "BAD_ROOM", {}, []
+        updates["room_id"] = room["room_id"]
+        updates["rm_no"] = room["rm_no"]
+        updates["rm_desc"] = room["rm_desc"]
+        # Q458: moving room is allowed and audited. `item_edit_log` already
+        # records field changes, so the move rides the existing mechanism.
+        changes.append((
+            "room",
+            _room_label(current["rm_no"], current["rm_desc"]),
+            _room_label(room["rm_no"], room["rm_desc"]),
+        ))
+
+    return "OK", updates, changes
+
+
+def _room_label(rm_no: str | None, rm_desc: str | None) -> str | None:
+    """How a room reads in the edit log — the number plus its description."""
+    if rm_no is None and rm_desc is None:
+        return None
+    return " · ".join(p for p in (rm_no, rm_desc) if p)
+
+
+def _apply_item_changes(
     db: Session,
     *,
     item_id: int,
-    workspace_id: int,
+    current: dict,
     payload: PatchItemIn,
-    actor_id: int,
-) -> dict | None:
-    """Apply a partial update to an item.  Returns the row dict via get_item_detail
-    or None if item not found/out-of-workspace.
+    author_id: int,
+    extra_updates: dict[str, object] | None = None,
+) -> list[tuple[str, str | None, str | None]] | str:
+    """Write the fields of `payload` that actually differ from `current`.
 
-    Soft-lock semantics (spec §6.4):
-    - If cutlist_owner_id IS NULL:  set item_locked=true and cutlist_owner_id=actor.
-    - If item_locked AND cutlist_owner_id != actor:  emit 'item.lock_overridden'
-      audit row WITHOUT changing ownership.
-    Edit log: one row per changed field.
+    Shared by the owner's own save and by the approval of someone else's
+    Controlled-Lock request, so an approved request lands exactly as a direct
+    save would.  `author_id` is who gets credited in `item_edit_log` — the
+    person whose change it is, which on an approval is the *requester*, not the
+    approver (the approver is named in the audit row instead).
+
+    Returns the (field, old, new) tuples it logged, or a refusal **code**
+    string when the payload's area/room pair cannot be resolved.
     """
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
-    if current is None:
-        return None
+    updates: dict[str, object] = dict(extra_updates or {})
+    changes: list[tuple[str, str | None, str | None]] = []
 
-    # ── Collect changed fields (skip None values — partial update) ────────────
-    updates: dict[str, object] = {}   # col -> new_value
-    changes: list[tuple[str, str | None, str | None]] = []   # (field, old, new)
+    # Area/Room first: they write three legacy columns between them, and the
+    # generic loop below must not then overwrite `stage` / `rm_no` / `rm_desc`
+    # with stale free text from the same payload.
+    outcome, ar_updates, ar_changes = _resolve_area_room(
+        db, current=current, payload=payload
+    )
+    if outcome != "OK":
+        return outcome
+    updates.update(ar_updates)
+    changes.extend(ar_changes)
+    _moved = {"stage", "rm_no", "rm_desc"} & set(ar_updates)
 
     for attr, col, row_key in _PATCH_FIELD_MAP:
+        if col in _moved:
+            continue
         new_val = getattr(payload, attr)
         if new_val is None:
             continue
@@ -788,40 +980,99 @@ def patch_item(
             updates[col] = new_val
             changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
 
-    # ── Soft-lock: claim ownership if unowned; warn on override ──────────────
-    owner_id: int | None = current["cutlist_owner_id"]
-    is_locked: bool = bool(current["item_locked"])
-
-    if owner_id is None:
-        # First-save claim
-        updates["item_locked"] = True
-        updates["cutlist_owner_id"] = actor_id
-    elif is_locked and owner_id != actor_id:
-        # Non-owner editing a locked item — audit warning only, don't steal lock
-        write_audit(
-            db,
-            workspace_id=workspace_id,
-            actor_id=actor_id,
-            event="item.lock_overridden",
-            target=str(item_id),
-            payload={"prior_owner_id": owner_id, "new_owner_id": actor_id},
-        )
-
-    # ── Build UPDATE if anything changed ─────────────────────────────────────
     if updates:
         set_clauses = ", ".join(f"{col} = :{col}" for col in updates)
-        params = {"iid": item_id, **{col: val for col, val in updates.items()}}
         db.execute(
             text(f"UPDATE items SET {set_clauses}, updated_at = now() WHERE item_id = :iid"),
-            params,
+            {"iid": item_id, **updates},
         )
         db.flush()
 
-    # ── Edit log rows ─────────────────────────────────────────────────────────
     if changes:
-        write_edit_log_many(db, item_id=item_id, actor_id=actor_id, changes=changes)
+        write_edit_log_many(db, item_id=item_id, actor_id=author_id, changes=changes)
 
-    return current   # caller re-fetches via get_item_detail for the full payload
+    return changes
+
+
+def _changed_fields(payload: PatchItemIn, current: dict) -> dict[str, object]:
+    """The submitted fields that would actually change `current`, as a jsonb body."""
+    out: dict[str, object] = {}
+    for attr, _col, row_key in _PATCH_FIELD_MAP:
+        new_val = getattr(payload, attr)
+        if new_val is None:
+            continue
+        if new_val != current.get(row_key):
+            out[attr] = new_val
+    # Area and Room are not in the field map — they resolve to three columns
+    # between them — but a held Controlled-Lock request has to carry them or
+    # approving it would silently drop the move.
+    for attr in ("area_id", "room_id"):
+        new_val = getattr(payload, attr)
+        if new_val is not None and new_val != current.get(attr):
+            out[attr] = new_val
+    return out
+
+
+def patch_item(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    payload: PatchItemIn,
+    actor_id: int,
+) -> dict | None:
+    """Apply a partial update to an item.  None if not found/out-of-workspace.
+
+    Controlled Lock (Q509, replacing the advisory soft-lock of spec §6.4):
+    - cutlist_owner_id IS NULL:      first save claims — item_locked=true, owner=actor.
+    - item_locked AND owner != actor: the save does **not** apply.  It is held as
+      a pending `item_lock_request` for the owner or a manager to decide, and
+      the caller gets 409.  Saving again revises your own pending request
+      rather than stacking a second one (uniq_pending_lock_request).
+    - otherwise:                     applies directly.
+
+    Returns `{"outcome": "applied"}` or `{"outcome": "lock_request", "request": {...}}`.
+    Edit log: one row per changed field.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return None
+
+    owner_id: int | None = current["cutlist_owner_id"]
+    is_locked: bool = bool(current["item_locked"])
+
+    if is_locked and owner_id is not None and owner_id != actor_id:
+        proposed = _changed_fields(payload, current)
+        if not proposed:
+            # Nothing would change — no request to raise, and nothing applied.
+            return {"outcome": "applied"}
+        request = _upsert_lock_request(
+            db,
+            item_id=item_id,
+            workspace_id=workspace_id,
+            requester_id=actor_id,
+            owner_id=owner_id,
+            proposed=proposed,
+        )
+        return {"outcome": "lock_request", "request": request}
+
+    extra: dict[str, object] = {}
+    if owner_id is None:
+        # First-save claim
+        extra = {"item_locked": True, "cutlist_owner_id": actor_id}
+
+    applied = _apply_item_changes(
+        db,
+        item_id=item_id,
+        current=current,
+        payload=payload,
+        author_id=actor_id,
+        extra_updates=extra,
+    )
+    if isinstance(applied, str):
+        # The area/room pair does not resolve — see `_resolve_area_room`.
+        return {"outcome": applied}
+    return {"outcome": "applied"}
 
 
 def delete_item(
@@ -974,6 +1225,12 @@ def patch_lifecycle(
     if current is None:
         return "NOT_FOUND"
 
+    # Q419: a related part shows no workflow stages at all, so it has no
+    # lifecycle to patch.  NOT_FOUND rather than a new sentinel — the stage
+    # genuinely does not exist for this row.
+    if current["row_type"] != "joinery_item":
+        return "NOT_FOUND"
+
     # Fetch current stage row (if any) to capture old values for edit_log
     existing = db.execute(
         text(
@@ -1064,6 +1321,11 @@ def claim_or_release_lock(
     if current is None:
         return "NOT_FOUND"
 
+    # The soft-lock guards cutlist ownership, and a related part has no
+    # cutlist (Q417), so it can neither be claimed nor assigned.
+    if current["row_type"] != "joinery_item":
+        return "NOT_FOUND"
+
     prior_owner: int | None = current["cutlist_owner_id"]
 
     if action == "claim":
@@ -1147,3 +1409,195 @@ def claim_or_release_lock(
         )
 
     return "OK"
+
+
+# ── Controlled Lock: requests (B7 / Q509) ─────────────────────────────────────
+
+_LOCK_REQUEST_COLS = """
+    r.request_id,
+    r.item_id,
+    r.requested_by,
+    ru.full_name                    AS requested_by_name,
+    r.requested_changes,
+    r.status,
+    r.created_at,
+    r.updated_at,
+    r.decided_by,
+    du.full_name                    AS decided_by_name,
+    r.decided_at,
+    r.decision_note
+"""
+
+
+def _lock_request_row(db: Session, *, request_id: int, workspace_id: int) -> dict | None:
+    """One request, scoped to the caller's workspace through its item's project."""
+    row = db.execute(
+        text(
+            f"""
+            SELECT {_LOCK_REQUEST_COLS}, i.cutlist_owner_id
+              FROM item_lock_request r
+              JOIN items i    ON i.item_id = r.item_id
+              JOIN projects p ON p.project_id = i.project_id
+              JOIN app_user ru ON ru.id = r.requested_by
+         LEFT JOIN app_user du ON du.id = r.decided_by
+             WHERE r.request_id = :rid
+               AND p.workspace_id = :wid
+            """
+        ),
+        {"rid": request_id, "wid": workspace_id},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def _upsert_lock_request(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    requester_id: int,
+    owner_id: int,
+    proposed: dict,
+) -> dict:
+    """Record (or revise) the requester's pending request on this item.
+
+    `uniq_pending_lock_request` makes this an upsert: a second save by the same
+    person replaces their own undecided proposal, so the owner always decides
+    on the latest version rather than a queue of stale ones.
+    """
+    rid = db.execute(
+        text(
+            """
+            INSERT INTO item_lock_request (item_id, requested_by, requested_changes)
+            VALUES (:iid, :uid, CAST(:changes AS jsonb))
+            ON CONFLICT (item_id, requested_by) WHERE status = 'pending'
+            DO UPDATE SET requested_changes = EXCLUDED.requested_changes,
+                          updated_at = now()
+            RETURNING request_id
+            """
+        ),
+        {"iid": item_id, "uid": requester_id, "changes": json.dumps(proposed)},
+    ).scalar()
+    db.flush()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=requester_id,
+        event="item.lock_request.create",
+        target=str(item_id),
+        payload={
+            "request_id": rid,
+            "owner_id": owner_id,
+            "fields": sorted(proposed),
+        },
+    )
+    return _lock_request_row(db, request_id=rid, workspace_id=workspace_id) or {}
+
+
+def list_lock_requests(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    status: str | None = None,
+) -> list[dict] | None:
+    """Requests on an item, newest first.  None if the item is out of workspace."""
+    if _item_row(db, item_id=item_id, workspace_id=workspace_id) is None:
+        return None
+    rows = db.execute(
+        text(
+            f"""
+            SELECT {_LOCK_REQUEST_COLS}
+              FROM item_lock_request r
+              JOIN app_user ru ON ru.id = r.requested_by
+         LEFT JOIN app_user du ON du.id = r.decided_by
+             WHERE r.item_id = :iid
+               AND (CAST(:status AS varchar) IS NULL OR r.status = :status)
+          ORDER BY r.request_id DESC
+            """
+        ),
+        {"iid": item_id, "status": status},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def decide_lock_request(
+    db: Session,
+    *,
+    request_id: int,
+    workspace_id: int,
+    actor: AuthUser,
+    decision: str,
+    note: str | None,
+) -> str | dict:
+    """Approve or reject a pending request.  decision ∈ {'approved', 'rejected'}.
+
+    Returns 'NOT_FOUND', 'FORBIDDEN', 'ALREADY_DECIDED', or the decided row.
+
+    Who may decide: the current lock owner, or a manager/admin — the same rule
+    `claim_or_release_lock` already applies to transferring the lock, since
+    both amount to overriding the owner.
+
+    Approval replays the stored body through the ordinary save path, so fields
+    the owner has since changed to the requested value are simply no-ops and
+    the edit log still credits the requester.
+    """
+    row = _lock_request_row(db, request_id=request_id, workspace_id=workspace_id)
+    if row is None:
+        return "NOT_FOUND"
+    if row["status"] != "pending":
+        return "ALREADY_DECIDED"
+    if row["cutlist_owner_id"] != actor.id and actor.auth_role not in ("manager", "admin"):
+        return "FORBIDDEN"
+
+    item_id = row["item_id"]
+    applied: list[str] = []
+
+    if decision == "approved":
+        current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+        if current is None:          # item deleted between request and decision
+            return "NOT_FOUND"
+        changes = _apply_item_changes(
+            db,
+            item_id=item_id,
+            current=current,
+            payload=PatchItemIn(**row["requested_changes"]),
+            author_id=row["requested_by"],
+        )
+        if isinstance(changes, str):
+            # The held request named an area or room that no longer resolves —
+            # deleted, or renamed out from under it while it waited.
+            return changes
+        applied = [field for field, _old, _new in changes]
+
+    db.execute(
+        text(
+            """
+            UPDATE item_lock_request
+               SET status = :status,
+                   decided_by = :actor,
+                   decided_at = now(),
+                   decision_note = :note,
+                   updated_at = now()
+             WHERE request_id = :rid
+            """
+        ),
+        {"status": decision, "actor": actor.id, "note": note, "rid": request_id},
+    )
+    db.flush()
+
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor.id,
+        event=f"item.lock_request.{'approve' if decision == 'approved' else 'reject'}",
+        target=str(item_id),
+        payload={
+            "request_id": request_id,
+            "requested_by": row["requested_by"],
+            "fields": sorted(row["requested_changes"]),
+            "applied_fields": applied,
+            "note": note,
+        },
+    )
+    return _lock_request_row(db, request_id=request_id, workspace_id=workspace_id) or {}

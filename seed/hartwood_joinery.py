@@ -377,6 +377,74 @@ def main() -> None:
                     },
                 ).scalar()
 
+                # --- Area + Room (Q454/Q455, migration 0026).  Same trap as
+                #     the cutlist below: 0026 backfilled these from the items
+                #     that existed when it ran, so items seeded afterwards get
+                #     none and the C6 selectors would have nothing to offer.
+                #     Area comes from the site location, Room from rm_no.
+                db.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO area (project_id, name)
+                            VALUES (:pid, :area)
+                            ON CONFLICT (project_id, name) DO NOTHING
+                            RETURNING area_id
+                        ), picked_area AS (
+                            SELECT area_id FROM ins
+                            UNION ALL
+                            SELECT area_id FROM area
+                             WHERE project_id = :pid AND name = :area
+                            LIMIT 1
+                        ), ins_room AS (
+                            INSERT INTO room (area_id, rm_no, rm_desc)
+                            SELECT area_id, :rm_no, :rm_desc FROM picked_area
+                            ON CONFLICT (area_id, rm_no) DO NOTHING
+                            RETURNING room_id, area_id
+                        ), picked_room AS (
+                            SELECT room_id FROM ins_room
+                            UNION ALL
+                            SELECT r.room_id FROM room r
+                              JOIN picked_area pa ON pa.area_id = r.area_id
+                             WHERE r.rm_no = :rm_no
+                            LIMIT 1
+                        )
+                        UPDATE items
+                           SET area_id = (SELECT area_id FROM picked_area),
+                               room_id = (SELECT room_id FROM picked_room)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": proj_id, "area": stage_site, "rm_no": rm_no,
+                     "rm_desc": rm_desc, "iid": item_id},
+                )
+
+                # --- Cutlist (Q540: one per existing item, carrying its own
+                #     number).  0027 minted these for items that existed when it
+                #     ran; items created afterwards — like these — need their own,
+                #     and worker_assignment.cutlist_id is NOT NULL since 0030.
+                db.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO cutlist (project_id, cutlist_no, name)
+                            VALUES (:pid, :num, :name)
+                            ON CONFLICT (cutlist_no) DO NOTHING
+                            RETURNING cutlist_id
+                        ), picked AS (
+                            SELECT cutlist_id FROM ins
+                            UNION ALL
+                            SELECT cutlist_id FROM cutlist WHERE cutlist_no = :num
+                            LIMIT 1
+                        )
+                        UPDATE items SET cutlist_id = (SELECT cutlist_id FROM picked)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": proj_id, "num": item_num, "iid": item_id,
+                     "name": description},
+                )
+
                 # --- Module (1 per item) ---
                 mod_id = db.execute(
                     text(
@@ -1070,7 +1138,10 @@ def main() -> None:
                     text(
                         """
                         SELECT item_id FROM items
-                        WHERE project_id = :p ORDER BY item_id LIMIT 6
+                        WHERE project_id = :p
+                          AND row_type = 'joinery_item'
+                          AND cutlist_id IS NOT NULL
+                        ORDER BY item_id LIMIT 6
                         """
                     ),
                     {"p": _alf_pid_8},
@@ -1097,7 +1168,10 @@ def main() -> None:
                     text(
                         """
                         DELETE FROM stage_completion_log
-                        WHERE item_id = ANY(:items)
+                        WHERE cutlist_id IN (
+                            SELECT cutlist_id FROM items
+                            WHERE item_id = ANY(:items) AND cutlist_id IS NOT NULL
+                        )
                         """
                     ),
                     {"items": _alf_items},
@@ -1106,7 +1180,10 @@ def main() -> None:
                     text(
                         """
                         DELETE FROM worker_assignment
-                        WHERE item_id = ANY(:items)
+                        WHERE cutlist_id IN (
+                            SELECT cutlist_id FROM items
+                            WHERE item_id = ANY(:items) AND cutlist_id IS NOT NULL
+                        )
                         """
                     ),
                     {"items": _alf_items},
@@ -1134,10 +1211,11 @@ def main() -> None:
                         text(
                             """
                             INSERT INTO worker_assignment(
-                                item_id, stage_key, worker_id, status,
+                                cutlist_id, stage_key, worker_id, status,
                                 assigned_by, started_at, ended_at
                             )
-                            VALUES (:i, :s, :w, 'done', :a,
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :w, 'done', :a,
                                     now() - interval '1 day',
                                     now() - interval '1 day' + interval '2 hours')
                             RETURNING assignment_id
@@ -1149,10 +1227,11 @@ def main() -> None:
                         text(
                             """
                             INSERT INTO stage_completion_log(
-                                item_id, stage_key, assignment_id, worker_id,
+                                cutlist_id, stage_key, assignment_id, worker_id,
                                 completed_at, note
                             )
-                            VALUES (:i, :s, :a, :w,
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :a, :w,
                                     now() - interval '1 day' + interval '2 hours',
                                     'auto-seeded done')
                             """
@@ -1182,10 +1261,11 @@ def main() -> None:
                         text(
                             f"""
                             INSERT INTO worker_assignment(
-                                item_id, stage_key, worker_id, status,
+                                cutlist_id, stage_key, worker_id, status,
                                 assigned_by, started_at
                             )
-                            VALUES (:i, :s, :w, :st, :a, {started})
+                            VALUES ((SELECT cutlist_id FROM items WHERE item_id = :i),
+                                    :s, :w, :st, :a, {started})
                             """
                         ),
                         {"i": iid, "s": stage, "w": wkr,
@@ -1851,6 +1931,69 @@ def main() -> None:
                 {"n": num},
             ).scalar()
             if iid is not None:
+                # Areas and Rooms for these too — the C6 selectors read them,
+                # and 0026's backfill never saw a row seeded after it ran.
+                s.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO area (project_id, name)
+                            VALUES (:pid, :area)
+                            ON CONFLICT (project_id, name) DO NOTHING
+                            RETURNING area_id
+                        ), picked_area AS (
+                            SELECT area_id FROM ins
+                            UNION ALL
+                            SELECT area_id FROM area
+                             WHERE project_id = :pid AND name = :area
+                            LIMIT 1
+                        ), ins_room AS (
+                            INSERT INTO room (area_id, rm_no, rm_desc)
+                            SELECT area_id, :rm_no, :rm_desc FROM picked_area
+                            ON CONFLICT (area_id, rm_no) DO NOTHING
+                            RETURNING room_id
+                        ), picked_room AS (
+                            SELECT room_id FROM ins_room
+                            UNION ALL
+                            SELECT r.room_id FROM room r
+                              JOIN picked_area pa ON pa.area_id = r.area_id
+                             WHERE r.rm_no = :rm_no
+                            LIMIT 1
+                        )
+                        UPDATE items
+                           SET area_id = (SELECT area_id FROM picked_area),
+                               room_id = (SELECT room_id FROM picked_room)
+                         WHERE item_id = :iid
+                        """
+                    ),
+                    {"pid": alf_pid, "area": stage, "rm_no": rm_no,
+                     "rm_desc": rm_desc, "iid": iid},
+                )
+
+                # Q540: every Joinery Item carries its own cutlist, numbered as
+                # itself.  Shop Floor keys on it and worker_assignment.cutlist_id
+                # is NOT NULL since 0030, so an item without one breaks a re-run
+                # of this seed the moment the shop-floor block reaches it.
+                s.execute(
+                    text(
+                        """
+                        WITH ins AS (
+                            INSERT INTO cutlist (project_id, cutlist_no, name)
+                            VALUES (:pid, :num, :name)
+                            ON CONFLICT (cutlist_no) DO NOTHING
+                            RETURNING cutlist_id
+                        ), picked AS (
+                            SELECT cutlist_id FROM ins
+                            UNION ALL
+                            SELECT cutlist_id FROM cutlist WHERE cutlist_no = :num
+                            LIMIT 1
+                        )
+                        UPDATE items SET cutlist_id = (SELECT cutlist_id FROM picked)
+                         WHERE item_id = :iid AND cutlist_id IS NULL
+                        """
+                    ),
+                    {"pid": alf_pid, "num": num, "iid": iid, "name": desc},
+                )
                 for sk, due_off, done_off in [
                     ("REQ",    -25, -20),
                     ("SM",     -15, -12),
@@ -2142,6 +2285,345 @@ def main() -> None:
             f"seeded legacy/orderbook: {len(legacy_orderbook)} joinery batches "
             "(Schiavello + Mitchell Laminates)"
         )
+
+        # ── Advance the shared number sequence past the seeded fixtures ────────
+        #
+        # Every item above is inserted with a FIXED `num` (290001.. and
+        # 297830..) so the seed stays idempotent and demo numbers stay stable.
+        # Migration 0027 seeds `joinery_number_seq` from whatever `items` holds
+        # AT MIGRATE TIME — which is nothing, because `make migrate` runs before
+        # `make seed`. The sequence would therefore sit at 100000 while seeded
+        # rows reach 297988, and every runtime allocation would start ~198k
+        # below the demo data.
+        #
+        # setval() is idempotent and monotonic here: GREATEST() never moves the
+        # sequence backwards, so re-running the seed is safe.
+        seq_row = s.execute(
+            text(
+                """
+                SELECT setval('joinery_number_seq', GREATEST(
+                    (SELECT last_value FROM joinery_number_seq),
+                    COALESCE((SELECT MAX(num) FROM items), 0)
+                ))
+                """
+            )
+        ).scalar()
+        s.commit()
+        print(f"advanced joinery_number_seq to {seq_row}")
+
+        # ==================================================================
+        # === Sub-project #10: cutlist + related parts + Orderbook (D1) ===
+        # Demo state for the four things this sub-project introduced that no
+        # other seed block exercises:
+        #
+        #   * a cutlist SHARED by two items, with one completed stage fanned
+        #     out to both (Q439) — the whole point of moving the production
+        #     workflow off the item;
+        #   * a third item linked to that cutlist AFTER the completion, whose
+        #     earlier stages stay blank (Q539);
+        #   * two related parts under one Joinery Item, one carrying an issued
+        #     order and one carrying none (Q417/Q429);
+        #   * the supplier (Q506/Q556: `vendors` IS the supplier entity) and
+        #     the purchase order behind that first one.
+        #
+        # It works on the seven `legacy_items` rather than the five
+        # ITEMS_PER_PROJECT ones because the shop-floor block (#8) wipes
+        # stage_completion_log for every cutlist the first six ALF items
+        # touch — a fan-out written there would not survive its own seed.
+        #
+        # It runs after the setval above so the related parts draw their
+        # numbers from nextval() exactly as the API allocates them (Q541),
+        # landing just past the seeded fixtures instead of ~198k below them.
+        # ==================================================================
+        def _seed_item_by_num(num: int) -> int | None:
+            return s.execute(
+                text("SELECT item_id FROM items WHERE num = :n"), {"n": num}
+            ).scalar()
+
+        _shared_head = _seed_item_by_num(297830)   # JO-SS01 — keeps its cutlist
+        _shared_mate = _seed_item_by_num(297871)   # JO-SS02 — moves onto it
+        _late_joiner = _seed_item_by_num(297910)   # JL-BE01a — links after the fact
+        _rp_parent   = _seed_item_by_num(297975)   # ST-CT01 — carries the related parts
+
+        if None not in (_shared_head, _shared_mate, _late_joiner, _rp_parent):
+            _shared_cid = s.execute(
+                text("SELECT cutlist_id FROM items WHERE item_id = :i"),
+                {"i": _shared_head},
+            ).scalar()
+
+            def _move_onto_shared(item_id: int) -> None:
+                """Re-point one item at the shared cutlist, dropping the one it
+                vacates. Q411 lets an item hold at most one cutlist, so the old
+                row is left with nothing; an empty cutlist would still show up
+                in /list, so it goes — but only once nothing references it.
+
+                The drop is unconditional, not a consequence of the move: the
+                blocks above re-INSERT a cutlist numbered as the item on every
+                run (their own idempotency guard is on `items`, not `cutlist`),
+                so a move that already happened still leaves one behind."""
+                s.execute(
+                    text("UPDATE items SET cutlist_id = :c, updated_at = now()"
+                         " WHERE item_id = :i AND cutlist_id IS DISTINCT FROM :c"),
+                    {"c": _shared_cid, "i": item_id},
+                )
+                s.execute(
+                    text(
+                        """
+                        DELETE FROM cutlist c
+                         USING items i
+                         WHERE i.item_id = :i
+                           AND c.cutlist_no = i.num
+                           AND c.cutlist_id <> :keep
+                           AND NOT EXISTS (SELECT 1 FROM items
+                                            WHERE cutlist_id = c.cutlist_id)
+                           AND NOT EXISTS (SELECT 1 FROM worker_assignment
+                                            WHERE cutlist_id = c.cutlist_id)
+                           AND NOT EXISTS (SELECT 1 FROM stage_completion_log
+                                            WHERE cutlist_id = c.cutlist_id)
+                        """
+                    ),
+                    {"i": item_id, "keep": _shared_cid},
+                )
+
+            _move_onto_shared(_shared_mate)
+            s.execute(
+                text("UPDATE cutlist SET name = :n, updated_at = now()"
+                     " WHERE cutlist_id = :c"),
+                {"n": "SS Bench run (shared)", "c": _shared_cid},
+            )
+
+            # The completion has to be in order to read as real: these two
+            # items are seeded with LISTED still open.
+            for _iid in (_shared_head, _shared_mate):
+                s.execute(
+                    text(
+                        """
+                        INSERT INTO item_stages (item_id, stage_key, done_date)
+                        VALUES (:i, 'LISTED', CURRENT_DATE - 3)
+                        ON CONFLICT (item_id, stage_key)
+                        DO UPDATE SET done_date = CURRENT_DATE - 3
+                        """
+                    ),
+                    {"i": _iid},
+                )
+
+            _cut_worker = s.execute(
+                text(
+                    "SELECT id FROM app_user WHERE workspace_id = :w"
+                    " AND is_shop_worker = true ORDER BY id LIMIT 1"
+                ),
+                {"w": workspace_id},
+            ).scalar() or _drafter_id
+            _cut_boss = s.execute(
+                text(
+                    "SELECT id FROM app_user WHERE workspace_id = :w"
+                    " AND auth_role = 'manager' ORDER BY id LIMIT 1"
+                ),
+                {"w": workspace_id},
+            ).scalar() or _cut_worker
+
+            # Idempotent: the log references the assignment, so it goes first.
+            s.execute(
+                text("DELETE FROM stage_completion_log"
+                     " WHERE cutlist_id = :c AND stage_key = 'DOWN'"),
+                {"c": _shared_cid},
+            )
+            s.execute(
+                text("DELETE FROM worker_assignment"
+                     " WHERE cutlist_id = :c AND stage_key = 'DOWN'"),
+                {"c": _shared_cid},
+            )
+            _shared_aid = s.execute(
+                text(
+                    """
+                    INSERT INTO worker_assignment (
+                        cutlist_id, stage_key, worker_id, status,
+                        assigned_by, started_at, ended_at)
+                    VALUES (:c, 'DOWN', :w, 'done', :a,
+                            now() - interval '2 days',
+                            now() - interval '2 days' + interval '3 hours')
+                    RETURNING assignment_id
+                    """
+                ),
+                {"c": _shared_cid, "w": _cut_worker, "a": _cut_boss},
+            ).scalar()
+            s.execute(
+                text(
+                    """
+                    INSERT INTO stage_completion_log (
+                        cutlist_id, stage_key, assignment_id, worker_id,
+                        completed_at, note)
+                    VALUES (:c, 'DOWN', :a, :w,
+                            now() - interval '2 days' + interval '3 hours',
+                            'seeded: one completion, fanned out across the cutlist')
+                    """
+                ),
+                {"c": _shared_cid, "a": _shared_aid, "w": _cut_worker},
+            )
+            # Q439: the projection lands on every item linked AT THIS MOMENT.
+            for _iid in (_shared_head, _shared_mate):
+                s.execute(
+                    text(
+                        """
+                        INSERT INTO item_stages (item_id, stage_key, done_date)
+                        VALUES (:i, 'DOWN', CURRENT_DATE - 2)
+                        ON CONFLICT (item_id, stage_key)
+                        DO UPDATE SET done_date = CURRENT_DATE - 2
+                        """
+                    ),
+                    {"i": _iid},
+                )
+
+            # Q539: and only now does the third item join. It gets no DOWN row
+            # — the stage was completed before it was on the cutlist, so its
+            # strip reads blank there and catches up at the next completion.
+            _move_onto_shared(_late_joiner)
+            s.execute(
+                text("DELETE FROM item_stages WHERE item_id = :i AND stage_key = 'DOWN'"),
+                {"i": _late_joiner},
+            )
+
+            # --- Related parts (Q447): rows in `items`, one level only ------
+            _rp_parent_row = s.execute(
+                text(
+                    """
+                    SELECT i.num, c.cutlist_no, a.name AS area_name,
+                           p.name AS project_name
+                      FROM items i
+                      JOIN projects p ON p.project_id = i.project_id
+                      LEFT JOIN cutlist c ON c.cutlist_id = i.cutlist_id
+                      LEFT JOIN area    a ON a.area_id    = i.area_id
+                     WHERE i.item_id = :i
+                    """
+                ),
+                {"i": _rp_parent},
+            ).mappings().first()
+
+            _rp_ids: list[int] = []
+            for _type_key, _descr, _qty, _st in [
+                ("benchtop", "Reception counter — 20mm stone top", 1, "LIVE"),
+                ("metal",    "Counter support brackets — folded 3mm", 6, "CLEAR"),
+            ]:
+                _rid = s.execute(
+                    text("SELECT item_id FROM items"
+                         " WHERE parent_item_id = :p AND description = :d"),
+                    {"p": _rp_parent, "d": _descr},
+                ).scalar()
+                if _rid is None:
+                    _rid = s.execute(
+                        text(
+                            """
+                            INSERT INTO items (
+                                num, project_id, description, qty, status,
+                                row_type, parent_item_id,
+                                related_part_type_key, group_id)
+                            VALUES (nextval('joinery_number_seq'), :p, :d, :q, :st,
+                                    'related_part', :parent, :tk, :gid)
+                            RETURNING item_id
+                            """
+                        ),
+                        {"p": alf_pid, "d": _descr, "q": _qty, "st": _st,
+                         "parent": _rp_parent, "tk": _type_key,
+                         "gid": str(_rp_parent_row["num"])},
+                    ).scalar()
+                _rp_ids.append(_rid)
+
+            # --- Supplier (Q506/Q556: `vendors` is the supplier entity) -----
+            _vendor_name = "Corian Stoneworks"
+            _vendor_id = s.execute(
+                text("SELECT vendor_id FROM vendors"
+                     " WHERE workspace_id = :w AND name = :n"),
+                {"w": workspace_id, "n": _vendor_name},
+            ).scalar()
+            if _vendor_id is None:
+                _vendor_id = s.execute(
+                    text(
+                        """
+                        INSERT INTO vendors (
+                            workspace_id, name, category, contact_name,
+                            contact_email, contact_phone, status, payment_terms)
+                        VALUES (:w, :n, 'Benchtop', 'Dee Ramsay',
+                                'orders@corianstoneworks.test', '+61 3 9000 1188',
+                                'Active', '30 days EOM')
+                        RETURNING vendor_id
+                        """
+                    ),
+                    {"w": workspace_id, "n": _vendor_name},
+                ).scalar()
+
+            # --- One issued order, against the FIRST related part only ------
+            # Q417/Q418: this number is what Tracking shows where a cutlist
+            # number would be, so `date_ordered` must be set (Q567) or the
+            # row reads as unordered. Q428: the CUTLIST NO. carried onto the
+            # order is the PARENT's — 0028 forbids a related part having one.
+            #
+            # Delete-then-insert, so the dates stay relative to today. The
+            # cost is one po_number_seq value per re-run; the sequence is
+            # unowned and numbers are never asserted absolutely.
+            _slab_mid = s.execute(
+                text("SELECT material_id FROM benchtop_materials"
+                     " WHERE slab_id = 'hartwood-CST-2297-A'"),
+            ).scalar()
+            s.execute(
+                text("DELETE FROM purchase_orders WHERE item_id = ANY(:ids)"),
+                {"ids": _rp_ids},
+            )
+            _po_id = s.execute(
+                text(
+                    """
+                    INSERT INTO purchase_orders (
+                        po_number, vendor_id, requester_id, description, category,
+                        item_id, project_id, project_name, location, cutlist_no,
+                        supplier_ref_no, status, priority,
+                        product_code, product_description,
+                        quantity, unit_of_measure, unit_cost, total_amount,
+                        required_date, date_ordered, due_date, internal_comments)
+                    VALUES (
+                        'PO-' || EXTRACT(year FROM now())::int || '-' ||
+                            lpad(nextval('po_number_seq')::text, 4, '0'),
+                        :v, :req, :descr, 'Benchtop',
+                        :item, :p, :pname, :loc, :cno,
+                        'CSW-88214', 'Approved', 'Medium',
+                        'hartwood-CST-2297-A',
+                        '20mm Corian Deep Black, polished front edge',
+                        1, 'slab', 3551.00, 3551.00,
+                        CURRENT_DATE + 21, CURRENT_DATE - 6, CURRENT_DATE + 14,
+                        'Seeded demo order — the O/BOOK subtab reads this row.')
+                    RETURNING po_id
+                    """
+                ),
+                {
+                    "v": _vendor_id, "req": mina_id,
+                    "descr": "Reception counter stone top",
+                    "item": _rp_ids[0], "p": alf_pid,
+                    "pname": _rp_parent_row["project_name"],
+                    "loc": _rp_parent_row["area_name"],
+                    "cno": (str(_rp_parent_row["cutlist_no"])
+                            if _rp_parent_row["cutlist_no"] is not None else None),
+                },
+            ).scalar()
+            s.execute(
+                text(
+                    """
+                    INSERT INTO po_line_items (
+                        po_id, line_number, item_description, sku,
+                        quantity, unit, unit_price, material_table, material_id)
+                    VALUES (:o, 1, '20mm Corian Deep Black slab — cut to counter',
+                            'hartwood-CST-2297-A', 1, 'slab', 3551.00,
+                            CASE WHEN CAST(:m AS bigint) IS NULL
+                                 THEN NULL ELSE 'benchtop_materials' END,
+                            CAST(:m AS bigint))
+                    """
+                ),
+                {"o": _po_id, "m": _slab_mid},
+            )
+
+            s.commit()
+            print(
+                "seeded #10 cutlist/orderbook: 1 shared cutlist (3 items, "
+                "1 fanned-out DOWN completion, 1 late joiner) + 2 related "
+                f"parts + supplier {_vendor_name!r} + 1 purchase order"
+            )
 
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "

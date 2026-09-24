@@ -8,10 +8,12 @@ from ..projects.queries import get_project
 from .queries import (
     claim_or_release_lock,
     create_item,
+    decide_lock_request,
     delete_item,
     get_item_availability,
     get_item_detail,
     list_items_for_project,
+    list_lock_requests,
     patch_item,
     patch_item_status,
     patch_lifecycle,
@@ -20,6 +22,8 @@ from .schemas import (
     AvailabilityOut,
     CreateItemIn,
     ItemOut,
+    LockRequestDecisionIn,
+    LockRequestOut,
     LockTransferIn,
     PatchItemIn,
     PatchItemStatusIn,
@@ -132,7 +136,11 @@ def patch_item_route(
     user: AuthUser = Depends(require_permission("tracking", "write")),
     db: Session = Depends(get_db),
 ):
-    """Partially update an item.  Drafter-only gate.  Soft-lock semantics apply."""
+    """Partially update an item.  Drafter-only gate.  Controlled Lock applies.
+
+    A non-owner's save on a locked item is **not** applied: it is held as a
+    pending `item_lock_request` and answered with 409 (Q509).
+    """
     result = patch_item(
         db,
         item_id=id,
@@ -142,6 +150,22 @@ def patch_item_route(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="item not found")
+    if result["outcome"] in ("BAD_AREA", "BAD_ROOM", "ROOM_WITHOUT_AREA"):
+        # Q552: a room lives inside an area, enforced by the composite FK.
+        # Refused here so the caller gets a named reason, not a 500.
+        raise HTTPException(status_code=409, detail={"code": result["outcome"]})
+    if result["outcome"] == "lock_request":
+        req = result["request"]
+        db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LOCK_REQUEST_CREATED",
+                "request_id": req["request_id"],
+                "owner_id": req["cutlist_owner_id"],
+                "fields": sorted(req["requested_changes"]),
+            },
+        )
     db.commit()
     detail = get_item_detail(
         db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
@@ -292,4 +316,91 @@ def release_lock(
     db.commit()
     return get_item_detail(
         db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
+    )
+
+
+# ── Controlled Lock requests (B7 / Q509) ──────────────────────────────────────
+
+
+@router.get("/items/{id}/lock-requests", response_model=list[LockRequestOut])
+def get_lock_requests(
+    id: int,
+    status: str | None = None,
+    user: AuthUser = Depends(require_permission("tracking", "read")),
+    db: Session = Depends(get_db),
+):
+    """Saves held against this item's lock, newest first.  `?status=pending` filters."""
+    rows = list_lock_requests(
+        db, item_id=id, workspace_id=user.workspace_id, status=status
+    )
+    if rows is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    return rows
+
+
+def _decide(
+    db: Session, *, request_id: int, user: AuthUser, decision: str, note: str | None
+):
+    result = decide_lock_request(
+        db,
+        request_id=request_id,
+        workspace_id=user.workspace_id,
+        actor=user,
+        decision=decision,
+        note=note,
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="lock request not found")
+    if result == "FORBIDDEN":
+        raise HTTPException(
+            status_code=403,
+            detail="only the lock owner, a manager, or an admin can decide",
+        )
+    if result == "ALREADY_DECIDED":
+        raise HTTPException(
+            status_code=409, detail={"code": "ALREADY_DECIDED"}
+        )
+    db.commit()
+    return result
+
+
+@router.post(
+    "/lock-requests/{rid}/approve",
+    response_model=LockRequestOut,
+    dependencies=[Depends(require_drafter())],
+)
+def approve_lock_request(
+    rid: int,
+    payload: LockRequestDecisionIn | None = None,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Apply the held save.  The edit log credits the requester, the audit the approver."""
+    return _decide(
+        db,
+        request_id=rid,
+        user=user,
+        decision="approved",
+        note=payload.note if payload else None,
+    )
+
+
+@router.post(
+    "/lock-requests/{rid}/reject",
+    response_model=LockRequestOut,
+    dependencies=[Depends(require_drafter())],
+)
+def reject_lock_request(
+    rid: int,
+    payload: LockRequestDecisionIn | None = None,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Discard the held save; the item is untouched."""
+    return _decide(
+        db,
+        request_id=rid,
+        user=user,
+        decision="rejected",
+        note=payload.note if payload else None,
     )

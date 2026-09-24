@@ -248,3 +248,51 @@ def test_fav_cross_workspace_404():
     assert r2.status_code == 404
     r3 = c_b.delete(f"/projects/{pid}/favourites")
     assert r3.status_code == 404
+
+
+# ── C5: the Project Details tiles (Q408 / Q571) ──────────────────────────────
+
+
+def test_project_serves_the_detail_window_tiles():
+    """Q408's Project Details tiles read real `projects` columns that the
+    serializer simply never carried — `created_by`, `tg_solid` and
+    `total_line_items`.
+
+    The mock's two hours tables are deliberately absent: they come from TGPAY
+    and nothing in this schema records hours (Q571).
+    """
+    c, wid, uid = _login("manager")
+    r = c.post("/projects", json={"project_code": "HJ-TILE", "name": "Tile Project"})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+
+    # A fresh project carries none of them — they are nullable, and "—" in the UI.
+    fresh = c.get(f"/projects/{pid}").json()
+    assert fresh["created_by"] is None
+    assert fresh["tg_solid"] is False     # column default
+    assert fresh["total_line_items"] is None
+
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("""UPDATE projects
+                       SET created_by = 'DAVIDM', tg_solid = true,
+                           total_line_items = 241
+                     WHERE project_id = :p"""),
+            {"p": pid},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    filled = c.get(f"/projects/{pid}").json()
+    assert filled["created_by"] == "DAVIDM"
+    assert filled["tg_solid"] is True
+    assert filled["total_line_items"] == 241
+
+    # and the same three come back through the list, which is what Tracking's
+    # Info button actually renders from
+    listed = [p for p in c.get("/projects").json()["projects"] if p["id"] == pid][0]
+    assert listed["created_by"] == "DAVIDM"
+    assert listed["tg_solid"] is True
+    assert listed["total_line_items"] == 241

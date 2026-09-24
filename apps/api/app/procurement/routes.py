@@ -402,99 +402,24 @@ def approval_history(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Vendors
+# Vendors — RETIRED (Q565).  Inventory — RETIRED (Q544).
+#
+# The four `/vendors*` endpoints are gone: `/suppliers` (B5) is now the single
+# surface over `vendors`, workspace-scoped as the rest of the product is. The
+# legacy pair were never scoped — `workspace` appeared zero times in this
+# module — and `0029`'s `workspace_id NOT NULL` had already broken the POST.
+# Same shape as #7a retiring `/catalogs/*` in favour of `/catalog/*`.
+#
+# The three `/inventory*` endpoints are gone because `0029` **dropped** the
+# tables under them: `inventory`, `inventory_movements` and the
+# `v_inventory_status` view (Q544, which kept `board_inventory` instead).
+# They had been returning 500 ever since. Sheet stock lives at
+# `/board-inventory` (0025).
+#
+# Everything else in this namespace is untouched.
 # ═══════════════════════════════════════════════════════════════════════════════
-@router.get("/vendors")
-def list_vendors(
-    category: Optional[str] = None,
-    status: Optional[VendorStatus] = None,
-    search: Optional[str] = None,
-    user: AuthUser = Depends(require_permission("orderbook", "read")),
-    db: Session = Depends(get_db),
-):
-    return q.list_vendors(
-        db,
-        category=category,
-        status=_enum_value(status) if status else None,
-        search=search,
-    )
 
 
-@router.get("/vendors/{vendor_id}")
-def get_vendor(
-    vendor_id: int,
-    user: AuthUser = Depends(require_permission("orderbook", "read")),
-    db: Session = Depends(get_db),
-):
-    vendor = q.get_vendor(db, vendor_id)
-    if not vendor:
-        raise HTTPException(404, "Vendor not found")
-    return {
-        "vendor": vendor,
-        "recent_orders": q.vendor_recent_orders(db, vendor_id),
-    }
-
-
-@router.post("/vendors", status_code=201)
-def create_vendor(
-    payload: VendorCreate,
-    user: AuthUser = Depends(require_permission("orderbook", "write")),
-    db: Session = Depends(get_db),
-):
-    body = payload.model_dump()
-    body["category"] = _enum_value(body["category"])
-    vendor_id = q.insert_vendor(db, body)
-    db.commit()
-    return {"vendor_id": vendor_id}
-
-
-@router.patch("/vendors/{vendor_id}/rating")
-def update_vendor_rating(
-    vendor_id: int,
-    rating: float = Query(..., ge=0, le=5),
-    user: AuthUser = Depends(require_permission("orderbook", "write")),
-    db: Session = Depends(get_db),
-):
-    rounded = round(rating, 1)
-    q.update_vendor_rating(db, vendor_id, rounded)
-    db.commit()
-    return {"vendor_id": vendor_id, "rating": rounded}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Inventory
-# ═══════════════════════════════════════════════════════════════════════════════
-@router.get("/inventory")
-def list_inventory(
-    stock_level: Optional[str] = Query(None, pattern="^(OK|Low|Critical)$"),
-    search: Optional[str] = None,
-    user: AuthUser = Depends(require_permission("orderbook", "read")),
-    db: Session = Depends(get_db),
-):
-    return q.list_inventory(db, stock_level=stock_level, search=search)
-
-
-@router.get("/inventory/low-stock")
-def low_stock_alerts(
-    user: AuthUser = Depends(require_permission("orderbook", "read")),
-    db: Session = Depends(get_db),
-):
-    return q.low_stock(db)
-
-
-@router.post("/inventory/movements", status_code=201)
-def record_movement(
-    payload: InventoryMovementCreate,
-    user: AuthUser = Depends(require_permission("orderbook", "write")),
-    db: Session = Depends(get_db),
-):
-    body = payload.model_dump()
-    body["movement_type"] = _enum_value(body["movement_type"])
-    q.insert_inventory_movement(db, body)
-    direction = 1 if body["movement_type"] == "IN" else -1
-    q.adjust_inventory(db, payload.item_id, direction, payload.quantity)
-    db.commit()
-    return {"recorded": True}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

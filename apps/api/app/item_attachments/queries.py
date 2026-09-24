@@ -10,6 +10,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..row_types import joinery_items_only
+
+# The three attachment slots (CV drawing / floor plan / site measure) are
+# cutlist documents. A related part has no cutlist (Plan V1 Q417).
+_JOINERY_ITEM = joinery_items_only("i")
 
 AttachmentKind = Literal["cv_drawing", "floor_plan", "site_measure"]
 ALL_KINDS: tuple[AttachmentKind, ...] = ("cv_drawing", "floor_plan", "site_measure")
@@ -27,10 +32,11 @@ def bind_attachment(
     """UPSERT a slot. Validates blob is PDF + workspace-match. Writes audit."""
     owns = db.execute(
         text(
-            """
+            f"""
             SELECT 1 FROM items i
               JOIN projects p ON p.project_id = i.project_id
              WHERE i.item_id = :i AND p.workspace_id = :w
+               AND {_JOINERY_ITEM}
             """
         ),
         {"i": item_id, "w": workspace_id},
@@ -90,7 +96,7 @@ def clear_attachment(
     """Remove a slot. Returns True if removed, False if not present OR cross-workspace."""
     row = db.execute(
         text(
-            """
+            f"""
             DELETE FROM item_attachment
              WHERE item_id = :i AND kind = :k
                AND item_id IN (
@@ -98,6 +104,7 @@ def clear_attachment(
                    FROM items i
                    JOIN projects p ON p.project_id = i.project_id
                   WHERE p.workspace_id = :w
+                    AND {_JOINERY_ITEM}
                )
              RETURNING file_blob_id
             """
@@ -124,11 +131,12 @@ def get_bundle(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
     # Workspace ownership check first
     owns = db.execute(
         text(
-            """
+            f"""
             SELECT 1
               FROM items i
               JOIN projects p ON p.project_id = i.project_id
              WHERE i.item_id = :i AND p.workspace_id = :w
+               AND {_JOINERY_ITEM}
             """
         ),
         {"i": item_id, "w": workspace_id},

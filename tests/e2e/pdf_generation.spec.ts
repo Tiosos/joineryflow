@@ -5,7 +5,7 @@ async function login(page: Page, email: string) {
   await page.fill('input[type="email"]', email);
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
 async function openFirstAlfredItem(page: Page) {

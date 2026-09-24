@@ -19,12 +19,17 @@ function inDaysISO(days: number): string {
 export function TrackingMetrics({ items }: Props) {
   const today = todayISO();
   const weekOut = inDaysISO(7);
-  const total = items.length;
+  // The tracking list carries related parts inline (Q558). They are not items
+  // in the job and have no stages at all (Q419), so counting them would both
+  // inflate "Items in job" and drag the installed percentage down against a
+  // denominator of rows that can never be installed.
+  const joineryItems = items.filter((i) => i.row_type !== "related_part");
+  const total = joineryItems.length;
 
   let overdue = 0;
   let dueWeek = 0;
   let installed = 0;
-  for (const it of items) {
+  for (const it of joineryItems) {
     let isOverdue = false;
     let isDueWeek = false;
     for (const sk of Object.keys(it.stages)) {

@@ -16,6 +16,15 @@
 > Migrations: `0021_estimating_core`, `0022_estimate_expires_at`,
 > `0023_team_status`.
 
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** A
+> **Tender Dashboard wraps** this module rather than replacing it: the estimate
+> becomes one step of Plan V1 §5's lifecycle (Q487). The **6-state machine in
+> `_LEGAL_TRANSITIONS` is replaced by 12 stages** (Q488), and `expired` — which
+> has no counterpart in that list — **maps onto Lost**, a lossy migration, while
+> `expires_at` survives as the validity window (Q548). **Convert gains a PM
+> review step** (Q490) and now **creates Joinery Items** from the quote's lines
+> (Q489), which it deliberately does not do today.
+
 ---
 
 ## 1. Why a seventh role

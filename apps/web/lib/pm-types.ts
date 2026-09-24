@@ -22,6 +22,10 @@ export interface ProjectOut {
   install_start: string | null; // date → ISO 8601 YYYY-MM-DD
   is_favourite: boolean;
   created_at: string; // datetime → ISO 8601 timestamp
+  // Q408's Project Details tiles (C5) — existing columns, newly served.
+  created_by: string | null;
+  tg_solid: boolean | null;
+  total_line_items: number | null;
 }
 
 export interface ProjectListOut {
@@ -74,6 +78,29 @@ export interface TrackingItemRow {
   item_locked: boolean;
   stages: Record<string, StageDates>; // keyed by stage_key: REQ..INST
   availability: AvailabilityRollup;
+  // Q420/Q422: related parts arrive in the SAME list, directly beneath their
+  // parent, and the grid nests on these. A related part has no stages at all
+  // (Q419), so `stages` is empty for it — that is not "nothing recorded yet".
+  row_type: "joinery_item" | "related_part";
+  parent_item_id: number | null;
+  related_part_type_key: string | null;
+  // Q438: the cutlist this item belongs to. SHARED — several rows carry the
+  // same number — and null until one is assigned, which Q440 allows
+  // indefinitely. Not the same as item_number, which is the Item ID (Q541).
+  cutlist_id: number | null;
+  cutlist_no: number | null;
+  // Q417: the leftmost reference is the cutlist number for a Joinery Item and
+  // the most recent ISSUED supplier-order number for a related part.
+  issued_order_no: string | null;
+  issued_order_po_id: number | null;
+  // Q425: the O/BOOK sub-tab's columns — the latest order on this row in ANY
+  // state, so a Draft raised a moment ago shows. Distinct from
+  // issued_order_no, which Q567 restricts to orders actually sent.
+  order_po_id: number | null;
+  order_no: string | null;
+  order_status: string | null;
+  order_supplier: string | null;
+  order_due_date: string | null;
 }
 
 export interface TrackingGridOut {
@@ -152,6 +179,11 @@ export interface ItemOut {
   painting_required: boolean | null; // DB col: painting_req
   solid_surface_required: boolean | null; // DB col: solid_surface_req
   group_id: string | null;
+  // Q454/Q455 — Area and Room as entities (0026). The legacy stage / room_no /
+  // room_desc above stay populated alongside these until a later migration
+  // drops them (Q435).
+  area_id: number | null;
+  room_id: number | null;
   stages: Record<string, StageDates>;
   modules: ModuleOut[];
   hardware_lines: HardwareLineOut[];
@@ -195,6 +227,8 @@ export interface CreateItemIn {
 }
 
 export interface PatchItemIn {
+  area_id?: number | null;
+  room_id?: number | null;
   description?: string | null;
   qty?: number | null;
   stage?: string | null;

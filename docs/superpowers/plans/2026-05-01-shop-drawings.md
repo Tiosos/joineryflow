@@ -7,6 +7,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Later change — extended by Plan V1 (see `docs/plan-v1/`).** `file_blob`
+> **survives** and keeps serving shop drawings, item attachments and sample
+> photos (Q479). A **second, external, read-only surface** is added alongside it
+> for *project-level* files, held in SharePoint and mutated through OneDrive
+> rather than this app (Plan V1 Q398–Q400). The two do not merge: Plan V1 Q392
+> keeps project files separate from Joinery Item files.
+
 **Goal:** Ship sub-project #5a — the file-upload subsystem + Shop Drawings tab — on top of the merged Procurement Workbench branch. A Drafter can upload a PDF/PNG/JPG drawing for a project, tag it with a room, and submit it for review. Manager/Admin can approve or reject with a note. Drawings render as cards on `/shop-dwgs` across three subtabs (Current / In review / Archive). Files are RBAC-gated, content-addressable on local disk behind a swappable `FileStore` interface, and deduped per workspace by sha256.
 
 **Spec:** `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions including the revision state machine, "one in-flight per drawing" rule, and the not-uploader review constraint.

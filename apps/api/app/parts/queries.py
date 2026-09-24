@@ -20,6 +20,11 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log, write_edit_log_many
 from .schemas import CreateModuleIn, CreatePartIn, PatchModuleIn, PatchPartIn
+from ..row_types import joinery_items_only
+
+# Parts hang off modules, which hang off Joinery Items. A related part has no
+# modules and no parts (Plan V1 Q447), so every guard here refuses its id.
+_JOINERY_ITEM = joinery_items_only("i")
 
 # ── Workspace isolation helpers ───────────────────────────────────────────────
 
@@ -28,10 +33,10 @@ def _item_id_for_module(db: Session, *, module_id: int, workspace_id: int) -> in
     """Return item_id if module's item is in workspace, else None."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT m.item_id
             FROM modules m
-            JOIN items i ON i.item_id = m.item_id
+            JOIN items i ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             WHERE m.module_id = :mid
               AND EXISTS (
                   SELECT 1 FROM projects p2
@@ -49,11 +54,11 @@ def _item_id_for_part(db: Session, *, part_id: int, workspace_id: int) -> int | 
     """Return item_id if part's module's item is in workspace, else None."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT m.item_id
             FROM parts p
             JOIN modules m ON m.module_id = p.module_id
-            JOIN items i ON i.item_id = m.item_id
+            JOIN items i ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             WHERE p.part_id = :pid
               AND EXISTS (
                   SELECT 1 FROM projects p2
@@ -71,10 +76,11 @@ def _item_in_workspace(db: Session, *, item_id: int, workspace_id: int) -> bool:
     """Return True if item is in workspace."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT 1
             FROM items i
             WHERE i.item_id = :iid
+              AND {_JOINERY_ITEM}
               AND EXISTS (
                   SELECT 1 FROM projects p2
                   WHERE p2.project_id = i.project_id
@@ -94,10 +100,10 @@ def get_module(db: Session, *, module_id: int, workspace_id: int) -> dict | None
     """Return ModuleOut-shaped dict (with empty parts list) for a single module."""
     row = db.execute(
         text(
-            """
+            f"""
             SELECT m.module_id AS id, m.name
             FROM modules m
-            JOIN items i ON i.item_id = m.item_id
+            JOIN items i ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             WHERE m.module_id = :mid
               AND EXISTS (
                   SELECT 1 FROM projects p2
@@ -277,7 +283,7 @@ def get_part(db: Session, *, part_id: int, workspace_id: int) -> dict | None:
     """
     row = db.execute(
         text(
-            """
+            f"""
             SELECT
                 p.part_id           AS id,
                 p.module_id,
@@ -292,7 +298,7 @@ def get_part(db: Session, *, part_id: int, workspace_id: int) -> dict | None:
                 p.comment
             FROM parts p
             JOIN modules m ON m.module_id = p.module_id
-            JOIN items i ON i.item_id = m.item_id
+            JOIN items i ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             LEFT JOIN board_materials bm ON bm.material_id = p.board_material_id
             WHERE p.part_id = :pid
               AND EXISTS (

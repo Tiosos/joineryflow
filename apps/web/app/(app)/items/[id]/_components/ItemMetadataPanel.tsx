@@ -3,21 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ItemOut, PatchItemIn } from "@/lib/pm-types";
+import { AreaRoomPicker } from "./AreaRoomPicker";
 
 interface Props {
   item: ItemOut;
+  /** Drafter-narrow gate, as everywhere else that mutates an item. */
+  canEdit?: boolean;
 }
 
+// Room # / Room Description / Stage left this list in C6: they are now the
+// Area and Room selectors below, which write the same three columns server-side
+// (Q454/Q455, migration 0026). Typing free text into them would let an item's
+// area and room drift out of the entities that now own them.
 const FIELDS: {
   key: keyof PatchItemIn;
   label: string;
   type?: "text" | "checkbox" | "number";
 }[] = [
   { key: "level", label: "Level" },
-  { key: "room_no", label: "Room #" },
-  { key: "room_desc", label: "Room Description" },
   { key: "description", label: "Description" },
-  { key: "stage", label: "Stage (site location)" },
   { key: "qty", label: "Qty", type: "number" },
   { key: "painting_required", label: "Painting required?", type: "checkbox" },
   {
@@ -113,7 +117,7 @@ function NotesField({
   );
 }
 
-export function ItemMetadataPanel({ item }: Props) {
+export function ItemMetadataPanel({ item, canEdit = true }: Props) {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -126,9 +130,17 @@ export function ItemMetadataPanel({ item }: Props) {
         body: JSON.stringify({ [field]: value }),
       });
       if (!res.ok) {
+        // Controlled Lock: a non-owner's save is held for approval, not lost.
+        // The field still reverts, because the item itself has not changed.
+        const held =
+          res.status === 409 &&
+          (await res.json().catch(() => null))?.detail?.code ===
+            "LOCK_REQUEST_CREATED";
         setErrors((e) => ({
           ...e,
-          [field as string]: `Save failed (${res.status})`,
+          [field as string]: held
+            ? "Held for the lock owner to approve"
+            : `Save failed (${res.status})`,
         }));
         return false;
       }
@@ -147,6 +159,44 @@ export function ItemMetadataPanel({ item }: Props) {
     <aside className="rounded-lg border border-h-line bg-h-surface p-4">
       <h2 className="mb-3 text-sm font-semibold text-h-ink">Metadata</h2>
       <div className="grid gap-3">
+        {/* Q454/Q455: Area and Room are entities now, so these are selectors
+            rather than free text. Q458 allows the move and item_edit_log
+            records it. */}
+        <AreaRoomPicker
+          projectId={item.project_id}
+          areaId={item.area_id ?? null}
+          roomId={item.room_id ?? null}
+          canEdit={canEdit}
+          onChange={async (next) => {
+            setErrors((e) => ({ ...e, area_room: "" }));
+            const res = await fetch(`/api/items/${item.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(next),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => null);
+              const code = body?.detail?.code;
+              setErrors((e) => ({
+                ...e,
+                area_room:
+                  code === "LOCK_REQUEST_CREATED"
+                    ? "Held for the lock owner to approve"
+                    : code === "ROOM_WITHOUT_AREA"
+                      ? "Choose an area first — rooms belong to one"
+                      : code === "BAD_ROOM"
+                        ? "That room is not in this area"
+                        : `Save failed (${res.status})`,
+              }));
+              return false;
+            }
+            router.refresh();
+            return true;
+          }}
+        />
+        {errors.area_room && (
+          <span className="text-xs text-[#b4443d]">{errors.area_room}</span>
+        )}
         {FIELDS.map((f) => {
           const v = item[f.key as keyof ItemOut] as unknown;
           if (f.type === "checkbox") {

@@ -44,6 +44,30 @@ class TrackingItemRow(BaseModel):
     item_locked: bool
     stages: dict[str, StageDates]   # keyed by stage_key (REQ..INST)
     availability: AvailabilityRollup
+    # Plan V1 Q420/Q422: related parts come back in the SAME list, directly
+    # beneath their parent, collapsed by default.  The web nests on these two.
+    # A related part has no stages at all (Q419), so `stages` is empty for it.
+    row_type: str                   # 'joinery_item' | 'related_part'
+    parent_item_id: int | None
+    related_part_type_key: str | None
+    # Q438: the cutlist this item belongs to — SHARED, so several rows carry
+    # the same number.  None while the item has no cutlist (Q440).  Distinct
+    # from `item_number`, which is the item's own Item ID (Q541).
+    cutlist_id: int | None
+    cutlist_no: int | None
+    # Q417/Q567: the most recent ISSUED supplier order for this row
+    # (`date_ordered IS NOT NULL`), which the Tracking grid shows in place of a
+    # cutlist number on a related part.  None until an order is issued.
+    issued_order_no: str | None
+    issued_order_po_id: int | None
+    # Q425: the O/BOOK sub-tab's columns — the latest order on this row in ANY
+    # state, so a Draft raised a moment ago is visible. Distinct from
+    # `issued_order_no`, which Q567 restricts to orders actually sent.
+    order_po_id: int | None
+    order_no: str | None
+    order_status: str | None
+    order_supplier: str | None
+    order_due_date: date | None
 
 
 class TrackingGridOut(BaseModel):
@@ -148,6 +172,8 @@ class ItemOut(BaseModel):
     painting_required: bool | None    # DB col: painting_req
     solid_surface_required: bool | None  # DB col: solid_surface_req
     group_id: str | None
+    area_id: int | None = None
+    room_id: int | None = None
     stages: dict[str, StageDates]
     modules: list[ModuleOut]
     hardware_lines: list[HardwareLineOut]
@@ -187,6 +213,13 @@ class PatchItemIn(BaseModel):
     estimator_notes: str | None = None
     painting_required: bool | None = None    # DB col: painting_req
     solid_surface_required: bool | None = None  # DB col: solid_surface_req
+    # Q454/Q455 — Area and Room as real entities (`0026`). Setting either also
+    # writes the legacy `stage` / `rm_no` / `rm_desc` columns, which stay
+    # populated until a later migration drops them (Q435), so the 25 read sites
+    # that still use them keep working. Room is nested under Area (Q552), so a
+    # room without an area is refused rather than silently unset.
+    area_id: int | None = None
+    room_id: int | None = None
 
 
 class LockTransferIn(BaseModel):
@@ -215,3 +248,27 @@ class PatchLifecycleIn(BaseModel):
     """
     due_date: date | None = None
     done_date: date | None = None
+
+
+# ── Controlled Lock (B7 / Q509) ───────────────────────────────────────────────
+
+
+class LockRequestOut(BaseModel):
+    """A non-owner's held save on a locked item."""
+    request_id: int
+    item_id: int
+    requested_by: int
+    requested_by_name: str | None = None
+    requested_changes: dict
+    status: Literal["pending", "approved", "rejected"]
+    created_at: datetime
+    updated_at: datetime
+    decided_by: int | None = None
+    decided_by_name: str | None = None
+    decided_at: datetime | None = None
+    decision_note: str | None = None
+
+
+class LockRequestDecisionIn(BaseModel):
+    """Payload for POST /lock-requests/{rid}/{approve,reject}.  Note is optional."""
+    note: str | None = None

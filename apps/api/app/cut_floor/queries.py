@@ -13,6 +13,11 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ..row_types import joinery_items_only
+
+# A related part has no modules, parts or cut plan (Plan V1 Q447), so it can
+# neither be nested nor looked up here.
+_JOINERY_ITEM = joinery_items_only("i")
 
 
 # ---- Status transition matrix (per spec §6) --------------------------------
@@ -46,11 +51,12 @@ def project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> 
 def item_project(db: Session, *, item_id: int, workspace_id: int) -> int | None:
     row = db.execute(
         text(
-            """
+            f"""
             SELECT i.project_id
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :iid AND p.workspace_id = :w
+              AND {_JOINERY_ITEM}
             """
         ),
         {"iid": item_id, "w": workspace_id},
@@ -99,7 +105,7 @@ def candidate_parts_for_optimise(
                    COALESCE(bm.grain_locked, false) AS grain_locked
             FROM parts p
             JOIN modules m  ON m.module_id = p.module_id
-            JOIN items i    ON i.item_id = m.item_id
+            JOIN items i    ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             JOIN projects pr ON pr.project_id = i.project_id
             LEFT JOIN board_materials bm ON bm.material_id = p.board_material_id
             WHERE {where}

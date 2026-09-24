@@ -605,145 +605,24 @@ def approval_history(
 
 
 # ── Vendors ───────────────────────────────────────────────────────────────────
-def list_vendors(
-    db: Session,
-    *,
-    category: Optional[str] = None,
-    status: Optional[str] = None,
-    search: Optional[str] = None,
-) -> list[dict]:
-    q = """
-        SELECT v.*, COUNT(po.po_id) AS active_pos
-          FROM vendors v
-          LEFT JOIN purchase_orders po ON v.vendor_id = po.vendor_id
-              AND po.status NOT IN ('Delivered','Cancelled')
-         WHERE 1=1
-    """
-    params: dict[str, Any] = {}
-    if category:
-        q += " AND v.category = :cat"
-        params["cat"] = category
-    if status:
-        q += " AND v.status = :status"
-        params["status"] = status
-    if search:
-        q += " AND v.name LIKE :s"
-        params["s"] = f"%{search}%"
-    q += " GROUP BY v.vendor_id ORDER BY v.name"
-    return [dict(r) for r in db.execute(text(q), params).mappings()]
 
 
-def get_vendor(db: Session, vendor_id: int) -> Optional[dict]:
-    row = db.execute(
-        text("SELECT * FROM vendors WHERE vendor_id = :id"),
-        {"id": vendor_id},
-    ).mappings().first()
-    return dict(row) if row else None
 
 
-def vendor_recent_orders(db: Session, vendor_id: int) -> list[dict]:
-    rows = db.execute(
-        text(
-            """
-            SELECT po_number, description, grand_total, status, created_at
-              FROM v_po_summary WHERE vendor_id = :id
-             ORDER BY created_at DESC LIMIT 20
-            """
-        ),
-        {"id": vendor_id},
-    ).mappings().all()
-    return [dict(r) for r in rows]
 
 
-def insert_vendor(db: Session, payload: dict) -> int:
-    row = db.execute(
-        text(
-            """
-            INSERT INTO vendors
-                (name, category, contact_name, contact_email, contact_phone,
-                 address, tax_id, payment_terms)
-            VALUES
-                (:name, :category, :contact_name, :contact_email, :contact_phone,
-                 :address, :tax_id, :payment_terms)
-            RETURNING vendor_id
-            """
-        ),
-        payload,
-    ).mappings().first()
-    return int(row["vendor_id"])
 
 
-def update_vendor_rating(db: Session, vendor_id: int, rating: float) -> None:
-    db.execute(
-        text("UPDATE vendors SET rating = :r WHERE vendor_id = :id"),
-        {"r": rating, "id": vendor_id},
-    )
 
 
-# ── Inventory ─────────────────────────────────────────────────────────────────
-def list_inventory(
-    db: Session,
-    *,
-    stock_level: Optional[str] = None,
-    search: Optional[str] = None,
-) -> list[dict]:
-    q = "SELECT * FROM v_inventory_status WHERE 1=1"
-    params: dict[str, Any] = {}
-    if stock_level:
-        q += " AND stock_level = :lv"
-        params["lv"] = stock_level
-    if search:
-        q += " AND (name LIKE :s OR sku LIKE :s OR category LIKE :s)"
-        params["s"] = f"%{search}%"
-    q += " ORDER BY stock_level DESC, name"
-    return [dict(r) for r in db.execute(text(q), params).mappings()]
+# ── Inventory — RETIRED (Q544): 0029 dropped inventory, inventory_movements
+#    and v_inventory_status. Sheet stock lives at /board-inventory (0025).
 
 
-def low_stock(db: Session) -> list[dict]:
-    rows = db.execute(
-        text(
-            """
-            SELECT * FROM v_inventory_status
-             WHERE stock_level IN ('Low','Critical')
-             ORDER BY
-               CASE stock_level WHEN 'Critical' THEN 0 WHEN 'Low' THEN 1 ELSE 2 END,
-               (quantity_on_hand / NULLIF(reorder_point, 0)) ASC
-            """
-        )
-    ).mappings()
-    return [dict(r) for r in rows]
 
 
-def insert_inventory_movement(db: Session, payload: dict) -> None:
-    db.execute(
-        text(
-            """
-            INSERT INTO inventory_movements
-                (item_id, po_id, movement_type, quantity, unit_cost,
-                 reference_number, notes, created_by)
-            VALUES
-                (:item_id, :po_id, :movement_type, :quantity, :unit_cost,
-                 :reference_number, :notes, :created_by)
-            """
-        ),
-        payload,
-    )
 
 
-def adjust_inventory(
-    db: Session, item_id: int, direction: int, quantity: float
-) -> None:
-    db.execute(
-        text(
-            """
-            UPDATE inventory
-               SET quantity_on_hand = quantity_on_hand + (:direction * :quantity),
-                   updated_at = now()
-             WHERE item_id = :item_id
-            """
-        ),
-        {"direction": direction, "quantity": quantity, "item_id": item_id},
-    )
 
 
 # ── Budget ────────────────────────────────────────────────────────────────────

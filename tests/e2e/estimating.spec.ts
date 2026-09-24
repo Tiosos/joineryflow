@@ -15,7 +15,7 @@ test("estimator can view + convert seeded estimate to project", async ({ page })
   await page.fill('input[type="email"]', "kai.ngata@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 
   await page.getByRole("link", { name: "Estimating", exact: true }).click();
   await expect(page).toHaveURL(/\/estimating/, { timeout: 30_000 });
@@ -40,7 +40,7 @@ test("quote PDF renders for the sent demo estimate", async ({ page, context }) =
   await page.fill('input[type="email"]', "kai.ngata@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/(home|dashboard)$/);
 
   await page.goto("/estimating");
   await page.getByText("EST-2026-0002").click();
@@ -61,7 +61,7 @@ test("PM (manager) sees the New estimate button", async ({ page }) => {
   await page.fill('input[type="email"]', "rin.park@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/(home|dashboard)$/);
 
   await page.goto("/estimating");
   await expect(page.locator('[data-testid="new-estimate-btn"]')).toBeVisible();

@@ -20,6 +20,11 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log_many
 from .parser import ParsedPart
+from ..row_types import joinery_items_only
+
+# Cabinet Vision imports create modules and parts, which a related part
+# cannot have (Plan V1 Q447).
+_JOINERY_ITEM = joinery_items_only("i")
 
 
 # --- Catalog table -> REGISTRY slug + legacy NOT NULL UNIQUE column ----------
@@ -120,12 +125,12 @@ def list_runs_for_item(
     db: Session, *, item_id: int, workspace_id: int
 ) -> list[dict]:
     rows = db.execute(
-        text("""
+        text(f"""
             SELECT r.cv_import_run_id, r.project_id, r.item_id, r.source_filename,
                    r.sha256, r.row_count, r.status, r.started_at, r.completed_at,
                    r.created_by
             FROM cv_import_run r
-            JOIN items i ON i.item_id = r.item_id
+            JOIN items i ON i.item_id = r.item_id AND {_JOINERY_ITEM}
             JOIN projects p ON p.project_id = i.project_id
             WHERE r.item_id = :iid
               AND p.workspace_id = :w
@@ -143,11 +148,12 @@ def get_item_project_for_workspace(
 ) -> int | None:
     """Return project_id if item is in workspace, else None."""
     row = db.execute(
-        text("""
+        text(f"""
             SELECT i.project_id
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :iid
+              AND {_JOINERY_ITEM}
               AND p.workspace_id = :w
         """),
         {"iid": item_id, "w": workspace_id},

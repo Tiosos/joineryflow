@@ -10,6 +10,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** Four
+> decisions reshape what this plan built: the **Cutlist becomes a separate
+> entity** owning production stages, shared across items (Q438), so
+> `item_stages` becomes a per-item projection written by fan-out rather than the
+> source of truth (Q439); **related-part rows** join `items` with a `row_type`
+> discriminator and a parent FK (Q447); **Area and Room become real entities**,
+> renaming `items.stage` → `area` (Q454/Q455); and the **advisory soft-lock
+> becomes a Controlled Lock** — a non-owner's save becomes a request needing
+> approval instead of succeeding with an audit row (Q509).
+>
+> The lock change **shipped 2026-09-19** (migration `0032`), so the soft-lock
+> this plan describes at T15 Step 4 — "non-owner saves are permitted" — is no
+> longer how the code behaves. `CLAUDE.md` carries the current rule.
+
 **Goal:** Ship sub-projects #2 + #3 (PM Project Workbench grid + Drafter Item Editor) of the JoineryFlow build, on top of the Foundation branch. PM lands on `/home`, opens a project, sees the tracking grid, clicks an item ▶, lands in the Drafter Item Editor with editable Cutlist + Hardware tabs, and returns to home — end-to-end verifiable via two new Playwright specs.
 
 **Spec:** `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`. Read it before starting. The spec resolves all open product/RBAC questions; this plan only sequences the implementation.

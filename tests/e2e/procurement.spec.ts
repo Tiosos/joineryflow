@@ -5,7 +5,7 @@ test("Procurement resolution flow", async ({ page }) => {
   await page.fill('input[type="email"]',    "rin.park@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 
   await page.goto("/tracking?project_id=1");
   await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();

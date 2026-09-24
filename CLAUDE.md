@@ -4,7 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+---
+
+## 0. RULE ZERO — when in doubt, ask (overrides everything below)
+
+**If you are unsure, or two sources of truth disagree, STOP and ask the user a
+question. Do not pick silently, do not guess, do not average the two.**
+
+This outranks every other rule in this file, including "bias toward caution over
+speed" and any instruction to keep momentum. A question costs minutes; a wrong
+assumption buried in a migration or a schema costs days.
+
+Ask — do not decide — whenever:
+
+- **Two documents disagree.** `CLAUDE.md`, `docs/plan-v1/plan_v1.md`,
+  `docs/plan-v1/OPEN-QUESTIONS.md`, a spec, a plan, or the code itself. If they
+  conflict, the conflict *is* the question.
+- **A decision is under-specified.** An answer that reads equally well two ways
+  has not been answered. (Q454/Q455 said Area and Room become entities "with FKs
+  from items", which fits both a nested and a sibling model — the real data had
+  to force the question. That should have been asked first.)
+- **The data contradicts the plan.** If what is actually in the database does
+  not match what a document assumes, say so with the evidence before writing
+  code against either.
+- **A rule would have to be bent.** Anything this file calls *binding* or
+  *invariant*, any terminology pin, any "never".
+- **Scope is about to grow.** If the honest implementation is materially bigger
+  than what was asked, name the gap before starting.
+
+When you ask: give the concrete evidence (a row count, a file and line, the two
+conflicting sentences), state the options, and say which you would pick and why.
+Then wait.
+
+When a decision *is* settled, record it where the next reader will look, and
+note it when the code deliberately departs from a document — never leave the two
+disagreeing silently.
+
+---
+
+**Tradeoff:** The guidelines below bias toward caution over speed. For trivial tasks, use judgment — but Rule Zero still applies.
 
 ## 1. Think Before Coding
 
@@ -74,19 +112,81 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0025`. Head is `0025_board_inventory`. Each sub-project section below names the migration(s) it introduced.
+- `db/` — Alembic migrations `0001` → `0032`. Head is `0032_item_lock_request`. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
+- `tests/e2e/` — 13 Playwright specs / 40 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
+- `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
+
+## Plan V1 — target architecture (one sub-project built)
+
+`docs/plan-v1/` holds **Plan V1**, the customer's specification for a
+company-wide joinery workflow and control platform, with its interview
+questions answered through Q431 (supplied 2026-09-17). It is mostly a
+**target**, not a description of this tree — with one exception: **Plan V1 #10
+(Cutlist + related parts + Orderbook) is built**, and has its own section
+below. Everything else in Plan V1 remains unimplemented.
+
+- `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
+- `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
+  state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q573, continuing Plan V1's own
+  numbering. **137 of 141 resolved; every answerable question is answered.**
+  Q552–Q573 were raised *while building* the Cutlist sub-project, each where a
+  document and the code disagreed.
+  The four left are **inputs only the customer can supply**: the SharePoint
+  site URL (Q480), a real drawing filename (Q547), what the Cars / OH&S
+  tabs hold (Q550), and what the Scope tab holds (Q572). The first two block
+  §H entirely.
+
+**Confirmed 2026-09-18** (Plan V1 §43, `OPEN-QUESTIONS.md` §A):
+
+- **Q433** — Plan V1 is the **roadmap for this codebase**. It is not a separate
+  product and not a rebuild; JoineryFlow evolves into it.
+- **Q435** — shipped behaviour **may change, but only behind data-preserving
+  migrations**.
+- **Q438** — the **Cutlist becomes a first-class entity** owning the production
+  workflow (conflict 1 below is accepted, not avoided).
+- **Q437** — the **next sub-project is Cutlist + related parts** (conflicts 1
+  and 2), built as one change. **Done** — widened by Q542 to take the whole
+  Orderbook with it. See *Cutlist + related parts + Orderbook* below.
+
+Apart from #10, this section still describes a target, and `CLAUDE.md` remains
+the record of what is actually true in the tree.
+
+**Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
+seven places where Plan V1 contradicted an invariant stated as binding in *this*
+file. **All seven are now decided** (re-scored 2026-09-18):
+
+| Conflict | Outcome |
+| --- | --- |
+| 1. **Cutlist owns the workflow** (Q410–Q413) | **Built** (`0027`, `0030`). `item_stages` stays per-item as a **projection**, written by fan-out on completion (Q439). Shop Floor re-keyed to `(cutlist_id, stage_key)`; the `(item_id, 'INST')` half of Q445 turned out to be unreachable — Shop Floor has never been able to hold DEL or INST (**Q561**). |
+| 2. **Related-part rows** (Q416–Q424) | **Built** (`0028`). Rows in `items` with a `row_type` + parent FK (Q447). The measured cost was **50 SQL call sites across 13 modules**; only **35** actually take the filter — `apps/api/app/row_types.py` holds the one definition and B1's note classifies the rest. |
+| 3. **Project files in SharePoint** (Q398–Q400) | **Bounded.** Additive only — `file_blob` survives and keeps serving shop drawings, attachments and sample photos (Q479). Nothing in #5a/#5b/#5c is rewritten. Blocked on three customer inputs. |
+| 4. **RBAC as data** (Plan V1 §3) | **Bounded.** DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles become 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. |
+| 5. ~~Navigation / Cutlist module~~ | **Closed (Q474).** Cutlist **is** the `List` tab — which the RBAC module name already reflects. The primary six do not grow. |
+| 6. **Area / Room as entities** | **Built** (`0026`). Real project-scoped tables with Room **nested under** Area (Q552) and a composite FK `items (area_id, room_id) → room`. It was *not* the pure rename Q455 anticipated: `items.stage` / `rm_no` / `rm_desc` are **kept and still written** alongside the new FKs (Q435), so the terminology pin below still stands. |
+| 7. **10 vs 14 lifecycle stages** | **Deferred (Q459).** Today's 10 stand; `PAINTED` before `MADE` with `paint_after_assembly` (Q461); one global `stages` lookup (Q462). Packing is the first extra stage to arrive (Q519). |
+
+**Three decisions deliberately depart from Plan V1's prose** — the code is right
+and should not be "fixed" to match: **Q499** (PM confirmation of the Material
+Summary is advisory, against §20's release gate), **Q513** (no rollback, against
+§11's 20 change states) and **Q527** (fixed KPI catalogue, against §32's
+IT-defined formulas).
 
 ## Foundation dev loop
 
 ```
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
-make migrate      # apply Alembic 0001 -> 0025
+make migrate      # apply Alembic 0001 -> 0032
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (52 files, ~470 tests)
+make test         # pytest in api container (60 test files, 638 tests)
+                  # Runnable WITHOUT Docker too, which is worth knowing when the
+                  # container is unavailable: `pyproject.toml` needs Python >=3.12
+                  # (the shell default may be older), so make a 3.12 venv, run
+                  # `pip install -e ".[dev]"`, point DATABASE_URL at any Postgres
+                  # migrated to head, and run pytest. Takes ~2 minutes.
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
@@ -98,7 +198,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 ## Auth & RBAC
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
-- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth; the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
+- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth (Plan V1 §3 would replace it with a DB-backed engine; see `docs/plan-v1/ALIGNMENT.md` §3.4); the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
 - **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
 - FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action)` factory in `apps/api/app/auth/rbac.py`.
@@ -122,14 +222,16 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 **Key data-model invariants** (enforced across schemas and UI):
 
-- **Six separate Material Catalog tables** (`board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) — do NOT unify them; lifecycles differ. They share an abstract interface `(id, type, description, supplier, cost_unit, lead_time_days, notes)`.
+- **Six separate Material Catalog tables** (`board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) — do NOT unify them; lifecycles differ. They are *intended* to share an abstract interface `(id, type, description, supplier, cost_unit, lead_time_days, notes)` — but **verify before relying on it**: `custom_made` names its supplier column `vendor`, not `supplier`. Of that list only `description`, `notes` and (since `0017`) `default_supplier` / `default_lead_time_days` are genuinely common to all six; the PK is `hire_id` on `equipment_hire` and `material_id` elsewhere. `0029` carries a per-table supplier-column map for this reason.
 - **ProjectHardwareCatalog** is a project-scoped link layer; item hardware lines reference materials *through* it. Log-only governance (no approval step; every add/remove writes an audit row).
 - **ProcurementBatch → Allocations → item_hardware_line_id** answers "is this item blocked on a material?" as a single join — no second window needed.
 - **CutPlan ≠ CutSchedule.** Optimisation output vs. Machine team's daily ordering. Keep as two entities.
+- **`items.num` comes from `joinery_number_seq` alone** (migration `0027`, Plan V1 Q541) — one company-wide counter shared by Item IDs, cutlist numbers and related parts, so a six-digit number never means two things. Allocate it **inside** the INSERT (`nextval('joinery_number_seq')`); never read `MAX(num)` and insert the result, which is the race B2a removed. The sequence has no owning table, so `TRUNCATE ... RESTART IDENTITY` does not reset it. `make seed` writes **fixed** numbers for idempotency and then advances the sequence past them — keep that step if you add seeded items.
+- **`purchase_orders.po_number` comes from `po_number_seq`** (migration `0031`, Q564), formatted `PO-{year}-{0000}`. The legacy generator in `legacy/procurement_api.py:274` used `MAX(...) + 1` and carried the same race B2a removed — do not reinstate it. Like `joinery_number_seq` this sequence has **no owning table**, so `TRUNCATE ... RESTART IDENTITY` does not reset it: never assert an absolute PO number in a test, only the format and that numbers advance.
 - **Terminology pins** (critical, legacy-FileMaker-era collisions):
   - `Stage` = site location/area (e.g. `Joinery Lab`, `Block B`).
   - `Zone` = numeric sub-division of Stage.
-  - `lifecycle_stage` (or `stage_key`) = the 10 production milestones (`REQ`, `SM`, `LISTED`, `DOWN`, `CNC`, `EDGED`, `PAINTED`, `MADE`, `DEL`, `INST`). **Never reuse the bare word "stage"** for these in code.
+  - `lifecycle_stage` (or `stage_key`) = the 10 production milestones (`REQ`, `SM`, `LISTED`, `DOWN`, `CNC`, `EDGED`, `PAINTED`, `MADE`, `DEL`, `INST`). **Never reuse the bare word "stage"** for these in code. (**The pin still stands.** Q456 retires it only once `items.stage` is *gone*, and #10 did not remove it: `0026` added `area` / `room` as real tables and the UI now reads them, but `items.stage` / `rm_no` / `rm_desc` are **still present and still written** on every save, because Q435 requires the change to be data-preserving. A later migration drops them; the pin retires then, not now.)
   - `Status` = record state (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`).
   - `Status Symbol` = Drafter-only UI flag, not reported.
 
@@ -137,7 +239,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 `jtbd_role` is a free-text column on `app_user` (no CHECK constraint, despite the Foundation spec §5 sketching one) used for display only — the seed writes mixed-case values like `CEO`, `Drafter`, `CNC operator`. Nothing branches on it: `/home/dashboard`'s `_role_view` keys off `auth_role` alone, and `estimator`/`editor` currently fall through to the viewer shape.
 
-**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). 32 endpoints, all gated by `require_permission("orderbook", action)`. Mounted at `/procurement/*`. The legacy DB views it reads (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`) were skipped by migration 0002 and recreated by **migration 0006**; 0009 redefines `v_po_summary` after the `app_user` repoint. This namespace (orders, vendors, budget, approvals) is **not** used by the v1 product surface — that is `procurement_v1`.
+**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). **25 endpoints** (was 32), all gated by `require_permission("orderbook", action)`. **Seven were retired**: the four `/vendors*` (Q565 — `/suppliers` is now the single surface over `vendors`, workspace-scoped; the legacy pair never were, and `0029`'s `workspace_id NOT NULL` had broken the POST) and the three `/inventory*` (Q544 — `0029` dropped `inventory`, `inventory_movements` and `v_inventory_status`, so they had been 500ing). Mounted at `/procurement/*`. The legacy DB views it reads (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`) were skipped by migration 0002 and recreated by **migration 0006**; 0009 redefines `v_po_summary` after the `app_user` repoint. This namespace (orders, vendors, budget, approvals) is **not** used by the v1 product surface — that is `procurement_v1`.
 
 ## Design system (binding)
 
@@ -147,7 +249,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
 - Typography: Inter (default sans) for UI, JetBrains Mono for part #, PO #, ETAs, money. The `.h-mono` utility (with `tnum`) is wired in `globals.css`.
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`.
+- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q474 confirmed this rule stands**: Plan V1's `Cutlist` module **is** the existing `List` tab — which the RBAC module name already reflects, since `("list","read")` gates `cutlist.pdf`. No seventh primary tab.)
 
 ## Reference docs (read before large changes)
 
@@ -162,6 +264,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 > reshape) has neither spec nor plan; the sub-project sections here are its
 > only written reference.
 
+- `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
+- `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
+- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — plan for sub-project #10: cutlist entity, related-part rows, Area/Room entities, and the Orderbook. **A1–A4, B1–B7, C1–C6, D1–D3 and E1–E2 are done**; only **E3** is open, blocked on a copy of the customer's real pilot data. Unusually for this repo its checkboxes *are* kept current and each finished task carries a `→` note recording what shipped and how it was verified.
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q573, **137 of 141 resolved**. Every answerable question is answered; the four left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents) and Q572 (what the Scope tab holds).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
@@ -197,7 +303,21 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand in v1.**
 - Procurement UI button on `/tracking` is hidden behind `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`, now defaulted to `1` in `.env.example` (it was absent, so the button was off in every fresh dev setup even though #4 shipped). A `.env` copied before that fix won't have it.
 - PDF generation buttons render disabled with tooltip ("ships in sub-project #5").
-- Soft-lock semantics: first save claims ownership; non-owner saves are permitted but write `event='item.lock_overridden'` audit row.
+- **Controlled Lock** (migration `0032`, Q509 — replaces the advisory
+  soft-lock). First save still claims ownership. A non-owner's save on a locked
+  item is **no longer applied**: `PATCH /items/{id}` answers
+  `409 {code: "LOCK_REQUEST_CREATED", …}` and the body is held as an
+  `item_lock_request` row. `GET /items/{id}/lock-requests` lists them;
+  `POST /lock-requests/{rid}/{approve,reject}` decides, restricted to the lock
+  owner or a manager/admin. Approval replays the stored body through the
+  ordinary save path — the **edit log credits the requester**, the audit row
+  names the approver. Saving again revises your own pending request rather than
+  queueing a second (`uniq_pending_lock_request`).
+  `event='item.lock_overridden'` is **retired**: nothing emits it, and existing
+  rows are history only. Scope is `PATCH /items/{id}` alone —
+  `/status` and `/lifecycle/{stage_key}` never consulted the lock and still do
+  not, and **there is no project-level lock** (Q566: `projects` has no lock
+  column).
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -602,6 +722,16 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 ## Shop Floor Ops (sub-project #8)
 
+> **Re-keyed by migration `0030` (B3).** `worker_assignment` and
+> `stage_completion_log` now key on **`(cutlist_id, stage_key)`**, not the
+> item — the production workflow belongs to the cutlist (Plan V1 Q412).
+> `worker_assignment.item_id` is **gone**; `stage_completion_log.item_id`
+> survives nullable as pre-`0030` provenance only. Completing a stage fans
+> `item_stages.done_date` out to every linked item whose own order contains it
+> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope is the five
+> production stages only — **DEL and INST are still not assignable** (Q561).
+> The notes below otherwise stand.
+
 - Migration 0020 adds `app_user.is_shop_worker` (bool default false),
   `items.paint_after_assembly` (bool default false; when true the
   lifecycle order becomes DOWN → CNC → EDGED → MADE → PAINTED),
@@ -929,3 +1059,196 @@ surfaces:
   BM-101 deliberately stocked in **two** sizes (2440×1220 and 3600×1800) to
   exercise the largest-sheet pick, and BM-104 at **zero** to exercise the
   out-of-stock path. Idempotent via the same upsert.
+
+## Cutlist + related parts + Orderbook (sub-project #10)
+
+> **Plan V1 #10** — selected by Q437, widened by Q542 to take the whole
+> Orderbook with it. Plan + per-task verification notes:
+> `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md`.
+> Every binding rule traces to a numbered answer in
+> `docs/plan-v1/OPEN-QUESTIONS.md`; Q552–Q573 were raised *while building*,
+> each where a document and the code disagreed.
+
+Seven migrations, `0026`–`0032`. The A-series (`0026`–`0029`) shipped as
+schema-only ahead of any code; `0030`–`0032` were not reserved up front —
+the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+
+**No RBAC matrix change** (Q432). Still 7 roles × 11 modules. Cutlist routes
+reuse `("list", action)` because Q474 settled that Cutlist *is* the `List`
+tab; orders and suppliers reuse `("orderbook", action)`; areas/rooms reuse
+`("tracking", action)`.
+
+### Schema
+
+- **`0026_area_room`** — `area` (project-scoped, Q457) + `room` **nested under
+  area** (Q552). Composite FK `items (area_id, room_id) → room (area_id,
+  room_id)` so an item's room can never drift out of its area. `level` and
+  `zone` stay plain columns, not hierarchy levels (Q546).
+- **`0027_cutlist`** — `cutlist (cutlist_id, project_id, cutlist_no UNIQUE,
+  name, created_by)`, project-scoped rather than carrying `workspace_id`
+  (the post-`0014` pattern `shop_drawing` / `sample` use). `items.cutlist_id`
+  nullable and single-column, so an item may have none (Q440) and can never
+  hold two (Q411). Introduces **`joinery_number_seq`**.
+- **`0028_related_parts`** — `items.row_type` (`joinery_item` | `related_part`),
+  `items.parent_item_id` self-FK, and a `related_part_type` lookup seeded with
+  metal / benchtop / cushion (Q448) so IT can add a fourth without a migration.
+  Nesting is **one level only** (Q449), enforced by a generated
+  `parent_row_type` column feeding a composite FK — not by application code.
+  CHECKs also forbid a related part holding a `cutlist_id` (Q417) and require
+  a type key on exactly the related-part rows.
+- **`0029_orderbook`** — revives the legacy `/procurement/*` schema as the
+  order layer rather than building beside it (Q502). **There is no new `order`
+  / `order_line` table and no new `supplier` table**: `purchase_orders` +
+  `po_line_items` *are* the order layer (Q553) and `vendors` *is* the supplier
+  entity (Q556). Adds `purchase_orders.project_id` (Q554 — workspace is
+  derived by joining `projects`, not denormalised), `.item_id`, and `attributes
+  jsonb` on both tables (Q503). Drops legacy `inventory` / `inventory_movements`
+  / `v_inventory_status` — `board_inventory` (`0025`) wins (Q544). Adds
+  `supplier_id` / `default_supplier_id` to all six catalog tables **beside**
+  their free text, which Q435 requires keeping.
+- **`0030_shop_floor_cutlist`** — re-keys `worker_assignment` and
+  `stage_completion_log` to `(cutlist_id, stage_key)`. See the Shop Floor
+  section above.
+- **`0031_order_categories`** — makes the inherited office-procurement schema
+  usable for joinery: `purchase_orders.cost_center_id` becomes nullable
+  (Q563), the frozen `category` CHECK becomes an `order_category` lookup
+  (Q557) seeded with the six legacy values plus eight joinery ones, and
+  **`po_number_seq`** replaces the legacy `MAX(...) + 1` generator (Q564).
+- **`0032_item_lock_request`** — the Controlled Lock. See the PM Workbench
+  section above.
+
+### Key invariants
+
+- **One number space** (Q541). `joinery_number_seq` feeds Item IDs, cutlist
+  numbers **and** related parts, so a six-digit number never means two things.
+  Allocate it **inside** the INSERT; never `MAX(num) + 1` (that race is what
+  B2a removed). Q540 gave every pre-existing item its own cutlist carrying its
+  `num`, so historical numbers survive recognisably — which is also why
+  `cutlist_no` carries **no width CHECK**.
+- **`item_stages` stays per-item, as a projection** (Q439). Completing a stage
+  on a cutlist fans the `done_date` out to every linked item whose own order
+  contains that stage — *selectively*, not blanket (Q562), so a
+  `painting_req = false` item never receives a PAINTED date from a sibling.
+  Undo reverses the whole cutlist (Q446).
+- **Late link leaves history blank** (Q539). An item linked to a cutlist that
+  has already completed a stage gets **no** backfill; its cell stays empty and
+  it catches up at the next completion. `fan_in_stage_undone` handles it for
+  free — there is no row to clear.
+- **A related part never carries a cutlist number** (Q417) — a DB CHECK, not a
+  convention. It shares its **parent's** Group ID (Q416/Q453) and, in Tracking,
+  shows its **issued order number** where a cutlist number would be.
+- **An order's CUTLIST NO. is the parent's** (Q428), may be blank if the parent
+  has none yet (Q429), and is filled in / rewritten automatically when the
+  parent gains or changes a cutlist (Q430/Q431) — one function,
+  `orders.queries.sync_orders_for_item`, called from the cutlist link/unlink
+  paths. It lives in `orders/` because the orders own the column being written.
+- **`row_type` filtering is centralised.** `apps/api/app/row_types.py` holds
+  the single `joinery_items_only(alias)` definition. Of the 50 SQL call sites
+  reading `items`, **35** carry it; the rest are item-scoped by id or
+  deliberately want both kinds — B1's note in the plan classifies all 50.
+  Add the helper, not a hand-written predicate. Grep finds far fewer than 35
+  hits: 16 modules import it and most bind the result to a module constant
+  (`_JOINERY_I = joinery_items_only("i")`) interpolated into several queries.
+- **Item cost does not roll up** (Q543, deliberate). Orders carry cost;
+  nothing aggregates it onto an item yet.
+
+### Backend modules
+
+All mounted at top-level paths from `main.py`.
+
+- `apps/api/app/areas/` — 3 endpoints (`GET /projects/{pid}/areas`,
+  `POST /projects/{pid}/areas`, `POST /areas/{aid}/rooms`), gated
+  `("tracking", action)` with `require_drafter()` on the writes. Creating a
+  duplicate returns 409 **carrying the existing id**, so a racing create just
+  selects it.
+- `apps/api/app/cutlists/` — 7 endpoints, gated `("list", action)`. Includes
+  `POST /cutlists/{cid}/items` / `DELETE .../items/{iid}` for link + unlink.
+  `GET /cutlists/{cid}` rolls parts and hardware up **flat across the
+  cutlist's items**.
+- `apps/api/app/related_parts/` — 7 endpoints. No migration of its own —
+  `0028` carries every structural rule; this module turns what a CHECK cannot
+  express into clean 409s instead of raw constraint violations.
+- `apps/api/app/suppliers/` — 6 endpoints over `vendors`, gated
+  `("orderbook", action)`, **workspace-scoped** (the four legacy
+  `/procurement/vendors*` routes never were, and `0029`'s `workspace_id NOT
+  NULL` had broken their POST — they are retired, Q565).
+- `apps/api/app/orders/` — 9 endpoints, gated `("orderbook", action)`, at
+  top-level paths and separate from the still-untouched legacy
+  `/procurement/*` namespace. `POST /orders` prefills project / location /
+  cutlist number from the item rather than asking for them (Q427).
+  `GET /orders` is the **workspace-wide** list behind the Orderbook page and
+  must stay declared *before* `/orders/{po_id}` so the literal path wins — the
+  same ordering caveat `catalog/routes.py` carries. It also returns the Q554
+  order that has no project at all (that one reaches its workspace through its
+  vendor), which no project page can show.
+- Item lock requests live in `apps/api/app/items/` — see PM Workbench above.
+
+### Web
+
+- **`/tracking`** — `ItemsTable` nests related parts under their parent,
+  **collapsed by default** (Q420–Q422), with an **empty stage-strip area** for
+  them (Q419 — scoped to the date columns only; their other columns still
+  render). The leftmost column shows a cutlist number for an item and an
+  issued order number for a related part (Q417), and a **seventh column-set
+  `O/BOOK`** (Q570) shows Order # / Supplier / Status / ETA. **Create Order**
+  opens the one generic form plus key/value `attributes` rows (Q426, Q503).
+- **`/orderbook`** — two tabs since E2. **Orders** (default) reads
+  `purchase_orders` and honours `?order=<po_number>` by selecting the row,
+  scrolling it into view and opening its detail panel — the "locate the order"
+  half of Q418. **Delivery queue** is #4's supplier-grouped procurement-batch
+  queue, kept rather than replaced because Q504 leaves batches beneath orders
+  as the allocation mechanism. Money and quantity arrive as **JSON strings**
+  (Pydantic `Decimal`), not numbers — `lib/orders-types.ts` records that;
+  typing them `number` compiles and then throws `toFixed is not a function`.
+- **`/list`** — now the **Cutlist module workspace** (Q474), not a mirror of
+  Tracking's item grid. `CutlistClient` lists a project's cutlists and opens
+  one into Items / Parts / Hardware panes. Opens as a `target="_blank"` tab
+  (Q545) and is deep-linkable (Q478).
+- **Item editor** — `AreaRoomPicker` replaces the free-text Area/Room fields,
+  with inline `+ New…` creation from the selector. A move is audited (Q458),
+  and moving area clears a room that would be orphaned.
+- **Project Details modal** — gains a `Project Stats` tab. Cars / OH&S and
+  Scope are **omitted pending Q550 / Q572**, not stubbed.
+
+### Known gaps
+
+- The item editor's own hardware query still reads the catalog `supplier`
+  column alone. `0017` put the real value in `default_supplier`, so it renders
+  "—" on every row. Pre-existing; the cutlist rollup coalesces both and is
+  pinned by a test.
+- Q508's Hard / Approval lock types and Q511 / Q512 have no home yet.
+- **E3 is the one task of #10 left open** — migrating a copy of the customer's
+  real pilot data (Q436) to confirm Q540's number preservation. It is blocked
+  on data that has not been supplied, not on work.
+- `apps/web/components/pm/TrackingGrid.tsx` is **dead code**: #9a replaced it
+  with `ItemsTable` (`b910ab1`) and nothing renders it. Left in place per §3
+  (mention unrelated dead code, do not delete it) — but do not read it as the
+  Tracking grid, because it is not.
+
+> **Fixed during E2, recorded because the shape recurs.** #9a's Tracking
+> overhaul dropped the **availability chip** when `ItemsTable` replaced
+> `TrackingGrid`, and with it the *only* entry point to the
+> `AvailabilityDrawer` — `TrackingClient.setDrawerItemId` was left being called
+> with `null` and nothing else, so a documented #4 feature was reachable only
+> by hand-typing `?drawer=item-availability&itemId=N`. Nobody noticed because
+> the e2e spec covering it had been failing on an unrelated login assertion
+> since the same batch. **A failing or skipped spec is not coverage**; when one
+> goes red for a trivial-looking reason, check what it stopped guarding.
+
+### Seed
+
+`make seed` gives **every** seeded Joinery Item an `area` + `room` and its own
+cutlist numbered as itself — 8 areas and 13 rooms across the two demo projects
+(6 and 9 of them on ALF-001). On ALF-001 it then adds cutlist **297830
+"SS Bench run (shared)"** carrying two items with one `DOWN` completion fanned
+out to both, plus a third item linked *afterwards* whose `DOWN` cell stays
+blank (Q539); two related parts under ST-CT01, one with an issued order and one
+without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
+
+> **The recurring trap, recorded once.** Alembic backfills only touch rows that
+> exist when the migration runs — and `make seed` inserts rows *afterwards*.
+> This silently broke cutlists and left area/room empty. Every seed block that
+> creates an item must now create its cutlist, area and room too. The
+> per-item cutlist blocks also re-INSERT on every run (their idempotency guard
+> is on `items`, not `cutlist`), so anything that *moves* an item between
+> cutlists has to drop the vacated row unconditionally.

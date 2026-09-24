@@ -136,20 +136,15 @@ export function StationClient({ me, workerId }: Props) {
               {active.stage_key}
             </span>
             <span className="font-mono text-sm text-h-muted">
-              {active.project_code} · #{active.item_number}
+              {active.project_code} · Cutlist #{active.cutlist_no}
             </span>
-            {active.code && (
-              <span className="font-mono text-sm text-h-ink">{active.code}</span>
-            )}
           </div>
           <div className="mt-3 text-3xl font-medium leading-tight text-h-ink">
-            {active.description ?? "—"}
+            {active.cutlist_name ?? "—"}
           </div>
-          {(active.room_no || active.room_desc) && (
-            <div className="mt-1 text-sm text-h-muted">
-              {active.room_no} · {active.room_desc}
-            </div>
-          )}
+          <div className="mt-1 text-sm text-h-muted">
+            {active.item_count} item{active.item_count === 1 ? "" : "s"} on this cutlist
+          </div>
           {active.note && (
             <div className="mt-3 rounded border border-h-line bg-h-bg p-3 text-sm text-h-ink">
               {active.note}
@@ -194,10 +189,10 @@ export function StationClient({ me, workerId }: Props) {
                   {card.stage_key}
                 </span>
                 <span className="font-mono text-xs text-h-muted">
-                  {card.project_code} · #{card.item_number}
+                  {card.project_code} · Cutlist #{card.cutlist_no}
                 </span>
                 <span className="text-sm text-h-ink">
-                  {card.description ?? "—"}
+                  {card.cutlist_name ?? "—"}
                 </span>
               </li>
             ))}
@@ -240,7 +235,7 @@ function UndoBannerStack({
             className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500 bg-amber-50 p-3 text-sm text-amber-900"
           >
             <span className="font-medium">
-              {r.stage_key} done on item #{r.item_number}
+              {r.stage_key} done on cutlist #{r.cutlist_no}
             </span>
             <span className="text-xs">
               · {mins} min{mins === 1 ? "" : "s"} left to undo
@@ -310,7 +305,7 @@ function MarkDoneDialog({
           Mark {card.stage_key} done?
         </h2>
         <p className="mt-1 text-sm text-h-muted">
-          Item #{card.item_number} · {card.description ?? "—"}
+          Cutlist #{card.cutlist_no} · {card.item_count} item{card.item_count === 1 ? "" : "s"}
         </p>
 
         <label className="mt-4 block text-sm text-h-muted">

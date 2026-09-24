@@ -3,11 +3,16 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
+import { AvailabilityChip } from "@/components/pm/AvailabilityChip";
 
-export type SubTab = "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC";
+// Q425 adds O/BOOK to the strip the legacy mock established. It swaps the
+// right-hand columns like every other entry — one row per item stays Tracking's
+// spine — and carries the Create Order button.
+export type SubTab =
+  | "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC" | "O/BOOK";
 
 export const SUB_TABS: SubTab[] = [
-  "DATE", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC",
+  "DATE", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC", "O/BOOK",
 ];
 
 const STAGE_KEYS = [
@@ -46,6 +51,12 @@ const SUB_TAB_COLUMNS: Record<Exclude<SubTab, "DATE">, { key: string; label: str
     { key: "result", label: "Result" },
     { key: "rework", label: "Rework" },
   ],
+  "O/BOOK": [
+    { key: "orderno", label: "Order #" },
+    { key: "supplier", label: "Supplier" },
+    { key: "ostatus", label: "Status" },
+    { key: "eta", label: "ETA" },
+  ],
 };
 
 type SortKey =
@@ -71,10 +82,22 @@ const EMPTY_FILTERS: FilterState = {
 
 interface Props {
   items: TrackingItemRow[];
+  /** Needed for the cutlist deep link — a row carries no project of its own. */
+  projectId: number;
   cutlistQuery: string;
   freeQuery: string;
   onOpenItem: (id: number) => void;
   onOpenStatus: (id: number) => void;
+  /** Q432: the orderbook write holders — admin, manager, drafter, purchase_officer. */
+  canCreateOrder?: boolean;
+  onCreateOrder?: () => void;
+  /**
+   * Opens the item-scoped AvailabilityDrawer (#4). The chip was the drawer's
+   * only entry point and lived on the old `TrackingGrid`, which #9a replaced
+   * with this table without carrying it over — leaving the drawer reachable
+   * only by hand-typing `?drawer=item-availability&itemId=N`. Restored here.
+   */
+  onOpenAvailability?: (id: number) => void;
 }
 
 function statusClasses(status: string | null): string {
@@ -106,11 +129,24 @@ function dateCellColor(dueIso: string | null, doneIso: string | null, todayIso: 
   return "text-h-muted";
 }
 
-export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenStatus }: Props) {
+export function ItemsTable({
+  items,
+  projectId,
+  cutlistQuery,
+  freeQuery,
+  onOpenItem,
+  onOpenStatus,
+  canCreateOrder = false,
+  onCreateOrder,
+  onOpenAvailability,
+}: Props) {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
   const [sortAsc, setSortAsc] = useState(true);
   const [subTab, setSubTab] = useState<SubTab>("DATE");
+  // Q422: related parts are collapsed when Tracking first opens. The set holds
+  // the parent ids the user has opened.
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const savedScrollLeft = useRef(0);
 
@@ -120,16 +156,35 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
     }
   }, [subTab]);
 
-  const levels  = useMemo(() => uniqStrings(items.map((i) => i.level)), [items]);
-  const rooms   = useMemo(() => uniqStrings(items.map((i) => i.room_no)), [items]);
-  const descs   = useMemo(() => uniqStrings(items.map((i) => i.room_desc)), [items]);
-  const codes   = useMemo(() => uniqStrings(items.map((i) => i.code)), [items]);
-  const listers = useMemo(() => uniqStrings(items.map((i) => i.cutlist_owner_name)), [items]);
+  // Q420: related parts are not free-standing rows — they hang off a parent.
+  // Everything the grid does (filter, sort, the filter dropdowns' options) runs
+  // over the Joinery Items alone; each parent's related parts follow it, so no
+  // sort order can separate a child from its parent.
+  const parents = useMemo(
+    () => items.filter((i) => i.row_type !== "related_part"),
+    [items],
+  );
+  const childrenByParent = useMemo(() => {
+    const m = new Map<number, TrackingItemRow[]>();
+    for (const it of items) {
+      if (it.row_type !== "related_part" || it.parent_item_id == null) continue;
+      const kids = m.get(it.parent_item_id);
+      if (kids) kids.push(it);
+      else m.set(it.parent_item_id, [it]);
+    }
+    return m;
+  }, [items]);
+
+  const levels  = useMemo(() => uniqStrings(parents.map((i) => i.level)), [parents]);
+  const rooms   = useMemo(() => uniqStrings(parents.map((i) => i.room_no)), [parents]);
+  const descs   = useMemo(() => uniqStrings(parents.map((i) => i.room_desc)), [parents]);
+  const codes   = useMemo(() => uniqStrings(parents.map((i) => i.code)), [parents]);
+  const listers = useMemo(() => uniqStrings(parents.map((i) => i.cutlist_owner_name)), [parents]);
 
   const filtered = useMemo(() => {
     const cq = cutlistQuery.trim();
     const fq = freeQuery.trim().toLowerCase();
-    return items.filter((it) => {
+    return parents.filter((it) => {
       if (filters.stage && it.stage !== filters.stage) return false;
       if (filters.zone && it.zone !== filters.zone) return false;
       if (filters.level && it.level !== filters.level) return false;
@@ -138,7 +193,14 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       if (filters.code && it.code !== filters.code) return false;
       if (filters.status && it.status !== filters.status) return false;
       if (filters.lister && it.cutlist_owner_name !== filters.lister) return false;
-      if (cq && !(it.item_number != null && String(it.item_number).includes(cq))) return false;
+      // The box is labelled "Cutlist #", so it matches the cutlist number — but
+      // Q541 draws Item IDs and cutlist numbers from ONE sequence, so the two
+      // can never collide and matching either keeps a six-digit number typed
+      // from a printed sheet finding its row whichever kind it is.
+      if (cq) {
+        const nums = [it.cutlist_no, it.item_number].filter((n) => n != null);
+        if (!nums.some((n) => String(n).includes(cq))) return false;
+      }
       if (fq) {
         const hay = [it.code, it.description, it.room_desc, it.room_no, it.stage]
           .filter(Boolean)
@@ -148,7 +210,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       }
       return true;
     });
-  }, [items, filters, cutlistQuery, freeQuery]);
+  }, [parents, filters, cutlistQuery, freeQuery]);
 
   const sorted = useMemo(() => sortRows(filtered, sortKey, sortAsc), [filtered, sortKey, sortAsc]);
 
@@ -163,6 +225,15 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
 
   function patch<K extends keyof FilterState>(k: K, v: FilterState[K]) {
     setFilters((s) => ({ ...s, [k]: v }));
+  }
+
+  function toggleRelated(parentId: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
   }
 
   function clearFilters() {
@@ -203,6 +274,15 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
                   {st}
                 </button>
               ))}
+              {subTab === "O/BOOK" && canCreateOrder && (
+                <button
+                  type="button"
+                  onClick={onCreateOrder}
+                  className="ml-2 rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white"
+                >
+                  + Create Order
+                </button>
+              )}
             </th>
           </tr>
           <tr>
@@ -237,6 +317,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
               subCols!.map((c) => <Th key={c.key}>{c.label}</Th>)
             )}
             <Th sort sortActive={sortKey === "itemId"} sortAsc={sortAsc} onSort={() => setSort("itemId")}>Item ID</Th>
+            <Th>Avail.</Th>
           </tr>
           <tr className="border-t border-h-line bg-h-surface">
             <td />
@@ -287,28 +368,57 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
             ) : (
               subCols!.map((c) => <td key={c.key} />)
             )}
-            <td />
+            <td /><td />
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={26} className="px-4 py-8 text-center text-h-muted">
+              <td colSpan={27} className="px-4 py-8 text-center text-h-muted">
                 No items match your filters.
               </td>
             </tr>
           ) : (
-            sorted.map((it) => (
-              <Row
-                key={it.id}
-                row={it}
-                isDate={isDate}
-                subColCount={subCols?.length ?? 0}
-                today={today}
-                onOpen={() => onOpenItem(it.id)}
-                onOpenStatus={() => onOpenStatus(it.id)}
-              />
-            ))
+            sorted.flatMap((it) => {
+              const kids = childrenByParent.get(it.id) ?? [];
+              const isOpen = expanded.has(it.id);
+              const rows = [
+                <Row
+                  key={it.id}
+                  row={it}
+                  projectId={projectId}
+                  isDate={isDate}
+                  subTab={subTab}
+                  subColCount={subCols?.length ?? 0}
+                  today={today}
+                  relatedCount={kids.length}
+                  relatedOpen={isOpen}
+                  onToggleRelated={() => toggleRelated(it.id)}
+                  onOpen={() => onOpenItem(it.id)}
+                  onOpenStatus={() => onOpenStatus(it.id)}
+                  onOpenAvailability={onOpenAvailability}
+                />,
+              ];
+              if (isOpen) {
+                for (const kid of kids) {
+                  rows.push(
+                    <Row
+                      key={kid.id}
+                      row={kid}
+                      projectId={projectId}
+                      isDate={isDate}
+                      subTab={subTab}
+                      subColCount={subCols?.length ?? 0}
+                      today={today}
+                      onOpen={() => onOpenItem(kid.id)}
+                      onOpenStatus={() => onOpenStatus(kid.id)}
+                      onOpenAvailability={onOpenAvailability}
+                    />,
+                  );
+                }
+              }
+              return rows;
+            })
           )}
         </tbody>
       </table>
@@ -318,39 +428,82 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
 
 function Row({
   row,
+  projectId,
   isDate,
+  subTab,
   subColCount,
   today,
+  relatedCount = 0,
+  relatedOpen = false,
+  onToggleRelated,
   onOpen,
   onOpenStatus,
+  onOpenAvailability,
 }: {
   row: TrackingItemRow;
+  projectId: number;
   isDate: boolean;
+  subTab: SubTab;
   subColCount: number;
   today: string;
+  relatedCount?: number;
+  relatedOpen?: boolean;
+  onToggleRelated?: () => void;
   onOpen: () => void;
   onOpenStatus: () => void;
+  onOpenAvailability?: (id: number) => void;
 }) {
+  const isRelated = row.row_type === "related_part";
   return (
-    <tr className="border-t border-h-line hover:bg-h-bg">
+    <tr
+      data-testid="tracking-row"
+      className={`border-t border-h-line hover:bg-h-bg ${isRelated ? "bg-h-bg/60" : ""}`}
+    >
       <td className="px-1 py-1 text-center text-h-muted" title="Omit (mock-only)">
         <input type="checkbox" disabled className="opacity-30" />
       </td>
       <td className="px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="rounded p-0.5 text-h-muted transition hover:bg-h-bg hover:text-h-accent"
-          title="Open item details"
-          aria-label="Open item details"
-        >
-          ▶
-        </button>
+        {isRelated ? (
+          // Q559: GET /items/{id} 404s on a related part — it has no Cutlist,
+          // Hardware or Board tab to open. Related parts are edited in Tracking.
+          <span
+            className="inline-block p-0.5 text-h-line"
+            title="A related part has no item editor (Q559)"
+          >
+            ▪
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="rounded p-0.5 text-h-muted transition hover:bg-h-bg hover:text-h-accent"
+            title="Open item details"
+            aria-label="Open item details"
+          >
+            ▶
+          </button>
+        )}
       </td>
-      <td className="px-2 py-1 font-mono text-h-ink">
-        <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
-          {row.item_number ?? row.id}
-        </Link>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-h-ink">
+        <span className="flex items-center gap-1">
+          {isRelated ? (
+            <span className="w-3.5 shrink-0" />
+          ) : relatedCount > 0 ? (
+            <button
+              type="button"
+              onClick={onToggleRelated}
+              className="w-3.5 shrink-0 rounded text-[9px] text-h-muted transition hover:text-h-accent"
+              title={`${relatedOpen ? "Hide" : "Show"} ${relatedCount} related part${relatedCount === 1 ? "" : "s"}`}
+              aria-expanded={relatedOpen}
+              aria-label={`${relatedOpen ? "Hide" : "Show"} related parts`}
+            >
+              {relatedOpen ? "▼" : "▶"}
+            </button>
+          ) : (
+            <span className="w-3.5 shrink-0" />
+          )}
+          <ReferenceCell row={row} projectId={projectId} />
+        </span>
       </td>
       <td className="px-2 py-1 text-h-ink">{row.stage ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.zone ?? "—"}</td>
@@ -358,7 +511,18 @@ function Row({
       <td className="px-2 py-1 text-h-muted">{row.room_no ?? "—"}</td>
       <td className="px-2 py-1 text-h-ink">{row.room_desc ?? "—"}</td>
       <td className="px-2 py-1 font-mono text-h-ink">{row.code ?? "—"}</td>
-      <td className="px-2 py-1 text-h-ink">{row.description ?? "—"}</td>
+      <td className="px-2 py-1 text-h-ink">
+        {isRelated ? (
+          <span className="flex items-center gap-1.5 pl-4">
+            <span className="rounded bg-h-line/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-h-muted">
+              {row.related_part_type_key ?? "part"}
+            </span>
+            {row.description ?? "—"}
+          </span>
+        ) : (
+          row.description ?? "—"
+        )}
+      </td>
       <td className="px-2 py-1">
         <button
           type="button"
@@ -374,17 +538,165 @@ function Row({
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">{row.qty ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted" title="Assembler (mock-only)">—</td>
       <td className="px-2 py-1 text-h-muted">{row.cutlist_owner_name ?? "—"}</td>
-      {isDate ? (
+      {isRelated && isDate ? (
+        // Q419: show NO workflow stages for a related part — leave the whole
+        // stage area blank rather than borrowing the parent's dates. Blank
+        // cells, not em dashes: an em dash reads as "recorded, but empty".
+        //
+        // Scoped to the DATE strip alone. Q419 blanks the *workflow-stage*
+        // area; the other sub-tabs are not stages, and O/BOOK especially must
+        // render for a related part — an order raised against one is the
+        // normal case (Q424), which is half of why that sub-tab exists.
+        Array.from({ length: STAGE_KEYS.length }).map((_, i) => (
+          <td key={i} className="px-2 py-1" />
+        ))
+      ) : isDate ? (
         STAGE_KEYS.map((sk) => (
           <StageCell key={sk} stage={row.stages[sk]} today={today} />
         ))
+      ) : subTab === "O/BOOK" ? (
+        <OrderCells row={row} />
       ) : (
         Array.from({ length: subColCount }).map((_, i) => (
           <td key={i} className="px-2 py-1 text-h-muted">—</td>
         ))
       )}
-      <td className="px-2 py-1 font-mono text-[10px] text-h-muted">{row.id}</td>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-[10px] text-h-muted">
+        {/* Q541/Q416: the Item ID is the six-digit `num`, not the internal row
+            key. It moved here from the CUTLIST column, which now carries the
+            cutlist's own number, and keeps the click-through to the editor —
+            except on a related part, which has no editor (Q559). */}
+        {isRelated ? (
+          <span>{row.item_number ?? row.id}</span>
+        ) : (
+          <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
+            {row.item_number ?? row.id}
+          </Link>
+        )}
+      </td>
+      {/* #4's availability rollup. The chip is the AvailabilityDrawer's only
+          entry point, so it is a button whenever a handler is supplied. A
+          related part carries no hardware lines of its own, so it has nothing
+          to roll up and shows a plain dash. */}
+      <td className="px-2 py-1">
+        {isRelated ? (
+          <span className="text-h-muted">—</span>
+        ) : onOpenAvailability ? (
+          <button
+            type="button"
+            onClick={() => onOpenAvailability(row.id)}
+            data-testid="open-availability"
+            aria-label="Open item availability"
+            className="rounded hover:opacity-80"
+          >
+            <AvailabilityChip
+              ready={row.availability.ready}
+              blocked={row.availability.blocked}
+            />
+          </button>
+        ) : (
+          <AvailabilityChip
+            ready={row.availability.ready}
+            blocked={row.availability.blocked}
+          />
+        )}
+      </td>
     </tr>
+  );
+}
+
+/**
+ * Q417: the leftmost reference depends on the row type — a Joinery Item shows
+ * its cutlist number, a related part shows the supplier-order number, because
+ * a related part never receives a cutlist number at all.
+ *
+ * Q567 fixes what "issued" means: the API returns `issued_order_no` only once
+ * that order carries a `date_ordered`, so a draft order leaves the cell blank.
+ *
+ * Q418: clicking the order number opens Orderbook **on that order**.
+ * `/orderbook` reads `purchase_orders` since the E2 rework and honours the
+ * `order` param by selecting the row and opening its detail panel; #4's
+ * procurement-batch queue moved to the Delivery queue tab beside it (Q504).
+ */
+function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: number }) {
+  if (row.row_type !== "related_part") {
+    // Q438/Q568: the cutlist's number, which several items share — not this
+    // item's own. Blank while the item has no cutlist, which Q440 allows
+    // indefinitely; its Item ID still identifies the row.
+    //
+    // `plan_v1.md` §1218: "Clicking that number opens a separate window
+    // containing the cutlist details" — Q545 defines "separate window" as a
+    // target="_blank" tab, and Q474 puts those details on /list.
+    if (row.cutlist_no == null) {
+      return <span className="text-h-muted" title="No cutlist assigned yet">—</span>;
+    }
+    return (
+      <Link
+        href={`/list?project_id=${projectId}&cutlist=${row.cutlist_id}`}
+        target="_blank"
+        className="hover:text-h-accent hover:underline"
+        title="Open this cutlist in a new tab"
+      >
+        {row.cutlist_no}
+      </Link>
+    );
+  }
+  if (!row.issued_order_no) {
+    return (
+      <span className="text-h-muted" title="No supplier order issued yet">
+        —
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={`/orderbook?order=${encodeURIComponent(row.issued_order_no)}`}
+      className="text-h-accent hover:underline"
+      title="Open this order in Orderbook"
+    >
+      {row.issued_order_no}
+    </Link>
+  );
+}
+
+/**
+ * Q425's O/BOOK columns: this row's latest order, whatever its state — a Draft
+ * raised moments ago is precisely what the sub-tab is for. Related parts get
+ * these columns too: an order against a related part is the normal case (Q424).
+ */
+function OrderCells({ row }: { row: TrackingItemRow }) {
+  if (row.order_no == null) {
+    return (
+      <>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+        <td className="px-2 py-1 text-h-muted">—</td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td className="whitespace-nowrap px-2 py-1 font-mono text-h-ink">
+        <Link
+          href={`/orderbook?order=${encodeURIComponent(row.order_no)}`}
+          target="_blank"
+          className="hover:text-h-accent hover:underline"
+          title="Open this order in Orderbook"
+        >
+          {row.order_no}
+        </Link>
+      </td>
+      <td className="px-2 py-1 text-h-ink">{row.order_supplier ?? "—"}</td>
+      <td className="px-2 py-1">
+        <span className="rounded-full bg-h-line/50 px-2 py-0.5 text-[10px] font-semibold text-h-ink">
+          {row.order_status ?? "—"}
+        </span>
+      </td>
+      <td className="px-2 py-1 font-mono text-[10px] tabular-nums text-h-muted">
+        {row.order_due_date ? row.order_due_date.slice(5) : "—"}
+      </td>
+    </>
   );
 }
 
@@ -495,7 +807,8 @@ function compareRows(a: TrackingItemRow, b: TrackingItemRow, key: SortKey): numb
     return cmp(av, bv);
   }
   switch (key as Exclude<SortKey, `stage:${string}`>) {
-    case "num":    return cmp(a.item_number ?? 0, b.item_number ?? 0);
+    // "num" is the CUTLIST column, which now carries the cutlist's number.
+    case "num":    return cmp(a.cutlist_no ?? 0, b.cutlist_no ?? 0);
     case "stage":  return cmp(a.stage ?? "", b.stage ?? "");
     case "zone":   return cmp(a.zone ?? "", b.zone ?? "");
     case "level":  return cmp(a.level ?? "", b.level ?? "");
@@ -508,7 +821,7 @@ function compareRows(a: TrackingItemRow, b: TrackingItemRow, key: SortKey): numb
     case "qty":    return cmp(a.qty ?? 0, b.qty ?? 0);
     case "assem":  return 0;
     case "lister": return cmp(a.cutlist_owner_name ?? "", b.cutlist_owner_name ?? "");
-    case "itemId": return cmp(a.id, b.id);
+    case "itemId": return cmp(a.item_number ?? a.id, b.item_number ?? b.id);
   }
 }
 

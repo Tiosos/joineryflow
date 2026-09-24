@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..row_types import joinery_items_only
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -26,7 +27,7 @@ def workspace_stats(
     """
     row = db.execute(
         text(
-            """
+            f"""
             WITH ws AS (
                 SELECT id FROM workspace WHERE slug = :slug
             ),
@@ -40,6 +41,7 @@ def workspace_stats(
                 FROM parts pa
                 JOIN modules mo ON mo.module_id = pa.module_id
                 JOIN items   it ON it.item_id   = mo.item_id
+                                AND {joinery_items_only("it")}
                 JOIN projects pr ON pr.project_id = it.project_id
                 JOIN ws ON pr.workspace_id = ws.id
             ),
@@ -51,8 +53,11 @@ def workspace_stats(
                     SELECT supplier AS s FROM hardware_materials
                      WHERE workspace_id = (SELECT id FROM ws) AND supplier IS NOT NULL
                     UNION ALL
-                    SELECT supplier AS s FROM custom_made
-                     WHERE workspace_id = (SELECT id FROM ws) AND supplier IS NOT NULL
+                    -- custom_made names this column `vendor`, not `supplier`
+                    -- (see CLAUDE.md, Material Catalog invariants). Selecting
+                    -- `supplier` here raised UndefinedColumn on every call.
+                    SELECT vendor AS s FROM custom_made
+                     WHERE workspace_id = (SELECT id FROM ws) AND vendor IS NOT NULL
                     UNION ALL
                     SELECT supplier AS s FROM benchtop_materials
                      WHERE workspace_id = (SELECT id FROM ws) AND supplier IS NOT NULL
