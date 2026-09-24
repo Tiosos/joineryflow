@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     session_sliding_days: int = 14
     session_hard_cap_days: int = 30
     cookie_secure: bool = False
+    meili_url: str = "http://meili:7700"
+    meili_api_key: str = ""
+    search_index: str = "jf_search"
     model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
