@@ -2032,6 +2032,33 @@ sub-project needs before a spec can be written.
 2. All ~18 §13 types now, stubbing the ones that do not exist yet.
 3. Defer Search behind small fixes.
 
+**Raised writing the Search spec (2026-09-24) — open.** Q577–Q580 are design
+questions the spec
+(`docs/superpowers/specs/2026-09-24-search-design.md`) needs answered. Each
+carries a recommendation; none is confirmed.
+
+### Q577 — Where does the search worker run? *(new — open)*
+Q575 chose a worker without saying where it lives.
+1. **Recommended.** Its own `search-worker` compose service running the api image with a different command. A crash or retry loop cannot starve request handling, and it has its own logs. Compose becomes five services.
+2. A background task inside the api (uvicorn) process. One service fewer, but `--reload` restarts it on every code edit and it runs once per uvicorn worker.
+
+### Q578 — Who writes the outbox rows? *(new — open)*
+Q575 says "every indexed mutation writes an outbox row in the same DB transaction", which both options satisfy.
+1. **Recommended.** Postgres triggers on each indexed table. They catch every write path — 13 modules write these tables, `catalog` and `cv` through dynamic SQL a grep misses — plus seed and migration data (CLAUDE.md's *recurring trap*). The cost: **triggers are a new pattern here**; no migration from `0001` to `0032` creates one.
+2. An `enqueue()` helper called from application code beside each write. Visible in Python, but a missed call site is a silently stale index, and seed / migrations need their own step.
+
+### Q579 — Q576's type list omitted records that exist *(new — open)*
+Q576 was answered from a list that left out **projects**, **areas / rooms** and **people**, all of which exist as tables. A search that cannot find "ALF-001" is a hole.
+1. **Recommended.** Add `project` as a type. Fold area and room names into item documents rather than making them their own results. Defer people (the only page to open is the admin-only `/it`). Suppliers stay indexed but have **no page to link to**, so their hits show contact details with no link until a supplier page exists.
+2. Q576 as written: no projects, areas / rooms or people.
+3. All three as their own types, with a new supplier / people destination.
+
+### Q580 — Deleted and archived records *(new — open)*
+`items.deleted` / `void_flag`, and `archived_at` on drawings, samples, customers and catalog rows.
+1. **Recommended.** Soft-deleted items are never indexed. Archived / void records are indexed with `archived = true` and hidden unless the user ticks *include archived*.
+2. Index only live records.
+3. Index everything with no default filter.
+
 ---
 
 ## §O — Templates, validation, initiatives *(Plan V1 §7–§8, §35–§38)*
