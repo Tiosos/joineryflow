@@ -12,7 +12,7 @@ services:
     env_file: .env
     environment:
       FILE_STORE_ROOT: /uploads
-    depends_on: [db]
+    depends_on: [db, meili]
     ports: ["8000:8000"]
     volumes:
       - ./apps/api:/code
@@ -20,6 +20,24 @@ services:
       - ./seed:/code/seed
       - uploads:/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  # Global Search (sub-project #11). No host port: only the api and the
+  # search-worker talk to it — the browser never does.
+  meili:
+    image: getmeili/meilisearch:v1.54.0
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    volumes: ["meilidata:/meili_data"]
+  # Drains search_outbox into meili (Q577: its own service, so a crash or a
+  # retry loop cannot starve the api). Same image, different command; no
+  # --reload, so restart it after editing app/search/.
+  search-worker:
+    build: ./apps/api
+    env_file: .env
+    depends_on: [db, meili]
+    volumes: ["./apps/api:/code"]
+    command: python -m app.search.worker
   web:
     build: ./apps/web
     env_file: .env
@@ -30,3 +48,4 @@ services:
 volumes:
   dbdata:
   uploads:
+  meilidata:

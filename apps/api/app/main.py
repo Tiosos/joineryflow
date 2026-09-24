@@ -24,6 +24,7 @@ from .procurement_v1.queue.routes import router as proc_v1_queue_router
 from .projects.routes import router as projects_router
 from .related_parts.routes import router as related_parts_router
 from .samples.routes import router as samples_router
+from .search.routes import router as search_router
 from .shop_drawings.routes import router as shop_dwgs_router
 from .suppliers.routes import router as suppliers_router
 from .shop_floor.routes import router as shop_floor_router
@@ -49,6 +50,7 @@ app.include_router(files_router)
 app.include_router(item_attachments_router)
 app.include_router(printing_router)
 app.include_router(samples_router)
+app.include_router(search_router)
 app.include_router(shop_dwgs_router)
 app.include_router(shop_floor_router)
 app.include_router(ws_router)

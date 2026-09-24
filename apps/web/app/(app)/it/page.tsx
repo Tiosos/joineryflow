@@ -2,6 +2,7 @@ import { fetchMe } from "@/lib/session";
 import { redirect } from "next/navigation";
 
 import { LabourRatesPanel } from "./_components/LabourRatesPanel";
+import { SearchHealthPanel } from "./_components/SearchHealthPanel";
 import { WorkerRosterPanel } from "./_components/WorkerRosterPanel";
 
 export default async function ITPage() {
@@ -15,6 +16,7 @@ export default async function ITPage() {
       </header>
       <WorkerRosterPanel />
       <LabourRatesPanel />
+      <SearchHealthPanel />
     </section>
   );
 }

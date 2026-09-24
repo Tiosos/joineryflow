@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Me } from "@/lib/session";
 import { LogoutButton } from "./LogoutButton";
+import { SearchBox } from "./SearchBox";
 
 interface TopBarProps {
   user: Me;
@@ -19,6 +20,7 @@ export function TopBar({ user, editorMode }: TopBarProps) {
           <div className="font-semibold text-h-ink">JoineryFlow</div>
         )}
       </div>
+      <SearchBox />
       <div className="flex items-center gap-4 text-sm">
         <span className="text-h-muted">
           {user.full_name} · <span className="text-h-ink">{user.auth_role}</span>

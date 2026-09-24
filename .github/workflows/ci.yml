@@ -15,8 +15,12 @@ jobs:
       - name: Create .env from example
         run: cp .env.example .env
 
-      - name: Build & start db + api
-        run: docker compose up -d --build db api
+      # meili is named explicitly although `api` depends on it: the tests marked
+      # `meili` run against it (MEILI_URL comes from .env.example). The
+      # search-worker is deliberately NOT started — it would drain outbox rows
+      # the tests count.
+      - name: Build & start db + meili + api
+        run: docker compose up -d --build db meili api
 
       - name: Wait for Postgres
         run: |

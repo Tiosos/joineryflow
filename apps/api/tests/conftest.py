@@ -128,6 +128,8 @@ TRUNCATE_TABLES = (
     "session",
     "app_user",
     "workspace",
+    # No FK to anything, so no CASCADE reaches it; fed by 0033's triggers.
+    "search_outbox",
 )
 
 
