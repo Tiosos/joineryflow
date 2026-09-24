@@ -296,3 +296,126 @@ def test_categories_include_joinery_values(ctx):
     keys = {c["category_key"] for c in r.json()}
     assert {"Board", "Hardware", "Benchtop", "Metal"} <= keys   # 0031's additions
     assert "Other" in keys                                       # legacy preserved
+
+
+# ---------------------------------------------------------------------------
+# GET /orders — the workspace-wide list behind the Orderbook page (Q418/Q504)
+# ---------------------------------------------------------------------------
+
+def test_workspace_list_spans_projects_and_is_newest_first(ctx):
+    """Orderbook has always been the CROSS-project surface, so this is not
+    `/projects/{pid}/orders` with a loop around it."""
+    c = ctx["client"]
+    other_pid = None
+    s = SessionLocal()
+    try:
+        other_pid = s.execute(
+            text("INSERT INTO projects(project_code, name, workspace_id)"
+                 " VALUES('ORD-OTHER', 'Second Project', :w) RETURNING project_id"),
+            {"w": ctx["wid"]},
+        ).scalar()
+        s.commit()
+    finally:
+        s.close()
+
+    first = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "edge tape",
+        "category": "Board", "project_id": ctx["pid"],
+    }).json()
+    second = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "brass rail",
+        "category": "Metal", "project_id": other_pid,
+    }).json()
+
+    r = c.get("/orders")
+    assert r.status_code == 200, r.text
+    rows = r.json()["orders"]
+    assert [o["po_id"] for o in rows] == [second["po_id"], first["po_id"]]
+    assert {o["project_id"] for o in rows} == {ctx["pid"], other_pid}
+
+
+def test_workspace_list_includes_an_order_with_no_project(ctx):
+    """Q554: such an order reaches its workspace through its VENDOR. No project
+    page can show it, so if Orderbook dropped it too it would be invisible."""
+    c = ctx["client"]
+    made = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "office consumables",
+        "category": "Office", "project_name": "Workshop stock",
+    }).json()
+    assert made["project_id"] is None
+
+    rows = c.get("/orders").json()["orders"]
+    assert made["po_id"] in [o["po_id"] for o in rows]
+
+
+def test_workspace_list_filters_by_status_supplier_and_search(ctx):
+    c = ctx["client"]
+    s2 = SessionLocal()
+    try:
+        other_vendor = s2.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES('Plyco', 'Board', :w) RETURNING vendor_id"),
+            {"w": ctx["wid"]},
+        ).scalar()
+        s2.commit()
+    finally:
+        s2.close()
+
+    a = c.post("/orders", json={"vendor_id": ctx["vendor"],
+                                "description": "walnut veneer",
+                                "category": "Board"}).json()
+    b = c.post("/orders", json={"vendor_id": other_vendor,
+                                "description": "birch ply",
+                                "category": "Board"}).json()
+    c.patch(f"/orders/{b['po_id']}", json={"status": "Approved"})
+
+    approved = c.get("/orders", params={"status": "Approved"}).json()["orders"]
+    assert [o["po_id"] for o in approved] == [b["po_id"]]
+
+    plyco = c.get("/orders", params={"supplier": "Plyco"}).json()["orders"]
+    assert [o["po_id"] for o in plyco] == [b["po_id"]]
+
+    # Q418 arrives with a PO number; the description is the other useful key.
+    by_number = c.get("/orders", params={"search": a["po_number"]}).json()["orders"]
+    assert [o["po_id"] for o in by_number] == [a["po_id"]]
+    by_text = c.get("/orders", params={"search": "walnut"}).json()["orders"]
+    assert [o["po_id"] for o in by_text] == [a["po_id"]]
+
+
+def test_workspace_list_is_isolated_from_other_workspaces(ctx):
+    """The literal /orders path must also not be swallowed by /orders/{po_id}."""
+    c = ctx["client"]
+    mine = c.post("/orders", json={"vendor_id": ctx["vendor"],
+                                   "description": "mine",
+                                   "category": "Board",
+                                   "project_id": ctx["pid"]}).json()
+
+    suffix = uuid.uuid4().hex[:8]
+    s = SessionLocal()
+    try:
+        other_ws = s.execute(
+            text("INSERT INTO workspace(slug, name) VALUES(:s,'Other WS') RETURNING id"),
+            {"s": f"ord-other-{suffix}"},
+        ).scalar()
+        other_vendor = s.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES('Foreign Supplier', 'Board', :w) RETURNING vendor_id"),
+            {"w": other_ws},
+        ).scalar()
+        foreign_po = s.execute(
+            text("""INSERT INTO purchase_orders
+                      (po_number, vendor_id, requester_id, description, category)
+                    VALUES ('PO-FOREIGN-1', :v,
+                            (SELECT id FROM app_user WHERE workspace_id = :w2 LIMIT 1),
+                            'not yours', 'Board')
+                    RETURNING po_id"""),
+            {"v": other_vendor, "w2": ctx["wid"]},
+        ).scalar()
+        s.commit()
+    finally:
+        s.close()
+
+    rows = c.get("/orders").json()["orders"]
+    ids = [o["po_id"] for o in rows]
+    assert mine["po_id"] in ids
+    assert foreign_po not in ids

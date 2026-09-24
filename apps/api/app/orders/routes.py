@@ -35,6 +35,30 @@ def list_categories_route(
     return q.list_categories(db)
 
 
+@router.get("/orders", response_model=OrderListOut)
+def list_workspace_orders_route(
+    status: str | None = None,
+    supplier: str | None = None,
+    search: str | None = None,
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    """Backs the Orderbook page's Orders tab — every order in the workspace.
+
+    Declared BEFORE `/orders/{po_id}` below so the literal path wins, the same
+    ordering caveat `catalog/routes.py` carries for `/catalog/cv-mappings`.
+    """
+    return {
+        "orders": q.list_orders_for_workspace(
+            db,
+            workspace_id=user.workspace_id,
+            status=status,
+            supplier=supplier,
+            q=search,
+        )
+    }
+
+
 @router.get("/projects/{pid}/orders", response_model=OrderListOut)
 def list_project_orders_route(
     pid: int,

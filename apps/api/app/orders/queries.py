@@ -107,6 +107,50 @@ def get_order(db: Session, *, po_id: int, workspace_id: int) -> dict | None:
     return order
 
 
+def list_orders_for_workspace(
+    db: Session,
+    *,
+    workspace_id: int,
+    status: str | None = None,
+    supplier: str | None = None,
+    q: str | None = None,
+) -> list[dict]:
+    """Every order in the workspace, newest first — the Orderbook page (Q418).
+
+    Cross-project by design: Orderbook has always been the cross-project queue
+    (#4 grouped batches by supplier here), and Q504 keeps orders as the
+    commercial layer above those batches rather than replacing them.
+
+    `_ORDER_WORKSPACE` already covers the Q554 case of an order with no project
+    at all — it reaches its workspace through its vendor instead — so such an
+    order is listed here even though no project page would ever show it.
+    """
+    where = [_ORDER_WORKSPACE]
+    params: dict = {"w": workspace_id}
+    if status:
+        where.append("po.status = :st")
+        params["st"] = status
+    if supplier:
+        where.append("v.name = :sup")
+        params["sup"] = supplier
+    if q:
+        # Deliberately narrow: the number a user arrives with from Tracking,
+        # or a word from the description. Not a full-text search.
+        where.append(
+            "(po.po_number ILIKE :q OR po.description ILIKE :q"
+            " OR po.cutlist_no ILIKE :q OR po.order_number ILIKE :q)"
+        )
+        params["q"] = f"%{q}%"
+    rows = db.execute(
+        text(
+            f"SELECT {_ORDER_COLS} {_ORDER_FROM} WHERE {' AND '.join(where)}"
+            " ORDER BY po.po_id DESC"
+        ),
+        params,
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def list_orders_for_project(
     db: Session, *, project_id: int, workspace_id: int
 ) -> list[dict] | None:

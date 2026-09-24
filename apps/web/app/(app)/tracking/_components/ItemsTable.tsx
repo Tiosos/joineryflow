@@ -3,6 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
+import { AvailabilityChip } from "@/components/pm/AvailabilityChip";
 
 // Q425 adds O/BOOK to the strip the legacy mock established. It swaps the
 // right-hand columns like every other entry — one row per item stays Tracking's
@@ -90,6 +91,13 @@ interface Props {
   /** Q432: the orderbook write holders — admin, manager, drafter, purchase_officer. */
   canCreateOrder?: boolean;
   onCreateOrder?: () => void;
+  /**
+   * Opens the item-scoped AvailabilityDrawer (#4). The chip was the drawer's
+   * only entry point and lived on the old `TrackingGrid`, which #9a replaced
+   * with this table without carrying it over — leaving the drawer reachable
+   * only by hand-typing `?drawer=item-availability&itemId=N`. Restored here.
+   */
+  onOpenAvailability?: (id: number) => void;
 }
 
 function statusClasses(status: string | null): string {
@@ -130,6 +138,7 @@ export function ItemsTable({
   onOpenStatus,
   canCreateOrder = false,
   onCreateOrder,
+  onOpenAvailability,
 }: Props) {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
@@ -308,6 +317,7 @@ export function ItemsTable({
               subCols!.map((c) => <Th key={c.key}>{c.label}</Th>)
             )}
             <Th sort sortActive={sortKey === "itemId"} sortAsc={sortAsc} onSort={() => setSort("itemId")}>Item ID</Th>
+            <Th>Avail.</Th>
           </tr>
           <tr className="border-t border-h-line bg-h-surface">
             <td />
@@ -358,13 +368,13 @@ export function ItemsTable({
             ) : (
               subCols!.map((c) => <td key={c.key} />)
             )}
-            <td />
+            <td /><td />
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={26} className="px-4 py-8 text-center text-h-muted">
+              <td colSpan={27} className="px-4 py-8 text-center text-h-muted">
                 No items match your filters.
               </td>
             </tr>
@@ -386,6 +396,7 @@ export function ItemsTable({
                   onToggleRelated={() => toggleRelated(it.id)}
                   onOpen={() => onOpenItem(it.id)}
                   onOpenStatus={() => onOpenStatus(it.id)}
+                  onOpenAvailability={onOpenAvailability}
                 />,
               ];
               if (isOpen) {
@@ -401,6 +412,7 @@ export function ItemsTable({
                       today={today}
                       onOpen={() => onOpenItem(kid.id)}
                       onOpenStatus={() => onOpenStatus(kid.id)}
+                      onOpenAvailability={onOpenAvailability}
                     />,
                   );
                 }
@@ -426,6 +438,7 @@ function Row({
   onToggleRelated,
   onOpen,
   onOpenStatus,
+  onOpenAvailability,
 }: {
   row: TrackingItemRow;
   projectId: number;
@@ -438,10 +451,14 @@ function Row({
   onToggleRelated?: () => void;
   onOpen: () => void;
   onOpenStatus: () => void;
+  onOpenAvailability?: (id: number) => void;
 }) {
   const isRelated = row.row_type === "related_part";
   return (
-    <tr className={`border-t border-h-line hover:bg-h-bg ${isRelated ? "bg-h-bg/60" : ""}`}>
+    <tr
+      data-testid="tracking-row"
+      className={`border-t border-h-line hover:bg-h-bg ${isRelated ? "bg-h-bg/60" : ""}`}
+    >
       <td className="px-1 py-1 text-center text-h-muted" title="Omit (mock-only)">
         <input type="checkbox" disabled className="opacity-30" />
       </td>
@@ -557,6 +574,33 @@ function Row({
           </Link>
         )}
       </td>
+      {/* #4's availability rollup. The chip is the AvailabilityDrawer's only
+          entry point, so it is a button whenever a handler is supplied. A
+          related part carries no hardware lines of its own, so it has nothing
+          to roll up and shows a plain dash. */}
+      <td className="px-2 py-1">
+        {isRelated ? (
+          <span className="text-h-muted">—</span>
+        ) : onOpenAvailability ? (
+          <button
+            type="button"
+            onClick={() => onOpenAvailability(row.id)}
+            data-testid="open-availability"
+            aria-label="Open item availability"
+            className="rounded hover:opacity-80"
+          >
+            <AvailabilityChip
+              ready={row.availability.ready}
+              blocked={row.availability.blocked}
+            />
+          </button>
+        ) : (
+          <AvailabilityChip
+            ready={row.availability.ready}
+            blocked={row.availability.blocked}
+          />
+        )}
+      </td>
     </tr>
   );
 }
@@ -569,10 +613,10 @@ function Row({
  * Q567 fixes what "issued" means: the API returns `issued_order_no` only once
  * that order carries a `date_ordered`, so a draft order leaves the cell blank.
  *
- * Q418: clicking the order number navigates to Orderbook. Locating the order
- * *within* that page needs the Orderbook rework — `/orderbook` still renders
- * procurement batches, not `purchase_orders`, so the `order` param is carried
- * but not yet honoured there.
+ * Q418: clicking the order number opens Orderbook **on that order**.
+ * `/orderbook` reads `purchase_orders` since the E2 rework and honours the
+ * `order` param by selecting the row and opening its detail panel; #4's
+ * procurement-batch queue moved to the Delivery queue tab beside it (Q504).
  */
 function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: number }) {
   if (row.row_type !== "related_part") {

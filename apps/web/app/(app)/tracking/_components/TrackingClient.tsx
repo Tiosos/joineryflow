@@ -169,6 +169,7 @@ export function TrackingClient({
         freeQuery={freeQuery}
         onOpenItem={(id) => setItemModalId(id)}
         onOpenStatus={(id) => setStatusPopupId(id)}
+        onOpenAvailability={(id) => setDrawerItemId(id)}
       />
 
       <div className="flex items-center gap-2 text-xs text-h-muted">

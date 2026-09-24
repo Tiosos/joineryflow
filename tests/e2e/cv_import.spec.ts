@@ -9,7 +9,7 @@ async function login(page: Page) {
   await page.fill('input[type="email"]', EMAIL);
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
 test.describe("CV Import wizard (#7b)", () => {

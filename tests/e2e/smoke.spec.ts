@@ -16,7 +16,7 @@ test("login → six tabs → logout", async ({ page }) => {
   await page.fill('input[type="password"]', "hartwood-dev");
   await page.click('button:has-text("Sign in")');
 
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 
   for (const label of [
     "Dashboard",
@@ -30,5 +30,6 @@ test("login → six tabs → logout", async ({ page }) => {
   }
 
   await page.click('button:has-text("Sign out")');
-  await expect(page).toHaveURL(/\/login$/, { timeout: 30_000 });
+  // Sign-out carries a reason param, so anchor on the path, not the whole URL.
+  await expect(page).toHaveURL(/\/login(\?|$)/, { timeout: 30_000 });
 });

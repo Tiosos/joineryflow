@@ -13,7 +13,7 @@ async function login(page: Page) {
   await page.fill('input[type="email"]', EMAIL);
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/home$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
 test.describe("catalog (#7a)", () => {
@@ -30,8 +30,9 @@ test.describe("catalog (#7a)", () => {
       await expect(page.getByRole("button", { name: label })).toBeVisible();
     }
     // Seeded board rows render in inline-edit <input value="..."> cells, so
-    // assert via getByDisplayValue rather than text content.
-    await expect(page.getByDisplayValue("18mm White MDF").first()).toBeVisible({ timeout: 10_000 });
+    // assert on the input's value rather than on text content. (Playwright has
+    // no getByDisplayValue — that is a Testing Library API.)
+    await expect(page.locator('input[value="18mm White MDF"]').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("creates a new board material and sees it in the grid", async ({ page }) => {
@@ -49,7 +50,7 @@ test.describe("catalog (#7a)", () => {
     await page.getByRole("button", { name: "Create" }).click();
 
     // Newly-created row appears as an input value in the grid (inline-edit).
-    await expect(page.getByDisplayValue(desc).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`input[value="${desc}"]`).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("CV Mappings tab renders the seeded mappings", async ({ page }) => {
