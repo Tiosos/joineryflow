@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0032`. Head is `0032_item_lock_request`. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 12 Playwright specs, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`.
+- `tests/e2e/` — 13 Playwright specs / 40 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -181,7 +181,7 @@ IT-defined formulas).
 make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
 make migrate      # apply Alembic 0001 -> 0032
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (60 test files, 634 tests)
+make test         # pytest in api container (60 test files, 638 tests)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
@@ -266,7 +266,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
-- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — plan for sub-project #10: cutlist entity, related-part rows, Area/Room entities, and the Orderbook. **A1–A4, B1–B7, C1–C6 and D1 are done**; D2–D3 and the E verification series are not. Unusually for this repo its checkboxes *are* kept current and each finished task carries a `→` note recording what shipped and how it was verified.
+- `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — plan for sub-project #10: cutlist entity, related-part rows, Area/Room entities, and the Orderbook. **A1–A4, B1–B7, C1–C6, D1–D3 and E1–E2 are done**; only **E3** is open, blocked on a copy of the customer's real pilot data. Unusually for this repo its checkboxes *are* kept current and each finished task carries a `→` note recording what shipped and how it was verified.
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q573, **137 of 141 resolved**. Every answerable question is answered; the four left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents) and Q572 (what the Scope tab holds).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
@@ -1172,10 +1172,15 @@ All mounted at top-level paths from `main.py`.
   `("orderbook", action)`, **workspace-scoped** (the four legacy
   `/procurement/vendors*` routes never were, and `0029`'s `workspace_id NOT
   NULL` had broken their POST — they are retired, Q565).
-- `apps/api/app/orders/` — 8 endpoints, gated `("orderbook", action)`, at
+- `apps/api/app/orders/` — 9 endpoints, gated `("orderbook", action)`, at
   top-level paths and separate from the still-untouched legacy
   `/procurement/*` namespace. `POST /orders` prefills project / location /
   cutlist number from the item rather than asking for them (Q427).
+  `GET /orders` is the **workspace-wide** list behind the Orderbook page and
+  must stay declared *before* `/orders/{po_id}` so the literal path wins — the
+  same ordering caveat `catalog/routes.py` carries. It also returns the Q554
+  order that has no project at all (that one reaches its workspace through its
+  vendor), which no project page can show.
 - Item lock requests live in `apps/api/app/items/` — see PM Workbench above.
 
 ### Web
@@ -1187,6 +1192,14 @@ All mounted at top-level paths from `main.py`.
   issued order number for a related part (Q417), and a **seventh column-set
   `O/BOOK`** (Q570) shows Order # / Supplier / Status / ETA. **Create Order**
   opens the one generic form plus key/value `attributes` rows (Q426, Q503).
+- **`/orderbook`** — two tabs since E2. **Orders** (default) reads
+  `purchase_orders` and honours `?order=<po_number>` by selecting the row,
+  scrolling it into view and opening its detail panel — the "locate the order"
+  half of Q418. **Delivery queue** is #4's supplier-grouped procurement-batch
+  queue, kept rather than replaced because Q504 leaves batches beneath orders
+  as the allocation mechanism. Money and quantity arrive as **JSON strings**
+  (Pydantic `Decimal`), not numbers — `lib/orders-types.ts` records that;
+  typing them `number` compiles and then throws `toFixed is not a function`.
 - **`/list`** — now the **Cutlist module workspace** (Q474), not a mirror of
   Tracking's item grid. `CutlistClient` lists a project's cutlists and opens
   one into Items / Parts / Hardware panes. Opens as a `target="_blank"` tab
@@ -1199,16 +1212,28 @@ All mounted at top-level paths from `main.py`.
 
 ### Known gaps
 
-- **`/orderbook` still renders the #4 procurement-batch queue**, not
-  `purchase_orders`. C1 links a related part's order to
-  `/orderbook?order=<po_number>`; that page ignores the parameter today, so
-  the "locate the order" half of Q418 is **unhonoured**. The order data and
-  its 8 endpoints exist — only this page has not been reworked.
 - The item editor's own hardware query still reads the catalog `supplier`
   column alone. `0017` put the real value in `default_supplier`, so it renders
   "—" on every row. Pre-existing; the cutlist rollup coalesces both and is
   pinned by a test.
 - Q508's Hard / Approval lock types and Q511 / Q512 have no home yet.
+- **E3 is the one task of #10 left open** — migrating a copy of the customer's
+  real pilot data (Q436) to confirm Q540's number preservation. It is blocked
+  on data that has not been supplied, not on work.
+- `apps/web/components/pm/TrackingGrid.tsx` is **dead code**: #9a replaced it
+  with `ItemsTable` (`b910ab1`) and nothing renders it. Left in place per §3
+  (mention unrelated dead code, do not delete it) — but do not read it as the
+  Tracking grid, because it is not.
+
+> **Fixed during E2, recorded because the shape recurs.** #9a's Tracking
+> overhaul dropped the **availability chip** when `ItemsTable` replaced
+> `TrackingGrid`, and with it the *only* entry point to the
+> `AvailabilityDrawer` — `TrackingClient.setDrawerItemId` was left being called
+> with `null` and nothing else, so a documented #4 feature was reachable only
+> by hand-typing `?drawer=item-availability&itemId=N`. Nobody noticed because
+> the e2e spec covering it had been failing on an unrelated login assertion
+> since the same batch. **A failing or skipped spec is not coverage**; when one
+> goes red for a trivial-looking reason, check what it stopped guarding.
 
 ### Seed
 

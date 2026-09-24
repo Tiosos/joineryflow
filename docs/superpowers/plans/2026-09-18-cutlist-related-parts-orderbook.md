@@ -1,14 +1,18 @@
 # Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
-> **Status: in progress.** Migrations `0026`–`0032` applied (`0030`–`0032` were
-> not reserved up front — B3, B6 and B7 each needed one). **A1–A4, B1–B7, C1–C6
-> and the whole D series are done**; only the E verification series is left.
-> Unusually for this repo the checkboxes below *are* being kept current, and
-> each finished task carries a `→` note recording what shipped and how it was
+> **Status: shipped, bar one blocked task.** Migrations `0026`–`0032` applied
+> (`0030`–`0032` were not reserved up front — B3, B6 and B7 each needed one).
+> **A1–A4, B1–B7, C1–C6, D1–D3 and E1–E2 are done.** Only **E3** is open, and
+> it is *blocked on customer data*, not on work: it needs a copy of the real
+> FileMaker pilot database, which has not been supplied.
+> Verified at close: **`make test` 637 passed, 1 skipped**; **e2e 40 passed, 0
+> skipped, 0 failed** on a pristine database seeded once.
+> Unusually for this repo the checkboxes below *are* kept current, and each
+> finished task carries a `→` note recording what shipped and how it was
 > verified — so read them, but treat `CLAUDE.md` as the statement of current
 > state.
 
-> **Later change:** seven things in the body below were superseded while
+> **Later change:** eight things in the body below were superseded while
 > building. The task notes record each in place; this is the list, so a reader
 > does not have to mine them.
 >
@@ -36,6 +40,14 @@
 > 7. **Scope widened before it started.** Q437 selected "cutlist + related
 >    parts"; **Q542** added the whole Orderbook, which is where `0029`, `0031`,
 >    `suppliers/` and `orders/` come from.
+> 8. **E2 grew a task the plan never had.** Its second clause — a spec covering
+>    "the order-number link into Orderbook" — could not be written, because
+>    `/orderbook` still rendered procurement batches and no task rebuilt it.
+>    Decided with the user during E2: `/orderbook` now reads `purchase_orders`
+>    behind a new `GET /orders`, with #4's batch queue kept beside it per Q504.
+>    E2 also restored an **availability chip** #9a had orphaned — a product
+>    regression, not a test fix — and repaired 15 pre-existing e2e failures
+>    that had nothing to do with this sub-project.
 
 > **Decision source.** Every binding rule here traces to a numbered answer in
 > `docs/plan-v1/OPEN-QUESTIONS.md` (Q432–Q573 — Q552 onward were raised while
@@ -870,7 +882,7 @@ hand-edited predicates.
 
 ### E. Verification
 
-- [~] **E1** — **partly done.** The suite **can** be run in this environment,
+- [x] **E1** — **done.** The suite **can** be run in this environment,
       contrary to what B2/B2a/B3 first recorded: a Python 3.12 venv
       (`pyproject.toml` requires >=3.12; the default `python3` here is 3.11)
       plus a local Postgres at `0030` runs all 572 tests in ~2 minutes.
@@ -884,14 +896,85 @@ hand-edited predicates.
       2. `test_shop_floor_routes.py` ×3 — `KeyError: 'item_id'` in two audit
          payloads (`routes.py:276`, `:352`) that B3 missed when `0030`
          dropped `worker_assignment.item_id`.
-      Both fixed; suite green. Still to do here: the e2e specs (E2) and the
-      pilot-data migration (E3).
-- [ ] ~~**E1** `make test` green~~; new tests for fan-out, undo, late-link,
+      Both fixed; suite green.
+      → **Closed out.** `make test` is **637 passed, 1 skipped** (from 572 when
+      this task opened). Every behaviour the second E1 line names now has a
+      test: fan-out, undo and the late-link in `test_shop_floor_cutlist.py`
+      (`test_fan_out_reaches_every_linked_item`,
+      `test_fan_out_skips_items_whose_order_excludes_the_stage`,
+      `test_undo_reverses_the_whole_cutlist`,
+      `test_late_joiner_gains_nothing_and_loses_nothing`); row_type isolation
+      across `test_cutlist_routes.py` / `test_order_routes.py` /
+      `test_related_part_routes.py`; the order→cutlist backfill in
+      `test_order_routes.py` (`test_blank_reference_fills_in_when_the_parent_gains_a_cutlist`,
+      `test_replacing_the_parents_cutlist_updates_linked_orders`); and the
+      Controlled Lock in `test_lock_semantics.py` (14 cases).
+- [x] ~~**E1** `make test` green~~; new tests for fan-out, undo, late-link,
       row_type isolation, order→cutlist backfill, Controlled Lock.
-- [ ] **E2** `make e2e-docker` green; new spec covering nested related parts
+      → Folded into the entry above; this duplicate line is kept only because
+      the `→` notes reference it.
+- [x] **E2** `make e2e-docker` green; new spec covering nested related parts
       collapsed by default and the order-number link into Orderbook.
+      → **done — 40 passed, 0 skipped, 0 failed**, on a pristine database with
+      a matching file store, seeded once, run once (`workers: 1`, `retries: 0`,
+      so nothing is a retry and nothing ran against state a prior pass had
+      mutated). Docker is unavailable in this container, so the run used
+      `make e2e`'s path with a config override pointing at the pre-installed
+      `chromium-1194`; the repo pins `@playwright/test` 1.59.1, whose bundled
+      `chromium_headless_shell-1217` is not present.
+      → **The task's second clause could not be tested as written.** Tracking
+      linked a related part's order to `/orderbook?order=<po_number>` from C1,
+      but that page still rendered #4's procurement-batch queue and ignored the
+      param — so Q418's "locate the order" half was unhonoured and **no task in
+      this plan covered rebuilding it** (recorded at Q418's note in
+      `OPEN-QUESTIONS.md`). Decided with the user: build it now. `/orderbook`
+      gained an Orders tab over `purchase_orders`, backed by a new workspace-wide
+      `GET /orders` (a 9th endpoint on the module), which honours `?order=` by
+      selecting the row, scrolling it into view and opening its detail panel.
+      Q504 keeps batches beneath orders, so #4's supplier-grouped queue moved
+      to a **Delivery queue** tab rather than being replaced.
+      → **A #9a regression surfaced and was fixed.** `[data-testid="tracking-row"]`
+      and `open-availability` lived only in `components/pm/TrackingGrid.tsx`,
+      which #9a orphaned when `ItemsTable` replaced it (`b910ab1`). Tracing it:
+      `TrackingClient.setDrawerItemId` was only ever called with `null`, so the
+      `AvailabilityDrawer` that `CLAUDE.md` documents as "triggered by clicking
+      the availability chip" was reachable only by hand-typing the URL.
+      `ItemsTable` gained an `Avail.` column restoring the entry point.
+      `TrackingGrid.tsx` is now dead code — **mentioned, not deleted**, per
+      `CLAUDE.md` §3.
+      → **The suite had 15 pre-existing failures, none from this sub-project.**
+      Every login helper asserted `/home`, which #9a made a redirect (10 files);
+      `smoke` asserted `/login$` after a logout that now lands on
+      `/login?reason=signed_out`; `catalog.spec.ts` called
+      `page.getByDisplayValue`, a **Testing Library** API that has never existed
+      in Playwright, so that spec could never have passed; `pm_workbench`
+      expected `▶` to open the editor, which #9a deliberately re-pointed at
+      `ItemDetailModal`, and a "Return to home" link now labelled "Return to
+      dashboard".
+      → **`cv_import.spec.ts` had never executed its body.** It clicked the text
+      "ALF-001" on `/projects`, where the code sits in a plain `<td>` and only
+      the NAME cell links, so the page never moved, `a[href^="/items/"]` counted
+      0, and `test.skip(count < 2)` swallowed the test — reported as a skip,
+      which reads like coverage and was not. Re-pointed through Tracking, at
+      **JO-TP01 deliberately rather than `nth(1)`** (the wizard 409s
+      `ITEM_NOT_EMPTY` and every `ITEMS_PER_PROJECT` item is seeded with a
+      module, so `nth(1)` would have hit K-102 and failed at Import), with the
+      CSV textarea scoped by placeholder (the wizard is inline, not a dialog, so
+      a bare `textarea` also matched the Metadata comment field). It now ticks
+      "Replace existing modules" when offered, so it is re-runnable and
+      exercises the replace path too.
+      → **Known: the suite is not idempotent.** `estimating.spec.ts` and
+      `procurement.spec.ts` fail on a second run against the same database — one
+      converts an estimate that cannot convert twice, the other creates a second
+      "Test Supplier" batch and trips strict mode. Pre-existing, and now the only
+      two with that property. **Green means green from a fresh seed.**
 - [ ] **E3** Migrate a **copy of pilot data** (Q436) and confirm every item kept
       its recognisable number (Q540).
+      → **Blocked, not skipped.** This needs a copy of the customer's real
+      FileMaker data, which is not in this repo and has not been supplied. It is
+      the one task in this plan that cannot be completed from the tree alone;
+      everything it would verify (Q540's number preservation) is pinned by
+      `0027`'s migration tests against synthetic rows in the meantime.
 
 ## 3. Sequencing
 

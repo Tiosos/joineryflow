@@ -1726,13 +1726,24 @@ Nothing sets it automatically; a user patches it through
 Tracking row, which is the intent of Q417's wording but is worth knowing when a
 row looks empty.
 
-**Q418 is only half-honoured, and deliberately.** Clicking the number navigates
-to Orderbook — `/orderbook?order=<po_number>` — but that page still renders
-procurement **batches** (`procurement_v1`), not `purchase_orders`, so it cannot
-yet *locate* the order the way Q418's second clause asks. **No task in the plan
-rebuilds it**: C4 adds an O/BOOK subtab to *Tracking*, which is a different
-surface. The param is carried so the link works the moment Orderbook reads
-orders; until then the user lands on the page but must find the order by eye.
+**Q418 was half-honoured for the C series; it is now fully honoured.**
+Clicking the number navigates to `/orderbook?order=<po_number>`. Through C1–C6
+that page still rendered procurement **batches** (`procurement_v1`), not
+`purchase_orders`, so it could not *locate* the order the way Q418's second
+clause asks — and **no task in the plan rebuilt it** (C4 adds an O/BOOK subtab
+to *Tracking*, a different surface). The param was carried anyway, so the link
+would work the moment Orderbook read orders.
+
+**Resolved in E2 (2026-09-20), with the user.** Writing E2's spec was what
+forced it: the task asks for a spec covering "the order-number link into
+Orderbook", and that could not be written against a page that ignored the
+param. `/orderbook` gained an **Orders** tab over `purchase_orders`, backed by
+a new workspace-wide `GET /orders`, which honours `?order=` by selecting the
+row, scrolling it into view and opening its detail panel. **Q504 is preserved**:
+batches remain the allocation layer beneath orders, so #4's supplier-grouped
+queue moved to a **Delivery queue** tab rather than being replaced. Pinned by
+`cutlist_related_parts.spec.ts`, which clicks the real link from Tracking and
+asserts the order is selected, not merely that the page loaded.
 
 ### Q568 — What does Tracking's CUTLIST column actually show? *(new — raised while building C2)*
 **Confirmed 2026-09-19: the cutlist's own number.** `TrackingItemRow` now
