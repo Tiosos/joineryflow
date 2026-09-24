@@ -1,7 +1,17 @@
 # Item & Project Detail 2.0 — Implementation Plan (#11)
 
+> **Status: partially shipped.** Migration `0036_item_project_detail`.
+> Current state lives in `## Item & Project Detail 2.0` in `CLAUDE.md` —
+> read it before picking up any of T06–T13 below, it lists exactly what's
+> missing (the `item_document` backend, all frontend, seed, tests). Design:
+> `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`.
+>
+> **Later change:** this doc's title says "#11" — free when written
+> (2026-05-27), but by the time this plan merged into `main` (2026-09-24,
+> commit `8ac99d5`) #11 had gone to Global Search. Go by the migration
+> number or merge date, not this label.
+
 **Spec:** `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`
-**Status:** In progress
 **Last updated:** 2026-05-27
 
 ---

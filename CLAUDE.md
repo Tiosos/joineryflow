@@ -299,6 +299,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
+- `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — most backend routes now mounted and working; `item_document` backend, all frontend, seed data and tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -1386,4 +1388,115 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   (left as a draft, so it is listed as missing), one built summary, then one
   item at v2 — so the summary opens with stale lines. Built through the same
   query functions the API uses, so audit / edit-log rows are real. Idempotent.
+
+## Tracking 2.0 (migration `0035`) — shipped
+
+> Design: `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md`; plan:
+> `docs/superpowers/plans/2026-05-27-tracking-2-0.md`. Authored 2026-05-27 on
+> a separate branch, merged into `main` 2026-09-24 (commit `8ac99d5`) —
+> *after* #12, out of migration-number order relative to its own title.
+> **Numbering collision, noted once here for both this and the next
+> section:** both docs call themselves sub-projects "#10" and "(#11)"; those
+> numbers were free when written in May but are now held by Cutlist +
+> Orderbook and Global Search, which were built and merged first. Go by
+> migration number or date, never by the label inside either doc.
+
+- **Migration `0035`** adds `workspace_counter(workspace_id, name,
+  next_value)` — an atomic per-workspace counter, `apps/api/app/counters/
+  next_value()` — plus six `items` columns: `jid_code`, `jid_color` (hex,
+  CHECKed), `var_boq` (`BOQ`/`VAR`, default `BOQ`), `contractor_id` (FK →
+  `app_user`, workspace-validated on write), `total_amount`,
+  `site_measure_notes`.
+- **Closes the legacy-parity gap on `/tracking`.** The grid gained JID code +
+  colour swatch, a VAR/BOQ pill, Contractor, Total $, and exposure of
+  columns that already existed on `items` but weren't in the API response
+  (`floor_plan`, `rls`, `joiery_details`, `painting_req`,
+  `solid_surface_req`, `cutlist_printed`, `group_id`, `item_code`,
+  `assembler`, `lister`). Stage cells switched from checkmark to
+  `done_date` (`DD.MM.YY`).
+- **Subtabs** (`ItemsTable.tsx`'s `SUB_TABS`): `DATE · TO BE ORDERED · iTIME
+  · HARDWARE · SITE MEASURE · INVOICE · QC · O/BOOK`. DATE, TO BE ORDERED
+  (a filter — `availability.blocked > 0`, not a separate table), HARDWARE,
+  SITE MEASURE and O/BOOK render real data; `iTIME`, `INVOICE` and `QC`
+  stay `—` placeholders pending a future invoicing/variations sub-project
+  neither doc built.
+- **Bulk status.** `POST /items/bulk-status` (`tracking:write`) applies one
+  status + one required note to up to 500 items in a single transaction;
+  missing or cross-workspace ids come back in the response instead of
+  404ing the whole call. The single-item `PATCH /items/{id}/status` was
+  tightened the same way — `note` is now required, not an optional
+  empty-string fallback.
+- **`workspace_counter` has no caller yet, deliberately.** Its own design
+  doc says it's seeded here ahead of a future PO/invoice/JID-numbering
+  consumer; nothing in this tree calls `next_value()` outside its own unit
+  tests (`test_counter.py`). Not a gap — don't invent a caller for it.
+- **RBAC — no matrix change.** New fields ride the existing
+  `require_drafter()` + `tracking:write` combo in `items/routes.py`;
+  `contractor_id` writes are rejected (422) if the user isn't in the
+  caller's own workspace.
+- **Seed.** `make seed` gives every ALF-001 item a `jid_code`/`jid_color`
+  pair, marks one item `VAR`, assigns `contractor_id` on two items, sets
+  `total_amount` on every item, a `site_measure_notes` on the SS-Bench
+  item, and one `workspace_counter` row.
+- Backend, frontend and seed all shipped; covered by
+  `test_tracking_bulk_status.py` plus extensions to `test_items_routes.py`.
+
+## Item & Project Detail 2.0 (migration `0036`) — partially shipped
+
+> Design: `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`;
+> plan: `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md`. Same
+> authoring-vs-merge-order caveat as Tracking 2.0 above.
+
+- **Migration `0036`** adds `projects.closed_at`/`closed_by`;
+  `project_contact` (`kind IN (office, site)`); `project_lift_access` (one
+  row per project); `item_query` (Q&A per item); `item_document` (an open
+  document register beyond the four named attachment slots); widens
+  `item_attachment_kind_check` to add `sketchup`/`cabvision` (`cv_drawing`
+  stays as a legacy synonym); `project_labour_hours_view` (returns zero —
+  a future labour-hours integration populates it).
+- **Backend shipped:** `ProjectOut` now surfaces FileMaker-era `projects`
+  columns that already existed but weren't exposed (`builder`,
+  `classification`, `site_street/suburb/postcode/state`,
+  `tg_project_manager`, `tg_coordinator`) plus the new `closed_at`/
+  `closed_by`; `POST /projects/{id}/close-out` (admin/manager,
+  `409 ALREADY_CLOSED`); `project_contacts/` (POST/GET/PATCH/DELETE,
+  `tracking:{read,write}`); `project_lift_access/` (GET/PUT/DELETE, one row
+  per project); `item_queries/` (ask on `list:read`, answer/edit-answer on
+  `list:write`, second answer without `allow_overwrite` returns 409). **The
+  last three routers were built in the same merge but not registered in
+  `main.py`** — `apps/api/app/{item_queries,project_contacts,
+  project_lift_access}/routes.py` existed with complete queries/schemas
+  and zero mount, so all 11 endpoints were unreachable until a follow-up
+  fix (`fix(api): mount item_queries, project_contacts,
+  project_lift_access routers`). They are now live and were verified
+  end-to-end against a migrated database.
+- **Not shipped, although the schema exists for it:**
+  - **`item_document` has no backend at all.**
+    `apps/api/app/item_documents/` holds only `schemas.py` — no
+    `queries.py`, no `routes.py`. The Document Register table is DB-only.
+  - `item_attachments/` (routes, queries, schemas) still hardcodes the
+    three original kinds — `AttachmentKind = Literal["cv_drawing",
+    "floor_plan", "site_measure"]` and a matching path regex — so
+    `sketchup`/`cabvision` pass the DB CHECK but are rejected by the API.
+  - `PATCH /items/{id}` was never extended for `floor_plan`, `rls`,
+    `joiery_details`, `cutlist_printed`: they're readable (via the
+    Tracking grid, shipped above) but not writable.
+  - **No frontend.** No `/projects/[id]/page.tsx` (only
+    `/projects/[id]/procurement/...` exists); no `ActionsTab` or
+    `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
+    `cutlist · hardware · board · take · attachments · log`); no 4-slot
+    `AttachmentsTab` restructure or Document Register UI; no "Open full
+    project page →" link on the Tracking modal.
+  - **No seed data.** `seed/hartwood_joinery.py` has zero inserts into
+    `project_contact`, `project_lift_access`, `item_query`, or
+    `item_document`, and never sets `builder`, `classification`, or
+    `closed_at`.
+  - **No automated tests.** None of `test_project_enrichment.py`,
+    `test_project_contacts.py`, `test_project_lift_access.py`,
+    `test_item_queries.py`, `test_item_documents.py` exist. The three
+    newly-mounted routers have manual end-to-end verification but no
+    regression coverage.
+- **RBAC — no matrix change**, per its design doc: `project_contact`/
+  `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
+  `list:{read,write}`; close-out is admin/manager only.
 
