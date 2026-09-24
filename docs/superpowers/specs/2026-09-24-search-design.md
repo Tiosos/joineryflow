@@ -4,16 +4,16 @@
 > `0033_search_outbox` is reserved. Plan:
 > `docs/superpowers/plans/2026-09-24-search.md`.
 >
-> **Four decisions below are proposed, not confirmed** — Q577–Q580 in
-> `docs/plan-v1/OPEN-QUESTIONS.md`. Each is marked **(proposed — Q5xx)** where
-> it is used. Do not start the tasks that depend on one until it is answered.
+> **Fully decided.** Q577–Q580, raised by this spec, were answered 2026-09-24
+> (every recommendation taken); see `docs/plan-v1/OPEN-QUESTIONS.md`.
 
 **Plan V1 source:** §13 — "global company-wide search for authorised users and
 department-specific search", across ~18 kinds of record.
 **Selected by:** Q520 (search first). **Built as:** Q525 (dedicated search
 service), Q574 (Meilisearch), Q575 (transactional outbox + worker + full
 reindex), Q576 (existing entity types only, workspace-scoped, gated on module
-`read` grants).
+`read` grants — amended by Q579), Q577–Q580 (worker, triggers, types,
+archived).
 **Gap analysis:** `docs/plan-v1/ALIGNMENT.md` §4 *Plan V1 §13–§15* — `ABSENT`.
 
 ---
@@ -48,10 +48,10 @@ container and a worker that keeps it in step with the database.
 | --- | --- | --- |
 | Engine | Meilisearch, one container, pinned minor version | Q574 |
 | Sync | Transactional outbox drained by a worker; full reindex command | Q575 |
-| Outbox writer | **Postgres triggers** on each source table, not app code | **proposed — Q578** |
-| Worker process | Its own compose service, same image as `api` | **proposed — Q577** |
-| Coverage | Existing entity types only — see §3 | Q576, **proposed — Q579** |
-| Deleted / archived | Soft-deleted items never indexed; archived records indexed, hidden by default | **proposed — Q580** |
+| Outbox writer | **Postgres triggers** on each source table, not app code | Q578 |
+| Worker process | Its own compose service, same image as `api` | Q577 |
+| Coverage | Existing entity types only — see §3 | Q576 as amended by Q579 |
+| Deleted / archived | Soft-deleted items never indexed; archived records indexed, hidden by default | Q580 |
 | Isolation | Every query carries a server-side `workspace_id` filter | Q576, CLAUDE.md |
 | Authorisation | Result types limited to modules the role can `read` | Q576 |
 | Project scope | **Not** applied in v1 — arrives with §3.4 RBAC (Q466) | Q576 |
@@ -67,12 +67,12 @@ across types and one query returns a type facet. Document id is
 
 | `type` | Source | Workspace reached via | Gated on | Opens |
 | --- | --- | --- | --- | --- |
-| `project` **(Q579)** | `projects` | `projects.workspace_id` | `tracking` | `/tracking?project_id={id}` |
+| `project` (Q579) | `projects` | `projects.workspace_id` | `tracking` | `/tracking?project_id={id}` |
 | `item` | `items` where `row_type='joinery_item'` | `projects` | `tracking` | `/items/{id}` |
 | `related_part` | `items` where `row_type='related_part'` | `projects` | `tracking` | `/tracking?project_id={pid}` |
 | `cutlist` | `cutlist` | `projects` | `list` | `/list?project_id={pid}&cutlist={id}` |
 | `order` | `purchase_orders` | `projects`, **or `vendors` when `project_id` is null** (Q554) | `orderbook` | `/orderbook?order={po_number}` |
-| `supplier` | `vendors` | `vendors.workspace_id` | `orderbook` | none today (**Q579**) |
+| `supplier` | `vendors` | `vendors.workspace_id` | `orderbook` | none today (Q579) |
 | `drawing` | `shop_drawing` | `projects` | `shop_dwgs` | `/shop-dwgs?project={pid}&drawing={id}` |
 | `sample` | `sample` | `projects` | `isample` | `/isample?project={pid}&sample={id}` |
 | `customer` | `customer` | `customer.workspace_id` | `estimating` | `/customers/{id}` |
@@ -84,7 +84,7 @@ Deep links were checked against the pages' actual `searchParams` handling
 `isample/page.tsx`, `catalog/page.tsx`, `OrdersClient.tsx`). Two types have no
 record-level destination today: a related part opens its project's Tracking
 grid, and a catalog row opens its tab pre-filtered on its SKU. **Suppliers
-have no page at all** — see Q579.
+have no page at all**, so per Q579 their hits show contact details with no link.
 
 **Area / Room are not their own type** (Q579): their names are folded into
 every item document, so searching "Kitchen" or a room number finds the items
@@ -176,7 +176,7 @@ reads the row's *current* state. That makes processing idempotent and
 order-independent: two updates of one row collapse into one document write,
 and a delete is simply "row not found → delete document".
 
-**(proposed — Q578) Rows are written by `AFTER INSERT OR UPDATE OR DELETE …
+**(Q578) Rows are written by `AFTER INSERT OR UPDATE OR DELETE …
 FOR EACH ROW` triggers**, one shared plpgsql function parameterised by type.
 Why triggers rather than an `enqueue()` call in application code:
 
@@ -240,7 +240,7 @@ freshness is **a few seconds** after commit, not real time.
 
 **Multiple workers are safe** (`SKIP LOCKED`), but compose runs one.
 
-**(proposed — Q577) Placement:** a separate `search-worker` service in
+**(Q577) Placement:** a separate `search-worker` service in
 `docker-compose.yml` that runs the api image with a different command. A crash
 or a tight retry loop then cannot starve request handling, and `docker compose
 logs search-worker` isolates it. The alternative is a background task inside
