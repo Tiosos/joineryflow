@@ -1,6 +1,6 @@
 # Implementation Plan — Material Take → Material Summary (sub-project #12)
 
-> **Status: in progress** (A, B done; C–E open). Migration `0034_material_take`; it follows
+> **Status: in progress** (A–C done; D–E open). Migration `0034_material_take`; it follows
 > `0033_search_outbox` (#11, PR #14), so **A1 cannot land before #14 merges**.
 > Design: `docs/superpowers/specs/2026-09-24-material-take-design.md`. As with
 > #10 and #11, checkboxes are kept current and each finished task gets a `→`
@@ -135,7 +135,7 @@ last among the take tasks because it reuses generation to compare.
 
 ### C. Material Summary (`apps/api/app/material_summaries/`)
 
-- [ ] **C1** `POST /projects/{pid}/material-summary` builds a draft from each
+- [x] **C1** `POST /projects/{pid}/material-summary` builds a draft from each
   Joinery Item's current approved take: group by `(material_type,
   material_id, unit)`, `OTHER` by exact `(description, unit)`; one
   `material_summary_source` row per contributing take line; response lists
@@ -143,7 +143,10 @@ last among the take tasks because it reuses generation to compare.
   *Done when:* two items with the same board produce one line whose sources
   sum to it; an item with only a draft appears in `missing_takes`, not in the
   lines.
-- [ ] **C2** `GET /projects/{pid}/material-summary` computes `stale` on read
+  → **done.** Board lines round up **once** here (`summary_sheets`, Q586).
+  Build and line edits need `require_drafter()` on top of `list` write — §20
+  names PM / Coordinator / Designer, and editors also hold `list` write.
+- [x] **C2** `GET /projects/{pid}/material-summary` computes `stale` on read
   (any source whose item's approved version now exceeds `take_version`) and,
   for board lines, `nest_sheets` from the project's latest `cut_plan`
   (sheets counted per `cut_sheet.material_sku`, matched to the line's
@@ -152,11 +155,25 @@ last among the take tasks because it reuses generation to compare.
   *Done when:* approving a new take version flips the old summary's line to
   stale; the seeded `ALF-001 v1 nest` shows `nest_sheets = 1` against `18-PB`;
   a material with an in-transit batch shows it on order.
-- [ ] **C3** `PATCH /material-summaries/{sid}/lines/{lid}` (`qty_confirmed`,
+  → **done, with a correction to this line:** the seeded nest's sheets are
+  labelled `18-PB`, a **Cabinet Vision code**, not a catalog SKU (the
+  optimiser writes the catalog SKU). Matching on SKU alone would have missed
+  it, so `nest_sheets` resolves `cut_sheet.material_sku` through the catalog
+  SKU **or** `cv_material_mapping`, per workspace. Stale also covers a
+  hard-deleted source item (sources no longer sum to the consolidated qty).
+  *Verified* on the seed (rolled back): ALF-001's MDF consolidates to **3**
+  sheets across 6 items with `nest_sheets = 1`; Hettich slides show **96 on
+  order** from the seeded batch; six part-less items listed as missing.
+- [x] **C3** `PATCH /material-summaries/{sid}/lines/{lid}` (`qty_confirmed`,
   `note`) and `POST /material-summaries/{sid}/confirm` (`("list","approve")`);
   history via `GET /projects/{pid}/material-summaries`.
   *Done when:* confirm sets status + actor; a purchase officer can read but
   gets 403 on confirm; audit rows `material_summary.{build,line_edit,confirm}`.
+  → **done.** Confirming fills any line the PM left unset with its
+  consolidated figure, and a confirmed summary is read-only
+  (`409 SUMMARY_CONFIRMED`) — rebuild to revise.
+  *Milestone 2 verified:* `test_material_summary_routes.py` (17); **full suite
+  770 passed, 1 skipped** with real Meilisearch.
 
 **Milestone push 2** — after C3, one push.
 
