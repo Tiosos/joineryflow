@@ -530,9 +530,21 @@ def get_item_detail(
                 i.solid_surface_req         AS solid_surface_required,
                 i.group_id,
                 i.area_id,
-                i.room_id
+                i.room_id,
+                i.jid_code,
+                i.jid_color,
+                i.var_boq,
+                i.contractor_id,
+                c.full_name                 AS contractor_name,
+                i.total_amount,
+                i.site_measure_notes,
+                i.floor_plan,
+                i.rls,
+                i.joiery_details,
+                i.cutlist_printed
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
+            LEFT JOIN app_user c ON c.id = i.contractor_id
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
               AND {_JOINERY_I}
@@ -765,6 +777,17 @@ def get_item_detail(
         "group_id": row["group_id"],
         "area_id": row["area_id"],
         "room_id": row["room_id"],
+        "jid_code": row["jid_code"],
+        "jid_color": row["jid_color"],
+        "var_boq": row["var_boq"] or "BOQ",
+        "contractor_id": row["contractor_id"],
+        "contractor_name": row["contractor_name"],
+        "total_amount": row["total_amount"],
+        "site_measure_notes": row["site_measure_notes"],
+        "floor_plan": row["floor_plan"],
+        "rls": row["rls"],
+        "joiery_details": row["joiery_details"],
+        "cutlist_printed": row["cutlist_printed"],
         "stages": stages,
         "modules": modules,
         "hardware_lines": hardware_lines,
@@ -825,7 +848,11 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.var_boq,
                 i.contractor_id,
                 i.total_amount,
-                i.site_measure_notes
+                i.site_measure_notes,
+                i.floor_plan,
+                i.rls,
+                i.joiery_details,
+                i.cutlist_printed
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
@@ -936,6 +963,11 @@ _PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
     ("contractor_id",        "contractor_id",     "contractor_id"),
     ("total_amount",         "total_amount",      "total_amount"),
     ("site_measure_notes",   "site_measure_notes","site_measure_notes"),
+    # Item & Project Detail 2.0 — pre-existing columns made writable
+    ("floor_plan",           "floor_plan",        "floor_plan"),
+    ("rls",                  "rls",               "rls"),
+    ("joiery_details",       "joiery_details",    "joiery_details"),
+    ("cutlist_printed",      "cutlist_printed",   "cutlist_printed"),
 ]
 
 

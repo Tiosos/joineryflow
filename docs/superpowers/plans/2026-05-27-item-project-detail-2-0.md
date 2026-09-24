@@ -3,9 +3,10 @@
 > **Status: partially shipped.** Migration `0036_item_project_detail`.
 > Current state lives in `## Item & Project Detail 2.0` in `CLAUDE.md` —
 > read it before picking up any of T07–T13 below, it lists exactly what's
-> missing (attachment kinds + item PATCH fields, all frontend, seed, most
-> tests). T06 (Document Register backend) is done, with three recorded
-> departures from this doc's silence — see that section. Design:
+> missing (attachment kinds, all frontend, seed, most tests). T06
+> (Document Register backend) is done, with three recorded departures from
+> this doc's silence — see that section. T07's item-PATCH half is done;
+> its attachment-kind half waits on what `cv_drawing` is a synonym of. Design:
 > `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`.
 >
 > **Later change:** this doc's title says "#11" — free when written

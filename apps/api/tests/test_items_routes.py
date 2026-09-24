@@ -911,3 +911,64 @@ def test_editor_post_item_403():
         json={"description": "Should fail"},
     )
     assert r.status_code == 403, r.text
+
+
+def test_patch_item_reference_fields_and_cutlist_printed():
+    """floor_plan / rls / joiery_details / cutlist_printed are writable, logged, and read back."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=102)
+    finally:
+        db.close()
+
+    body = {"floor_plan": "FP-03", "rls": "6328-T1", "joiery_details": "JD-12",
+            "cutlist_printed": False}  # the column defaults to true
+    r = c.patch(f"/items/{iid}", json=body)
+    assert r.status_code == 200, r.text
+    assert {k: r.json()[k] for k in body} == body
+    assert {k: c.get(f"/items/{iid}").json()[k] for k in body} == body
+
+    db = SessionLocal()
+    try:
+        fields = {row[0] for row in db.execute(
+            text("SELECT field FROM item_edit_log WHERE item_id = :i"), {"i": iid})}
+    finally:
+        db.close()
+    assert fields == set(body)
+
+
+def test_patch_item_reference_field_over_64_chars_is_422():
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=103)
+    finally:
+        db.close()
+    assert c.patch(f"/items/{iid}", json={"rls": "x" * 65}).status_code == 422
+
+
+def test_get_item_returns_tracking_2_0_fields():
+    """The detail payload used to declare these but never select them, so it
+    always answered jid_code=None / var_boq='BOQ' whatever the row held."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=104)
+    finally:
+        db.close()
+
+    r = c.patch(f"/items/{iid}", json={
+        "jid_code": "JO-SS02", "jid_color": "#AABBCC", "var_boq": "VAR",
+        "contractor_id": uid, "total_amount": "1500.00",
+        "site_measure_notes": "Check wall plumb",
+    })
+    assert r.status_code == 200, r.text
+    got = c.get(f"/items/{iid}").json()
+    assert (got["jid_code"], got["jid_color"], got["var_boq"]) == ("JO-SS02", "#AABBCC", "VAR")
+    assert (got["contractor_id"], got["contractor_name"]) == (uid, "U")
+    assert got["total_amount"] == "1500.00"
+    assert got["site_measure_notes"] == "Check wall plumb"

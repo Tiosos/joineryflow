@@ -300,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
-- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend routes mounted and working, including the Document Register; the attachment-kind and item-PATCH extensions, all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend routes mounted and working, including the Document Register and the item reference-field PATCH; the attachment-kind extension, all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -1440,6 +1440,12 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   item, and one `workspace_counter` row.
 - Backend, frontend and seed all shipped; covered by
   `test_tracking_bulk_status.py` plus extensions to `test_items_routes.py`.
+- **Fixed after the merge:** `ItemOut` declared the six new fields but
+  `get_item_detail` never selected them, so `GET` and `PATCH /items/{id}`
+  always answered `jid_code: null, var_boq: "BOQ"` (etc.) whatever the row
+  held — the Tracking grid, which reads through `list_items_for_project`,
+  was right all along. Pinned by
+  `test_get_item_returns_tracking_2_0_fields`.
 
 ## Item & Project Detail 2.0 (migration `0036`) — partially shipped
 
@@ -1494,14 +1500,17 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   already only stores those three, so the check guards the register if the
   upload allowlist ever widens. Covered by `test_item_documents.py` (10
   tests).
+- **Item reference fields are writable** (built after the merge):
+  `PATCH /items/{id}` accepts `floor_plan`, `rls`, `joiery_details`
+  (`varchar(64)` — longer is 422) and `cutlist_printed`, through the usual
+  `_PATCH_FIELD_MAP` path, so they get one edit-log row per field and go
+  through the Controlled Lock like every other field. `ItemOut` (the
+  `GET` / `PATCH /items/{id}` payload) now returns them.
 - **Not shipped, although the schema exists for it:**
   - `item_attachments/` (routes, queries, schemas) still hardcodes the
     three original kinds — `AttachmentKind = Literal["cv_drawing",
     "floor_plan", "site_measure"]` and a matching path regex — so
     `sketchup`/`cabvision` pass the DB CHECK but are rejected by the API.
-  - `PATCH /items/{id}` was never extended for `floor_plan`, `rls`,
-    `joiery_details`, `cutlist_printed`: they're readable (via the
-    Tracking grid, shipped above) but not writable.
   - **No frontend.** No `/projects/[id]/page.tsx` (only
     `/projects/[id]/procurement/...` exists); no `ActionsTab` or
     `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
