@@ -298,7 +298,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
-- `docs/superpowers/specs/2026-09-24-material-take-design.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Not started**; design fully decided (Q495–Q501, Q581–Q585); migration `0034` reserved, after #11's `0033`. No plan yet.
+- `docs/superpowers/specs/2026-09-24-material-take-design.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Not started**; design fully decided (Q495–Q501, Q581–Q585); migration `0034` reserved, after #11's `0033`. Plan: `docs/superpowers/plans/2026-09-24-material-take.md` (15 tasks, three milestone pushes to save CI minutes).
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
