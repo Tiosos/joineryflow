@@ -302,7 +302,7 @@ strip against Plan V1's stated arrangement.
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
-| Global company-wide search across ~18 object types | Per-surface `q=` filters only (tracking, list, shop-dwgs, isample, catalog, estimating, customers). No cross-object search, no search index. | `ABSENT` |
+| Global company-wide search across ~18 object types | **Sub-project #11 (2026-09-24):** one Meilisearch index over 11 types (projects, items, related parts, cutlists, orders, suppliers, drawings, samples, customers, estimates, catalog), fed by a trigger-written outbox (`0033`), top-bar box + `/search`. Workspace-scoped and gated on module `read`; not yet project- or department-scoped (waits for §3.4 / Q466); people, tasks, documents, comms and history not covered. | `PARTIAL` |
 | Desktop + tablet + mobile responsive | Desktop-only in practice. `legacy/REFINEMENT_BACKLOG.md` still carries the mobile pass as an open follow-up; #8 explicitly deferred "mobile-first responsive UI". | `ABSENT` |
 | Site mobile: photos, measurements, markup, defects, scanning, signatures | Nothing. | `ABSENT` |
 | **Offline work with sync, conflict detection, never silently overwritten** | Nothing. The whole stack is server-rendered with raw `fetch()` and no client cache (no TanStack Query by design). | `ABSENT` |
@@ -400,6 +400,11 @@ The lists are not a relabelling of each other:
 | Prefill PROJECT, LOCATION, CUTLIST NO. from the parent (Q427–Q428); allow blank cutlist (Q429); backfill when the parent gets one (Q430); update all linked orders when replaced (Q431) | Nothing. Also depends on both §3.1 and §3.2. | `ABSENT` |
 
 ## 5. Tally
+
+> **Later change (2026-09-24):** the §13 search row moved `ABSENT` → `PARTIAL`
+> with sub-project #11. **The counts below were not re-scored** — they also
+> predate #10 (Cutlist + related parts + Orderbook), which moved several rows,
+> so treat them as the 2026-09-18 baseline, not current state.
 
 Counting the 82 mapped rows in §4: **4 `SHIPPED`, 21 `PARTIAL`, 50 `ABSENT`,
 7 `REARCH`.** These are unchanged by the decisions — they describe the tree as

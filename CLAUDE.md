@@ -112,25 +112,28 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0032`. Head is `0032_item_lock_request`. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0033`. Head is `0033_search_outbox` (Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 13 Playwright specs / 40 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
+- `tests/e2e/` — 14 Playwright specs / 42 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
-## Plan V1 — target architecture (one sub-project built)
+## Plan V1 — target architecture (two sub-projects built)
 
 `docs/plan-v1/` holds **Plan V1**, the customer's specification for a
 company-wide joinery workflow and control platform, with its interview
 questions answered through Q431 (supplied 2026-09-17). It is mostly a
-**target**, not a description of this tree — with one exception: **Plan V1 #10
-(Cutlist + related parts + Orderbook) is built**, and has its own section
-below. Everything else in Plan V1 remains unimplemented.
+**target**, not a description of this tree — with two exceptions: **Plan V1 #10
+(Cutlist + related parts + Orderbook)** and **#11 (Global Search, §13)** are
+built, each with its own section below. Everything else in Plan V1 remains
+unimplemented.
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
-  state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture**.
+  state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
+  the 2026-09-18 baseline, **not re-scored** after #10 or #11 (only the §13
+  search row has been moved, to `PARTIAL`).
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q580, continuing Plan V1's own
   numbering. **144 of 148 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11).
@@ -153,7 +156,7 @@ below. Everything else in Plan V1 remains unimplemented.
   and 2), built as one change. **Done** — widened by Q542 to take the whole
   Orderbook with it. See *Cutlist + related parts + Orderbook* below.
 
-Apart from #10, this section still describes a target, and `CLAUDE.md` remains
+Apart from #10 and #11, this section still describes a target, and `CLAUDE.md` remains
 the record of what is actually true in the tree.
 
 **Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
@@ -179,10 +182,12 @@ IT-defined formulas).
 ## Foundation dev loop
 
 ```
-make up           # build + start db, api, web (db: Postgres 16, api: FastAPI, web: Next.js 16)
-make migrate      # apply Alembic 0001 -> 0032
+make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
+make migrate      # apply Alembic 0001 -> 0033
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (60 test files, 638 tests)
+make test         # pytest in api container (66 test files, 714 tests; the `meili`-marked
+                  # ones skip unless MEILI_URL is set — compose sets it)
+make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
@@ -291,7 +296,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
-- `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13): Meilisearch, trigger-fed outbox + worker, migration `0033` reserved. **Not started**; design fully decided (Q574–Q580).
+- `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)
@@ -1254,3 +1259,65 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
 > per-item cutlist blocks also re-INSERT on every run (their idempotency guard
 > is on `items`, not `cutlist`), so anything that *moves* an item between
 > cutlists has to drop the vacated row unconditionally.
+
+## Global Search (sub-project #11)
+
+> Plan V1 §13, selected by Q520. Design: `docs/superpowers/specs/2026-09-24-search-design.md`;
+> plan with per-task verification notes: `docs/superpowers/plans/2026-09-24-search.md`.
+> Every rule traces to Q525 or Q574–Q580.
+
+- **Infrastructure.** Two new compose services: `meili`
+  (`getmeili/meilisearch:v1.54.0`, **no host port**, `MEILI_*` keys in `.env`)
+  and `search-worker` (the api image running `python -m app.search.worker`,
+  **no `--reload`** — restart it after editing `app/search/`). Meili's data
+  is disposable: `make reindex` rebuilds it from Postgres.
+- **Migration `0033_search_outbox` — the repo's first triggers** (Q578).
+  `search_enqueue(kind, id_col)` sits on 15 tables (plus `estimate_revision`,
+  which enqueues its estimate) and writes `(entity_type, entity_id)` to
+  `search_outbox` in the writer's own transaction. `search_fanout()` sits on
+  six parents whose values are embedded in child documents (project code,
+  area / room / cutlist names, supplier and customer names) and fires only
+  when one of those columns changes. **Any new write path is covered
+  automatically; a new *searchable table* needs a trigger in a migration and a
+  loader in `documents.py`** — `test_search_reindex.py` fails if the two
+  disagree. `TRUNCATE` fires no row triggers, which is why the test suite
+  truncates `search_outbox` itself (`conftest.TRUNCATE_TABLES`).
+- **The outbox holds identity only.** The worker locks rows `FOR UPDATE SKIP
+  LOCKED`, loads each row's *current* state, waits for Meili task success,
+  then deletes exactly the ids it locked — so an outage loses nothing and a
+  write mid-pass survives. A committed edit is searchable in ~3 s.
+- **`app/search/`** — `index.py` (`SearchIndex` protocol, `MeiliIndex` over
+  httpx, `FakeIndex` for tests; **`build_filter` is the only producer of
+  filter strings** and always carries `workspace_id`), `documents.py` (the
+  only module that knows the source schema; one loader per kind), `worker.py`,
+  `reindex.py`, `routes.py`.
+- **`GET /search?q=&types=&project_id=&include_archived=&limit=&offset=`** —
+  `current_user` only; **no RBAC matrix change**. A type is visible when the
+  role can `read` its module (`routes.TYPE_MODULE`); unreadable types are
+  dropped silently, never 403'd. `503 SEARCH_UNAVAILABLE` on outage, with no
+  Postgres fallback. **`GET /search/health`** is gated
+  `("it_management","read")` — which the matrix gives **manager** as well as
+  admin.
+- **Binding search behaviour.** `codes` (item / cutlist / PO / estimate /
+  SKU numbers) has **typo tolerance off**, and every query uses
+  `matchingStrategy: "all"`: a number one keystroke off, or `EST-2026-0001`
+  matching `EST-2026-0002` by dropping a word, would be a *different record*
+  (`joinery_number_seq` is shared, Q541).
+- **Coverage (Q576 + Q579):** 11 types. Area / room names are searchable
+  through item documents, not as results; people are deferred; suppliers are
+  indexed with **no link** (no supplier page exists). **Never indexed:**
+  secrets, money columns, `vendors.bank_account` / `tax_id` /
+  `payment_terms` / `rating`, customer `abn` — pinned by sentinel tests.
+- **`archived` (Q580)** mirrors each record's own page: void items, and
+  `archived_at` on drawings, samples, customers and catalog rows, plus rejected
+  samples and rejected / expired / withdrawn estimates. Soft-deleted items are
+  never indexed. Cancelled orders, inactive suppliers and closed projects stay
+  visible.
+- **Web.** `components/chrome/SearchBox.tsx` in `TopBar` (`/` focuses it),
+  `/search?q=&type=&include_archived=` (not a tab), and a Search panel on
+  `/it`. The browser still only ever talks to the Next proxy.
+- **Known gap found while building.** Four seeded catalog rows (one each in
+  `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) have
+  **`workspace_id` NULL**, so they are invisible on `/catalog` as well as in
+  search. Pre-existing seed gap, not fixed here.
+

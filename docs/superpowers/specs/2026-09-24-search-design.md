@@ -1,8 +1,8 @@
 # Global Search — design spec (sub-project #11)
 
-> **Status: not started.** Design only; nothing here is built. Migration
-> `0033_search_outbox` is reserved. Plan:
-> `docs/superpowers/plans/2026-09-24-search.md`.
+> **Status: shipped** (migration `0033_search_outbox`). Current state lives in
+> `CLAUDE.md`; the plan (`docs/superpowers/plans/2026-09-24-search.md`)
+> records per task what shipped and where it departed from this spec.
 >
 > **Fully decided.** Q577–Q580, raised by this spec, were answered 2026-09-24
 > (every recommendation taken); see `docs/plan-v1/OPEN-QUESTIONS.md`.
