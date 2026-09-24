@@ -43,13 +43,30 @@ _SELECT_COLS = """
     p.total_value,
     p.created_at,
     COALESCE(ic.cnt, 0)                   AS item_count,
-    (f.user_id IS NOT NULL)               AS is_favourite
+    (f.user_id IS NOT NULL)               AS is_favourite,
+    -- Project Detail 2.0 (#11) — additive surface
+    p.builder,
+    p.classification,
+    p.site_street,
+    p.site_suburb,
+    p.site_postcode,
+    p.site_state,
+    p.tg_project_manager,
+    p.tg_coordinator,
+    p.tg_solid,
+    p.carell_pid,
+    p.total_line_items,
+    p.closed_at,
+    p.closed_by,
+    cb.full_name                          AS closed_by_name
 """
 
 _FROM_JOINS = """
     FROM projects p
     LEFT JOIN app_user u
         ON u.id = p.pm_id
+    LEFT JOIN app_user cb
+        ON cb.id = p.closed_by
     LEFT JOIN project_favourites f
         ON f.project_id = p.project_id AND f.user_id = :uid
     LEFT JOIN (
@@ -58,6 +75,50 @@ _FROM_JOINS = """
         GROUP BY project_id
     ) ic ON ic.project_id = p.project_id
 """
+
+
+def _hydrate_project(db: Session, *, project_id: int) -> tuple[list[dict], dict | None, dict]:
+    """Fetch contacts, lift access, and labour hours for one project."""
+    contacts = db.execute(
+        text(
+            """
+            SELECT contact_id, project_id, kind, position, name, email, mobile,
+                   notes, sort_order, created_at, created_by
+              FROM project_contact
+             WHERE project_id = :pid
+             ORDER BY kind, sort_order, contact_id
+            """
+        ),
+        {"pid": project_id},
+    ).mappings().all()
+
+    lift = db.execute(
+        text(
+            """
+            SELECT project_id, notes, sketch_file_blob_id, updated_at, updated_by
+              FROM project_lift_access
+             WHERE project_id = :pid
+            """
+        ),
+        {"pid": project_id},
+    ).mappings().first()
+
+    labour = db.execute(
+        text(
+            """
+            SELECT site_install, assembly, administration
+              FROM project_labour_hours_view
+             WHERE project_id = :pid
+            """
+        ),
+        {"pid": project_id},
+    ).mappings().first()
+
+    return (
+        [dict(c) for c in contacts],
+        dict(lift) if lift else None,
+        dict(labour) if labour else {"site_install": 0, "assembly": 0, "administration": 0},
+    )
 
 
 def list_projects(
@@ -100,7 +161,60 @@ def get_project(
         ),
         {"pid": project_id, "wid": workspace_id, "uid": current_user_id},
     ).mappings().first()
-    return dict(row) if row else None
+    if row is None:
+        return None
+    out = dict(row)
+    contacts, lift, labour = _hydrate_project(db, project_id=project_id)
+    out["contacts"] = contacts
+    out["lift_access"] = lift
+    out["labour_hours"] = labour
+    return out
+
+
+def close_out_project(
+    db: Session,
+    *,
+    project_id: int,
+    workspace_id: int,
+    actor_id: int,
+) -> str:
+    """Set closed_at + closed_by + status='Closed'.
+
+    Returns 'OK', 'NOT_FOUND', or 'ALREADY_CLOSED'.
+    """
+    row = db.execute(
+        text(
+            "SELECT closed_at FROM projects WHERE project_id = :pid AND workspace_id = :wid"
+        ),
+        {"pid": project_id, "wid": workspace_id},
+    ).mappings().first()
+    if row is None:
+        return "NOT_FOUND"
+    if row["closed_at"] is not None:
+        return "ALREADY_CLOSED"
+
+    db.execute(
+        text(
+            """
+            UPDATE projects
+               SET closed_at = now(),
+                   closed_by = :uid,
+                   status    = 'Closed'
+             WHERE project_id = :pid AND workspace_id = :wid
+            """
+        ),
+        {"pid": project_id, "wid": workspace_id, "uid": actor_id},
+    )
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="project.close_out",
+        target=str(project_id),
+        payload={},
+    )
+    db.flush()
+    return "OK"
 
 
 def create_project(
@@ -148,6 +262,19 @@ _PATCH_COL_MAP = {
     "pm_id": "pm_id",
     "install_start": "installation_start",
     "status": "status",
+    # Project Detail 2.0 (#11) — additive
+    "builder": "builder",
+    "classification": "classification",
+    "site_street": "site_street",
+    "site_suburb": "site_suburb",
+    "site_postcode": "site_postcode",
+    "site_state": "site_state",
+    "tg_project_manager": "tg_project_manager",
+    "tg_coordinator": "tg_coordinator",
+    "tg_solid": "tg_solid",
+    "carell_pid": "carell_pid",
+    "total_value": "total_value",
+    "total_line_items": "total_line_items",
 }
 
 

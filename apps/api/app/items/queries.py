@@ -33,6 +33,9 @@ from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
 
+# Status keys writable by /status and /bulk-status endpoints (matches PatchItemStatusIn).
+_VALID_STATUS_KEYS = frozenset({"CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"})
+
 # Workspace isolation clause (items -> projects.workspace_id direct FK, since 0014).
 _WORKSPACE_FILTER = """
     EXISTS (
@@ -57,6 +60,33 @@ _ITEM_COLS = """
     i.cutlist_owner_id,
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
+    -- Tracking 2.0 enrichment (#10)
+    i.jid_code,
+    i.jid_color,
+    i.var_boq,
+    i.contractor_id,
+    c.full_name                                     AS contractor_name,
+    i.total_amount,
+    i.site_measure_notes,
+    i.floor_plan,
+    i.rls,
+    i.joiery_details,
+    i.painting_req                                  AS painting_required,
+    i.solid_surface_req                             AS solid_surface_required,
+    i.cutlist_printed,
+    i.group_id,
+    i.item_code,
+    i.assembler,
+    i.lister,
+    (
+        SELECT ia.file_blob_id
+        FROM item_attachment ia
+        WHERE ia.item_id = i.item_id AND ia.kind = 'site_measure'
+    )                                               AS site_measure_attachment_id,
+    (
+        SELECT COUNT(*) FROM item_hardware_lines hl
+        WHERE hl.item_id = i.item_id
+    )                                               AS hardware_line_count,
     (
         SELECT COUNT(DISTINCT hl.line_id)
         FROM item_hardware_lines hl
@@ -83,6 +113,7 @@ def list_items_for_project(
     status: str | None = None,
     stage_key: str | None = None,
     q: str | None = None,
+    availability: str | None = None,
 ) -> list[dict]:
     """Return tracking grid rows for a project, scoped to the caller's workspace.
 
@@ -90,6 +121,8 @@ def list_items_for_project(
       status    - exact match on items.status
       stage_key - items currently AT that lifecycle stage (due_date set, done_date NULL)
       q         - ILIKE substring on description or code
+      availability - 'blocked' for items with ≥1 unallocated hardware line
+                     (powers the TO BE ORDERED subtab); anything else ignored.
     """
     params: dict = {
         "pid": project_id,
@@ -97,15 +130,17 @@ def list_items_for_project(
         "status": status,
         "stage_key": stage_key,
         "q": q,
+        "blocked_only": 1 if availability == "blocked" else 0,
     }
 
-    # Query 1: items with availability rollup
+    # Query 1: items with availability rollup + contractor join
     item_rows = db.execute(
         text(
             f"""
             SELECT {_ITEM_COLS}
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
+            LEFT JOIN app_user c ON c.id = i.contractor_id
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
@@ -123,6 +158,17 @@ def list_items_for_project(
                   CAST(:q AS text) IS NULL
                   OR i.description ILIKE '%' || :q || '%'
                   OR i.code ILIKE '%' || :q || '%'
+              )
+              AND (
+                  :blocked_only = 0
+                  OR EXISTS (
+                      SELECT 1 FROM item_hardware_lines hl
+                      WHERE hl.item_id = i.item_id
+                        AND NOT EXISTS (
+                            SELECT 1 FROM batch_allocations ba
+                            WHERE ba.item_hardware_line_id = hl.line_id
+                        )
+                  )
               )
             ORDER BY COALESCE(i.num, CAST(i.item_id AS integer))
             """
@@ -181,6 +227,26 @@ def list_items_for_project(
                     "ready": int(r["ready"]),
                     "blocked": int(r["blocked"]),
                 },
+                # Tracking 2.0 enrichment
+                "jid_code": r["jid_code"],
+                "jid_color": r["jid_color"],
+                "var_boq": r["var_boq"] or "BOQ",
+                "contractor_id": r["contractor_id"],
+                "contractor_name": r["contractor_name"],
+                "total_amount": r["total_amount"],
+                "site_measure_notes": r["site_measure_notes"],
+                "site_measure_attachment_id": r["site_measure_attachment_id"],
+                "floor_plan": r["floor_plan"],
+                "rls": r["rls"],
+                "joiery_details": r["joiery_details"],
+                "painting_required": r["painting_required"],
+                "solid_surface_required": r["solid_surface_required"],
+                "cutlist_printed": r["cutlist_printed"],
+                "group_id": r["group_id"],
+                "item_code": r["item_code"],
+                "assembler": r["assembler"],
+                "lister": r["lister"],
+                "hardware_line_count": int(r["hardware_line_count"] or 0),
             }
         )
 
@@ -661,7 +727,13 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.painting_req,
                 i.solid_surface_req,
                 i.item_locked,
-                i.cutlist_owner_id
+                i.cutlist_owner_id,
+                i.jid_code,
+                i.jid_color,
+                i.var_boq,
+                i.contractor_id,
+                i.total_amount,
+                i.site_measure_notes
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
@@ -670,6 +742,15 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
         {"iid": item_id, "wid": workspace_id},
     ).mappings().first()
     return dict(row) if row is not None else None
+
+
+def _user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> bool:
+    """Return True if app_user belongs to the workspace.  Guards contractor_id writes."""
+    row = db.execute(
+        text("SELECT 1 FROM app_user WHERE id = :uid AND workspace_id = :wid"),
+        {"uid": user_id, "wid": workspace_id},
+    ).first()
+    return row is not None
 
 
 def create_item(
@@ -751,6 +832,13 @@ _PATCH_FIELD_MAP: list[tuple[str, str, str]] = [
     ("estimator_notes",      "estimator_notes", "estimator_notes"),
     ("painting_required",    "painting_req",    "painting_req"),
     ("solid_surface_required","solid_surface_req","solid_surface_req"),
+    # Tracking 2.0 enrichment (#10) — contractor_id is validated in patch_item()
+    ("jid_code",             "jid_code",          "jid_code"),
+    ("jid_color",            "jid_color",         "jid_color"),
+    ("var_boq",              "var_boq",           "var_boq"),
+    ("contractor_id",        "contractor_id",     "contractor_id"),
+    ("total_amount",         "total_amount",      "total_amount"),
+    ("site_measure_notes",   "site_measure_notes","site_measure_notes"),
 ]
 
 
@@ -761,9 +849,11 @@ def patch_item(
     workspace_id: int,
     payload: PatchItemIn,
     actor_id: int,
-) -> dict | None:
-    """Apply a partial update to an item.  Returns the row dict via get_item_detail
-    or None if item not found/out-of-workspace.
+) -> dict | str | None:
+    """Apply a partial update to an item.  Returns the row dict via get_item_detail,
+    None if item not found/out-of-workspace, or the sentinel string
+    "CROSS_WORKSPACE_CONTRACTOR" when payload.contractor_id references a user
+    in another workspace.
 
     Soft-lock semantics (spec §6.4):
     - If cutlist_owner_id IS NULL:  set item_locked=true and cutlist_owner_id=actor.
@@ -774,6 +864,12 @@ def patch_item(
     current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
     if current is None:
         return None
+
+    # Tracking 2.0: cross-workspace contractor reference blocked at app layer.
+    if payload.contractor_id is not None and not _user_in_workspace(
+        db, user_id=payload.contractor_id, workspace_id=workspace_id
+    ):
+        return "CROSS_WORKSPACE_CONTRACTOR"
 
     # ── Collect changed fields (skip None values — partial update) ────────────
     updates: dict[str, object] = {}   # col -> new_value
@@ -894,14 +990,19 @@ def patch_item_status(
     item_id: int,
     workspace_id: int,
     status: str,
-    note: str | None = None,
+    note: str,
     actor_id: int,
 ) -> bool:
     """Update items.status.  Returns True if updated, False if item not found.
 
     Writes to item_status_log (the actual table, which records status changes
     with columns: item_id, status, note, changed_by), audit_log, and item_edit_log.
+
+    note is required and must be non-empty (matches item_status_log.note NOT NULL).
     """
+    if not note:
+        raise ValueError("note is required for status changes")
+
     current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
     if current is None:
         return False
@@ -919,7 +1020,6 @@ def patch_item_status(
     )
     db.flush()
 
-    # item_status_log records status changes: (item_id, status, note, changed_by)
     db.execute(
         text(
             """
@@ -927,7 +1027,7 @@ def patch_item_status(
             VALUES (:iid, :s, :n, :cb)
             """
         ),
-        {"iid": item_id, "s": status, "n": note or "", "cb": str(actor_id)},
+        {"iid": item_id, "s": status, "n": note, "cb": str(actor_id)},
     )
     db.flush()
 
@@ -948,6 +1048,103 @@ def patch_item_status(
         new_value=status,
     )
     return True
+
+
+def bulk_patch_item_status(
+    db: Session,
+    *,
+    item_ids: list[int],
+    workspace_id: int,
+    status: str,
+    note: str,
+    actor_id: int,
+) -> dict:
+    """Apply the same status + note to a batch of items.  Single transaction.
+
+    For each id: classify into one of
+      - 'updated': existed and was updated; status_log + audit + edit_log written.
+      - 'not_found': no item with that id exists at all.
+      - 'cross_workspace': item exists but belongs to another workspace.
+
+    Returns {'updated': int, 'not_found': [int], 'cross_workspace': [int]}.
+    """
+    if not note:
+        raise ValueError("note is required for bulk status changes")
+    if status not in _VALID_STATUS_KEYS:
+        raise ValueError(f"unknown status key: {status}")
+
+    not_found: list[int] = []
+    cross_workspace: list[int] = []
+    updated_count = 0
+    bulk_size = len(item_ids)
+
+    for iid in item_ids:
+        # Existence + workspace classification in one round-trip
+        row = db.execute(
+            text(
+                """
+                SELECT p.workspace_id AS wid
+                FROM items i
+                JOIN projects p ON p.project_id = i.project_id
+                WHERE i.item_id = :iid
+                """
+            ),
+            {"iid": iid},
+        ).mappings().first()
+        if row is None:
+            not_found.append(iid)
+            continue
+        if row["wid"] != workspace_id:
+            cross_workspace.append(iid)
+            continue
+
+        prev_status = db.execute(
+            text("SELECT status FROM items WHERE item_id = :iid"),
+            {"iid": iid},
+        ).scalar()
+
+        db.execute(
+            text("UPDATE items SET status = :s, updated_at = now() WHERE item_id = :iid"),
+            {"s": status, "iid": iid},
+        )
+        db.execute(
+            text(
+                """
+                INSERT INTO item_status_log(item_id, status, note, changed_by)
+                VALUES (:iid, :s, :n, :cb)
+                """
+            ),
+            {"iid": iid, "s": status, "n": note, "cb": str(actor_id)},
+        )
+        write_audit(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor_id,
+            event="item.status.bulk",
+            target=str(iid),
+            payload={
+                "old": prev_status,
+                "new": status,
+                "note": note,
+                "bulk_size": bulk_size,
+            },
+        )
+        write_edit_log(
+            db,
+            item_id=iid,
+            actor_id=actor_id,
+            field="item.status",
+            old_value=prev_status,
+            new_value=status,
+        )
+        updated_count += 1
+
+    db.flush()
+    return {
+        "updated": updated_count,
+        "not_found": not_found,
+        "cross_workspace": cross_workspace,
+    }
 
 
 def patch_lifecycle(

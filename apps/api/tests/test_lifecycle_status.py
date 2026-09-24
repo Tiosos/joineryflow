@@ -172,7 +172,10 @@ def test_patch_status_writes_audit_and_edit_log():
     finally:
         db.close()
 
-    r = c.patch(f"/items/{iid}/status", json={"status": "LIVE"})
+    r = c.patch(
+        f"/items/{iid}/status",
+        json={"status": "LIVE", "note": "Promoted to LIVE for shop drawings sign-off"},
+    )
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "LIVE"
 

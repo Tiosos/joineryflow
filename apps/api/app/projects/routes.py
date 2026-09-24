@@ -4,8 +4,16 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import current_user, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
-from .queries import add_favourite, create_project, get_project, list_projects, patch_project, remove_favourite
-from .schemas import CreateProjectIn, PatchProjectIn, ProjectListOut, ProjectOut
+from .queries import (
+    add_favourite,
+    close_out_project,
+    create_project,
+    get_project,
+    list_projects,
+    patch_project,
+    remove_favourite,
+)
+from .schemas import CloseOutOut, CreateProjectIn, PatchProjectIn, ProjectListOut, ProjectOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -101,6 +109,44 @@ def patch_project_route(
         raise HTTPException(status_code=404, detail="project not found")
     db.commit()
     return row
+
+
+@router.post("/{pid}/close-out", response_model=CloseOutOut)
+def close_out_route(
+    pid: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Close out a project.  Admin/manager only.  409 if already closed."""
+    if user.auth_role not in ("manager", "admin"):
+        raise HTTPException(status_code=403, detail="manager or admin required")
+
+    result = close_out_project(
+        db,
+        project_id=pid,
+        workspace_id=user.workspace_id,
+        actor_id=user.id,
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="project not found")
+    if result == "ALREADY_CLOSED":
+        raise HTTPException(status_code=409, detail="project already closed")
+    db.commit()
+
+    row = get_project(
+        db,
+        project_id=pid,
+        workspace_id=user.workspace_id,
+        current_user_id=user.id,
+    )
+    if row is None:
+        raise HTTPException(status_code=500, detail="project not found after close-out")
+    return {
+        "project_id": pid,
+        "closed_at": row["closed_at"],
+        "closed_by": row["closed_by"],
+        "closed_by_name": row.get("closed_by_name"),
+    }
 
 
 @router.post("/{pid}/favourites", status_code=204)

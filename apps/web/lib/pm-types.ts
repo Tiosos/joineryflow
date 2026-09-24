@@ -57,6 +57,8 @@ export interface AvailabilityRollup {
   blocked: number;
 }
 
+export type VarBoq = "BOQ" | "VAR";
+
 export interface TrackingItemRow {
   id: number;
   item_number: number | null;
@@ -74,6 +76,26 @@ export interface TrackingItemRow {
   item_locked: boolean;
   stages: Record<string, StageDates>; // keyed by stage_key: REQ..INST
   availability: AvailabilityRollup;
+  // Tracking 2.0 enrichment (#10)
+  jid_code?: string | null;
+  jid_color?: string | null; // hex #RRGGBB
+  var_boq?: VarBoq;
+  contractor_id?: number | null;
+  contractor_name?: string | null;
+  total_amount?: string | null; // numeric → string in JSON
+  site_measure_notes?: string | null;
+  site_measure_attachment_id?: number | null;
+  floor_plan?: string | null;
+  rls?: string | null;
+  joiery_details?: string | null;
+  painting_required?: boolean | null;
+  solid_surface_required?: boolean | null;
+  cutlist_printed?: boolean | null;
+  group_id?: string | null;
+  item_code?: string | null;
+  assembler?: string | null;
+  lister?: string | null;
+  hardware_line_count?: number;
 }
 
 export interface TrackingGridOut {

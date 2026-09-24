@@ -4,17 +4,27 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
 
-export type SubTab = "DATE" | "iTIME" | "HARDWARE" | "SITE MEASURE" | "INVOICE" | "QC";
+export type SubTab =
+  | "DATE"
+  | "TO BE ORDERED"
+  | "iTIME"
+  | "HARDWARE"
+  | "SITE MEASURE"
+  | "INVOICE"
+  | "QC";
 
 export const SUB_TABS: SubTab[] = [
-  "DATE", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC",
+  "DATE", "TO BE ORDERED", "iTIME", "HARDWARE", "SITE MEASURE", "INVOICE", "QC",
 ];
 
 const STAGE_KEYS = [
   "REQ", "SM", "LISTED", "DOWN", "CNC", "EDGED", "PAINTED", "MADE", "DEL", "INST",
 ] as const;
 
-const SUB_TAB_COLUMNS: Record<Exclude<SubTab, "DATE">, { key: string; label: string }[]> = {
+// SubTabs that render the same 10 stage-date columns as DATE.
+const DATE_LIKE_SUBTABS: ReadonlySet<SubTab> = new Set<SubTab>(["DATE", "TO BE ORDERED"]);
+
+const SUB_TAB_COLUMNS: Record<Exclude<SubTab, "DATE" | "TO BE ORDERED">, { key: string; label: string }[]> = {
   iTIME: [
     { key: "hours", label: "Hours" },
     { key: "operator", label: "Operator" },
@@ -22,17 +32,16 @@ const SUB_TAB_COLUMNS: Record<Exclude<SubTab, "DATE">, { key: string; label: str
     { key: "end", label: "End" },
   ],
   HARDWARE: [
-    { key: "hinges", label: "Hinges" },
-    { key: "handles", label: "Handles" },
-    { key: "runners", label: "Runners" },
-    { key: "ordered", label: "Ordered" },
-    { key: "received", label: "Received" },
+    { key: "lines", label: "Lines" },
+    { key: "ready", label: "Ready" },
+    { key: "blocked", label: "Blocked" },
   ],
   "SITE MEASURE": [
+    { key: "reqdate", label: "REQ Date" },
     { key: "smdate", label: "SM Date" },
     { key: "by", label: "By" },
-    { key: "variance", label: "Variance" },
-    { key: "signoff", label: "Signed Off" },
+    { key: "notes", label: "Notes" },
+    { key: "snapshot", label: "Snapshot" },
   ],
   INVOICE: [
     { key: "invno", label: "Invoice #" },
@@ -75,6 +84,10 @@ interface Props {
   freeQuery: string;
   onOpenItem: (id: number) => void;
   onOpenStatus: (id: number) => void;
+  // Bulk selection — optional; pass nothing to disable (List tab reuse).
+  selectedIds?: Set<number>;
+  onToggleSelect?: (id: number) => void;
+  onToggleSelectVisible?: (ids: number[], select: boolean) => void;
 }
 
 function statusClasses(status: string | null): string {
@@ -106,7 +119,17 @@ function dateCellColor(dueIso: string | null, doneIso: string | null, todayIso: 
   return "text-h-muted";
 }
 
-export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenStatus }: Props) {
+export function ItemsTable({
+  items,
+  cutlistQuery,
+  freeQuery,
+  onOpenItem,
+  onOpenStatus,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectVisible,
+}: Props) {
+  const bulkEnabled = Boolean(selectedIds && onToggleSelect && onToggleSelectVisible);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("num");
   const [sortAsc, setSortAsc] = useState(true);
@@ -129,7 +152,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
   const filtered = useMemo(() => {
     const cq = cutlistQuery.trim();
     const fq = freeQuery.trim().toLowerCase();
-    return items.filter((it) => {
+    return subtabFiltered.filter((it) => {
       if (filters.stage && it.stage !== filters.stage) return false;
       if (filters.zone && it.zone !== filters.zone) return false;
       if (filters.level && it.level !== filters.level) return false;
@@ -148,7 +171,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       }
       return true;
     });
-  }, [items, filters, cutlistQuery, freeQuery]);
+  }, [subtabFiltered, filters, cutlistQuery, freeQuery]);
 
   const sorted = useMemo(() => sortRows(filtered, sortKey, sortAsc), [filtered, sortKey, sortAsc]);
 
@@ -171,9 +194,15 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
     setSortAsc(true);
   }
 
-  const isDate = subTab === "DATE";
-  const subCols = isDate ? null : SUB_TAB_COLUMNS[subTab];
+  const isDateLike = DATE_LIKE_SUBTABS.has(subTab);
+  const subCols = isDateLike ? null : SUB_TAB_COLUMNS[subTab as Exclude<SubTab, "DATE" | "TO BE ORDERED">];
   const today = todayISO();
+
+  // For TO BE ORDERED, filter to items with at least one blocked hardware line.
+  const subtabFiltered = useMemo(
+    () => (subTab === "TO BE ORDERED" ? items.filter((it) => it.availability.blocked > 0) : items),
+    [items, subTab],
+  );
 
   return (
     <div
@@ -184,9 +213,9 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
       <table className="w-full text-xs">
         <thead className="bg-h-bg text-h-muted">
           <tr>
-            <td colSpan={15} />
+            <td colSpan={17} />
             <th
-              colSpan={(isDate ? 10 : subCols!.length) + 1}
+              colSpan={(isDateLike ? 10 : subCols!.length) + 1}
               className="px-2 py-1 text-right"
             >
               {SUB_TABS.map((st) => (
@@ -209,6 +238,8 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
             <Th className="w-6" />
             <Th className="w-6" />
             <Th sort sortActive={sortKey === "num"} sortAsc={sortAsc} onSort={() => setSort("num")}>CUTLIST</Th>
+            <Th>JID</Th>
+            <Th>V/B</Th>
             <Th sort sortActive={sortKey === "stage"} sortAsc={sortAsc} onSort={() => setSort("stage")}>Stage</Th>
             <Th sort sortActive={sortKey === "zone"} sortAsc={sortAsc} onSort={() => setSort("zone")}>Zone</Th>
             <Th sort sortActive={sortKey === "level"} sortAsc={sortAsc} onSort={() => setSort("level")}>Lvl</Th>
@@ -217,11 +248,11 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
             <Th sort sortActive={sortKey === "code"} sortAsc={sortAsc} onSort={() => setSort("code")}>Code</Th>
             <Th sort sortActive={sortKey === "desc"} sortAsc={sortAsc} onSort={() => setSort("desc")}>Description</Th>
             <Th sort sortActive={sortKey === "status"} sortAsc={sortAsc} onSort={() => setSort("status")}>STATUS</Th>
-            <Th align="right" sort sortActive={sortKey === "size"} sortAsc={sortAsc} onSort={() => setSort("size")}>Size</Th>
+            <Th align="right" sort sortActive={sortKey === "size"} sortAsc={sortAsc} onSort={() => setSort("size")} title="Total amount $">Total $</Th>
             <Th align="right" sort sortActive={sortKey === "qty"} sortAsc={sortAsc} onSort={() => setSort("qty")}>Qty</Th>
-            <Th sort sortActive={sortKey === "assem"} sortAsc={sortAsc} onSort={() => setSort("assem")}>Assembler</Th>
+            <Th sort sortActive={sortKey === "assem"} sortAsc={sortAsc} onSort={() => setSort("assem")} title="Contractor">Contractor</Th>
             <Th sort sortActive={sortKey === "lister"} sortAsc={sortAsc} onSort={() => setSort("lister")}>Lister</Th>
-            {isDate ? (
+            {isDateLike ? (
               STAGE_KEYS.map((sk) => (
                 <Th
                   key={sk}
@@ -250,6 +281,9 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
                 Clear
               </button>
             </td>
+            <td />
+            {/* JID, V/B — no filters in v1 */}
+            <td />
             <td />
             <td className="px-1 py-1">
               <FilterSelect value={filters.stage} onChange={(v) => patch("stage", v)} options={["Joinery Lab", "Joinery General", "PC2", "Stone"]} placeholder="All stages" />
@@ -280,7 +314,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
             <td className="px-1 py-1">
               <FilterSelect value={filters.lister} onChange={(v) => patch("lister", v)} options={listers} placeholder="All listers" />
             </td>
-            {isDate ? (
+            {isDateLike ? (
               <>
                 <td /><td /><td /><td /><td /><td /><td /><td /><td /><td />
               </>
@@ -293,7 +327,7 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={26} className="px-4 py-8 text-center text-h-muted">
+              <td colSpan={28} className="px-4 py-8 text-center text-h-muted">
                 No items match your filters.
               </td>
             </tr>
@@ -302,9 +336,13 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
               <Row
                 key={it.id}
                 row={it}
-                isDate={isDate}
+                subTab={subTab}
+                isDateLike={isDateLike}
                 subColCount={subCols?.length ?? 0}
                 today={today}
+                bulkEnabled={bulkEnabled}
+                checked={selectedIds?.has(it.id) ?? false}
+                onToggle={onToggleSelect ? () => onToggleSelect(it.id) : undefined}
                 onOpen={() => onOpenItem(it.id)}
                 onOpenStatus={() => onOpenStatus(it.id)}
               />
@@ -318,23 +356,39 @@ export function ItemsTable({ items, cutlistQuery, freeQuery, onOpenItem, onOpenS
 
 function Row({
   row,
-  isDate,
+  subTab,
+  isDateLike,
   subColCount,
   today,
+  bulkEnabled,
+  checked,
+  onToggle,
   onOpen,
   onOpenStatus,
 }: {
   row: TrackingItemRow;
-  isDate: boolean;
+  subTab: SubTab;
+  isDateLike: boolean;
   subColCount: number;
   today: string;
+  bulkEnabled: boolean;
+  checked: boolean;
+  onToggle?: () => void;
   onOpen: () => void;
   onOpenStatus: () => void;
 }) {
   return (
     <tr className="border-t border-h-line hover:bg-h-bg">
-      <td className="px-1 py-1 text-center text-h-muted" title="Omit (mock-only)">
-        <input type="checkbox" disabled className="opacity-30" />
+      <td className="px-1 py-1 text-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!bulkEnabled}
+          onChange={onToggle}
+          className={bulkEnabled ? "cursor-pointer" : "opacity-30"}
+          aria-label={`Select item ${row.item_number ?? row.id}`}
+          title={bulkEnabled ? "Select for bulk status change" : "Bulk select unavailable"}
+        />
       </td>
       <td className="px-1 py-1 text-center">
         <button
@@ -351,6 +405,12 @@ function Row({
         <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
           {row.item_number ?? row.id}
         </Link>
+      </td>
+      <td className="px-2 py-1 text-h-ink">
+        <JidCell code={row.jid_code} color={row.jid_color} />
+      </td>
+      <td className="px-2 py-1">
+        <VarBoqPill value={row.var_boq ?? "BOQ"} />
       </td>
       <td className="px-2 py-1 text-h-ink">{row.stage ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.zone ?? "—"}</td>
@@ -370,21 +430,128 @@ function Row({
           {row.status ?? "—"}
         </button>
       </td>
-      <td className="px-2 py-1 text-right text-h-muted">—</td>
+      <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">
+        {formatAmount(row.total_amount)}
+      </td>
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">{row.qty ?? "—"}</td>
-      <td className="px-2 py-1 text-h-muted" title="Assembler (mock-only)">—</td>
+      <td className="px-2 py-1 text-h-muted" title="Contractor">{row.contractor_name ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.cutlist_owner_name ?? "—"}</td>
-      {isDate ? (
+      {isDateLike ? (
         STAGE_KEYS.map((sk) => (
           <StageCell key={sk} stage={row.stages[sk]} today={today} />
         ))
       ) : (
-        Array.from({ length: subColCount }).map((_, i) => (
-          <td key={i} className="px-2 py-1 text-h-muted">—</td>
-        ))
+        <SubTabCells row={row} subTab={subTab} subColCount={subColCount} />
       )}
       <td className="px-2 py-1 font-mono text-[10px] text-h-muted">{row.id}</td>
     </tr>
+  );
+}
+
+
+function JidCell({ code, color }: { code: string | null | undefined; color: string | null | undefined }) {
+  if (!code && !color) return <span className="text-h-muted">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {color ? (
+        <span
+          className="inline-block h-3 w-3 rounded-sm border border-h-line"
+          style={{ backgroundColor: color }}
+          aria-hidden="true"
+          title={`JID color ${color}`}
+        />
+      ) : null}
+      <span className="font-mono text-[10px]">{code ?? "—"}</span>
+    </span>
+  );
+}
+
+function VarBoqPill({ value }: { value: "BOQ" | "VAR" }) {
+  const isVar = value === "VAR";
+  const cls = isVar
+    ? "bg-[#f3e0d6] text-[#a84f31]"
+    : "bg-h-bg text-h-muted border border-h-line";
+  return (
+    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
+function formatAmount(amount: string | null | undefined): string {
+  if (amount == null || amount === "") return "—";
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+
+// SubTab data cells for non-date subtabs.  INVOICE + iTIME + QC stay as `—`
+// stubs (Invoice ships in #13; iTIME / QC are out of scope for #10).
+function SubTabCells({
+  row,
+  subTab,
+  subColCount,
+}: {
+  row: TrackingItemRow;
+  subTab: SubTab;
+  subColCount: number;
+}) {
+  if (subTab === "HARDWARE") {
+    return (
+      <>
+        <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">
+          {row.hardware_line_count ?? 0}
+        </td>
+        <td className="px-2 py-1 text-right font-mono tabular-nums text-[#3f7d48]">
+          {row.availability.ready}
+        </td>
+        <td className="px-2 py-1 text-right font-mono tabular-nums text-[#b4443d]">
+          {row.availability.blocked}
+        </td>
+      </>
+    );
+  }
+
+  if (subTab === "SITE MEASURE") {
+    const req = row.stages.REQ?.due_date ?? null;
+    const smDone = row.stages.SM?.done_date ?? null;
+    const smDue = row.stages.SM?.due_date ?? null;
+    const smDisplay = smDone ?? smDue;
+    return (
+      <>
+        <td className="px-2 py-1 font-mono text-[10px] tabular-nums text-h-muted">
+          {req ?? "—"}
+        </td>
+        <td className="px-2 py-1 font-mono text-[10px] tabular-nums text-h-muted">
+          {smDisplay ?? "—"}
+        </td>
+        <td className="px-2 py-1 text-h-muted">{row.lister ?? "—"}</td>
+        <td className="px-2 py-1 text-h-muted">{row.site_measure_notes ?? "—"}</td>
+        <td className="px-2 py-1">
+          {row.site_measure_attachment_id ? (
+            <a
+              href={`/api/files/${row.site_measure_attachment_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-h-accent hover:underline"
+            >
+              View
+            </a>
+          ) : (
+            <span className="text-h-muted">—</span>
+          )}
+        </td>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {Array.from({ length: subColCount }).map((_, i) => (
+        <td key={i} className="px-2 py-1 text-h-muted">—</td>
+      ))}
+    </>
   );
 }
 

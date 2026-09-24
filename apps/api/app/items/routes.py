@@ -6,6 +6,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..projects.queries import get_project
 from .queries import (
+    bulk_patch_item_status,
     claim_or_release_lock,
     create_item,
     delete_item,
@@ -18,6 +19,8 @@ from .queries import (
 )
 from .schemas import (
     AvailabilityOut,
+    BulkItemStatusIn,
+    BulkItemStatusOut,
     CreateItemIn,
     ItemOut,
     LockTransferIn,
@@ -36,9 +39,19 @@ def get_project_items(
     status: str | None = None,
     stage: str | None = None,
     q: str | None = None,
+    availability: str | None = None,
     user: AuthUser = Depends(require_permission("tracking", "read")),
     db: Session = Depends(get_db),
 ):
+    """List items for a project.
+
+    Query params:
+      status        - exact filter on items.status
+      stage         - filter to items currently at this lifecycle stage
+      q             - free-text search on description / code
+      availability  - 'blocked' to show only items with unallocated hardware
+                      (powers the TO BE ORDERED subtab in Tracking 2.0)
+    """
     proj = get_project(
         db,
         project_id=pid,
@@ -54,6 +67,7 @@ def get_project_items(
         status=status,
         stage_key=stage,
         q=q,
+        availability=availability,
     )
     return {"project_id": pid, "items": items}
 
@@ -142,6 +156,11 @@ def patch_item_route(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="item not found")
+    if result == "CROSS_WORKSPACE_CONTRACTOR":
+        raise HTTPException(
+            status_code=422,
+            detail="contractor_id must reference a user in the same workspace",
+        )
     db.commit()
     detail = get_item_detail(
         db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
@@ -237,6 +256,30 @@ def patch_status_route(
     return get_item_detail(
         db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
     )
+
+
+@router.post("/items/bulk-status", response_model=BulkItemStatusOut)
+def post_bulk_status(
+    payload: BulkItemStatusIn,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Apply a status + shared note to many items in one transaction.
+
+    Note is required (Pydantic min_length=1, also enforced by item_status_log.note NOT NULL).
+    Items missing or in another workspace are listed separately in the response
+    rather than failing the whole call.
+    """
+    result = bulk_patch_item_status(
+        db,
+        item_ids=payload.item_ids,
+        workspace_id=user.workspace_id,
+        status=payload.status,
+        note=payload.note,
+        actor_id=user.id,
+    )
+    db.commit()
+    return result
 
 
 @router.patch("/items/{id}/lifecycle/{stage_key}", response_model=ItemOut)
