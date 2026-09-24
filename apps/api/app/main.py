@@ -13,6 +13,7 @@ from .hardware_lines.routes import router as hardware_lines_router
 from .parts.routes import router as parts_router
 from .home.routes import router as home_router
 from .item_attachments.routes import router as item_attachments_router
+from .item_queries.routes import router as item_queries_router
 from .items.routes import router as items_router
 from .material_summaries.routes import router as material_summaries_router
 from .material_takes.routes import router as material_takes_router
@@ -23,6 +24,8 @@ from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
 from .procurement_v1.batches.routes import router as proc_v1_batches_router
 from .procurement_v1.materials.routes import router as proc_v1_materials_router
 from .procurement_v1.queue.routes import router as proc_v1_queue_router
+from .project_contacts.routes import router as project_contacts_router
+from .project_lift_access.routes import router as project_lift_access_router
 from .projects.routes import router as projects_router
 from .related_parts.routes import router as related_parts_router
 from .samples.routes import router as samples_router
@@ -65,7 +68,10 @@ app.include_router(proc_v1_batches_router)
 app.include_router(proc_v1_alloc_router)
 app.include_router(proc_v1_queue_router)
 app.include_router(projects_router)
+app.include_router(project_contacts_router)
+app.include_router(project_lift_access_router)
 app.include_router(items_router)
+app.include_router(item_queries_router)
 app.include_router(material_takes_router)
 app.include_router(material_summaries_router)
 app.include_router(hardware_lines_router)
