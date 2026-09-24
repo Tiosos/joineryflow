@@ -149,6 +149,10 @@ Applied idempotently by the worker at start-up and by the reindex command:
   number that is one keystroke off is a *different record* (`joinery_number_seq`
   is shared, Q541), so "297831" must never return 297830.
 - `faceting` on `type`, so the results page shows per-type counts.
+- Every search sends `matchingStrategy: "all"` — **every query word must
+  match**. Found while building: Meili's default drops trailing words, so
+  `EST-2026-0001` (three tokens) also returned `EST-2026-0002`, the same
+  wrong-record hazard as a typo'd number.
 
 ### 3.3 What must never be indexed
 

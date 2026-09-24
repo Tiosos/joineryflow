@@ -148,6 +148,11 @@ class MeiliIndex:
             "limit": query.limit,
             "offset": query.offset,
             "facets": ["type"],
+            # Every query word must match. Meili's default ("last") drops
+            # trailing words until something matches, so "EST-2026-0001"
+            # (tokenised EST / 2026 / 0001) returned EST-2026-0002 too — the
+            # same wrong-record hazard the codes typo rule exists for.
+            "matchingStrategy": "all",
         })
         return SearchResult(
             hits=body["hits"],
@@ -251,3 +256,10 @@ class FakeIndex:
 
     def healthy(self) -> bool:
         return not self.down
+
+
+def get_index() -> SearchIndex:
+    """The configured index — the worker's and the routes' single source."""
+    from ..config import settings
+
+    return MeiliIndex(settings.meili_url, settings.meili_api_key, settings.search_index)

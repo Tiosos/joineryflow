@@ -106,6 +106,18 @@ def test_real_typo_tolerance_on_title_not_on_codes():
         idx.drop(idx.index)
 
 
+@pytest.mark.meili
+def test_real_every_query_word_must_match():
+    """EST-2026-0001 tokenises to three words; dropping one must not let a
+    sibling identifier through."""
+    idx = _real()
+    try:
+        _put(idx, [_doc(1, codes=["EST-2026-0001"]), _doc(2, codes=["EST-2026-0002"])])
+        assert [h["id"] for h in idx.search(_q("EST-2026-0001")).hits] == ["item-1"]
+    finally:
+        idx.drop(idx.index)
+
+
 def test_fake_outage_raises():
     f = FakeIndex()
     f.down = True

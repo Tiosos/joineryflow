@@ -123,6 +123,12 @@ def test_archived_catalog_row(db, workspace_id):
     assert D.load(db, "board_materials", [mid])[mid]["archived"] is True
 
 
+def test_row_without_workspace_is_not_indexed(db):
+    mid = _one(db, """INSERT INTO benchtop_materials(slab_id, description, workspace_id)
+                      VALUES ('DOC-NOWS', 'Orphan slab', NULL) RETURNING material_id""")
+    assert D.load(db, "benchtop_materials", [mid]) == {}
+
+
 def test_every_kind_has_a_loader():
     assert set(D.LOADERS) == set(D.KINDS)
 

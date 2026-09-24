@@ -329,4 +329,8 @@ def load(db: Session, kind: str, ids: list[int]) -> dict[int, dict]:
     """Current documents for `ids` of one kind, keyed by entity id."""
     if not ids:
         return {}
-    return {d["entity_id"]: d for d in LOADERS[kind](db, ids)}
+    # A row with no workspace can never pass the search filter (and is equally
+    # invisible on its own page, which filters on workspace_id too) — seed
+    # data carries four such catalog rows. Treat it as not indexable.
+    return {d["entity_id"]: d for d in LOADERS[kind](db, ids)
+            if d["workspace_id"] is not None}
