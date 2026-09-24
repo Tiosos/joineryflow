@@ -8,6 +8,13 @@ from sqlalchemy import text
 
 from app.catalog.queries import create_catalog_row, patch_catalog_row
 
+from .search_helpers import make_order, make_tree, make_vendor
+
+
+@pytest.fixture
+def tree(db, workspace_id):
+    return make_tree(db, workspace_id)
+
 
 @pytest.fixture
 def since(db):
@@ -26,24 +33,6 @@ def since(db):
 
     rows.reset = reset
     return rows
-
-
-@pytest.fixture
-def tree(db, workspace_id):
-    """workspace → project → area → room, a cutlist and an item linked to all."""
-    one = lambda sql, **p: db.execute(text(sql), p).scalar()  # noqa: E731
-    pid = one("INSERT INTO projects(project_code, name, workspace_id)"
-              " VALUES ('SRCH-1', 'Search project', :w) RETURNING project_id", w=workspace_id)
-    aid = one("INSERT INTO area(project_id, name) VALUES (:p, 'Level 2') RETURNING area_id", p=pid)
-    rid = one("INSERT INTO room(area_id, rm_no, rm_desc) VALUES (:a, '2.04', 'Kitchen')"
-              " RETURNING room_id", a=aid)
-    cid = one("INSERT INTO cutlist(project_id, cutlist_no, name)"
-              " VALUES (:p, nextval('joinery_number_seq'), 'Run') RETURNING cutlist_id", p=pid)
-    iid = one("""INSERT INTO items(num, project_id, description, status, area_id, room_id, cutlist_id)
-                 VALUES (nextval('joinery_number_seq'), :p, 'Island bench', 'LIVE', :a, :r, :c)
-                 RETURNING item_id""", p=pid, a=aid, r=rid, c=cid)
-    return {"w": workspace_id, "project": pid, "area": aid, "room": rid,
-            "cutlist": cid, "item": iid}
 
 
 def test_insert_update_delete_each_enqueue_one_row(db, workspace_id, since):
@@ -121,29 +110,9 @@ def test_catalog_dynamic_sql_path_enqueues(db, workspace_id, since):
     assert since() == [("board_materials", mid)] * 2
 
 
-def _vendor(db, w, name):
-    return db.execute(text("INSERT INTO vendors(workspace_id, name, category)"
-                           " SELECT :w, :n, category_key FROM order_category LIMIT 1"
-                           " RETURNING vendor_id"),
-                      {"w": w, "n": name}).scalar()
-
-
-def _order(db, w, vid, po_number, project_id=None):
-    uid = db.execute(text(
-        "INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
-        " VALUES (:w, :e, 'Req', 'x', 'manager') RETURNING id"),
-        {"w": w, "e": f"{po_number.lower()}@search.test"}).scalar()
-    cat = db.execute(text("SELECT category_key FROM order_category LIMIT 1")).scalar()
-    return db.execute(text("""
-        INSERT INTO purchase_orders(po_number, vendor_id, project_id, requester_id,
-                                    description, category)
-        VALUES (:n, :v, :p, :u, 'Stone top', :c) RETURNING po_id"""),
-        {"n": po_number, "v": vid, "p": project_id, "u": uid, "c": cat}).scalar()
-
-
 def test_vendor_rename_enqueues_its_orders(db, tree, since):
-    vid = _vendor(db, tree["w"], "Acme")
-    po = _order(db, tree["w"], vid, "PO-TEST-SRCH", tree["project"])
+    vid = make_vendor(db, tree["w"], "Acme")
+    po = make_order(db, tree["w"], vid, "PO-TEST-SRCH", tree["project"])
     since.reset()
     db.execute(text("UPDATE vendors SET name = 'Acme Stone' WHERE vendor_id = :v"), {"v": vid})
     assert since() == [("supplier", vid), ("order", po)]
@@ -151,8 +120,8 @@ def test_vendor_rename_enqueues_its_orders(db, tree, since):
 
 def test_null_parent_id_is_skipped(db, workspace_id, since):
     """An order with no project must not make the project fan-out insert a NULL."""
-    vid = _vendor(db, workspace_id, "Solo")
-    po = _order(db, workspace_id, vid, "PO-TEST-SRCH2")
+    vid = make_vendor(db, workspace_id, "Solo")
+    po = make_order(db, workspace_id, vid, "PO-TEST-SRCH2")
     assert since() == [("supplier", vid), ("order", po)]
 
 
