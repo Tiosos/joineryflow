@@ -153,7 +153,7 @@ DRAFT_EXISTS`; use regenerate. Lines:
   one item.
 - **Boards — (Q581).** One line per `board_material_id`, unit
   **`sheet`**. The existing rollup's `SUM(parts.qty)` is a *part count*, not a
-  sheet count, and nobody orders "12 parts" of 18mm particleboard. Recommended:
+  sheet count, and nobody orders "12 parts" of 18mm particleboard. Decided:
   `ceil(Σ(len × wid × qty) / sheet_area)`, where `sheet_area` is the largest
   in-stock `board_inventory` size for that material (the same pick `/optimise`
   makes), else the catalog row's `sheet_len_mm × sheet_wid_mm`. The line then
@@ -162,12 +162,12 @@ DRAFT_EXISTS`; use regenerate. Lines:
   silently dropped.
 - **Nest — (Q582).** Q496 wants the nest's real sheet counts. But a
   nest is project-level and its sheets mix items: the seeded
-  `ALF-001 v1 nest` has one sheet carrying parts of two items. Recommended:
+  `ALF-001 v1 nest` has one sheet carrying parts of two items. Decided:
   the nest's count applies at **summary** level (§5), where it is exact, and
   per-item takes keep the area estimate.
 - **Edging and finishing — (Q584).** `parts.edge`, `edging_spec` and
   `colour` are free text with no catalog reference, and all three are empty
-  on every seeded part (37 of 37). Recommended: not generated in v1. The
+  on every seeded part (37 of 37). Decided: not generated in v1. The
   drafter adds them as manual `OTHER` lines, unit `m` or `each`.
 
 Generation is a pure read of live lines plus one insert. It never touches
@@ -216,7 +216,7 @@ old one stays as history.
 `shop_drawing` carries `project_id` and a free-text `room`, and nothing points
 from a drawing to an item (checked against the schema at `0033`).
 
-**(Q583)** Recommended for v1: detect drift from the thing a take is
+**(Q583)** Decided for v1: detect drift from the thing a take is
 actually generated from. When an item's live parts or hardware lines would
 now generate different lines from its current approved take (a
 generate-and-compare done on read), the take shows **Outdated**, and a
@@ -237,7 +237,7 @@ such", which implies an order can come *from* a summary line. Today nothing
 connects them: orders (`purchase_orders`, #10) and batches (#4) are created
 from items or directly.
 
-Recommended for v1:
+Decided for v1:
 
 - The summary page shows, per line, the quantities **already on order and
   received** for that material from the existing batch rollup (read-only), so
