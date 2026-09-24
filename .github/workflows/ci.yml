@@ -1,9 +1,20 @@
 name: CI
 
+# Actions minutes are limited, so spend them only where code changed.
+# Docs-only commits (specs, plans, CLAUDE.md) skip CI entirely. If branch
+# protection ever *requires* these checks, a skipped run leaves them pending
+# and blocks the merge — add an always-pass job for that case, don't drop this.
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
+
+# A newer push to the same PR cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   api-tests:
