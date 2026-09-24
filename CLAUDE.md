@@ -134,9 +134,9 @@ unimplemented.
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
   the 2026-09-18 baseline, **not re-scored** after #10 or #11 (only the §13
   search row has been moved, to `PARTIAL`).
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q585, continuing Plan V1's own
-  numbering. **149 of 153 resolved; every answerable question is answered.**
-  Q574–Q580 settle the Search design (sub-project #11); Q581–Q585 the Material
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
+  numbering. **150 of 154 resolved; every answerable question is answered.**
+  Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
   Take design (#12).
   Q552–Q573 were raised *while building* the Cutlist sub-project, each where a
   document and the code disagreed.
@@ -274,7 +274,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/plan-v1/plan_v1.md` — **Plan V1**, the customer's canonical target spec, answered through Q431. A target, not current state.
 - `docs/plan-v1/ALIGNMENT.md` — Plan V1 mapped onto this tree; read §3 before starting any Plan V1 work.
 - `docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md` — plan for sub-project #10: cutlist entity, related-part rows, Area/Room entities, and the Orderbook. **A1–A4, B1–B7, C1–C6, D1–D3 and E1–E2 are done**; only **E3** is open, blocked on a copy of the customer's real pilot data. Unusually for this repo its checkboxes *are* kept current and each finished task carries a `→` note recording what shipped and how it was verified.
-- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q585, **149 of 153 resolved**. Every answerable question is answered; the four left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents) and Q572 (what the Scope tab holds).
+- `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, **150 of 154 resolved**. Every answerable question is answered; the four left are customer inputs — Q480 (SharePoint site URL), Q547 (drawing filename pattern), Q550 (Cars / OH&S contents) and Q572 (what the Scope tab holds).
 - `legacy/product_spec.md` — product overview, JTBD roles, data model invariants, design tokens, IA. Authoritative for v1 product surface. (The Foundation spec's §10 cites this as `docs/product_spec.md`; it lives in `legacy/`.)
 - `legacy/REFINEMENT_BACKLOG.md` — 7 open follow-ups from the 2026-05-10 alignment pass (the `make migrate -w /db` workaround, 7 missing palette tokens, a `/dev/legacy` compare route, mobile + dark-mode passes). Graduate an item into `docs/superpowers/plans/` when you pick it up.
 - `legacy/trackingv2.md` — detailed v1 build plan for Project Information Management. Authoritative for module 1.
@@ -298,7 +298,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
-- `docs/superpowers/specs/2026-09-24-material-take-design.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Not started**; design fully decided (Q495–Q501, Q581–Q585); migration `0034` reserved, after #11's `0033`. Plan: `docs/superpowers/plans/2026-09-24-material-take.md` (15 tasks, three milestone pushes to save CI minutes).
+- `docs/superpowers/specs/2026-09-24-material-take-design.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Not started**; design fully decided (Q495–Q501, Q581–Q586); migration `0034` reserved, after #11's `0033`. Plan: `docs/superpowers/plans/2026-09-24-material-take.md` (15 tasks, three milestone pushes to save CI minutes).
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
 
 ## PM Workbench (sub-project #2 + #3)

@@ -1,6 +1,6 @@
 # Implementation Plan — Material Take → Material Summary (sub-project #12)
 
-> **Status: not started.** Migration `0034_material_take` reserved; it follows
+> **Status: in progress** (A1, B1 done — local only). Migration `0034_material_take`; it follows
 > `0033_search_outbox` (#11, PR #14), so **A1 cannot land before #14 merges**.
 > Design: `docs/superpowers/specs/2026-09-24-material-take-design.md`. As with
 > #10 and #11, checkboxes are kept current and each finished task gets a `→`
@@ -34,7 +34,7 @@ last among the take tasks because it reuses generation to compare.
 | --- | --- | --- |
 | Granularity | One take per Joinery Item; related parts excluded | §20, Q495, Q424 |
 | Versioning | Approved take is immutable; change = version `n + 1`; ≤ 1 draft and ≤ 1 approved per item (partial unique indexes) | Q500 |
-| Boards | Unit `sheet`: `ceil(Σ len×wid×qty / sheet_area)`, plus adjustable `wastage_pct`; m² when no size is known | Q581 |
+| Boards | Unit `sheet`, **fractional per item** (`Σ len×wid×qty / sheet_area`, rounded up to 2 dp), plus adjustable `wastage_pct`; m² when no size is known. The summary rounds up **once** | Q581 as amended by **Q586** |
 | Sheet size | Largest **in-stock** `board_inventory` size → else largest **recorded** size (qty 0 still names a real size) → else catalog `sheet_len_mm × sheet_wid_mm` → else `m2` | Q581, clarified here (see note) |
 | Nest | Sheet count per SKU shown on the **summary** only, from the project's latest CutPlan | Q582 |
 | Drift | Generate-and-compare against the live lines on read; no drawing trigger | Q583 |
@@ -55,25 +55,39 @@ last among the take tasks because it reuses generation to compare.
 
 ### A. Schema
 
-- [ ] **A1** Migration `0034_material_take` — the six tables in spec §3,
+- [x] **A1** Migration `0034_material_take` — the six tables in spec §3,
   partial unique indexes `uniq_take_draft` / `uniq_take_approved`, and the
   `OTHER`-has-no-`material_id` CHECK. Downgrade drops them in reverse order.
   **No search triggers** (spec §3).
   *Done when:* upgrade → downgrade → upgrade is clean on a seeded DB, and the
   full suite still passes (the `0033` trigger tests must be untouched by it).
+  → **done.** Beyond spec §3: `material_summary_source`'s FKs **cascade** —
+  items can be hard-deleted (`items/queries.py`, `related_parts/queries.py`),
+  which RESTRICT would have blocked once an item was summarised; a lost source
+  makes the line's sources stop summing to `qty_consolidated`, which C2 reports
+  as stale. Two extra CHECKs tie `status`/`approved_at` and
+  `source`/`qty_generated` together. *Verified:* upgrade → downgrade → upgrade
+  clean on a seeded DB; six tables created. Full suite deferred to milestone 1.
 
 ### B. Material Take (`apps/api/app/material_takes/`)
 
-- [ ] **B1** `generation.py` — **pure** functions: `estimate_sheets(parts,
+- [x] **B1** `generation.py` — **pure** functions: `estimate_sheets(parts,
   sheet)` and `resolve_sheet_size(...)` following the §1 fallback order, then
   `generate_lines(db, item_id)` that reads parts + hardware lines and returns
   line dicts (no writes).
-  *Done when:* unit tests pin the arithmetic — seeded BM-001 (26 parts,
-  11.18 m² on 2440×1220) → **4 sheets**; BM-002 (3.15 m²) → **2**; 25-SS304
-  (no size anywhere) → `unit='m2'`, `qty=0.90`; PLY-12-BIR resolves its
-  zero-stock recorded size; an exact multiple does not round up an extra sheet;
-  hardware sums per `(material_type, material_id)`; a related part's lines are
-  never read.
+  *Done when:* unit tests pin the arithmetic — fractional sheets rounded up
+  to 2 dp (never 0.00 for a real part), an exact multiple stays exact, ten
+  0.38-sheet items consolidate to **4** sheets (Q586), no size anywhere →
+  `unit='m2'`, a zero-stock recorded size is used; hardware sums per
+  `(material_type, material_id)`; another workspace's stock is ignored.
+  *(This line originally named whole-sheet figures — 4 and 2 per item — which
+  Q586 retired; corrected in place so the check matches the rule.)*
+  → **done.** `app/material_takes/generation.py`: `estimate_sheets`,
+  `pick_sheet_size`, `summary_sheets` pure; `generate_lines` the one read;
+  `generated_signature` for B4. *Verified:* `tests/test_material_take_generation.py`
+  12 passed. Against the seed, ALF-001's MDF consolidates to **3** sheets
+  (per-item rounding would have said 6) — the finding that raised **Q586**.
+
 - [ ] **B2** Generate + draft CRUD routes: `POST /items/{iid}/material-take/generate`
   (`409 DRAFT_EXISTS`), `POST /material-takes/{tid}/regenerate`,
   `POST/PATCH/DELETE /material-takes/{tid}/lines[/{lid}]`. `("list","write")`

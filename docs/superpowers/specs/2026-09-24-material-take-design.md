@@ -151,6 +151,11 @@ DRAFT_EXISTS`; use regenerate. Lines:
   `item_hardware_lines → project_hardware_catalog`, unit `each`, `qty_generated`
   = Σ `qty`. This is the same join `/projects/{pid}/materials` uses, scoped to
   one item.
+> **Later change (Q586, found building B1):** board lines are **fractional**
+> sheets per item, rounded up to 2 dp, and the summary rounds up once over the
+> project. Rounding each item up and adding overcounted badly (ALF-001's MDF:
+> 6 sheets against 3). Read the `ceil(…)` below as applying at the summary.
+
 - **Boards — (Q581).** One line per `board_material_id`, unit
   **`sheet`**. The existing rollup's `SUM(parts.qty)` is a *part count*, not a
   sheet count, and nobody orders "12 parts" of 18mm particleboard. Decided:

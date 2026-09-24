@@ -1301,7 +1301,7 @@ recommendation taken. They are the gaps
 answers and what the schema and data actually hold.
 
 ### Q581 — In what unit is a board line counted? *(new — raised writing the Material Take spec)*
-**Option 1 confirmed (2026-09-24).** Sheets from area, plus wastage %; m² when no sheet size is known.
+**Option 1 confirmed (2026-09-24).** Sheets from area, plus wastage %; m² when no sheet size is known. *(Amended by **Q586**: fractional per item, rounded up once at the summary.)*
 The existing project rollup counts boards as `SUM(parts.qty)` — a **part count**, not sheets (`apps/api/app/procurement_v1/materials/queries.py`). A take is something Procurement orders from, and boards are ordered in sheets.
 1. **Recommended.** Sheets, estimated as `ceil(Σ part area × qty / sheet area)` using the largest in-stock sheet for that material (the pick `/optimise` already makes), else the catalog row's `sheet_len_mm × sheet_wid_mm`, plus an adjustable wastage %. A board with no known sheet size generates in m² rather than being dropped.
 2. Square metres for every board, converted to sheets only at ordering.
@@ -1332,6 +1332,13 @@ Q496 says the nest supplies real sheet counts, but a nest is **project-level and
 Q499 lets Procurement "order against unconfirmed lines … flagged as such", which implies ordering *from* a line. Nothing links an order (`purchase_orders`) or batch to a summary line today.
 1. **Recommended.** Not in v1: the summary shows each line's quantity already on order / received from the existing batch rollup (read-only). Create-order-from-line and its "unconfirmed" flag follow with §21's required / ordered / received / outstanding design.
 2. Yes — a "Create order" action per line that prefills the order form and records the line (and whether it was confirmed) on the order.
+
+### Q586 — Per-item whole-sheet rounding overcounts at the summary *(new — raised building #12's B1)*
+**Option 1 confirmed (2026-09-24).** Fractional sheets per item (area ÷ sheet area, rounded **up** to 2 dp, plus wastage); the summary sums them and rounds up **once**. This **amends Q581**, whose `ceil(…)` was per item.
+Found by running generation against the seed: items share sheets, so rounding each item up and then adding inflates the order. ALF-001's six MDF items would sum to **6** whole sheets against **3** actually needed (Birch Ply: 5 against 1); across both demo projects, 10 against 4.
+1. Fractional sheets per item; one round-up at the summary.
+2. Whole sheets per item, as Q581 was written; the PM corrects the summary by hand.
+3. m² per item; convert to sheets only at the summary.
 
 ---
 
