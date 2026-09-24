@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { ProcurementTabs } from "./_components/ProcurementTabs";
 
 interface Search {
-  tab?: "materials" | "batches" | "catalog";
+  tab?: "materials" | "summary" | "batches" | "catalog";
   catalog_type?: string;
   material_type?: string;
   material_id?: string;
@@ -33,6 +33,11 @@ export default async function ProjectProcurementPage({
   // is read-only on orderbook), so they are threaded separately.
   const canWrite = can(me, "orderbook", "write");
   const canWriteCatalog = can(me, "catalog", "write");
+  // The Material Summary (#12) gates on `list`: building needs drafter+ (the
+  // API adds require_drafter), confirming needs `list` approve.
+  const canEditSummary =
+    can(me, "list", "write") && ["drafter", "manager", "admin"].includes(me.auth_role);
+  const canConfirmSummary = can(me, "list", "approve");
   return (
     <div className="grid gap-4">
       <header className="flex items-baseline justify-between">
@@ -44,6 +49,8 @@ export default async function ProjectProcurementPage({
         tab={tab}
         canWrite={canWrite}
         canWriteCatalog={canWriteCatalog}
+        canEditSummary={canEditSummary}
+        canConfirmSummary={canConfirmSummary}
         sp={sp as Record<string, string | undefined>}
       />
     </div>

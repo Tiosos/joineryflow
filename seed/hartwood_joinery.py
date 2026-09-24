@@ -2625,6 +2625,44 @@ def main() -> None:
                 f"parts + supplier {_vendor_name!r} + 1 purchase order"
             )
 
+        # ------------------------------------------------------------------
+        # #12 Material Take + Material Summary (Plan V1 §19–§20).
+        # Built through the same query functions the API uses, so seeded
+        # takes carry audit / edit-log rows like real ones. On ALF-001: every
+        # item with parts gets an approved take except one left as a draft
+        # (it shows under "missing takes"); a summary is built; then one item
+        # approves a v2, so that summary shows a stale line. Idempotent: the
+        # project's takes and summaries are dropped first.
+        # ------------------------------------------------------------------
+        from app.material_summaries import queries as _summaries
+        from app.material_takes import queries as _takes
+
+        _alf = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'"
+                               " AND workspace_id = :w"), {"w": wid}).scalar()
+        _drafter = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND auth_role = 'drafter' ORDER BY id LIMIT 1"),
+                              {"w": wid}).scalar()
+        if _alf and _drafter:
+            db.execute(text("DELETE FROM material_summary WHERE project_id = :p"), {"p": _alf})
+            db.execute(text("DELETE FROM material_take WHERE item_id IN"
+                            " (SELECT item_id FROM items WHERE project_id = :p)"), {"p": _alf})
+            _take_items = [r[0] for r in db.execute(text("""
+                SELECT i.item_id FROM items i
+                 WHERE i.project_id = :p AND i.row_type = 'joinery_item'
+                   AND EXISTS (SELECT 1 FROM modules m WHERE m.item_id = i.item_id)
+                 ORDER BY i.num"""), {"p": _alf})]
+            if len(_take_items) >= 2:
+                _draft_only, _revised = _take_items[1], _take_items[0]
+                for _iid in _take_items:
+                    _tid = _takes.generate(db, _iid, wid, _drafter)
+                    if _iid != _draft_only:
+                        _takes.approve(db, _tid, wid, _drafter)
+                _summaries.build(db, _alf, wid, _drafter)
+                _takes.approve(db, _takes.generate(db, _revised, wid, _drafter), wid, _drafter)
+                db.commit()
+                print(f"seeded #12 material take: {len(_take_items) - 1} approved takes "
+                      f"(1 at v2), 1 draft, 1 project summary whose lines for that item read stale")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

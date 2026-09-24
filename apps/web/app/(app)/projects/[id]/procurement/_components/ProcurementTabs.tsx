@@ -4,8 +4,9 @@ import Link from "next/link";
 import { ProjectMaterialsTable } from "./ProjectMaterialsTable";
 import { BatchesTable } from "./BatchesTable";
 import { CatalogTabs } from "./CatalogTabs";
+import { MaterialSummaryPanel } from "./MaterialSummaryPanel";
 
-const TABS = ["materials", "batches", "catalog"] as const;
+const TABS = ["materials", "summary", "batches", "catalog"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Props {
@@ -13,10 +14,14 @@ interface Props {
   tab: Tab;
   canWrite: boolean;
   canWriteCatalog: boolean;
+  canEditSummary: boolean;
+  canConfirmSummary: boolean;
   sp: Record<string, string | undefined>;
 }
 
-export function ProcurementTabs({ projectId, tab, canWrite, canWriteCatalog, sp }: Props) {
+export function ProcurementTabs({
+  projectId, tab, canWrite, canWriteCatalog, canEditSummary, canConfirmSummary, sp,
+}: Props) {
   return (
     <>
       <nav role="tablist" className="flex gap-1 border-b border-h-line">
@@ -40,6 +45,10 @@ export function ProcurementTabs({ projectId, tab, canWrite, canWriteCatalog, sp 
       <div className="pt-4">
         {tab === "materials" && (
           <ProjectMaterialsTable projectId={projectId} canWrite={canWrite} sp={sp} />
+        )}
+        {tab === "summary" && (
+          <MaterialSummaryPanel projectId={projectId} canEdit={canEditSummary}
+            canConfirm={canConfirmSummary} />
         )}
         {tab === "batches" && (
           <BatchesTable projectId={projectId} canWrite={canWrite} sp={sp} />
