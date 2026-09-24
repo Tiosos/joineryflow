@@ -300,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
-- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — most backend routes now mounted and working; `item_document` backend, all frontend, seed data and tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend routes mounted and working, including the Document Register; the attachment-kind and item-PATCH extensions, all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -1470,10 +1470,31 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   fix (`fix(api): mount item_queries, project_contacts,
   project_lift_access routers`). They are now live and were verified
   end-to-end against a migrated database.
+- **Document Register backend** (`item_documents/`, built after the merge):
+  `GET /items/{iid}/documents` (`list:read`), `POST /items/{iid}/documents`,
+  `PATCH /documents/{did}` (label / sort_order; `label: null` clears it,
+  `sort_order: null` is 422) and `DELETE /documents/{did}` (all
+  `list:write`). Unbinding deletes the register row only — the `file_blob`
+  stays, as everywhere else (no orphan GC). Audit
+  `item.document.{bind,update,unbind}`. Three choices made while building,
+  each where the design doc was silent or a sibling module disagreed:
+  - **`list:write` alone gates writes, so editors can bind.** The design
+    doc says `list:write`; `item_attachments` adds `require_drafter()` on
+    top. The doc for *this* feature wins; the sibling `item_queries` (same
+    doc) also uses `list:write` alone.
+  - **Joinery Items only.** A related part gets 404, the same rule the
+    named attachment slots follow. The design doc predates related parts.
+    Widening later is additive; narrowing would orphan rows.
+  - **Writes `item_edit_log` as well as `audit_log`**, per the PM Workbench
+    invariant (`_document_bind` / `_document_unbind`, and
+    `document.{id}.{field}` per changed field). `item_attachments` and
+    `item_queries` write audit only — a pre-existing gap, not fixed here.
+
+  A bound blob must be PDF, PNG or JPEG (415 otherwise); `POST /files`
+  already only stores those three, so the check guards the register if the
+  upload allowlist ever widens. Covered by `test_item_documents.py` (10
+  tests).
 - **Not shipped, although the schema exists for it:**
-  - **`item_document` has no backend at all.**
-    `apps/api/app/item_documents/` holds only `schemas.py` — no
-    `queries.py`, no `routes.py`. The Document Register table is DB-only.
   - `item_attachments/` (routes, queries, schemas) still hardcodes the
     three original kinds — `AttachmentKind = Literal["cv_drawing",
     "floor_plan", "site_measure"]` and a matching path regex — so
@@ -1485,17 +1506,18 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
     `/projects/[id]/procurement/...` exists); no `ActionsTab` or
     `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
     `cutlist · hardware · board · take · attachments · log`); no 4-slot
-    `AttachmentsTab` restructure or Document Register UI; no "Open full
-    project page →" link on the Tracking modal.
+    `AttachmentsTab` restructure or Document Register UI (the API above
+    has no caller yet); no "Open full project page →" link on the
+    Tracking modal.
   - **No seed data.** `seed/hartwood_joinery.py` has zero inserts into
     `project_contact`, `project_lift_access`, `item_query`, or
     `item_document`, and never sets `builder`, `classification`, or
     `closed_at`.
-  - **No automated tests.** None of `test_project_enrichment.py`,
-    `test_project_contacts.py`, `test_project_lift_access.py`,
-    `test_item_queries.py`, `test_item_documents.py` exist. The three
-    newly-mounted routers have manual end-to-end verification but no
-    regression coverage.
+  - **Tests exist only for the Document Register.** None of
+    `test_project_enrichment.py`, `test_project_contacts.py`,
+    `test_project_lift_access.py`, `test_item_queries.py` exist. Those
+    three routers have manual end-to-end verification but no regression
+    coverage.
 - **RBAC — no matrix change**, per its design doc: `project_contact`/
   `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
   `list:{read,write}`; close-out is admin/manager only.
