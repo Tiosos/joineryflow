@@ -85,7 +85,7 @@ def test_route_get_bundle_initially_empty(client, truncate_all):
     assert r.status_code == 200
     body = r.json()
     assert body["item_id"] == ids["iid"]
-    assert len(body["slots"]) == 3
+    assert len(body["slots"]) == 5
     assert all(s["file_blob_id"] is None for s in body["slots"])
 
 
@@ -245,3 +245,29 @@ def test_route_bind_cross_workspace_returns_422(client, truncate_all):
     # The route maps "item not found in this workspace" ValueError to 404 (per existing routes.py logic
     # which checks for "not found" substring). Either 404 or 422 is acceptable as long as the bind fails.
     assert r.status_code in (404, 422)
+
+
+@pytest.mark.parametrize("kind", ["sketchup", "cabvision"])
+def test_route_bind_new_kind_sits_beside_cv_drawing(client, truncate_all, kind):
+    """0036's kinds are separate slots, not aliases of cv_drawing."""
+    ids = _route_seed(client, truncate_all)
+    assert client.post(f"/items/{ids['iid']}/attachments/cv_drawing",
+                       json={"file_blob_id": ids["bid"]}).status_code == 201
+    r = client.post(f"/items/{ids['iid']}/attachments/{kind}",
+                    json={"file_blob_id": ids["bid"]})
+    assert r.status_code == 201, r.text
+    by_kind = {s["kind"]: s for s in client.get(f"/items/{ids['iid']}/attachments").json()["slots"]}
+    assert by_kind[kind]["file_blob_id"] == ids["bid"]
+    assert by_kind["cv_drawing"]["file_blob_id"] == ids["bid"]
+    assert client.delete(f"/items/{ids['iid']}/attachments/{kind}").status_code == 204
+    by_kind = {s["kind"]: s for s in client.get(f"/items/{ids['iid']}/attachments").json()["slots"]}
+    assert by_kind[kind]["file_blob_id"] is None
+    assert by_kind["cv_drawing"]["file_blob_id"] == ids["bid"]
+
+
+def test_route_new_kinds_keep_pdf_only_gate(client, truncate_all):
+    ids = _route_seed(client, truncate_all)
+    files = {"file": ("p.png", io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 200), "image/png")}
+    png_id = client.post("/files", files=files).json()["file_blob_id"]
+    r = client.post(f"/items/{ids['iid']}/attachments/sketchup", json={"file_blob_id": png_id})
+    assert r.status_code == 415

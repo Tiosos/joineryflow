@@ -300,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
-- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend routes mounted and working, including the Document Register and the item reference-field PATCH; the attachment-kind extension, all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend complete — routes mounted, Document Register, item reference-field PATCH, five attachment slots; all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -421,7 +421,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   top-level paths from `main.py`.
 - Migration 0015 adds `item_attachment(item_id, kind, file_blob_id, ...)` with
   `UNIQUE (item_id, kind)` slot constraint and `ON DELETE CASCADE` from items.
-  Three legal kinds: `cv_drawing`, `floor_plan`, `site_measure`. (Migration
+  Three legal kinds: `cv_drawing`, `floor_plan`, `site_measure` (**since
+  `0036` there are five** — `sketchup` and `cabvision` added beside them; the
+  Combined PDF still uses only these three. See *Item & Project Detail 2.0*).
+  (Migration
   0014 was the workspace-isolation hardening that landed alongside this
   sub-project — `projects.workspace_id` direct FK + the `(p.pm_id IS NULL OR
   …)` predicate retired.)
@@ -1458,7 +1461,8 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   row per project); `item_query` (Q&A per item); `item_document` (an open
   document register beyond the four named attachment slots); widens
   `item_attachment_kind_check` to add `sketchup`/`cabvision` (`cv_drawing`
-  stays as a legacy synonym); `project_labour_hours_view` (returns zero —
+  stays; the migration's comment calls it a "legacy synonym", but the code
+  treats it as its own slot — see below); `project_labour_hours_view` (returns zero —
   a future labour-hours integration populates it).
 - **Backend shipped:** `ProjectOut` now surfaces FileMaker-era `projects`
   columns that already existed but weren't exposed (`builder`,
@@ -1506,18 +1510,28 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   `_PATCH_FIELD_MAP` path, so they get one edit-log row per field and go
   through the Controlled Lock like every other field. `ItemOut` (the
   `GET` / `PATCH /items/{id}` payload) now returns them.
+- **Attachment slots are five, purely additive** (built after the merge;
+  **decided by the user**, 2026-09-25). The design doc called `cv_drawing` a
+  "legacy synonym" without saying of what; the answer is that it is **not a
+  synonym in the code**: `cv_drawing` ("CV Production Drawing") keeps its own
+  slot and its existing rows, and `sketchup` / `cabvision` are two further,
+  independent slots. `item_attachments/` now offers
+  `cv_drawing · sketchup · cabvision · floor_plan · site_measure`, the bundle
+  always carries all five, and the PDF-only gate applies to all of them.
+  **The Combined PDF is unchanged** — still `cv_drawing`, `floor_plan`,
+  `site_measure` only (also the user's call; pinned by
+  `test_print_combined_ignores_sketchup_and_cabvision`). Do not "fix" this
+  into a rename or an alias. The web `AttachmentsTab` still shows only the
+  three Combined slots; `lib/print.ts` counts only those three so its
+  "N of 3" label can't overflow when the new slots are bound via the API.
 - **Not shipped, although the schema exists for it:**
-  - `item_attachments/` (routes, queries, schemas) still hardcodes the
-    three original kinds — `AttachmentKind = Literal["cv_drawing",
-    "floor_plan", "site_measure"]` and a matching path regex — so
-    `sketchup`/`cabvision` pass the DB CHECK but are rejected by the API.
   - **No frontend.** No `/projects/[id]/page.tsx` (only
     `/projects/[id]/procurement/...` exists); no `ActionsTab` or
     `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
-    `cutlist · hardware · board · take · attachments · log`); no 4-slot
-    `AttachmentsTab` restructure or Document Register UI (the API above
-    has no caller yet); no "Open full project page →" link on the
-    Tracking modal.
+    `cutlist · hardware · board · take · attachments · log`); no
+    SketchUp / CabVision cards in `AttachmentsTab` and no Document Register
+    UI (the APIs above have no caller yet); no "Open full project page →"
+    link on the Tracking modal.
   - **No seed data.** `seed/hartwood_joinery.py` has zero inserts into
     `project_contact`, `project_lift_access`, `item_query`, or
     `item_document`, and never sets `builder`, `classification`, or

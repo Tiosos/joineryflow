@@ -160,3 +160,33 @@ def test_print_audit_row_written(client, truncate_all):
         assert row[1] == str(ids["iid"])
     finally:
         s.close()
+
+
+def test_print_combined_ignores_sketchup_and_cabvision(client, truncate_all):
+    """Combined keeps its three attachment slots; the 0036 kinds are not merged."""
+    baseline = _seed_full_item(client, truncate_all)
+    baseline_pages = len(pypdf.PdfReader(io.BytesIO(
+        client.get(f"/items/{baseline['iid']}/combined.pdf").content)).pages)
+
+    ids = _seed_full_item(client, truncate_all)
+    files = {"file": ("s.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
+    bid = client.post("/files", files=files).json()["file_blob_id"]
+    for kind in ("sketchup", "cabvision"):
+        assert client.post(f"/items/{ids['iid']}/attachments/{kind}",
+                           json={"file_blob_id": bid}).status_code == 201
+    r = client.get(f"/items/{ids['iid']}/combined.pdf")
+    assert r.status_code == 200
+    assert len(pypdf.PdfReader(io.BytesIO(r.content)).pages) == baseline_pages
+
+    from app.db import SessionLocal
+    s = SessionLocal()
+    try:
+        payload = s.execute(text("""
+            SELECT payload FROM audit_log
+             WHERE workspace_id = :w AND event = 'item.print.combined'
+             ORDER BY id DESC LIMIT 1
+        """), {"w": ids["wid"]}).scalar()
+    finally:
+        s.close()
+    assert payload["attachments_present"] == {
+        "cv_drawing": False, "floor_plan": False, "site_measure": False}

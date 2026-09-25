@@ -10,7 +10,7 @@ from .schemas import AttachmentsBundleOut, BindAttachmentIn
 
 router = APIRouter(tags=["item_attachments"])
 
-KindPath = Path(..., pattern="^(cv_drawing|floor_plan|site_measure)$")
+KindPath = Path(..., pattern="^(cv_drawing|sketchup|cabvision|floor_plan|site_measure)$")
 
 
 @router.get("/items/{iid}/attachments", response_model=AttachmentsBundleOut)

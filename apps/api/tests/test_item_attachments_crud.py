@@ -123,13 +123,14 @@ def test_clear_returns_false_if_no_slot(db, workspace_id):
     assert deleted is False
 
 
-def test_get_bundle_returns_three_slots_with_populated_and_null(db, workspace_id):
+def test_get_bundle_returns_five_slots_with_populated_and_null(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
                     file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
     bundle = get_bundle(db, item_id=seed["iid"], workspace_id=workspace_id)
     assert bundle["item_id"] == seed["iid"]
-    assert len(bundle["slots"]) == 3
+    assert [sl["kind"] for sl in bundle["slots"]] == [
+        "cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure"]
     by_kind = {s["kind"]: s for s in bundle["slots"]}
     assert by_kind["cv_drawing"]["file_blob_id"] == seed["bid"]
     assert by_kind["cv_drawing"]["original_filename"] == "cv.pdf"

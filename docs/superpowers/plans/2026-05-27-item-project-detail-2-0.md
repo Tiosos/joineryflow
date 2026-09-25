@@ -2,11 +2,12 @@
 
 > **Status: partially shipped.** Migration `0036_item_project_detail`.
 > Current state lives in `## Item & Project Detail 2.0` in `CLAUDE.md` —
-> read it before picking up any of T07–T13 below, it lists exactly what's
-> missing (attachment kinds, all frontend, seed, most tests). T06
-> (Document Register backend) is done, with three recorded departures from
-> this doc's silence — see that section. T07's item-PATCH half is done;
-> its attachment-kind half waits on what `cv_drawing` is a synonym of. Design:
+> read it before picking up any of T08–T13 below, it lists exactly what's
+> missing (all frontend, seed, most tests). The backend (T01–T07) is done.
+> Departures from this doc: T06 records three choices where it was silent;
+> T07's attachment kinds are **five, purely additive** — `cv_drawing` is
+> *not* treated as a synonym, and the Combined PDF is unchanged (user's
+> decision, 2026-09-25). Design:
 > `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`.
 >
 > **Later change:** this doc's title says "#11" — free when written

@@ -16,8 +16,11 @@ from ..row_types import joinery_items_only
 # cutlist documents. A related part has no cutlist (Plan V1 Q417).
 _JOINERY_ITEM = joinery_items_only("i")
 
-AttachmentKind = Literal["cv_drawing", "floor_plan", "site_measure"]
-ALL_KINDS: tuple[AttachmentKind, ...] = ("cv_drawing", "floor_plan", "site_measure")
+# sketchup and cabvision (0036) are separate slots beside cv_drawing, not a rename.
+AttachmentKind = Literal["cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure"]
+ALL_KINDS: tuple[AttachmentKind, ...] = (
+    "cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure",
+)
 
 
 def bind_attachment(
@@ -123,7 +126,7 @@ def clear_attachment(
 
 
 def get_bundle(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
-    """Return all 3 slots in canonical order, populated or null.
+    """Return all 5 slots in canonical order, populated or null.
 
     Returns None if the item doesn't exist or belongs to a different workspace
     (so the route can return 404 — don't leak existence).
