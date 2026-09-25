@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0034`. Head is `0034_material_take` (Material Take, #12; `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0036`. Head is `0036_item_project_detail` (Item & Project Detail 2.0; `0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12); `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
@@ -186,9 +186,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0034
+make migrate      # apply Alembic 0001 -> 0036
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (69 test files, 771 tests; the `meili`-marked
+make test         # pytest in api container (76 test files, 841 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -299,6 +299,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/specs/2026-05-05-shop-floor-design.md` — Shop Floor Ops v2 spec (sub-project #8).
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
+- `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend complete — routes mounted, Document Register, item reference-field PATCH, five attachment slots, and tested; all frontend and seed data are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -398,8 +400,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   enforces the in-flight invariant. Approve updates
   `shop_drawing.current_revision_id` atomically. Archive 409s on already-
   archived (no silent re-archive); patch enforces creator-or-manager rule.
-- Allowed file types: PDF / PNG / JPEG only (validated by magic bytes).
-  SVG, DWG, etc. rejected with 415.
+- Allowed file types: PDF / PNG / JPEG (validated by magic bytes), plus —
+  since the 0036 attachment slots — SketchUp `.skp` and Cabinet Vision `.cvj`
+  (see *Item & Project Detail 2.0*). SVG, DWG, etc. rejected with 415.
+  **Shop drawings themselves still take PDF / PNG / JPEG only**: both bind
+  paths check the blob's mime (422 otherwise), because `/files` no longer
+  enforces that on its own.
 - Thumbnails are deterministic SVG placeholders seeded from `drawing_id`
   (no PDF rendering pipeline in v1).
 - Seed (`make seed`) inserts 2 fixture PDFs + 6 demo drawings on ALF-001
@@ -419,7 +425,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   top-level paths from `main.py`.
 - Migration 0015 adds `item_attachment(item_id, kind, file_blob_id, ...)` with
   `UNIQUE (item_id, kind)` slot constraint and `ON DELETE CASCADE` from items.
-  Three legal kinds: `cv_drawing`, `floor_plan`, `site_measure`. (Migration
+  Three legal kinds: `cv_drawing`, `floor_plan`, `site_measure` (**since
+  `0036` there are five** — `sketchup` and `cabvision` added beside them; the
+  Combined PDF still uses only these three. See *Item & Project Detail 2.0*).
+  (Migration
   0014 was the workspace-isolation hardening that landed alongside this
   sub-project — `projects.workspace_id` direct FK + the `(p.pm_id IS NULL OR
   …)` predicate retired.)
@@ -442,10 +451,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
     `Cache-Control: no-store`. Browser opens in a new tab via
     `<a target="_blank">`.
 - Item attachment routes:
-  - `GET /items/{iid}/attachments` — bundle of 3 slots, populated or null.
+  - `GET /items/{iid}/attachments` — bundle of 3 slots (5 since `0036`),
+    populated or null.
   - `POST /items/{iid}/attachments/{kind}` — bind/replace via
     `{file_blob_id}` body. PDF-only mime gate (415 on PNG/JPEG; the
-    file_blob table itself remains generic).
+    file_blob table itself remains generic). Since `0036` the gate is per
+    slot — `sketchup` / `cabvision` take `.skp` / `.cvj` instead.
   - `DELETE /items/{iid}/attachments/{kind}` — clear slot.
 - RBAC: print routes use `("list", "read")` (any reader can print);
   attachment mutations use `("list", "write")` (drafter+, since drafter is
@@ -1386,4 +1397,177 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   (left as a draft, so it is listed as missing), one built summary, then one
   item at v2 — so the summary opens with stale lines. Built through the same
   query functions the API uses, so audit / edit-log rows are real. Idempotent.
+
+## Tracking 2.0 (migration `0035`) — shipped
+
+> Design: `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md`; plan:
+> `docs/superpowers/plans/2026-05-27-tracking-2-0.md`. Authored 2026-05-27 on
+> a separate branch, merged into `main` 2026-09-24 (commit `8ac99d5`) —
+> *after* #12, out of migration-number order relative to its own title.
+> **Numbering collision, noted once here for both this and the next
+> section:** both docs call themselves sub-projects "#10" and "(#11)"; those
+> numbers were free when written in May but are now held by Cutlist +
+> Orderbook and Global Search, which were built and merged first. Go by
+> migration number or date, never by the label inside either doc.
+
+- **Migration `0035`** adds `workspace_counter(workspace_id, name,
+  next_value)` — an atomic per-workspace counter, `apps/api/app/counters/
+  next_value()` — plus six `items` columns: `jid_code`, `jid_color` (hex,
+  CHECKed), `var_boq` (`BOQ`/`VAR`, default `BOQ`), `contractor_id` (FK →
+  `app_user`, workspace-validated on write), `total_amount`,
+  `site_measure_notes`.
+- **Closes the legacy-parity gap on `/tracking`.** The grid gained JID code +
+  colour swatch, a VAR/BOQ pill, Contractor, Total $, and exposure of
+  columns that already existed on `items` but weren't in the API response
+  (`floor_plan`, `rls`, `joiery_details`, `painting_req`,
+  `solid_surface_req`, `cutlist_printed`, `group_id`, `item_code`,
+  `assembler`, `lister`). Stage cells switched from checkmark to
+  `done_date` (`DD.MM.YY`).
+- **Subtabs** (`ItemsTable.tsx`'s `SUB_TABS`): `DATE · TO BE ORDERED · iTIME
+  · HARDWARE · SITE MEASURE · INVOICE · QC · O/BOOK`. DATE, TO BE ORDERED
+  (a filter — `availability.blocked > 0`, not a separate table), HARDWARE,
+  SITE MEASURE and O/BOOK render real data; `iTIME`, `INVOICE` and `QC`
+  stay `—` placeholders pending a future invoicing/variations sub-project
+  neither doc built.
+- **Bulk status.** `POST /items/bulk-status` (`tracking:write`) applies one
+  status + one required note to up to 500 items in a single transaction;
+  missing or cross-workspace ids come back in the response instead of
+  404ing the whole call. The single-item `PATCH /items/{id}/status` was
+  tightened the same way — `note` is now required, not an optional
+  empty-string fallback.
+- **`workspace_counter` has no caller yet, deliberately.** Its own design
+  doc says it's seeded here ahead of a future PO/invoice/JID-numbering
+  consumer; nothing in this tree calls `next_value()` outside its own unit
+  tests (`test_counter.py`). Not a gap — don't invent a caller for it.
+- **RBAC — no matrix change.** New fields ride the existing
+  `require_drafter()` + `tracking:write` combo in `items/routes.py`;
+  `contractor_id` writes are rejected (422) if the user isn't in the
+  caller's own workspace.
+- **Seed.** `make seed` gives every ALF-001 item a `jid_code`/`jid_color`
+  pair, marks one item `VAR`, assigns `contractor_id` on two items, sets
+  `total_amount` on every item, a `site_measure_notes` on the SS-Bench
+  item, and one `workspace_counter` row.
+- Backend, frontend and seed all shipped; covered by
+  `test_tracking_bulk_status.py` plus extensions to `test_items_routes.py`.
+- **Fixed after the merge:** `ItemOut` declared the six new fields but
+  `get_item_detail` never selected them, so `GET` and `PATCH /items/{id}`
+  always answered `jid_code: null, var_boq: "BOQ"` (etc.) whatever the row
+  held — the Tracking grid, which reads through `list_items_for_project`,
+  was right all along. Pinned by
+  `test_get_item_returns_tracking_2_0_fields`.
+
+## Item & Project Detail 2.0 (migration `0036`) — partially shipped
+
+> Design: `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`;
+> plan: `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md`. Same
+> authoring-vs-merge-order caveat as Tracking 2.0 above.
+
+- **Migration `0036`** adds `projects.closed_at`/`closed_by`;
+  `project_contact` (`kind IN (office, site)`); `project_lift_access` (one
+  row per project); `item_query` (Q&A per item); `item_document` (an open
+  document register beyond the four named attachment slots); widens
+  `item_attachment_kind_check` to add `sketchup`/`cabvision` (`cv_drawing`
+  stays; the migration's comment calls it a "legacy synonym", but the code
+  treats it as its own slot — see below); `project_labour_hours_view` (returns zero —
+  a future labour-hours integration populates it).
+- **Backend shipped:** `ProjectOut` now surfaces FileMaker-era `projects`
+  columns that already existed but weren't exposed (`builder`,
+  `classification`, `site_street/suburb/postcode/state`,
+  `tg_project_manager`, `tg_coordinator`) plus the new `closed_at`/
+  `closed_by`; `POST /projects/{id}/close-out` (admin/manager,
+  `409 ALREADY_CLOSED`) — **the only way to close** (user, 2026-09-25):
+  `PATCH {status: "Closed"}` is 422, so `closed_at` / `closed_by` are always
+  stamped, and PATCHing `status` to `Current` / `Hold` **re-opens**, clearing
+  both (the design doc's §9 rule, which the merged code had not implemented); `project_contacts/` (POST/GET/PATCH/DELETE,
+  `tracking:{read,write}`); `project_lift_access/` (GET/PUT/DELETE, one row
+  per project); `item_queries/` (ask on `list:read`, answer/edit-answer on
+  `list:write`, second answer without `allow_overwrite` returns 409). **The
+  last three routers were built in the same merge but not registered in
+  `main.py`** — `apps/api/app/{item_queries,project_contacts,
+  project_lift_access}/routes.py` existed with complete queries/schemas
+  and zero mount, so all 11 endpoints were unreachable until a follow-up
+  fix (`fix(api): mount item_queries, project_contacts,
+  project_lift_access routers`). They are now live and were verified
+  end-to-end against a migrated database.
+- **Document Register backend** (`item_documents/`, built after the merge):
+  `GET /items/{iid}/documents` (`list:read`), `POST /items/{iid}/documents`,
+  `PATCH /documents/{did}` (label / sort_order; `label: null` clears it,
+  `sort_order: null` is 422) and `DELETE /documents/{did}` (all
+  `list:write`). Unbinding deletes the register row only — the `file_blob`
+  stays, as everywhere else (no orphan GC). Audit
+  `item.document.{bind,update,unbind}`. Three choices made while building,
+  each where the design doc was silent or a sibling module disagreed:
+  - **`list:write` alone gates writes, so editors can bind.** The design
+    doc says `list:write`; `item_attachments` adds `require_drafter()` on
+    top. The doc for *this* feature wins; the sibling `item_queries` (same
+    doc) also uses `list:write` alone.
+  - **Joinery Items only.** A related part gets 404, the same rule the
+    named attachment slots follow. The design doc predates related parts.
+    Widening later is additive; narrowing would orphan rows.
+  - **Writes `item_edit_log` as well as `audit_log`**, per the PM Workbench
+    invariant (`_document_bind` / `_document_unbind`, and
+    `document.{id}.{field}` per changed field). `item_attachments` and
+    `item_queries` write audit only — a pre-existing gap, not fixed here.
+
+  A bound blob must be PDF, PNG or JPEG (415 otherwise); `POST /files`
+  already only stores those three, so the check guards the register if the
+  upload allowlist ever widens. Covered by `test_item_documents.py` (10
+  tests).
+- **Item reference fields are writable** (built after the merge):
+  `PATCH /items/{id}` accepts `floor_plan`, `rls`, `joiery_details`
+  (`varchar(64)` — longer is 422) and `cutlist_printed`, through the usual
+  `_PATCH_FIELD_MAP` path, so they get one edit-log row per field and go
+  through the Controlled Lock like every other field. `ItemOut` (the
+  `GET` / `PATCH /items/{id}` payload) now returns them.
+- **Attachment slots are five, purely additive** (built after the merge;
+  **decided by the user**, 2026-09-25). The design doc called `cv_drawing` a
+  "legacy synonym" without saying of what; the answer is that it is **not a
+  synonym in the code**: `cv_drawing` ("CV Production Drawing") keeps its own
+  slot and its existing rows, and `sketchup` / `cabvision` are two further,
+  independent slots. `item_attachments/` now offers
+  `cv_drawing · sketchup · cabvision · floor_plan · site_measure` and the
+  bundle always carries all five.
+  **Each slot takes one format** (user, 2026-09-25): `sketchup` a `.skp`,
+  `cabvision` a `.cvj`, the other three a PDF — anything else is 415
+  (`item_attachments.queries.KIND_MIME`).
+  **Uploading them** (`files/validators.py`, also the user's call): the
+  "signature *and* extension must agree" rule still holds. `.skp` is
+  `FF FE FF 0E` (SketchUp 2021+) or the OLE compound-file signature (older
+  SketchUp); `.cvj` is OLE. OLE is shared by both — and by `.doc`/`.xls`/`.msi`
+  — so for OLE the extension picks between `.skp` and `.cvj` and any other
+  name is refused. Stored mimes are `application/vnd.sketchup.skp` and
+  `application/x-cabinet-vision-job`. **The 25 MB cap is unchanged for every
+  type** — a larger SketchUp model gets 413; the user chose that over a
+  per-type cap. The signatures come from published format notes, not from a
+  customer file: verify against a real `.skp` / `.cvj` when one is available.
+  Widening `/files` meant adding a mime check wherever a blob is bound
+  without one: shop drawings (422) and the lift-access sketch (415) keep
+  PDF / PNG / JPEG; samples (PNG / JPEG) and the Document Register
+  (PDF / PNG / JPEG) already had their own.
+  **The Combined PDF is unchanged** — still `cv_drawing`, `floor_plan`,
+  `site_measure` only (also the user's call; pinned by
+  `test_print_combined_ignores_sketchup_and_cabvision`). Do not "fix" this
+  into a rename or an alias. The web `AttachmentsTab` still shows only the
+  three Combined slots; `lib/print.ts` counts only those three so its
+  "N of 3" label can't overflow when the new slots are bound via the API.
+- **Not shipped, although the schema exists for it:**
+  - **No frontend.** No `/projects/[id]/page.tsx` (only
+    `/projects/[id]/procurement/...` exists); no `ActionsTab` or
+    `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
+    `cutlist · hardware · board · take · attachments · log`); no
+    SketchUp / CabVision cards in `AttachmentsTab` and no Document Register
+    UI (the APIs above have no caller yet); no "Open full project page →"
+    link on the Tracking modal.
+  - **No seed data.** `seed/hartwood_joinery.py` has zero inserts into
+    `project_contact`, `project_lift_access`, `item_query`, or
+    `item_document`, and never sets `builder`, `classification`, or
+    `closed_at`.
+- **RBAC — no matrix change**, per its design doc: `project_contact`/
+  `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
+  `list:{read,write}`; close-out is admin/manager only.
+- **Tests:** `test_project_enrichment.py` (enriched `ProjectOut`, close-out,
+  re-open), `test_project_contacts.py`, `test_project_lift_access.py`,
+  `test_item_queries.py`, `test_item_documents.py`, plus the attachment,
+  upload and item-route files extended above. What remains unbuilt is
+  frontend and seed, not backend coverage.
 

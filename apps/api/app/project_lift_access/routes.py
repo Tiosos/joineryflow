@@ -42,6 +42,8 @@ def upsert_lift_access_route(
             status_code=422,
             detail="sketch_file_blob_id must be in the caller's workspace",
         )
+    if result == "UNSUPPORTED_BLOB":
+        raise HTTPException(status_code=415, detail="sketch must be a PDF, PNG or JPEG")
     db.commit()
     return result
 

@@ -24,7 +24,10 @@ export function combinedTooltip(bundle: AttachmentsBundle | null): string {
 
 export function attachmentsCountLabel(bundle: AttachmentsBundle | null): string {
   if (!bundle) return "0 of 3 slots populated";
-  const populated = bundle.slots.filter((s) => s.file_blob_id != null).length;
+  // The bundle also carries sketchup / cabvision, which Combined does not use.
+  const populated = bundle.slots.filter(
+    (s) => ATTACHMENT_KINDS.includes(s.kind) && s.file_blob_id != null,
+  ).length;
   return `${populated} of 3 slots populated · used by Print Combined PDF`;
 }
 

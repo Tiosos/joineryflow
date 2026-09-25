@@ -4,11 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-AttachmentKind = Literal["cv_drawing", "floor_plan", "site_measure"]
+AttachmentKind = Literal["cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure"]
 
 
 class AttachmentSlotOut(BaseModel):
-    """One of the three slots; populated or empty."""
+    """One of the five slots; populated or empty."""
     kind: AttachmentKind
     file_blob_id: int | None = None
     original_filename: str | None = None
@@ -19,7 +19,7 @@ class AttachmentSlotOut(BaseModel):
 
 
 class AttachmentsBundleOut(BaseModel):
-    """Always exactly 3 slots in canonical order: cv_drawing, floor_plan, site_measure."""
+    """Always exactly 5 slots, in the canonical order of queries.ALL_KINDS."""
     item_id: int
     slots: list[AttachmentSlotOut]
 

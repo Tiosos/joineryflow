@@ -85,7 +85,7 @@ def test_route_get_bundle_initially_empty(client, truncate_all):
     assert r.status_code == 200
     body = r.json()
     assert body["item_id"] == ids["iid"]
-    assert len(body["slots"]) == 3
+    assert len(body["slots"]) == 5
     assert all(s["file_blob_id"] is None for s in body["slots"])
 
 
@@ -245,3 +245,47 @@ def test_route_bind_cross_workspace_returns_422(client, truncate_all):
     # The route maps "item not found in this workspace" ValueError to 404 (per existing routes.py logic
     # which checks for "not found" substring). Either 404 or 422 is acceptable as long as the bind fails.
     assert r.status_code in (404, 422)
+
+
+SKP_BYTES = b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le") + b"\x00" * 200
+CVJ_BYTES = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x02" * 200
+
+
+def _upload(client, name: str, data: bytes) -> int:
+    r = client.post("/files", files={"file": (name, io.BytesIO(data), "application/octet-stream")})
+    assert r.status_code == 201, r.text
+    return r.json()["file_blob_id"]
+
+
+@pytest.mark.parametrize("kind,name,data", [
+    ("sketchup", "site.skp", SKP_BYTES),
+    ("cabvision", "job.cvj", CVJ_BYTES),
+])
+def test_route_model_slot_sits_beside_cv_drawing(client, truncate_all, kind, name, data):
+    """0036's slots are separate from cv_drawing, not aliases of it."""
+    ids = _route_seed(client, truncate_all)
+    model = _upload(client, name, data)
+    assert client.post(f"/items/{ids['iid']}/attachments/cv_drawing",
+                       json={"file_blob_id": ids["bid"]}).status_code == 201
+    r = client.post(f"/items/{ids['iid']}/attachments/{kind}", json={"file_blob_id": model})
+    assert r.status_code == 201, r.text
+    by_kind = {s["kind"]: s for s in client.get(f"/items/{ids['iid']}/attachments").json()["slots"]}
+    assert (by_kind[kind]["file_blob_id"], by_kind["cv_drawing"]["file_blob_id"]) == (model, ids["bid"])
+    assert client.delete(f"/items/{ids['iid']}/attachments/{kind}").status_code == 204
+    by_kind = {s["kind"]: s for s in client.get(f"/items/{ids['iid']}/attachments").json()["slots"]}
+    assert by_kind[kind]["file_blob_id"] is None
+    assert by_kind["cv_drawing"]["file_blob_id"] == ids["bid"]
+
+
+def test_route_each_slot_takes_only_its_own_format(client, truncate_all):
+    ids = _route_seed(client, truncate_all)
+    skp = _upload(client, "site.skp", SKP_BYTES)
+    cvj = _upload(client, "job.cvj", CVJ_BYTES)
+    wrong = [
+        ("sketchup", ids["bid"]), ("sketchup", cvj),      # PDF / CVJ into the SketchUp slot
+        ("cabvision", ids["bid"]), ("cabvision", skp),    # PDF / SKP into the CabVision slot
+        ("cv_drawing", skp), ("floor_plan", cvj),         # models into the PDF slots
+    ]
+    for kind, bid in wrong:
+        r = client.post(f"/items/{ids['iid']}/attachments/{kind}", json={"file_blob_id": bid})
+        assert r.status_code == 415, (kind, r.text)

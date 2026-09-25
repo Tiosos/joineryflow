@@ -212,6 +212,10 @@ class ItemOut(BaseModel):
     contractor_name: str | None = None
     total_amount: Decimal | None = None
     site_measure_notes: str | None = None
+    floor_plan: str | None = None
+    rls: str | None = None
+    joiery_details: str | None = None
+    cutlist_printed: bool | None = None
 
 
 # ── Write input models (T15) ───────────────────────────────────────────────────
@@ -260,6 +264,11 @@ class PatchItemIn(BaseModel):
     contractor_id: int | None = None
     total_amount: Decimal | None = None
     site_measure_notes: str | None = None
+    # Item & Project Detail 2.0 — pre-existing varchar(64) / boolean columns
+    floor_plan: str | None = Field(default=None, max_length=64)
+    rls: str | None = Field(default=None, max_length=64)
+    joiery_details: str | None = Field(default=None, max_length=64)
+    cutlist_printed: bool | None = None
 
 
 class LockTransferIn(BaseModel):

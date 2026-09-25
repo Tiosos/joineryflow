@@ -28,6 +28,9 @@ _LATEST_REV_CTE = """
     )
 """
 
+# /files also stores .skp / .cvj for attachment slots; the viewer renders only these.
+DRAWING_MIMES = ("application/pdf", "image/png", "image/jpeg")
+
 
 def _ensure_project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
     """Returns True iff the project exists and belongs to this workspace."""
@@ -182,11 +185,13 @@ def create_drawing(
         raise ValueError("project not found in workspace")
     # Confirm the file_blob belongs to this workspace (cross-workspace blob is rejected).
     blob = db.execute(
-        text("SELECT 1 FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
+        text("SELECT mime FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
         {"b": payload.file_blob_id, "w": workspace_id},
     ).first()
     if not blob:
         raise ValueError("file_blob_id not found in this workspace")
+    if blob[0] not in DRAWING_MIMES:
+        raise ValueError("shop drawings accept PDF, PNG or JPEG only")
 
     drawing_id = db.execute(
         text(
@@ -275,11 +280,13 @@ def add_revision(
     if not drawing:
         raise ValueError("drawing not found")
     blob = db.execute(
-        text("SELECT 1 FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
+        text("SELECT mime FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
         {"b": file_blob_id, "w": workspace_id},
     ).first()
     if not blob:
         raise ValueError("file_blob_id not found in this workspace")
+    if blob[0] not in DRAWING_MIMES:
+        raise ValueError("shop drawings accept PDF, PNG or JPEG only")
 
     next_rev = db.execute(
         text("SELECT COALESCE(MAX(rev_no), 0) + 1 FROM shop_drawing_revision WHERE drawing_id = :d"),

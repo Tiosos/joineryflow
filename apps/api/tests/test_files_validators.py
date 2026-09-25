@@ -1,6 +1,8 @@
 """Magic-byte mime sniff + extension cross-check."""
 from app.files.validators import (
     MAX_BYTE_SIZE,
+    CVJ_MIME,
+    SKP_MIME,
     sniff_mime,
     validate_extension_matches,
 )
@@ -54,3 +56,30 @@ def test_sniff_mime_empty_bytes_returns_none():
 def test_sniff_mime_truncated_png_returns_none():
     """Input shorter than the PNG signature (8 bytes) cannot match PNG."""
     assert sniff_mime(b"\x89PNG") is None  # only 4 bytes; PNG needs 8
+
+
+OLE = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x00" * 8
+SKP_VFF = b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le")
+
+
+def test_sniff_mime_sketchup_2021_plus():
+    assert sniff_mime(SKP_VFF[:16]) == SKP_MIME
+
+
+def test_sniff_mime_ole_is_decided_by_extension():
+    # Pre-2021 SketchUp and Cabinet Vision jobs share the OLE signature.
+    assert sniff_mime(OLE, "old-model.SKP") == SKP_MIME
+    assert sniff_mime(OLE, "kitchen.cvj") == CVJ_MIME
+
+
+def test_sniff_mime_ole_with_other_name_is_refused():
+    assert sniff_mime(OLE, "renamed.doc") is None
+    assert sniff_mime(OLE, "noext") is None
+    assert sniff_mime(OLE) is None
+
+
+def test_validate_extension_matches_model_formats():
+    assert validate_extension_matches("site.skp", SKP_MIME) is True
+    assert validate_extension_matches("job.CVJ", CVJ_MIME) is True
+    assert validate_extension_matches("site.cvj", SKP_MIME) is False
+    assert validate_extension_matches("job.skp", CVJ_MIME) is False

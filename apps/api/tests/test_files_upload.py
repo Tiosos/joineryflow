@@ -126,3 +126,30 @@ def test_upload_viewer_forbidden_403(client):
     files = {"file": ("a.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
     r = client.post("/files", files=files)
     assert r.status_code == 403
+
+
+SKP_BYTES = b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le") + b"\x00" * 200
+OLE_BYTES = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x01" * 200
+
+
+@pytest.mark.parametrize("name,data,mime", [
+    ("model.skp", SKP_BYTES, "application/vnd.sketchup.skp"),        # SketchUp 2021+
+    ("old-model.skp", OLE_BYTES, "application/vnd.sketchup.skp"),    # pre-2021 SketchUp
+    ("kitchen.cvj", OLE_BYTES + b"cvj", "application/x-cabinet-vision-job"),
+])
+def test_upload_model_formats_accepted(client, name, data, mime):
+    _login(client)
+    r = client.post("/files", files={"file": (name, io.BytesIO(data), "application/octet-stream")})
+    assert r.status_code == 201, r.text
+    assert r.json()["mime"] == mime
+
+
+@pytest.mark.parametrize("name,data", [
+    ("renamed.doc", OLE_BYTES),       # OLE is only accepted as .skp / .cvj
+    ("model.cvj", SKP_BYTES),          # SketchUp bytes under a Cabinet Vision name
+    ("fake.skp", b"not a model" * 20),  # right name, no signature
+])
+def test_upload_model_format_mismatch_rejected_415(client, name, data):
+    _login(client)
+    r = client.post("/files", files={"file": (name, io.BytesIO(data), "application/octet-stream")})
+    assert r.status_code == 415, r.text

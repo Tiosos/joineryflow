@@ -10,14 +10,26 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..files.validators import CVJ_MIME, SKP_MIME
 from ..row_types import joinery_items_only
 
 # The three attachment slots (CV drawing / floor plan / site measure) are
 # cutlist documents. A related part has no cutlist (Plan V1 Q417).
 _JOINERY_ITEM = joinery_items_only("i")
 
-AttachmentKind = Literal["cv_drawing", "floor_plan", "site_measure"]
-ALL_KINDS: tuple[AttachmentKind, ...] = ("cv_drawing", "floor_plan", "site_measure")
+# sketchup and cabvision (0036) are separate slots beside cv_drawing, not a rename.
+AttachmentKind = Literal["cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure"]
+ALL_KINDS: tuple[AttachmentKind, ...] = (
+    "cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure",
+)
+# The two model slots hold native files; the three Combined PDF slots hold PDFs.
+KIND_MIME: dict[str, str] = {
+    "cv_drawing": "application/pdf",
+    "sketchup": SKP_MIME,
+    "cabvision": CVJ_MIME,
+    "floor_plan": "application/pdf",
+    "site_measure": "application/pdf",
+}
 
 
 def bind_attachment(
@@ -29,7 +41,7 @@ def bind_attachment(
     workspace_id: int,
     actor_id: int,
 ) -> dict:
-    """UPSERT a slot. Validates blob is PDF + workspace-match. Writes audit."""
+    """UPSERT a slot. Validates the blob's type for the slot + workspace-match. Writes audit."""
     owns = db.execute(
         text(
             f"""
@@ -50,8 +62,8 @@ def bind_attachment(
     ).first()
     if not blob:
         raise ValueError("file_blob not found in this workspace")
-    if blob[0] != "application/pdf":
-        raise ValueError("item attachments must be application/pdf")
+    if blob[0] != KIND_MIME[kind]:
+        raise ValueError(f"{kind} attachments must be {KIND_MIME[kind]}")
 
     prior = db.execute(
         text("SELECT file_blob_id FROM item_attachment WHERE item_id = :i AND kind = :k"),
@@ -123,7 +135,7 @@ def clear_attachment(
 
 
 def get_bundle(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
-    """Return all 3 slots in canonical order, populated or null.
+    """Return all 5 slots in canonical order, populated or null.
 
     Returns None if the item doesn't exist or belongs to a different workspace
     (so the route can return 404 — don't leak existence).

@@ -14,14 +14,15 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
     return row is not None
 
 
-def _blob_in_workspace(db: Session, *, file_blob_id: int, workspace_id: int) -> bool:
-    row = db.execute(
-        text(
-            "SELECT 1 FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"
-        ),
+# /files also stores .skp / .cvj for attachment slots; a sketch is a drawing or photo.
+SKETCH_MIMES = ("application/pdf", "image/png", "image/jpeg")
+
+
+def _blob_mime(db: Session, *, file_blob_id: int, workspace_id: int) -> str | None:
+    return db.execute(
+        text("SELECT mime FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
         {"b": file_blob_id, "w": workspace_id},
-    ).first()
-    return row is not None
+    ).scalar()
 
 
 def get_lift_access(
@@ -58,13 +59,16 @@ def upsert_lift_access(
     payload: UpsertLiftAccessIn,
     actor_id: int,
 ) -> str | dict:
-    """Returns 'NOT_FOUND', 'CROSS_WORKSPACE_BLOB', or the new row dict."""
+    """Returns 'NOT_FOUND', 'CROSS_WORKSPACE_BLOB', 'UNSUPPORTED_BLOB', or the new row dict."""
     if not _project_in_workspace(db, project_id=project_id, workspace_id=workspace_id):
         return "NOT_FOUND"
-    if payload.sketch_file_blob_id is not None and not _blob_in_workspace(
-        db, file_blob_id=payload.sketch_file_blob_id, workspace_id=workspace_id
-    ):
-        return "CROSS_WORKSPACE_BLOB"
+    if payload.sketch_file_blob_id is not None:
+        mime = _blob_mime(db, file_blob_id=payload.sketch_file_blob_id,
+                          workspace_id=workspace_id)
+        if mime is None:
+            return "CROSS_WORKSPACE_BLOB"
+        if mime not in SKETCH_MIMES:
+            return "UNSUPPORTED_BLOB"
 
     db.execute(
         text(
