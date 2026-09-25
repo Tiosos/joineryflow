@@ -28,12 +28,37 @@ export interface ProjectContactOut {
   created_by: number | null;
 }
 
+export interface CreateContactIn {
+  kind: ContactKind;
+  name: string;
+  position?: string | null;
+  email?: string | null;
+  mobile?: string | null;
+  notes?: string | null;
+  sort_order?: number;
+}
+
+export interface PatchContactIn {
+  kind?: ContactKind | null;
+  name?: string | null;
+  position?: string | null;
+  email?: string | null;
+  mobile?: string | null;
+  notes?: string | null;
+  sort_order?: number | null;
+}
+
 export interface ProjectLiftAccessOut {
   project_id: number;
   notes: string | null;
   sketch_file_blob_id: number | null;
   updated_at: string | null; // datetime → ISO 8601 timestamp
   updated_by: number | null;
+}
+
+export interface UpsertLiftAccessIn {
+  notes: string | null;
+  sketch_file_blob_id: number | null;
 }
 
 export interface ProjectLabourHoursOut {

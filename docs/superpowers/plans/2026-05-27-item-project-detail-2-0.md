@@ -304,6 +304,30 @@ Layout (server component `page.tsx` fetches and passes down, same shape as
 works once then 409s on retry; a `viewer` sees the page with no edit
 affordances; a cross-workspace id 404s.
 
+> **→ Done (2026-09-25).** Built per the two decisions made before starting
+> (asked rather than assumed, since the design doc left both open):
+> - **Status stays a read-only pill** in the header — no Current/Hold
+>   selector was added on this page. The backend already supports reopening
+>   a closed project via a plain `PATCH {status}` (any non-"Closed" value
+>   clears `closed_at`/`closed_by`), but T11's own task list never asked for
+>   that control here, so it was left out rather than added silently.
+> - **`/projects` (the list page) now also links to the new page** — a
+>   "Details →" cell per row, alongside the existing name link to
+>   `/tracking?project_id=`. Without it the page had no entry point at all
+>   until T12 ships, and even then only from inside one modal.
+> One correctness point worth flagging for whoever touches
+> `project_lift_access` next: `PUT /projects/{id}/lift-access` is a full
+> overwrite, not a partial merge (confirmed by reading
+> `project_lift_access/queries.py::upsert_lift_access` — both columns are
+> set from the request body every time). `ProjectLiftAccessPanel.tsx` always
+> sends the current `notes` value alongside whichever field is actually
+> changing; a caller that PUTs only the field it means to change will
+> silently null out the other one.
+> Verified with `tsc --noEmit` and `next build` only — no running
+> DB/container in this environment, so the manual click-through (real
+> ALF-001 id, close-out-then-409, viewer read-only, cross-workspace 404)
+> still belongs in T15.
+
 ## T12 — Tracking modal → project page link
 
 **File:** `apps/web/app/(app)/tracking/_components/ProjectDetailModal.tsx`
