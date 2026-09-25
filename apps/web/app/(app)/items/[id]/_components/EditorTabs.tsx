@@ -8,6 +8,8 @@ import { LogTab } from "./LogTab";
 import AttachmentsTab from "./AttachmentsTab";
 import { BoardTab } from "./BoardTab";
 import { MaterialTakeTab } from "./MaterialTakeTab";
+import { ActionsTab } from "./ActionsTab";
+import { QueryTab } from "./QueryTab";
 
 interface EditorTabsProps {
   item: ItemOut;
@@ -15,7 +17,16 @@ interface EditorTabsProps {
   currentUserRole: string | null;
 }
 
-const TABS = ["cutlist", "hardware", "board", "take", "attachments", "log"] as const;
+const TABS = [
+  "cutlist",
+  "hardware",
+  "board",
+  "take",
+  "attachments",
+  "actions",
+  "query",
+  "log",
+] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -24,6 +35,8 @@ const TAB_LABELS: Record<Tab, string> = {
   board: "Board",
   take: "Material Take",
   attachments: "Attachments",
+  actions: "Actions",
+  query: "Query",
   log: "Log",
 };
 
@@ -67,6 +80,12 @@ export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
         )}
         {current === "attachments" && (
           <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
+        )}
+        {current === "actions" && (
+          <ActionsTab item={item} currentUserRole={currentUserRole} />
+        )}
+        {current === "query" && (
+          <QueryTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
         {current === "log" && <LogTab rows={item.edit_log} />}
       </div>

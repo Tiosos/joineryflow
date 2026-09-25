@@ -204,6 +204,23 @@ through the Controlled Lock like every other field (a non-owner's toggle
 should show the same "Held for approval" message `ItemMetadataPanel`
 already shows, since it reuses the same `patchField` helper).
 
+> **→ Done (2026-09-25).** Built as scoped, with one dropped item and one
+> reuse found along the way:
+> - **No Print Combined/Cutlist/Hardware buttons in `ActionsTab`.**
+>   `EditorFooter.tsx` already renders all three, on every tab, at all
+>   times — duplicating them inside the Actions tab would just be the same
+>   three links shown twice. Dropped rather than copied from the design
+>   sketch.
+> - **`StatusPopup`** (from `tracking/_components/`) turned out to be fully
+>   decoupled from `TrackingClient`'s state (`itemId`/`onClose`/`onUpdated`
+>   props, fetches its own item) — reused directly instead of writing a
+>   second status-change UI.
+> - Verified with `tsc --noEmit` and `next build` only (no running
+>   DB/container in this environment) — the Controlled Lock / RBAC claims
+>   above are verified by reading `items/routes.py` and
+>   `auth/permissions.py`, not by exercising the live app. Manual
+>   click-through against `make up` still belongs in T15.
+
 ## T10 — Frontend: AttachmentsTab widened to 5 slots
 
 **Files:** `apps/web/app/(app)/items/[id]/_components/{AttachmentsTab.tsx,

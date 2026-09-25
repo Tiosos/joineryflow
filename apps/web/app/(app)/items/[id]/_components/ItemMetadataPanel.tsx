@@ -29,6 +29,15 @@ const FIELDS: {
     label: "Solid surface required?",
     type: "checkbox",
   },
+  // Item & Project Detail 2.0 (#11): Cutlist Printed and the three reference
+  // fields below join the existing two flags here rather than a separate
+  // header-chip / "Refs panel" component — same varchar(64)/boolean PATCH
+  // pattern already handled by BoolField/MetaField, one place a user already
+  // looks for per-item flags.
+  { key: "cutlist_printed", label: "Cutlist printed?", type: "checkbox" },
+  { key: "floor_plan", label: "Floor Plan" },
+  { key: "rls", label: "RLS" },
+  { key: "joiery_details", label: "Joinery Details" },
 ];
 
 interface BoolFieldProps {
