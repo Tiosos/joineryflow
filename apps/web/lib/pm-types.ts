@@ -10,6 +10,38 @@
 // Source: apps/api/app/projects/schemas.py
 // =============================================================================
 
+// Item & Project Detail 2.0 (#11) — contacts / lift access / labour hours
+// sub-objects embedded on ProjectOut.
+export type ContactKind = "office" | "site";
+
+export interface ProjectContactOut {
+  contact_id: number;
+  project_id: number;
+  kind: ContactKind;
+  position: string | null;
+  name: string;
+  email: string | null;
+  mobile: string | null;
+  notes: string | null;
+  sort_order: number;
+  created_at: string; // datetime → ISO 8601 timestamp
+  created_by: number | null;
+}
+
+export interface ProjectLiftAccessOut {
+  project_id: number;
+  notes: string | null;
+  sketch_file_blob_id: number | null;
+  updated_at: string | null; // datetime → ISO 8601 timestamp
+  updated_by: number | null;
+}
+
+export interface ProjectLabourHoursOut {
+  site_install: number;
+  assembly: number;
+  administration: number;
+}
+
 export interface ProjectOut {
   id: number;
   project_code: string;
@@ -26,6 +58,22 @@ export interface ProjectOut {
   created_by: string | null;
   tg_solid: boolean | null;
   total_line_items: number | null;
+  // Project Detail 2.0 (#11) — additive
+  builder: string | null;
+  classification: string | null;
+  site_street: string | null;
+  site_suburb: string | null;
+  site_postcode: string | null;
+  site_state: string | null;
+  tg_project_manager: string | null;
+  tg_coordinator: string | null;
+  carell_pid: string | null;
+  closed_at: string | null; // datetime → ISO 8601 timestamp
+  closed_by: number | null;
+  closed_by_name: string | null;
+  contacts: ProjectContactOut[];
+  lift_access: ProjectLiftAccessOut | null;
+  labour_hours: ProjectLabourHoursOut;
 }
 
 export interface ProjectListOut {
@@ -44,6 +92,32 @@ export interface PatchProjectIn {
   pm_id?: number | null; // note: API rejects explicit null (model_validator)
   install_start?: string | null; // date → ISO 8601 YYYY-MM-DD
   status?: string | null;
+  // Project Detail 2.0 (#11) — additive; PATCH /projects/{id} is manager/admin
+  // only for these fields (a manual role check, not the tracking:write RBAC row).
+  builder?: string | null;
+  classification?: string | null;
+  site_street?: string | null;
+  site_suburb?: string | null;
+  site_postcode?: string | null;
+  site_state?: string | null;
+  tg_project_manager?: string | null;
+  tg_coordinator?: string | null;
+  tg_solid?: boolean | null;
+  carell_pid?: string | null;
+  total_value?: number | null;
+  total_line_items?: number | null;
+}
+
+// =============================================================================
+// Project close-out
+// Source: apps/api/app/projects/schemas.py
+// =============================================================================
+
+export interface CloseOutOut {
+  project_id: number;
+  closed_at: string; // datetime → ISO 8601 timestamp
+  closed_by: number;
+  closed_by_name: string | null;
 }
 
 // =============================================================================
@@ -211,6 +285,19 @@ export interface ItemOut {
   hardware_lines: HardwareLineOut[];
   edit_log: EditLogRow[];
   lock_warning: LockWarning | null;
+  // Tracking 2.0 enrichment (#10)
+  jid_code: string | null;
+  jid_color: string | null; // hex #RRGGBB
+  var_boq: VarBoq;
+  contractor_id: number | null;
+  contractor_name: string | null;
+  total_amount: string | null; // numeric → string in JSON, matches TrackingItemRow
+  site_measure_notes: string | null;
+  // Item & Project Detail 2.0 (#11) — pre-existing varchar(64) / boolean columns
+  floor_plan: string | null;
+  rls: string | null;
+  joiery_details: string | null;
+  cutlist_printed: boolean | null;
 }
 
 // =============================================================================
@@ -262,6 +349,18 @@ export interface PatchItemIn {
   estimator_notes?: string | null;
   painting_required?: boolean | null; // DB col: painting_req
   solid_surface_required?: boolean | null; // DB col: solid_surface_req
+  // Tracking 2.0 enrichment (#10)
+  jid_code?: string | null;
+  jid_color?: string | null; // hex #RRGGBB
+  var_boq?: VarBoq | null;
+  contractor_id?: number | null;
+  total_amount?: string | null; // numeric → string, matches ItemOut
+  site_measure_notes?: string | null;
+  // Item & Project Detail 2.0 (#11) — pre-existing varchar(64) / boolean columns
+  floor_plan?: string | null;
+  rls?: string | null;
+  joiery_details?: string | null;
+  cutlist_printed?: boolean | null;
 }
 
 export interface LockTransferIn {
@@ -278,6 +377,62 @@ export interface PatchItemStatusIn {
 export interface PatchLifecycleIn {
   due_date?: string | null; // date → ISO 8601 YYYY-MM-DD
   done_date?: string | null; // date → ISO 8601 YYYY-MM-DD
+}
+
+// =============================================================================
+// Item Query (Q&A) — Item & Project Detail 2.0 (#11)
+// Source: apps/api/app/item_queries/schemas.py
+// =============================================================================
+
+export interface ItemQueryOut {
+  query_id: number;
+  item_id: number;
+  asked_by: number | null;
+  asked_by_name: string | null;
+  asked_at: string; // datetime → ISO 8601 timestamp
+  question: string;
+  answered_by: number | null;
+  answered_by_name: string | null;
+  answered_at: string | null; // datetime → ISO 8601 timestamp
+  answer: string | null;
+}
+
+export interface CreateQueryIn {
+  question: string;
+}
+
+export interface AnswerQueryIn {
+  answer: string;
+}
+
+// =============================================================================
+// Item Document Register — Item & Project Detail 2.0 (#11)
+// Source: apps/api/app/item_documents/schemas.py
+// =============================================================================
+
+export interface ItemDocumentOut {
+  document_id: number;
+  item_id: number;
+  file_blob_id: number;
+  label: string | null;
+  sort_order: number;
+  uploaded_by: number | null;
+  uploaded_by_name: string | null;
+  uploaded_at: string; // datetime → ISO 8601 timestamp
+  original_filename: string | null;
+  byte_size: number | null;
+  mime_type: string | null;
+}
+
+export interface BindDocumentIn {
+  file_blob_id: number;
+  label?: string | null;
+  sort_order?: number;
+}
+
+export interface PatchDocumentIn {
+  label?: string | null;
+  sort_order?: number | null;
 }
 
 // =============================================================================

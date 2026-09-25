@@ -133,6 +133,16 @@ kinds; the backend (`item_attachments/schemas.py`) has carried 5 since T07.
 **Acceptance:** web typecheck clean. No behaviour change — this only widens
 types the other tasks then use.
 
+> **→ Done (2026-09-25).** All four TS files updated as scoped; `npx tsc
+> --noEmit` and `pnpm run build` both clean. One deliberate scope pull-in
+> from T10: since `AttachmentsTab.tsx` already iterates `ATTACHMENT_KINDS`,
+> widening that constant to 5 immediately makes it render the SketchUp/
+> CabVision cards too — leaving `AttachmentSlotCard.tsx`'s file-picker
+> hardcoded to `.pdf` for those two would have been a live (if minor) UX
+> papercut, so its `accept` attribute was switched to a per-kind
+> `KIND_ACCEPT` map in this pass as well. T10 no longer needs that step —
+> only the optional "Used by Combined PDF" badge remains open there.
+
 ## T09 — Frontend: item editor — Actions tab, Query tab, reference fields
 
 **Files:** `apps/web/app/(app)/items/[id]/_components/{EditorTabs.tsx,

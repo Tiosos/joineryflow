@@ -6,9 +6,20 @@ import {
   bindAttachment,
   clearAttachment,
 } from "@/lib/attachments-fetch";
-import type { AttachmentSlot } from "@/lib/attachments-types";
+import type { AttachmentKind, AttachmentSlot } from "@/lib/attachments-types";
 import { KIND_LABELS } from "@/lib/attachments-types";
 import { uploadFile } from "@/lib/file-upload";
+
+// sketchup holds a .skp, cabvision a .cvj; the other three slots take a PDF
+// (item_attachments/queries.py::KIND_MIME is the real, server-side gate —
+// this is just a file-picker hint).
+const KIND_ACCEPT: Record<AttachmentKind, string> = {
+  cv_drawing: ".pdf,application/pdf",
+  sketchup: ".skp",
+  cabvision: ".cvj",
+  floor_plan: ".pdf,application/pdf",
+  site_measure: ".pdf,application/pdf",
+};
 
 interface Props {
   itemId: number;
@@ -128,7 +139,7 @@ export default function AttachmentSlotCard({ itemId, slot, canWrite, onChanged }
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,application/pdf"
+          accept={KIND_ACCEPT[slot.kind]}
           onChange={onFileChosen}
           className="hidden"
         />
