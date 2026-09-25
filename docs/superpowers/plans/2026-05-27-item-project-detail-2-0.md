@@ -336,6 +336,13 @@ Add a footer link `<a href={`/projects/${project.id}`}>Open full project
 page →</a>` beside the existing "Read-only view..." footer text.
 `project.id` is already on `ProjectOut`.
 
+> **→ Done (2026-09-25).** Used `next/link`'s `Link` rather than a bare
+> `<a>`, matching every other in-app navigation link in this codebase
+> (`/projects/page.tsx`, etc.) — client-side nav instead of a full reload.
+> Also dropped "Edit project metadata from the admin tools" from the footer
+> sentence, since that vague phrase now has a concrete, linked destination
+> right next to it. `tsc --noEmit` and `next build` clean.
+
 ## T13 — Seed data
 
 **File:** `seed/hartwood_joinery.py` (new block after the existing `#12

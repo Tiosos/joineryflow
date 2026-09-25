@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ProjectOut } from "@/lib/pm-types";
 
 interface Props {
@@ -145,9 +146,17 @@ export function ProjectDetailModal({ project, onClose }: Props) {
           />
         </div>
 
-        <footer className="border-t border-h-line bg-h-bg px-5 py-3 text-[11px] text-h-muted">
-          Read-only view. Edit project metadata from the admin tools. Hours come
-          from TGPAY, which is not integrated — see Q571.
+        <footer className="flex items-center justify-between gap-4 border-t border-h-line bg-h-bg px-5 py-3 text-[11px] text-h-muted">
+          <span>
+            Read-only view. Hours come from TGPAY, which is not integrated —
+            see Q571.
+          </span>
+          <Link
+            href={`/projects/${project.id}`}
+            className="shrink-0 whitespace-nowrap text-h-accent hover:underline"
+          >
+            Open full project page →
+          </Link>
         </footer>
       </div>
     </div>
