@@ -64,7 +64,7 @@ async def upload_file(
     if total == 0:
         raise HTTPException(status_code=400, detail="empty file")
 
-    sniffed = sniff_mime(payload[:16])
+    sniffed = sniff_mime(payload[:16], file.filename or "")
     if sniffed is None:
         raise HTTPException(status_code=415, detail="unsupported file type (magic-byte sniff failed)")
     if not validate_extension_matches(file.filename or "", sniffed):

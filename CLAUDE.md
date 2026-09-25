@@ -400,8 +400,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   enforces the in-flight invariant. Approve updates
   `shop_drawing.current_revision_id` atomically. Archive 409s on already-
   archived (no silent re-archive); patch enforces creator-or-manager rule.
-- Allowed file types: PDF / PNG / JPEG only (validated by magic bytes).
-  SVG, DWG, etc. rejected with 415.
+- Allowed file types: PDF / PNG / JPEG (validated by magic bytes), plus —
+  since the 0036 attachment slots — SketchUp `.skp` and Cabinet Vision `.cvj`
+  (see *Item & Project Detail 2.0*). SVG, DWG, etc. rejected with 415.
+  **Shop drawings themselves still take PDF / PNG / JPEG only**: both bind
+  paths check the blob's mime (422 otherwise), because `/files` no longer
+  enforces that on its own.
 - Thumbnails are deterministic SVG placeholders seeded from `drawing_id`
   (no PDF rendering pipeline in v1).
 - Seed (`make seed`) inserts 2 fixture PDFs + 6 demo drawings on ALF-001
@@ -447,10 +451,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
     `Cache-Control: no-store`. Browser opens in a new tab via
     `<a target="_blank">`.
 - Item attachment routes:
-  - `GET /items/{iid}/attachments` — bundle of 3 slots, populated or null.
+  - `GET /items/{iid}/attachments` — bundle of 3 slots (5 since `0036`),
+    populated or null.
   - `POST /items/{iid}/attachments/{kind}` — bind/replace via
     `{file_blob_id}` body. PDF-only mime gate (415 on PNG/JPEG; the
-    file_blob table itself remains generic).
+    file_blob table itself remains generic). Since `0036` the gate is per
+    slot — `sketchup` / `cabvision` take `.skp` / `.cvj` instead.
   - `DELETE /items/{iid}/attachments/{kind}` — clear slot.
 - RBAC: print routes use `("list", "read")` (any reader can print);
   attachment mutations use `("list", "write")` (drafter+, since drafter is
@@ -1516,8 +1522,25 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   synonym in the code**: `cv_drawing` ("CV Production Drawing") keeps its own
   slot and its existing rows, and `sketchup` / `cabvision` are two further,
   independent slots. `item_attachments/` now offers
-  `cv_drawing · sketchup · cabvision · floor_plan · site_measure`, the bundle
-  always carries all five, and the PDF-only gate applies to all of them.
+  `cv_drawing · sketchup · cabvision · floor_plan · site_measure` and the
+  bundle always carries all five.
+  **Each slot takes one format** (user, 2026-09-25): `sketchup` a `.skp`,
+  `cabvision` a `.cvj`, the other three a PDF — anything else is 415
+  (`item_attachments.queries.KIND_MIME`).
+  **Uploading them** (`files/validators.py`, also the user's call): the
+  "signature *and* extension must agree" rule still holds. `.skp` is
+  `FF FE FF 0E` (SketchUp 2021+) or the OLE compound-file signature (older
+  SketchUp); `.cvj` is OLE. OLE is shared by both — and by `.doc`/`.xls`/`.msi`
+  — so for OLE the extension picks between `.skp` and `.cvj` and any other
+  name is refused. Stored mimes are `application/vnd.sketchup.skp` and
+  `application/x-cabinet-vision-job`. **The 25 MB cap is unchanged for every
+  type** — a larger SketchUp model gets 413; the user chose that over a
+  per-type cap. The signatures come from published format notes, not from a
+  customer file: verify against a real `.skp` / `.cvj` when one is available.
+  Widening `/files` meant adding a mime check wherever a blob is bound
+  without one: shop drawings (422) and the lift-access sketch (415) keep
+  PDF / PNG / JPEG; samples (PNG / JPEG) and the Document Register
+  (PDF / PNG / JPEG) already had their own.
   **The Combined PDF is unchanged** — still `cv_drawing`, `floor_plan`,
   `site_measure` only (also the user's call; pinned by
   `test_print_combined_ignores_sketchup_and_cabvision`). Do not "fix" this
@@ -1536,11 +1559,11 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
     `project_contact`, `project_lift_access`, `item_query`, or
     `item_document`, and never sets `builder`, `classification`, or
     `closed_at`.
-  - **Tests exist only for the Document Register.** None of
-    `test_project_enrichment.py`, `test_project_contacts.py`,
-    `test_project_lift_access.py`, `test_item_queries.py` exist. Those
-    three routers have manual end-to-end verification but no regression
-    coverage.
+  - **Thin tests.** `test_item_documents.py` covers the Document Register
+    and `test_project_lift_access.py` only the sketch's type check; there
+    is no `test_project_enrichment.py`, `test_project_contacts.py` or
+    `test_item_queries.py`. Contacts, queries and most of lift access have
+    manual end-to-end verification but no regression coverage.
 - **RBAC — no matrix change**, per its design doc: `project_contact`/
   `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
   `list:{read,write}`; close-out is admin/manager only.

@@ -44,7 +44,7 @@ def bind_attachment_route(
         )
     except ValueError as exc:
         msg = str(exc)
-        if "application/pdf" in msg:
+        if "attachments must be" in msg:
             raise HTTPException(status_code=415, detail=msg)
         if "workspace" in msg or "not found" in msg:
             raise HTTPException(status_code=404, detail=msg)

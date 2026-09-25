@@ -7,7 +7,9 @@
 > Departures from this doc: T06 records three choices where it was silent;
 > T07's attachment kinds are **five, purely additive** — `cv_drawing` is
 > *not* treated as a synonym, and the Combined PDF is unchanged (user's
-> decision, 2026-09-25). Design:
+> decision, 2026-09-25). This doc's "PDF gate stays for named slots" is
+> also superseded: `sketchup` holds a native `.skp` and `cabvision` a
+> `.cvj`, which `/files` now accepts (same 25 MB cap). Design:
 > `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`.
 >
 > **Later change:** this doc's title says "#11" — free when written

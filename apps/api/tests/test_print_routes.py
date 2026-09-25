@@ -169,11 +169,15 @@ def test_print_combined_ignores_sketchup_and_cabvision(client, truncate_all):
         client.get(f"/items/{baseline['iid']}/combined.pdf").content)).pages)
 
     ids = _seed_full_item(client, truncate_all)
-    files = {"file": ("s.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
-    bid = client.post("/files", files=files).json()["file_blob_id"]
-    for kind in ("sketchup", "cabvision"):
+    models = {
+        "sketchup": ("site.skp", b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le") + b"\x00" * 64),
+        "cabvision": ("job.cvj", b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" + b"\x00" * 64),
+    }
+    for kind, (name, data) in models.items():
+        r = client.post("/files", files={"file": (name, io.BytesIO(data), "application/octet-stream")})
+        assert r.status_code == 201, r.text
         assert client.post(f"/items/{ids['iid']}/attachments/{kind}",
-                           json={"file_blob_id": bid}).status_code == 201
+                           json={"file_blob_id": r.json()["file_blob_id"]}).status_code == 201
     r = client.get(f"/items/{ids['iid']}/combined.pdf")
     assert r.status_code == 200
     assert len(pypdf.PdfReader(io.BytesIO(r.content)).pages) == baseline_pages

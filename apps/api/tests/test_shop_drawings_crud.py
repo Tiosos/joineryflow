@@ -167,3 +167,18 @@ def test_create_drawing_cross_workspace_blob_rejected(client):
         "title": "X", "room": "Y", "file_blob_id": blob_id_a,
     })
     assert r.status_code == 422
+
+
+def test_model_files_are_refused_as_drawings(client):
+    """/files also stores .skp for attachment slots; the drawing viewer can't render it."""
+    ids = _setup(client)
+    skp = b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le") + b"\x00" * 100
+    skp_id = client.post("/files", files={"file": ("m.skp", io.BytesIO(skp), "application/octet-stream")}).json()["file_blob_id"]
+    r = client.post(f"/projects/{ids['pid']}/shop-drawings",
+                    json={"title": "Model", "room": "Kitchen", "file_blob_id": skp_id})
+    assert r.status_code == 422, r.text
+
+    did = client.post(f"/projects/{ids['pid']}/shop-drawings",
+                      json={"title": "Run", "room": "Kitchen", "file_blob_id": _upload_blob(client)}).json()["drawing_id"]
+    r = client.post(f"/shop-drawings/{did}/revisions", json={"file_blob_id": skp_id})
+    assert r.status_code == 422, r.text
