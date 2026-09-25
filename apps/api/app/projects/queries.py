@@ -329,9 +329,22 @@ def patch_project(
     if "pm_id" in fields and fields["pm_id"] is not None:
         _assert_user_in_workspace(db, user_id=fields["pm_id"], workspace_id=workspace_id)
 
+    # Closing goes only through close_out_project, so closed_at/by are always
+    # stamped; moving status anywhere else re-opens and clears the stamp.
+    if "status" in fields and fields["status"] == "Closed":
+        # Another workspace's project must still read as 404, not as this 422.
+        if db.execute(
+            text("SELECT 1 FROM projects WHERE project_id = :pid AND workspace_id = :wid"),
+            {"pid": project_id, "wid": workspace_id},
+        ).first() is None:
+            return None
+        raise ValueError("use POST /projects/{id}/close-out to close a project")
+
     set_clauses = ", ".join(
         f"{_PATCH_COL_MAP[k]} = :{k}" for k in fields if k in _PATCH_COL_MAP
     )
+    if "status" in fields:
+        set_clauses += ", closed_at = NULL, closed_by = NULL"
     # CRITICAL #1: scope the UPDATE to this workspace via the direct FK.
     # If 0 rows affected the project either doesn't exist or belongs to another workspace.
     params = {**fields, "pid": project_id, "wid": workspace_id}

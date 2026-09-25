@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0034`. Head is `0034_material_take` (Material Take, #12; `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0036`. Head is `0036_item_project_detail` (Item & Project Detail 2.0; `0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12); `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
@@ -186,9 +186,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0034
+make migrate      # apply Alembic 0001 -> 0036
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (69 test files, 771 tests; the `meili`-marked
+make test         # pytest in api container (76 test files, 841 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -300,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
-- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend complete — routes mounted, Document Register, item reference-field PATCH, five attachment slots; all frontend, seed data and most tests are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend complete — routes mounted, Document Register, item reference-field PATCH, five attachment slots, and tested; all frontend and seed data are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -1475,7 +1475,10 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   `classification`, `site_street/suburb/postcode/state`,
   `tg_project_manager`, `tg_coordinator`) plus the new `closed_at`/
   `closed_by`; `POST /projects/{id}/close-out` (admin/manager,
-  `409 ALREADY_CLOSED`); `project_contacts/` (POST/GET/PATCH/DELETE,
+  `409 ALREADY_CLOSED`) — **the only way to close** (user, 2026-09-25):
+  `PATCH {status: "Closed"}` is 422, so `closed_at` / `closed_by` are always
+  stamped, and PATCHing `status` to `Current` / `Hold` **re-opens**, clearing
+  both (the design doc's §9 rule, which the merged code had not implemented); `project_contacts/` (POST/GET/PATCH/DELETE,
   `tracking:{read,write}`); `project_lift_access/` (GET/PUT/DELETE, one row
   per project); `item_queries/` (ask on `list:read`, answer/edit-answer on
   `list:write`, second answer without `allow_overwrite` returns 409). **The
@@ -1559,12 +1562,12 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
     `project_contact`, `project_lift_access`, `item_query`, or
     `item_document`, and never sets `builder`, `classification`, or
     `closed_at`.
-  - **Thin tests.** `test_item_documents.py` covers the Document Register
-    and `test_project_lift_access.py` only the sketch's type check; there
-    is no `test_project_enrichment.py`, `test_project_contacts.py` or
-    `test_item_queries.py`. Contacts, queries and most of lift access have
-    manual end-to-end verification but no regression coverage.
 - **RBAC — no matrix change**, per its design doc: `project_contact`/
   `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
   `list:{read,write}`; close-out is admin/manager only.
+- **Tests:** `test_project_enrichment.py` (enriched `ProjectOut`, close-out,
+  re-open), `test_project_contacts.py`, `test_project_lift_access.py`,
+  `test_item_queries.py`, `test_item_documents.py`, plus the attachment,
+  upload and item-route files extended above. What remains unbuilt is
+  frontend and seed, not backend coverage.
 

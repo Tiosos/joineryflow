@@ -3,7 +3,10 @@
 > **Status: partially shipped.** Migration `0036_item_project_detail`.
 > Current state lives in `## Item & Project Detail 2.0` in `CLAUDE.md` —
 > read it before picking up any of T08–T13 below, it lists exactly what's
-> missing (all frontend, seed, most tests). The backend (T01–T07) is done.
+> missing (all frontend and seed). The backend (T01–T07) and its tests (T12)
+> are done. §9's re-open rule is implemented as written, and PATCHing a
+> project to `Closed` is refused so close-out is the only way to close
+> (user's decision, 2026-09-25).
 > Departures from this doc: T06 records three choices where it was silent;
 > T07's attachment kinds are **five, purely additive** — `cv_drawing` is
 > *not* treated as a synonym, and the Combined PDF is unchanged (user's

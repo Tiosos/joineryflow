@@ -113,9 +113,10 @@ def test_patch_status_writes_audit():
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
 
-    r2 = c.patch(f"/projects/{pid}", json={"status": "Closed"})
+    # "Closed" is refused here (close-out owns it); see test_project_enrichment.py.
+    r2 = c.patch(f"/projects/{pid}", json={"status": "Hold"})
     assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "Closed"
+    assert r2.json()["status"] == "Hold"
 
     # Verify at least one audit row with a project.patch event exists.
     db = SessionLocal()
