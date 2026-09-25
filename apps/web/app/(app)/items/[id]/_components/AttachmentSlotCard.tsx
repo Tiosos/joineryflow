@@ -26,6 +26,7 @@ interface Props {
   slot: AttachmentSlot;
   canWrite: boolean;
   onChanged: () => Promise<void>;
+  usedByCombined: boolean;
 }
 
 function formatSize(bytes: number | null): string {
@@ -41,7 +42,13 @@ function ddmmyyyy(iso: string | null): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
-export default function AttachmentSlotCard({ itemId, slot, canWrite, onChanged }: Props) {
+export default function AttachmentSlotCard({
+  itemId,
+  slot,
+  canWrite,
+  onChanged,
+  usedByCombined,
+}: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -85,7 +92,17 @@ export default function AttachmentSlotCard({ itemId, slot, canWrite, onChanged }
   return (
     <div className={`rounded-lg border p-4 ${populated ? "border-h-line bg-h-surface" : "border-dashed border-h-line bg-h-surface/40"}`}>
       <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-medium text-h-ink">{KIND_LABELS[slot.kind]}</h3>
+        <h3 className="flex items-center gap-2 text-sm font-medium text-h-ink">
+          {KIND_LABELS[slot.kind]}
+          {usedByCombined && (
+            <span
+              title="Included in Print Combined PDF"
+              className="rounded-full border border-h-line px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-h-muted"
+            >
+              Combined PDF
+            </span>
+          )}
+        </h3>
         <span className="text-xs text-h-muted">{populated ? "Populated" : "Empty"}</span>
       </div>
 

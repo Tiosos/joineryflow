@@ -244,6 +244,16 @@ other pinned print tests stay green untouched (backend-only, unaffected by
 this). Manual: 5 cards render; SketchUp/CabVision pickers filter to
 `.skp`/`.cvj`; Combined tooltip/count still reads "N of 3".
 
+> **→ Done (2026-09-25).** The `KIND_ACCEPT` map and the widened
+> `ATTACHMENT_KINDS` iteration were already pulled into T08 (see its own
+> `→ Done` note) — this pass added the one thing left: a small "Combined
+> PDF" pill on the 3 relevant `AttachmentSlotCard`s, driven by
+> `COMBINED_PDF_KINDS.includes(kind)` (computed once in `AttachmentsTab.tsx`
+> and passed down as a prop, rather than re-deriving it inside the card).
+> `tsc --noEmit` and `next build` clean; the backend print tests are
+> untouched by this (frontend-only change). Manual click-through against a
+> running app still belongs in T15.
+
 ## T11 — Frontend: project page `/projects/[id]`
 
 **Files:** new `apps/web/app/(app)/projects/[id]/page.tsx`, new
