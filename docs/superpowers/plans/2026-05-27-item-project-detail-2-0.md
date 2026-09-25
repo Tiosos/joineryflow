@@ -416,6 +416,54 @@ slots, visit `/projects/{id}` and confirm the header/contacts/lift-access
 panels render and close-out works once. Keep it in the same
 non-idempotent-suite family as the others (re-seed between runs).
 
+> **→ Done (2026-09-25).** Three tests, following the file's own
+> `login`/`openFirstAlfredItem` local-helper convention (mirrors
+> `pdf_generation.spec.ts`) rather than a shared module:
+> 1. Query tab ask+answer, the reference fields + Cutlist Printed (now in
+>    the metadata panel, not a header chip — T09's deviation), Attachments
+>    widened to 5 slots, and opening the Actions tab's Set-status dialog.
+> 2. The project page reachable both from `/projects`'s "Details →" link and
+>    from the Tracking modal's "Open full project page →" link, with seeded
+>    contacts/lift-access text asserted.
+> 3. Close-out is **not visible at all** for a drafter — deliberately
+>    swapped from the draft's "close-out works once" plan text: actually
+>    clicking Close-out would durably flip ALF-001's `status` to `Closed`
+>    for every other spec that shares this Postgres instance within one
+>    `make e2e` run (no re-seed between specs in a single run), which is a
+>    materially different risk than the other suite's known non-idempotency
+>    (each of those re-mutates only its own domain data). Asserting the
+>    RBAC gate instead of performing the mutation is just as real a
+>    regression check and doesn't carry that risk.
+>
+> **Actually run against a live stack**, not just `--list`ed. This sandbox
+> has no `make e2e`/Docker, so: migrated the same scratch Postgres from T13
+> to head, ran `uvicorn app.main:app` and `next dev` directly (env vars
+> standing in for compose: `API_URL`, `FILE_STORE_ROOT`,
+> `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`), and pointed Playwright at
+> `http://localhost:3000` with `launchOptions.executablePath` overridden to
+> `/opt/pw-browsers/chromium` (the pre-installed browser is a version older
+> than this repo's pinned `@playwright/test`, so the default lookup path
+> 404s — see the environment's own README on this).
+>
+> The first two runs caught real, worth-fixing bugs **in the test itself**,
+> not the app: an unscoped `getByText("CV Production Drawing", {exact:
+> true})` failed because T10's "Combined PDF" badge shares the same
+> heading, and an unscoped `getByRole("button", {name: "Close"})` was
+> ambiguous against `ItemHeader`'s unrelated "Close editor" button. Both
+> fixed by scoping the locator to the right container rather than loosening
+> the assertion. Final clean run (after re-seeding to undo the mutations
+> from debugging runs, exactly the non-idempotency this spec's own header
+> comment warns about): **3/3 passed.** Also re-ran `smoke.spec.ts`,
+> `pdf_generation.spec.ts` (both tests), `drafter_editor.spec.ts` and
+> `pm_workbench.spec.ts` against the same stack as a regression check on
+> shared components (`EditorTabs`, `ItemMetadataPanel`,
+> `ProjectDetailModal`) — all green. `material_take.spec.ts` failed on this
+> pass, but for a reason unrelated to this work: it hardcodes
+> `/projects/1/...`, and this scratch database's ALF-001 landed on
+> `project_id=2` because an earlier `pytest` run (T13's verification)
+> truncated and re-seeded the workspace once already — confirmed by direct
+> query, not a regression from anything in T08–T14.
+
 ## T15 — Smoke
 
 `make up && make migrate && make seed`. Click through: item editor's 8 tabs
