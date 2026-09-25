@@ -377,6 +377,33 @@ these four tables has a natural `ON CONFLICT` key except lift access):
 **Acceptance:** `make seed` run twice back-to-back produces identical row
 counts; print a one-line summary matching the file's existing convention.
 
+> **→ Done (2026-09-25).** Built exactly as scoped, through the real query
+> functions (`app.projects.queries.patch_project`,
+> `app.project_contacts.queries.create_contact`,
+> `app.project_lift_access.queries.upsert_lift_access`,
+> `app.item_queries.queries.{create_query,answer_query}`,
+> `app.item_documents.queries.bind_document`) so the seeded rows carry real
+> `audit_log` / `item_edit_log` entries, matching the `#12` block's
+> precedent. Actor attribution follows the real RBAC split T11 traced:
+> project metadata / contacts use a resolved manager id, item queries and
+> documents use the drafter.
+>
+> **Actually verified against a live database**, not just read for
+> correctness — this environment has no Docker, but does have a local
+> PostgreSQL 16 + Python 3.12, matching the no-Docker path this file's dev
+> loop section documents. Migrated a scratch DB to head (`0036`), ran
+> `python -m seed.hartwood_joinery` twice back-to-back, and confirmed by
+> direct query: `project_contact` stays at 4 rows, `project_lift_access` at
+> 1, `item_query` at 2 (1 open / 1 answered), `item_document` at 2, and
+> `file_blob` does not grow on the second run (sha256 dedup in
+> `put_seed_file` works as expected) — no duplicate-row or constraint
+> errors on either run. Also ran the five directly-relevant backend test
+> files (`test_project_contacts`, `test_project_lift_access`,
+> `test_item_queries`, `test_item_documents`, `test_project_enrichment`) —
+> 40 passed. The full `make test` / `make e2e` suites were not run (out of
+> scope for a seed-only change, and `make` itself needs Docker); T15 is
+> still where a full click-through belongs.
+
 ## T14 — e2e coverage (new)
 
 **File:** new `tests/e2e/item_project_detail.spec.ts`
