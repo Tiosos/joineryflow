@@ -77,9 +77,15 @@ def test_ask_answer_edit_round_trip(ws):
     try:
         events = [r[0] for r in s.execute(text(
             "SELECT event FROM audit_log WHERE event LIKE 'item.query.%' ORDER BY id"))]
+        edit_fields = [r[0] for r in s.execute(text(
+            "SELECT field FROM item_edit_log WHERE item_id = :i ORDER BY log_id"),
+            {"i": ws["iid"]})]
     finally:
         s.close()
     assert events == ["item.query.create", "item.query.answer", "item.query.edit_answer"]
+    assert edit_fields == [
+        "_query_create", f"query.{q['query_id']}.answer", f"query.{q['query_id']}.answer",
+    ]
 
 
 def test_list_is_newest_first(ws):

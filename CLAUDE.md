@@ -1510,8 +1510,12 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
     Widening later is additive; narrowing would orphan rows.
   - **Writes `item_edit_log` as well as `audit_log`**, per the PM Workbench
     invariant (`_document_bind` / `_document_unbind`, and
-    `document.{id}.{field}` per changed field). `item_attachments` and
-    `item_queries` write audit only — a pre-existing gap, not fixed here.
+    `document.{id}.{field}` per changed field). **Fixed later:**
+    `item_attachments` and `item_queries` used to write audit only; both now
+    write `item_edit_log` too (`attachment.{kind}` on bind/clear;
+    `_query_create` on ask, `query.{id}.answer` on answer/edit-answer),
+    pinned by `test_bind_writes_item_edit_log` / `test_clear_writes_item_edit_log`
+    and `test_ask_answer_edit_round_trip`'s edit-log assertion.
 
   A bound blob must be PDF, PNG or JPEG (415 otherwise); `POST /files`
   already only stores those three, so the check guards the register if the

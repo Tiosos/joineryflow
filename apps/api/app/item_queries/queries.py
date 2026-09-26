@@ -1,8 +1,12 @@
-"""SQL helpers for item_query CRUD.  Workspace-isolated through items->projects."""
+"""SQL helpers for item_query CRUD.  Workspace-isolated through items->projects.
+
+Every mutation writes audit_log and item_edit_log in the same transaction.
+"""
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..edit_log import write_edit_log
 
 
 _QUERY_COLS = """
@@ -100,6 +104,10 @@ def create_query(
         target=str(item_id),
         payload={"query_id": qid},
     )
+    write_edit_log(
+        db, item_id=item_id, actor_id=actor_id, field="_query_create",
+        old_value=None, new_value=question,
+    )
     db.flush()
     return _query_in_workspace(db, query_id=qid, workspace_id=workspace_id)
 
@@ -140,6 +148,11 @@ def answer_query(
         event=event,
         target=str(current["item_id"]),
         payload={"query_id": query_id},
+    )
+    write_edit_log(
+        db, item_id=current["item_id"], actor_id=actor_id,
+        field=f"query.{query_id}.answer",
+        old_value=current["answer"], new_value=answer,
     )
     db.flush()
     return _query_in_workspace(db, query_id=query_id, workspace_id=workspace_id)
