@@ -2133,41 +2133,45 @@ def main() -> None:
             text(
                 """
                 INSERT INTO custom_made
-                    (internal_ref, description, vendor, cost, lead_time_days)
-                VALUES ('hartwood-CM-SIGNBOX-01',
+                    (workspace_id, internal_ref, description, vendor, cost,
+                     lead_time_days)
+                VALUES (:w, 'hartwood-CM-SIGNBOX-01',
                         'Bespoke signage box (reception)',
                         'Metalform', 1250.00, 14)
                 ON CONFLICT (internal_ref) DO NOTHING
                 """
-            )
+            ),
+            {"w": workspace_id},
         )
         # benchtop_materials.slab_id is globally UNIQUE → prefix.
         s.execute(
             text(
                 """
                 INSERT INTO benchtop_materials
-                    (slab_id, description, material_type, thickness_mm,
-                     supplier, cost_per_slab, lead_time_days)
-                VALUES ('hartwood-CST-2297-A',
+                    (workspace_id, slab_id, description, material_type,
+                     thickness_mm, supplier, cost_per_slab, lead_time_days)
+                VALUES (:w, 'hartwood-CST-2297-A',
                         'Caesarstone 6131 Bianco Drift 20mm',
                         'stone', 20.00, 'CDK Stone', 1450.00, 21)
                 ON CONFLICT (slab_id) DO NOTHING
                 """
-            )
+            ),
+            {"w": workspace_id},
         )
         # appliances.model_number is globally UNIQUE → prefix.
         s.execute(
             text(
                 """
                 INSERT INTO appliances
-                    (model_number, description, manufacturer, supplier,
-                     cost_per_unit, lead_time_days)
-                VALUES ('hartwood-MIELE-H7164BP',
+                    (workspace_id, model_number, description, manufacturer,
+                     supplier, cost_per_unit, lead_time_days)
+                VALUES (:w, 'hartwood-MIELE-H7164BP',
                         'Miele 60cm Oven H7164BP', 'Miele',
                         'Winning Appliances', 3450.00, 14)
                 ON CONFLICT (model_number) DO NOTHING
                 """
-            )
+            ),
+            {"w": workspace_id},
         )
         # equipment_hire requires project_id FK; scope to ALF-001.
         if alf_pid is not None:
@@ -2175,17 +2179,60 @@ def main() -> None:
                 text(
                     """
                     INSERT INTO equipment_hire
-                        (contract_ref, project_id, description, supplier,
-                         rate, rate_unit, hire_start, hire_end, total_cost)
-                    VALUES ('hartwood-KENNARDS-0423-881', :p,
+                        (workspace_id, contract_ref, project_id, description,
+                         supplier, rate, rate_unit, hire_start, hire_end,
+                         total_cost)
+                    VALUES (:w, 'hartwood-KENNARDS-0423-881', :p,
                             'Kennards scissor lift — Alfred site',
                             'Kennards', 285.00, 'DAY',
                             CURRENT_DATE - 7, CURRENT_DATE + 21, 8000.00)
                     ON CONFLICT (contract_ref) DO NOTHING
                     """
                 ),
-                {"p": alf_pid},
+                {"w": workspace_id, "p": alf_pid},
             )
+        # Backfill for databases seeded before workspace_id was set above
+        # (pre-existing gap: these 4 rows were invisible on /catalog and in
+        # search).
+        s.execute(
+            text(
+                """
+                UPDATE custom_made SET workspace_id = :w
+                WHERE internal_ref = 'hartwood-CM-SIGNBOX-01'
+                  AND workspace_id IS NULL
+                """
+            ),
+            {"w": workspace_id},
+        )
+        s.execute(
+            text(
+                """
+                UPDATE benchtop_materials SET workspace_id = :w
+                WHERE slab_id = 'hartwood-CST-2297-A' AND workspace_id IS NULL
+                """
+            ),
+            {"w": workspace_id},
+        )
+        s.execute(
+            text(
+                """
+                UPDATE appliances SET workspace_id = :w
+                WHERE model_number = 'hartwood-MIELE-H7164BP'
+                  AND workspace_id IS NULL
+                """
+            ),
+            {"w": workspace_id},
+        )
+        s.execute(
+            text(
+                """
+                UPDATE equipment_hire SET workspace_id = :w
+                WHERE contract_ref = 'hartwood-KENNARDS-0423-881'
+                  AND workspace_id IS NULL
+                """
+            ),
+            {"w": workspace_id},
+        )
 
         # ==================================================================
         # === Page 4b: drafter_item_editor.html — enrich JO-SS02 ==========

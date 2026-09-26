@@ -71,7 +71,7 @@ export function PartsGrid({ module }: PartsGridProps) {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-h-line text-left text-xs text-h-muted">
-            <th className="w-6 pb-2 pr-2" /> {/* checkbox */}
+            <th className="w-6 pb-2 pr-2" />{/* checkbox */}
             <th className="pb-2 pr-2 font-medium">Qty</th>
             <th className="pb-2 pr-2 font-medium min-w-[120px]">Part name</th>
             <th className="pb-2 pr-2 font-medium">L (mm)</th>
@@ -81,7 +81,7 @@ export function PartsGrid({ module }: PartsGridProps) {
             <th className="pb-2 pr-2 font-medium">Colour</th>
             <th className="pb-2 pr-2 font-medium">Paint</th>
             <th className="pb-2 pr-2 font-medium">Comment</th>
-            <th className="pb-2" /> {/* delete */}
+            <th className="pb-2" />{/* delete */}
           </tr>
         </thead>
         <tbody>
