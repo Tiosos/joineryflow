@@ -1234,10 +1234,13 @@ All mounted at top-level paths from `main.py`.
 
 ### Known gaps
 
-- The item editor's own hardware query still reads the catalog `supplier`
-  column alone. `0017` put the real value in `default_supplier`, so it renders
-  "—" on every row. Pre-existing; the cutlist rollup coalesces both and is
-  pinned by a test.
+- **Fixed later.** The item editor's own hardware query (`hardware_lines/
+  queries.py::list_catalog` + `list_source_catalog`) used to read the catalog
+  `supplier` column alone, rendering "—" on every row since `0017` put the
+  real value in `default_supplier`. Now `COALESCE`s both, same as the cutlist
+  rollup already did (`vendor` for `custom_made`), pinned by
+  `test_catalog_supplier_falls_back_to_default_supplier` and
+  `test_source_catalog_supplier_falls_back_to_default_supplier`.
 - Q508's Hard / Approval lock types and Q511 / Q512 have no home yet.
 - **E3 is the one task of #10 left open** — migrating a copy of the customer's
   real pilot data (Q436) to confirm Q540's number preservation. It is blocked

@@ -6,7 +6,7 @@ Raw SQL inserts bypass the route layer (no catalog-write API exists in T13).
 Schema notes carried forward from queries.py:
 - project_hardware_catalog has no workspace_id; scoped via projects.pm_id chain.
 - project_hardware_catalog has no qty column; endpoint returns 1.0 for all rows.
-- equipment_hire PK is hire_id; custom_made supplier is NULL.
+- equipment_hire PK is hire_id; custom_made uses vendor, not supplier.
 """
 import uuid
 
@@ -267,6 +267,85 @@ def test_catalog_includes_qty_and_unit_cost():
     row = rows[0]
     assert abs(row["unit_cost"] - 24.99) < 0.01
     assert row["qty"] == 1.0
+
+
+def test_catalog_supplier_falls_back_to_default_supplier():
+    """The six catalog tables' free-text `supplier` is mostly empty — `0017` put
+    the real value in `default_supplier`, which is why the query coalesces.
+
+    Reading `supplier` alone showed "no supplier" on every seeded row while a
+    supplier was plainly recorded (custom_made via its `vendor` column).
+    """
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid)
+        hw_mid = db.execute(
+            text(
+                """INSERT INTO hardware_materials(workspace_id, sku, description,
+                                                   supplier, default_supplier)
+                   VALUES(:wid, 'HW-SUP', 'Damper', NULL, 'Hettich Australia')
+                   RETURNING material_id"""
+            ),
+            {"wid": wid},
+        ).scalar()
+        cm_mid = db.execute(
+            text(
+                """INSERT INTO custom_made(workspace_id, internal_ref, description,
+                                           vendor, default_supplier, cost)
+                   VALUES(:wid, 'CM-SUP', 'Signbox', NULL, 'Metalform', 100)
+                   RETURNING material_id"""
+            ),
+            {"wid": wid},
+        ).scalar()
+        _add_to_catalog(
+            db, project_id=pid, material_type="HARDWARE",
+            material_id=hw_mid, added_by=uid,
+        )
+        _add_to_catalog(
+            db, project_id=pid, material_type="CUSTOM",
+            material_id=cm_mid, added_by=uid,
+        )
+    finally:
+        db.close()
+
+    r = c.get(f"/projects/{pid}/hardware_catalog")
+    assert r.status_code == 200, r.text
+    suppliers = {row["source_table"]: row["supplier"] for row in r.json()["rows"]}
+    assert suppliers["hardware_materials"] == "Hettich Australia"
+    assert suppliers["custom_made"] == "Metalform"
+
+
+def test_source_catalog_supplier_falls_back_to_default_supplier():
+    """GET /source_catalog/{table} carries the same default_supplier fallback."""
+    c, wid, _uid = _login()
+    db = SessionLocal()
+    try:
+        db.execute(
+            text(
+                """INSERT INTO board_materials(workspace_id, code, sku, description,
+                                               supplier, default_supplier)
+                   VALUES(:wid, 'BRD-SUP', 'SKU-SUP', 'Ply', NULL, 'Big River Group')"""
+            ),
+            {"wid": wid},
+        )
+        db.execute(
+            text(
+                """INSERT INTO custom_made(workspace_id, internal_ref, description,
+                                           vendor, default_supplier, cost)
+                   VALUES(:wid, 'CM-SUP2', 'Signbox 2', NULL, 'Metalform', 100)"""
+            ),
+            {"wid": wid},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    board_rows = c.get("/source_catalog/board_materials").json()["rows"]
+    assert board_rows[0]["supplier"] == "Big River Group"
+
+    custom_rows = c.get("/source_catalog/custom_made").json()["rows"]
+    assert custom_rows[0]["supplier"] == "Metalform"
 
 
 # ── T18 tests ──────────────────────────────────────────────────────────────────
