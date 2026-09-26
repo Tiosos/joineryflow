@@ -911,6 +911,20 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
     project-scoped (`project_id` FK on the catalog row) and can't be
     referenced from a pre-project quote.
   - `estimate_line_part.material_type IN ('BOARD','CUSTOM','BENCHTOP')`.
+- **Fixed later.** `create_line()` computed `SELECT COALESCE(MAX(seq), 0) + 1`
+  against `estimate_line` and inserted without locking the parent revision —
+  the `(revision_id, seq)` index (`0021`) is a plain index, not unique, so two
+  concurrent `POST /revisions/{rid}/lines` calls on the same draft (a
+  double-click, two tabs) could both read the same `MAX(seq)` and insert a
+  duplicate. `create_line()` now calls the existing `lock_revision_for_update()`
+  helper (already used by the status-transition and Convert paths) instead of
+  the unlocked `_assert_draft()`, so a concurrent create on the same revision
+  serializes instead of racing. No migration — `reorder_lines`/`patch_line`/
+  `delete_line` never generate a new `seq`, so they weren't exposed. Pinned by
+  `test_concurrent_create_line_serializes_instead_of_duplicating_seq`
+  (`test_estimating_line_seq_race.py`), which reproduces the race with two
+  real DB sessions on separate threads and confirms it fails against the
+  pre-fix code (`[1, 1]` instead of `[1, 2]`).
 - **Revision workflow (binding).** `_LEGAL_TRANSITIONS` in `queries.py`:
   `draft → sent|withdrawn`; `sent → accepted|rejected|expired|withdrawn`;
   `accepted/rejected/expired/withdrawn` are terminal. Any illegal
