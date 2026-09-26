@@ -1230,6 +1230,26 @@ All mounted at top-level paths from `main.py`.
   same ordering caveat `catalog/routes.py` carries. It also returns the Q554
   order that has no project at all (that one reaches its workspace through its
   vendor), which no project page can show.
+- **Fixed later.** `add_line()` computed `SELECT COALESCE(MAX(line_number), 0)
+  + 1` against `po_line_items` with no lock on the parent `purchase_orders`
+  row, racing against `UNIQUE (po_id, line_number)` (`0002`) — and, unlike
+  every other mutation in this module, the route had **no** `IntegrityError`
+  handling at all, so two concurrent `POST /orders/{po_id}/lines` calls on
+  the same order raised a raw 500. `_lock_order_for_update()` (same shape as
+  estimating's `lock_revision_for_update()`) now locks the order row before
+  the `MAX+1` read, so a concurrent `add_line()` on the same order serializes
+  instead of racing. No migration. Pinned by
+  `test_concurrent_add_line_serializes_instead_of_duplicating_line_number`
+  (`test_orders_line_number_race.py`), confirmed to fail against the pre-fix
+  code with a raw `UniqueViolation` on `po_line_items_po_id_line_number_key`.
+  (A parallel-looking race was suspected in `shop_drawings.add_revision()`'s
+  `rev_no` allocation, but turned out **not reachable**: every new revision
+  is inserted `status='draft'`, so any two concurrent inserts on the same
+  drawing always collide first on the partial unique index
+  `uniq_drawing_inflight` — which the route already turns into a clean 409 —
+  before the `rev_no` collision could ever surface. Verified by writing the
+  same race test there and watching it hit `uniq_drawing_inflight`, not an
+  unhandled 500; no code change was needed.)
 - Item lock requests live in `apps/api/app/items/` — see PM Workbench above.
 
 ### Web
