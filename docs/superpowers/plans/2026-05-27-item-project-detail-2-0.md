@@ -1,12 +1,11 @@
 # Item & Project Detail 2.0 — Implementation Plan (#11)
 
-> **Status: partially shipped.** Migration `0036_item_project_detail`.
-> Current state lives in `## Item & Project Detail 2.0` in `CLAUDE.md` —
-> read it before picking up any of T08–T15 below, it lists exactly what's
-> missing (all frontend and seed). The backend (T01–T07) and its tests (T12,
-> old numbering) are done. §9's re-open rule is implemented as written, and
-> PATCHing a project to `Closed` is refused so close-out is the only way to
-> close (user's decision, 2026-09-25).
+> **Status: shipped.** Migration `0036_item_project_detail`. T01–T14 are all
+> done — backend, frontend, seed data and an e2e spec; current state lives
+> in `## Item & Project Detail 2.0` in `CLAUDE.md`. Only T15 (a full
+> `make up` smoke test) is partial — see its own `→` note. §9's re-open rule
+> is implemented as written, and PATCHing a project to `Closed` is refused
+> so close-out is the only way to close (user's decision, 2026-09-25).
 >
 > **Later change (2026-09-25):** T08–T13 below were fleshed out from stubs
 > into a full task breakdown before any frontend work started. Two drifts
@@ -470,6 +469,31 @@ non-idempotent-suite family as the others (re-seed between runs).
 (cutlist/hardware/board/take/attachments/log/actions/query) all render;
 `/projects/{id}` shows the 3-column layout with real seeded data; the
 Tracking Project Details modal's footer link opens it.
+
+> **→ Partial (2026-09-25).** This sandbox has no Docker, so `make up`
+> itself (compose: db, meili, api, search-worker, web) couldn't run. Did
+> the equivalent within that limit — same scratch Postgres from T13/T14,
+> migrated to head, `uvicorn app.main:app` and `next dev` run directly (env
+> vars standing in for compose), then a manual click-through via two
+> throwaway Playwright scripts (not committed — this is a manual QA task,
+> not new test coverage; T14 already owns the committed spec):
+> - All 8 item editor tabs (T14 only exercised attachments/actions/query
+>   directly) render their expected content with no unexpected console
+>   errors. This surfaced one **pre-existing, unrelated** issue: `PartsGrid.
+>   tsx` (Cutlist tab, never touched by T08–T14) throws a React hydration
+>   warning from a stray whitespace text node under a `<tr>`. Recorded in
+>   `CLAUDE.md`, not fixed here — out of scope and not a regression.
+> - `/projects/{id}` renders the Details panel's real seeded values
+>   (site address, TG team) and the Labour Hours card, in addition to what
+>   T14 already checked (header, contacts, lift access, both entry points).
+> - Two screenshots (project page; item editor Attachments tab, 5 slots)
+>   sent to the user as visual confirmation, not just DOM assertions.
+>
+> Not covered: Meilisearch / search-worker (this sub-project doesn't touch
+> search), and the literal `make up` container topology — a real gap versus
+> the letter of this task, accepted because nothing in T08–T14 touches
+> infrastructure that a bare `uvicorn`/`next dev` pair doesn't already
+> exercise identically.
 
 ---
 
