@@ -3,6 +3,7 @@
 Routes own the transaction boundary (db.commit). Queries flush only.
 The PDF-only mime gate and the workspace-match check on file_blob run here so
 both routes and seed helpers go through the same enforcement path.
+Every mutation writes audit_log and item_edit_log in the same transaction.
 """
 from typing import Literal
 
@@ -10,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..edit_log import write_edit_log
 from ..files.validators import CVJ_MIME, SKP_MIME
 from ..row_types import joinery_items_only
 
@@ -93,6 +95,11 @@ def bind_attachment(
         event="item_attachment.bind", target=f"{item_id}:{kind}",
         payload=audit_payload,
     )
+    write_edit_log(
+        db, item_id=item_id, actor_id=actor_id, field=f"attachment.{kind}",
+        old_value=str(prior) if prior is not None else None,
+        new_value=str(file_blob_id),
+    )
     db.flush()
     return {"item_id": item_id, "kind": kind, "file_blob_id": file_blob_id}
 
@@ -129,6 +136,10 @@ def clear_attachment(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="item_attachment.clear", target=f"{item_id}:{kind}",
         payload={"file_blob_id": row[0]},
+    )
+    write_edit_log(
+        db, item_id=item_id, actor_id=actor_id, field=f"attachment.{kind}",
+        old_value=str(row[0]), new_value=None,
     )
     db.flush()
     return True

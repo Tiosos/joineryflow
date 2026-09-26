@@ -148,3 +148,32 @@ def test_item_delete_cascades_attachments(db, workspace_id):
     ), {"i": seed["iid"]}).scalar()
     assert count == 0
 
+
+def test_bind_writes_item_edit_log(db, workspace_id):
+    """Every item-scoped mutation writes item_edit_log alongside audit_log
+    (CLAUDE.md's PM Workbench invariant) — attachments used to skip this."""
+    seed = _seed(db, workspace_id)
+    bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+    row = db.execute(text(
+        "SELECT field, old_value, new_value FROM item_edit_log WHERE item_id = :i"
+    ), {"i": seed["iid"]}).mappings().one()
+    assert row["field"] == "attachment.cv_drawing"
+    assert row["old_value"] is None
+    assert row["new_value"] == str(seed["bid"])
+
+
+def test_clear_writes_item_edit_log(db, workspace_id):
+    seed = _seed(db, workspace_id)
+    bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+    clear_attachment(db, item_id=seed["iid"], kind="cv_drawing",
+                     workspace_id=workspace_id, actor_id=seed["uid"])
+    rows = db.execute(text(
+        "SELECT field, old_value, new_value FROM item_edit_log"
+        " WHERE item_id = :i ORDER BY log_id"
+    ), {"i": seed["iid"]}).mappings().all()
+    assert [r["field"] for r in rows] == ["attachment.cv_drawing", "attachment.cv_drawing"]
+    assert rows[1]["old_value"] == str(seed["bid"])
+    assert rows[1]["new_value"] is None
+
