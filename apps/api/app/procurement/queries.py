@@ -21,12 +21,89 @@ User-identity joins use `app_user` (migration 0004) instead of the legacy
 `users` table. Procurement-specific user fields (cost_center_id,
 approval_limit, extension) are dropped pending a future
 procurement_user_profile side-table.
+
+Workspace isolation: purchase_orders / po_line_items / po_attachments /
+approval_workflows are all scoped through `_PO_WORKSPACE_EXISTS` (see below);
+budget_transactions / v_budget_utilisation through `_CC_IN_WORKSPACE`, via
+cost_centers.workspace_id (added by migration 0029). This module was ported
+from a single-tenant app and had none of this at all until now.
 """
 from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+
+# ── Workspace isolation ───────────────────────────────────────────────────────
+# purchase_orders has no workspace_id of its own. It resolves to one through
+# project_id (a column POCreate below never sets, so every PO created via
+# this legacy surface is vendor-only today) or, failing that, vendor_id — the
+# same join apps/api/app/orders/queries.py's _ORDER_WORKSPACE already
+# established for the v1 order layer, since both routers write the same
+# purchase_orders table (Q554/Q555).
+_PO_WORKSPACE_EXISTS = """
+    (
+        (po.project_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM projects p2
+            WHERE p2.project_id = po.project_id AND p2.workspace_id = :wid
+        ))
+        OR
+        (po.project_id IS NULL AND EXISTS (
+            SELECT 1 FROM vendors v2
+            WHERE v2.vendor_id = po.vendor_id AND v2.workspace_id = :wid
+        ))
+    )
+"""
+
+
+def _po_id_in_workspace(col: str) -> str:
+    """SQL fragment: the po_id referenced by `col` belongs to the caller's
+    workspace. Pass a qualified column (e.g. "aw.po_id") whenever the query
+    joins more than one table with its own po_id, to avoid an ambiguous
+    reference."""
+    return f"{col} IN (SELECT po.po_id FROM purchase_orders po WHERE {_PO_WORKSPACE_EXISTS})"
+
+
+def po_in_workspace(db: Session, *, po_id: int, workspace_id: int) -> bool:
+    """Ownership guard for single-PO routes. Callers check this once and then
+    trust po_id for the rest of the route — po_line_items, po_attachments and
+    approval_workflows all reach their workspace through it."""
+    row = db.execute(
+        text(
+            f"SELECT 1 FROM purchase_orders po WHERE po.po_id = :po_id AND {_PO_WORKSPACE_EXISTS}"
+        ),
+        {"po_id": po_id, "wid": workspace_id},
+    ).first()
+    return row is not None
+
+
+def vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> bool:
+    row = db.execute(
+        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
+        {"v": vendor_id, "w": workspace_id},
+    ).first()
+    return row is not None
+
+
+def cost_center_in_workspace(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
+    row = db.execute(
+        text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"),
+        {"c": cost_center_id, "w": workspace_id},
+    ).first()
+    return row is not None
+
+
+def user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> bool:
+    """requester_id (create_order) and approver_id (submit_for_approval) are
+    FKs to app_user with no workspace check of their own; both end up joined
+    to app_user.full_name in v_po_summary / approval_history, so an
+    unvalidated foreign id leaks that name cross-workspace."""
+    row = db.execute(
+        text("SELECT 1 FROM app_user WHERE id = :u AND workspace_id = :w"),
+        {"u": user_id, "w": workspace_id},
+    ).first()
+    return row is not None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -90,6 +167,7 @@ def append_changelog(
 def list_orders(
     db: Session,
     *,
+    workspace_id: int,
     status: Optional[str] = None,
     category: Optional[str] = None,
     priority: Optional[str] = None,
@@ -103,8 +181,8 @@ def list_orders(
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict]:
-    q = "SELECT * FROM v_po_summary WHERE 1=1"
-    params: dict[str, Any] = {}
+    q = f"SELECT * FROM v_po_summary WHERE {_po_id_in_workspace('po_id')}"
+    params: dict[str, Any] = {"wid": workspace_id}
     if status:
         q += " AND status = :status"
         params["status"] = status
@@ -375,27 +453,30 @@ def duplicate_order(db: Session, po_id: int, new_po_number: str) -> int:
 def _filter_query(where: str) -> str:
     return (
         f"SELECT * FROM v_po_summary WHERE {where}"
+        f" AND {_po_id_in_workspace('po_id')}"
         " ORDER BY required_date ASC, created_at DESC"
     )
 
 
-def filter_rto(db: Session) -> list[dict]:
-    return [
-        dict(r)
-        for r in db.execute(text(_filter_query("status = 'Next'"))).mappings()
-    ]
-
-
-def filter_tbo(db: Session) -> list[dict]:
+def filter_rto(db: Session, *, workspace_id: int) -> list[dict]:
     return [
         dict(r)
         for r in db.execute(
-            text(_filter_query("status IN ('Next','Quote')"))
+            text(_filter_query("status = 'Next'")), {"wid": workspace_id}
         ).mappings()
     ]
 
 
-def filter_due(db: Session) -> list[dict]:
+def filter_tbo(db: Session, *, workspace_id: int) -> list[dict]:
+    return [
+        dict(r)
+        for r in db.execute(
+            text(_filter_query("status IN ('Next','Quote')")), {"wid": workspace_id}
+        ).mappings()
+    ]
+
+
+def filter_due(db: Session, *, workspace_id: int) -> list[dict]:
     return [
         dict(r)
         for r in db.execute(
@@ -404,55 +485,61 @@ def filter_due(db: Session) -> list[dict]:
                     "due_date IS NOT NULL AND arrived_date IS NULL"
                     " AND status NOT IN ('Cancelled','Rejected')"
                 )
-            )
+            ),
+            {"wid": workspace_id},
         ).mappings()
     ]
 
 
-def filter_overdue(db: Session) -> list[dict]:
+def filter_overdue(db: Session, *, workspace_id: int) -> list[dict]:
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT * FROM v_po_summary
              WHERE required_date IS NOT NULL
                AND required_date < CURRENT_DATE
                AND arrived_date IS NULL
                AND status NOT IN ('Delivered','Cancelled','Rejected')
+               AND {_po_id_in_workspace('po_id')}
              ORDER BY required_date ASC
             """
-        )
+        ),
+        {"wid": workspace_id},
     ).mappings()
     return [dict(r) for r in rows]
 
 
-def filter_arrived(db: Session) -> list[dict]:
+def filter_arrived(db: Session, *, workspace_id: int) -> list[dict]:
     return [
         dict(r)
         for r in db.execute(
-            text(_filter_query("arrived_date IS NOT NULL"))
+            text(_filter_query("arrived_date IS NOT NULL")), {"wid": workspace_id}
         ).mappings()
     ]
 
 
-def filter_my_orders(db: Session, requester_id: int) -> list[dict]:
+def filter_my_orders(db: Session, requester_id: int, *, workspace_id: int) -> list[dict]:
     return [
         dict(r)
         for r in db.execute(
-            text(_filter_query("requester_id = :rid")), {"rid": requester_id}
+            text(_filter_query("requester_id = :rid")),
+            {"rid": requester_id, "wid": workspace_id},
         ).mappings()
     ]
 
 
-def filter_clear(db: Session) -> list[dict]:
+def filter_clear(db: Session, *, workspace_id: int) -> list[dict]:
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT * FROM v_po_summary
              WHERE required_date IS NOT NULL
                AND required_date >= CURRENT_DATE - INTERVAL '2 years'
+               AND {_po_id_in_workspace('po_id')}
              ORDER BY required_date DESC
             """
-        )
+        ),
+        {"wid": workspace_id},
     ).mappings()
     return [dict(r) for r in rows]
 
@@ -525,10 +612,10 @@ def delete_attachment(db: Session, attachment_id: int) -> None:
 
 
 # ── Approvals ─────────────────────────────────────────────────────────────────
-def list_pending_approvals(db: Session, approver_id: int) -> list[dict]:
+def list_pending_approvals(db: Session, approver_id: int, *, workspace_id: int) -> list[dict]:
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT aw.workflow_id, aw.po_id, aw.sequence_order, aw.created_at,
                    ps.po_number, ps.vendor_name, ps.description, ps.total_amount,
                    ps.grand_total, ps.currency, ps.category, ps.priority,
@@ -536,10 +623,11 @@ def list_pending_approvals(db: Session, approver_id: int) -> list[dict]:
               FROM approval_workflows aw
               JOIN v_po_summary ps ON aw.po_id = ps.po_id
              WHERE aw.approver_id = :approver_id AND aw.status = 'Pending'
+               AND {_po_id_in_workspace('aw.po_id')}
              ORDER BY aw.created_at ASC
             """
         ),
-        {"approver_id": approver_id},
+        {"approver_id": approver_id, "wid": workspace_id},
     ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -586,17 +674,18 @@ def get_po_budget_fields(db: Session, po_id: int) -> Optional[dict]:
 
 
 def approval_history(
-    db: Session, *, approver_id: Optional[int] = None, limit: int = 50
+    db: Session, *, workspace_id: int, approver_id: Optional[int] = None, limit: int = 50
 ) -> list[dict]:
-    q = """
+    q = f"""
         SELECT aw.*, ps.po_number, ps.vendor_name, ps.grand_total,
                ps.requester_name, u.full_name AS approver_name
           FROM approval_workflows aw
           JOIN v_po_summary ps ON aw.po_id = ps.po_id
           JOIN app_user u ON aw.approver_id = u.id
          WHERE aw.status != 'Pending'
+           AND {_po_id_in_workspace('aw.po_id')}
     """
-    params: dict[str, Any] = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit, "wid": workspace_id}
     if approver_id:
         q += " AND aw.approver_id = :approver_id"
         params["approver_id"] = approver_id
@@ -626,9 +715,20 @@ def approval_history(
 
 
 # ── Budget ────────────────────────────────────────────────────────────────────
-def list_budget(db: Session, *, fiscal_year: Optional[int] = None) -> list[dict]:
-    q = "SELECT * FROM v_budget_utilisation WHERE 1=1"
-    params: dict[str, Any] = {}
+# cost_centers.workspace_id was added directly by migration 0029 ("workspace
+# scoping, only where there is no join path") — v_budget_utilisation and
+# budget_transactions have no workspace_id of their own but both resolve
+# through cost_center_id -> cost_centers.workspace_id.
+_CC_IN_WORKSPACE = (
+    "cost_center_id IN (SELECT cost_center_id FROM cost_centers WHERE workspace_id = :wid)"
+)
+
+
+def list_budget(
+    db: Session, *, workspace_id: int, fiscal_year: Optional[int] = None
+) -> list[dict]:
+    q = f"SELECT * FROM v_budget_utilisation WHERE {_CC_IN_WORKSPACE}"
+    params: dict[str, Any] = {"wid": workspace_id}
     if fiscal_year:
         q += " AND fiscal_year = :yr"
         params["yr"] = fiscal_year
@@ -636,10 +736,10 @@ def list_budget(db: Session, *, fiscal_year: Optional[int] = None) -> list[dict]
     return [dict(r) for r in db.execute(text(q), params).mappings()]
 
 
-def budget_summary(db: Session) -> Optional[dict]:
+def budget_summary(db: Session, *, workspace_id: int) -> Optional[dict]:
     row = db.execute(
         text(
-            """
+            f"""
             SELECT
                 SUM(budget_amount)   AS total_budget,
                 SUM(total_committed) AS total_spent,
@@ -648,24 +748,29 @@ def budget_summary(db: Session) -> Optional[dict]:
                   SUM(total_committed) / NULLIF(SUM(budget_amount), 0) * 100, 1
                 ) AS overall_utilisation_pct
               FROM v_budget_utilisation
+             WHERE {_CC_IN_WORKSPACE}
             """
-        )
+        ),
+        {"wid": workspace_id},
     ).mappings().first()
     return dict(row) if row else None
 
 
-def cost_center_transactions(db: Session, cost_center_id: int) -> list[dict]:
+def cost_center_transactions(
+    db: Session, cost_center_id: int, *, workspace_id: int
+) -> list[dict]:
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT bt.*, po.po_number, u.full_name AS created_by_name
               FROM budget_transactions bt
               LEFT JOIN purchase_orders po ON bt.po_id = po.po_id
               LEFT JOIN app_user u ON bt.created_by = u.id
              WHERE bt.cost_center_id = :cc
+               AND bt.{_CC_IN_WORKSPACE}
              ORDER BY bt.transaction_date DESC
             """
         ),
-        {"cc": cost_center_id},
+        {"cc": cost_center_id, "wid": workspace_id},
     ).mappings().all()
     return [dict(r) for r in rows]
