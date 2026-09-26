@@ -366,11 +366,25 @@ def cancel_order(
     return "OK"
 
 
+def _lock_order_for_update(db: Session, *, po_id: int, workspace_id: int) -> bool:
+    """Locks the purchase_orders row for the rest of this transaction, so a
+    concurrent add_line() on the same order serializes instead of racing on
+    the (po_id, line_number) unique constraint (0002)."""
+    row = db.execute(
+        text(
+            f"SELECT 1 FROM purchase_orders po"
+            f" WHERE po.po_id = :o AND {_ORDER_WORKSPACE} FOR UPDATE OF po"
+        ),
+        {"o": po_id, "w": workspace_id},
+    ).first()
+    return row is not None
+
+
 def add_line(
     db: Session, *, po_id: int, workspace_id: int,
     payload: CreateOrderLineIn, actor_id: int,
 ) -> dict | None:
-    if get_order(db, po_id=po_id, workspace_id=workspace_id) is None:
+    if not _lock_order_for_update(db, po_id=po_id, workspace_id=workspace_id):
         return None
     next_no = db.execute(
         text("SELECT COALESCE(MAX(line_number), 0) + 1 FROM po_line_items WHERE po_id = :o"),
