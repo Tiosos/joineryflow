@@ -5,6 +5,10 @@ Routes own the transaction boundary; queries flush only.
 Workspace isolation: every read + write filters by `cut_plan.workspace_id`
 (or by joining through it). cut_schedule and cut_sheet/part_slot have no
 workspace_id column — they always go through cut_plan.
+
+cut_schedule.assigned_to is a plain FK to app_user with no workspace check
+of its own — routes must validate it via user_in_workspace() before insert
+or update, the same pattern items/queries.py uses for contractor_id.
 """
 from __future__ import annotations
 
@@ -521,6 +525,15 @@ def plan_in_workspace(
             "SELECT 1 FROM cut_plan WHERE id = :pid AND workspace_id = :w"
         ),
         {"pid": plan_id, "w": workspace_id},
+    ).first() is not None
+
+
+def user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> bool:
+    """Guards cut_schedule.assigned_to — a plain app_user FK with no workspace
+    check of its own, joined to full_name in list_cut_schedules/get_cut_schedule."""
+    return db.execute(
+        text("SELECT 1 FROM app_user WHERE id = :uid AND workspace_id = :w"),
+        {"uid": user_id, "w": workspace_id},
     ).first() is not None
 
 

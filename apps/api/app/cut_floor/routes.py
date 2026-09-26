@@ -7,7 +7,9 @@ Two surfaces:
                /cut-schedules/{sid},  /cut-schedules/reorder
 
 All gated by ("cut_floor", action). Workspace isolation via
-`cut_plan.workspace_id`. Audit on every mutation.
+`cut_plan.workspace_id`; `assigned_to` is separately validated against
+`app_user.workspace_id` (see queries.user_in_workspace) since it is a plain
+FK with no workspace check of its own. Audit on every mutation.
 """
 from __future__ import annotations
 
@@ -468,6 +470,12 @@ def create_cut_schedule_route(
         db, workspace_id=user.workspace_id, plan_id=body.cut_plan_id
     ):
         raise HTTPException(404, "cut plan not found")
+    if body.assigned_to is not None and not q.user_in_workspace(
+        db, user_id=body.assigned_to, workspace_id=user.workspace_id
+    ):
+        raise HTTPException(
+            422, "assigned_to must reference a user in the same workspace"
+        )
     sid = q.insert_cut_schedule(
         db,
         workspace_id=user.workspace_id,
@@ -524,7 +532,14 @@ def patch_cut_schedule_route(
     if "scheduled_for" in payload:
         fields["scheduled_for"] = payload["scheduled_for"]
     if "assigned_to" in payload:
-        fields["assigned_to"] = payload["assigned_to"]
+        assigned_to = payload["assigned_to"]
+        if assigned_to is not None and not q.user_in_workspace(
+            db, user_id=assigned_to, workspace_id=user.workspace_id
+        ):
+            raise HTTPException(
+                422, "assigned_to must reference a user in the same workspace"
+            )
+        fields["assigned_to"] = assigned_to
     if "priority" in payload:
         fields["priority"] = payload["priority"]
 

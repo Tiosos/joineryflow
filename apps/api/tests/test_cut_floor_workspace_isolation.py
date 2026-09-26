@@ -63,18 +63,39 @@ def _seed_two_workspaces_one_plan(truncate_all):
         wid_b = s.execute(
             text("INSERT INTO workspace(slug,name) VALUES('cfb','B') RETURNING id")
         ).scalar()
-        s.execute(
+        uid_b = s.execute(
             text(
                 """
                 INSERT INTO app_user(workspace_id, email, full_name,
                                      password_hash, auth_role)
-                VALUES (:w, 'b@cf.test', 'B', :p, 'drafter')
+                VALUES (:w, 'b@cf.test', 'B', :p, 'drafter') RETURNING id
                 """
             ),
             {"w": wid_b, "p": hash_password("pw")},
-        )
+        ).scalar()
+        pid_b = s.execute(
+            text(
+                """
+                INSERT INTO projects(project_code, name, pm_id, workspace_id)
+                VALUES ('B-1', 'B', :u, :w) RETURNING project_id
+                """
+            ),
+            {"u": uid_b, "w": wid_b},
+        ).scalar()
+        plan_b = s.execute(
+            text(
+                """
+                INSERT INTO cut_plan(workspace_id, project_id, name, created_by)
+                VALUES (:w, :p, 'B plan', :u) RETURNING id
+                """
+            ),
+            {"w": wid_b, "p": pid_b, "u": uid_b},
+        ).scalar()
         s.commit()
-        return {"pid_a": pid_a, "plan_a": plan_a, "sched_a": sched_a}
+        return {
+            "pid_a": pid_a, "plan_a": plan_a, "sched_a": sched_a, "uid_a": uid_a,
+            "plan_b": plan_b, "uid_b": uid_b,
+        }
     finally:
         s.close()
 
@@ -140,3 +161,34 @@ def test_create_cut_schedule_referencing_foreign_plan_returns_404(client, trunca
         },
     )
     assert r.status_code == 404
+
+
+def test_create_cut_schedule_rejects_foreign_assigned_to(client, truncate_all):
+    """assigned_to is a plain app_user FK — B must not be able to assign A's user."""
+    ids = _seed_two_workspaces_one_plan(truncate_all)
+    _login_b(client)
+    r = client.post(
+        "/cut-schedules",
+        json={
+            "cut_plan_id": ids["plan_b"],
+            "scheduled_for": "2026-05-09",
+            "assigned_to": ids["uid_a"],
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_patch_cut_schedule_rejects_foreign_assigned_to(client, truncate_all):
+    ids = _seed_two_workspaces_one_plan(truncate_all)
+    _login_b(client)
+    r = client.post(
+        "/cut-schedules",
+        json={"cut_plan_id": ids["plan_b"], "scheduled_for": "2026-05-09"},
+    )
+    assert r.status_code == 201, r.text
+    sid_b = r.json()["id"]
+
+    r = client.patch(
+        f"/cut-schedules/{sid_b}", json={"assigned_to": ids["uid_a"]}
+    )
+    assert r.status_code == 422, r.text

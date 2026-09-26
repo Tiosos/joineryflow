@@ -710,6 +710,18 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Workspace isolation everywhere via `cut_plan.workspace_id`. Cut
   schedules join through cut_plan; cut sheets and part slots join
   through cut_plan. Cross-workspace reads return 404.
+- **Fixed later.** `cut_schedule.assigned_to` is a plain FK to `app_user`
+  with no workspace check of its own, and `list_cut_schedules` /
+  `get_cut_schedule` join it to `full_name` for display — unlike its sibling
+  `shop_floor`, which validates every `worker_id` against
+  `(workspace_id, is_shop_worker)`, `POST /cut-schedules` and
+  `PATCH /cut-schedules/{sid}` accepted any `app_user.id` in the whole
+  database, so a caller could assign (and thereby leak the name of) a user
+  from a different workspace. `queries.user_in_workspace()` (same shape as
+  `items/queries.py::_user_in_workspace` for `contractor_id`) now guards
+  both routes; unvalidated ids get `422`. Pinned by
+  `test_create_cut_schedule_rejects_foreign_assigned_to` /
+  `test_patch_cut_schedule_rejects_foreign_assigned_to`.
 - Foreign-slot rule: `GET /items/{iid}/cut-plan` returns only sheets
   that contain ≥1 slot for the item (or its modules' parts). Slots
   whose `part_id` is null or belongs to *other* items in the project
