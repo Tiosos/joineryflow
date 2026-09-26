@@ -7,7 +7,8 @@ Schema notes:
 - project_hardware_catalog has no qty column. qty is returned as 1.0 (catalog-level
   default; per-line qty lives on item_hardware_lines, not the catalog itself).
 - equipment_hire PK is hire_id (not material_id); handled in the UNION ALL CTE.
-- custom_made has vendor (not supplier); exposed as NULL for consistency.
+- custom_made has vendor (not supplier); coalesced with default_supplier like
+  the other five tables' supplier column (0017 put the real value there).
 - board_materials has both a legacy supplier column and the new unit_cost column.
 
 Schema drift (T18):
@@ -70,13 +71,16 @@ def list_catalog(
     rows = db.execute(
         text(
             """
+            -- `0017` put suppliers in `default_supplier`; the six tables' own
+            -- `supplier` (`vendor` on custom_made) is mostly empty. COALESCE,
+            -- or every row reads as "no supplier" when one is recorded.
             WITH src AS (
                 SELECT
                     'BOARD'         AS mat_type,
                     material_id     AS sid,
                     sku,
                     description,
-                    supplier,
+                    COALESCE(supplier, default_supplier) AS supplier,
                     unit_cost
                 FROM board_materials
 
@@ -87,7 +91,7 @@ def list_catalog(
                     material_id,
                     sku,
                     description,
-                    supplier,
+                    COALESCE(supplier, default_supplier),
                     unit_cost
                 FROM hardware_materials
 
@@ -98,7 +102,7 @@ def list_catalog(
                     material_id,
                     sku,
                     description,
-                    NULL::text      AS supplier,
+                    COALESCE(vendor, default_supplier),
                     unit_cost
                 FROM custom_made
 
@@ -109,7 +113,7 @@ def list_catalog(
                     material_id,
                     sku,
                     description,
-                    supplier,
+                    COALESCE(supplier, default_supplier),
                     unit_cost
                 FROM benchtop_materials
 
@@ -120,7 +124,7 @@ def list_catalog(
                     material_id,
                     sku,
                     description,
-                    supplier,
+                    COALESCE(supplier, default_supplier),
                     unit_cost
                 FROM appliances
 
@@ -131,7 +135,7 @@ def list_catalog(
                     hire_id,
                     sku,
                     description,
-                    supplier,
+                    COALESCE(supplier, default_supplier),
                     unit_cost
                 FROM equipment_hire
             )
@@ -639,8 +643,13 @@ def list_source_catalog(
     equipment_hire uses hire_id as PK; all others use material_id.
     """
     pk_col = "hire_id" if table == "equipment_hire" else "material_id"
-    # custom_made uses `vendor` instead of `supplier`; expose as NULL for API consistency.
-    supplier_expr = "NULL::text AS supplier" if table == "custom_made" else "supplier"
+    # custom_made uses `vendor` instead of `supplier`; `0017` put the real value
+    # in `default_supplier` on every table, so COALESCE both (CLAUDE.md).
+    supplier_expr = (
+        "COALESCE(vendor, default_supplier) AS supplier"
+        if table == "custom_made"
+        else "COALESCE(supplier, default_supplier) AS supplier"
+    )
     rows = db.execute(
         text(
             f"""
