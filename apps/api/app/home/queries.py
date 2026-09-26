@@ -8,6 +8,10 @@ Schema drift notes verified against live DB:
   - purchase_orders.status valid values: Draft, Pending, Approved, Rejected,
     Delivered, Cancelled, Hold, Quote, Next. 'open' = NOT IN (Delivered, Cancelled, Rejected).
   - approval_workflows.status valid values: Pending, Approved, Rejected, Skipped.
+  - Neither purchase_orders nor approval_workflows has a workspace_id column;
+    both reach one through purchase_orders.project_id -> projects.workspace_id,
+    or (project_id IS NULL) through purchase_orders.vendor_id -> vendors.workspace_id
+    (same _PO_WORKSPACE_EXISTS join apps/api/app/orders/queries.py uses).
   - stages table may be empty in fresh DB (seeded per-test in tests).
   - app_user.auth_role includes 'drafter' as a distinct role (not just 'editor').
 
@@ -48,6 +52,23 @@ _BATCH_WORKSPACE_EXISTS = """
         SELECT 1 FROM projects p2
         WHERE p2.project_id = b.project_id
           AND p2.workspace_id = :wid
+    )
+"""
+
+# purchase_orders has no workspace_id either; it reaches one through its
+# project, or — since vendor_id is NOT NULL — through its vendor when it has
+# no project (Q554/Q555, apps/api/app/orders/queries.py's _ORDER_WORKSPACE).
+_PO_WORKSPACE_EXISTS = """
+    (
+        (po.project_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM projects p2
+            WHERE p2.project_id = po.project_id AND p2.workspace_id = :wid
+        ))
+        OR
+        (po.project_id IS NULL AND EXISTS (
+            SELECT 1 FROM vendors v2
+            WHERE v2.vendor_id = po.vendor_id AND v2.workspace_id = :wid
+        ))
     )
 """
 
@@ -272,16 +293,16 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     overdue_count = int(overdue_row["cnt"]) if overdue_row else 0
 
     # metric 2: open_pos — purchase_orders NOT in terminal states
-    # TODO(multi-tenant): purchase_orders has no workspace_id column; this counts across all workspaces. Add workspace_id in a follow-up migration.
     open_pos_row = db.execute(
         text(
-            """
+            f"""
             SELECT COUNT(*) AS cnt
-            FROM purchase_orders
-            WHERE status NOT IN ('Delivered', 'Cancelled', 'Rejected')
+            FROM purchase_orders po
+            WHERE {_PO_WORKSPACE_EXISTS}
+              AND po.status NOT IN ('Delivered', 'Cancelled', 'Rejected')
             """
         ),
-        {},
+        {"wid": wid},
     ).mappings().first()
     open_pos_count = int(open_pos_row["cnt"]) if open_pos_row else 0
 
@@ -300,17 +321,20 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     ).mappings().first()
     deliveries_week_count = int(deliveries_week_row["cnt"]) if deliveries_week_row else 0
 
-    # metric 4: pending_approvals — approval_workflows with status='Pending'
-    # TODO(multi-tenant): approval_workflows has no workspace_id column; same limitation as open_pos above.
+    # metric 4: pending_approvals — approval_workflows with status='Pending',
+    # scoped through the purchase_order it approves (approval_workflows has no
+    # workspace path of its own).
     pending_approvals_row = db.execute(
         text(
-            """
+            f"""
             SELECT COUNT(*) AS cnt
-            FROM approval_workflows
-            WHERE status = 'Pending'
+            FROM approval_workflows aw
+            JOIN purchase_orders po ON po.po_id = aw.po_id
+            WHERE {_PO_WORKSPACE_EXISTS}
+              AND aw.status = 'Pending'
             """
         ),
-        {},
+        {"wid": wid},
     ).mappings().first()
     pending_approvals_count = int(pending_approvals_row["cnt"]) if pending_approvals_row else 0
 
