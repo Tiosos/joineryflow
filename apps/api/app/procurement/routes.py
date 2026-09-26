@@ -5,6 +5,12 @@ the static RBAC matrix in app.auth.permissions.
 
 Transactions: this file owns db.commit() / db.rollback(). queries.py never
 commits.
+
+Workspace isolation: every order/attachment/approval route either passes
+`workspace_id=user.workspace_id` into a list/filter query or checks
+`q.po_in_workspace(...)` before touching a specific po_id; budget routes pass
+`workspace_id` through to the `_CC_IN_WORKSPACE` filter — see the note atop
+queries.py.
 """
 import os
 import shutil
@@ -71,6 +77,7 @@ def list_orders(
 ):
     return q.list_orders(
         db,
+        workspace_id=user.workspace_id,
         status=_enum_value(status) if status else None,
         category=_enum_value(category) if category else None,
         priority=_enum_value(priority) if priority else None,
@@ -92,6 +99,8 @@ def get_order(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     summary = q.get_order_summary(db, po_id)
     if not summary:
         raise HTTPException(404, "Purchase order not found")
@@ -110,6 +119,12 @@ def create_order(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=user.workspace_id):
+        raise HTTPException(422, "vendor not found in this workspace")
+    if not q.cost_center_in_workspace(
+        db, cost_center_id=payload.cost_center_id, workspace_id=user.workspace_id
+    ):
+        raise HTTPException(422, "cost center not found in this workspace")
     po_number = q.generate_po_number(db, datetime.now().year)
     body = payload.model_dump(exclude={"line_items"})
     for key in ("category", "priority"):
@@ -129,6 +144,8 @@ def update_order(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(400, "No fields to update")
@@ -147,6 +164,8 @@ def submit_for_approval(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     affected = q.submit_for_approval(db, po_id, approver_id)
     if not affected:
         raise HTTPException(400, "PO is not in Draft status")
@@ -162,6 +181,8 @@ def mark_delivered(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     po = q.mark_delivered(db, po_id, arrived_date)
     if po:
         q.commit_budget(
@@ -182,6 +203,8 @@ def cancel_order(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     q.cancel_order(db, po_id)
     q.append_changelog(db, po_id, "Cancelled")
     db.commit()
@@ -194,6 +217,8 @@ def duplicate_order(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     src = q.get_order_raw(db, po_id)
     if not src:
         raise HTTPException(404, "Purchase order not found")
@@ -212,7 +237,7 @@ def filter_rto(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_rto(db)
+    return q.filter_rto(db, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/tbo")
@@ -220,7 +245,7 @@ def filter_tbo(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_tbo(db)
+    return q.filter_tbo(db, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/due")
@@ -228,7 +253,7 @@ def filter_due(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_due(db)
+    return q.filter_due(db, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/overdue")
@@ -236,7 +261,7 @@ def filter_overdue(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_overdue(db)
+    return q.filter_overdue(db, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/arrived")
@@ -244,7 +269,7 @@ def filter_arrived(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_arrived(db)
+    return q.filter_arrived(db, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/my-orders")
@@ -253,7 +278,7 @@ def filter_my_orders(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_my_orders(db, requester_id)
+    return q.filter_my_orders(db, requester_id, workspace_id=user.workspace_id)
 
 
 @router.get("/orders/filter/clear")
@@ -261,7 +286,7 @@ def filter_clear(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.filter_clear(db)
+    return q.filter_clear(db, workspace_id=user.workspace_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -273,6 +298,8 @@ def list_attachments(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     return q.list_attachments(db, po_id)
 
 
@@ -285,6 +312,8 @@ async def upload_attachment(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Purchase order not found")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     target_dir = UPLOAD_DIR / str(po_id)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -327,6 +356,8 @@ def delete_attachment(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Attachment not found")
     row = q.get_attachment(db, po_id, attachment_id)
     if not row:
         raise HTTPException(404, "Attachment not found")
@@ -350,7 +381,7 @@ def pending_approvals(
     user: AuthUser = Depends(require_permission("orderbook", "approve")),
     db: Session = Depends(get_db),
 ):
-    return q.list_pending_approvals(db, approver_id)
+    return q.list_pending_approvals(db, approver_id, workspace_id=user.workspace_id)
 
 
 @router.post("/approvals/{workflow_id}/decide")
@@ -361,7 +392,7 @@ def decide_approval(
     db: Session = Depends(get_db),
 ):
     wf = q.get_workflow(db, workflow_id)
-    if not wf:
+    if not wf or not q.po_in_workspace(db, po_id=wf["po_id"], workspace_id=user.workspace_id):
         raise HTTPException(404, "Workflow not found")
     if wf["status"] != "Pending":
         raise HTTPException(400, "This approval has already been acted on")
@@ -398,7 +429,7 @@ def approval_history(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.approval_history(db, approver_id=approver_id, limit=limit)
+    return q.approval_history(db, workspace_id=user.workspace_id, approver_id=approver_id, limit=limit)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -416,7 +447,8 @@ def approval_history(
 # They had been returning 500 ever since. Sheet stock lives at
 # `/board-inventory` (0025).
 #
-# Everything else in this namespace is untouched.
+# Everything else in this namespace now has workspace isolation (see the
+# module docstring).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -431,7 +463,7 @@ def get_budget(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.list_budget(db, fiscal_year=fiscal_year)
+    return q.list_budget(db, workspace_id=user.workspace_id, fiscal_year=fiscal_year)
 
 
 @router.get("/budget/summary")
@@ -439,7 +471,7 @@ def get_budget_summary(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.budget_summary(db)
+    return q.budget_summary(db, workspace_id=user.workspace_id)
 
 
 @router.get("/budget/{cost_center_id}/transactions")
@@ -448,7 +480,7 @@ def cost_center_transactions(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return q.cost_center_transactions(db, cost_center_id)
+    return q.cost_center_transactions(db, cost_center_id, workspace_id=user.workspace_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
