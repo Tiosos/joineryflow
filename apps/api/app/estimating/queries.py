@@ -849,7 +849,19 @@ def create_line(
     db: Session, *, revision_id: int, workspace_id: int,
     actor_id: int, payload: dict,
 ) -> int:
-    _assert_draft(db, revision_id=revision_id, workspace_id=workspace_id)
+    # Locks the revision row for the rest of this transaction, so a second
+    # concurrent create_line() on the same revision blocks here instead of
+    # reading the same MAX(seq) and inserting a duplicate (the race the
+    # company-wide joinery_number_seq / po_number_seq sequences avoid by
+    # allocating inside the INSERT — estimate_line has no such sequence,
+    # so locking the parent row is the equivalent here).
+    cur = lock_revision_for_update(
+        db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    if cur is None:
+        raise ValueError("NOT_FOUND")
+    if cur["status"] != "draft":
+        raise ValueError("REVISION_LOCKED")
     next_seq = db.execute(
         text(
             """
