@@ -125,6 +125,8 @@ def create_order(
         db, cost_center_id=payload.cost_center_id, workspace_id=user.workspace_id
     ):
         raise HTTPException(422, "cost center not found in this workspace")
+    if not q.user_in_workspace(db, user_id=payload.requester_id, workspace_id=user.workspace_id):
+        raise HTTPException(422, "requester not found in this workspace")
     po_number = q.generate_po_number(db, datetime.now().year)
     body = payload.model_dump(exclude={"line_items"})
     for key in ("category", "priority"):
@@ -166,6 +168,8 @@ def submit_for_approval(
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
+    if not q.user_in_workspace(db, user_id=approver_id, workspace_id=user.workspace_id):
+        raise HTTPException(422, "approver not found in this workspace")
     affected = q.submit_for_approval(db, po_id, approver_id)
     if not affected:
         raise HTTPException(400, "PO is not in Draft status")

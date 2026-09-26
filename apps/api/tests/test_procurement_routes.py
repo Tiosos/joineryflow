@@ -151,6 +151,35 @@ def test_create_order_rejects_foreign_cost_center():
     assert r.status_code == 422, r.text
 
 
+def test_create_order_rejects_foreign_requester():
+    mine = _login()
+    other = _login()
+
+    r = mine["client"].post(
+        "/procurement/orders",
+        json={
+            "vendor_id": mine["vendor_id"],
+            "requester_id": other["uid"],
+            "cost_center_id": mine["cc_id"],
+            "description": "widgets",
+            "category": "Office",
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_submit_for_approval_rejects_foreign_approver():
+    mine = _login()
+    other = _login()
+    mine_po = _create_order(mine)
+
+    r = mine["client"].patch(
+        f"/procurement/orders/{mine_po['po_id']}/submit",
+        params={"approver_id": other["uid"]},
+    )
+    assert r.status_code == 422, r.text
+
+
 def test_update_and_cancel_cross_workspace_are_404():
     mine = _login()
     other = _login()

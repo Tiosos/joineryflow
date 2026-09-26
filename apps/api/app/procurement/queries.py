@@ -94,6 +94,18 @@ def cost_center_in_workspace(db: Session, *, cost_center_id: int, workspace_id: 
     return row is not None
 
 
+def user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> bool:
+    """requester_id (create_order) and approver_id (submit_for_approval) are
+    FKs to app_user with no workspace check of their own; both end up joined
+    to app_user.full_name in v_po_summary / approval_history, so an
+    unvalidated foreign id leaks that name cross-workspace."""
+    row = db.execute(
+        text("SELECT 1 FROM app_user WHERE id = :u AND workspace_id = :w"),
+        {"u": user_id, "w": workspace_id},
+    ).first()
+    return row is not None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def generate_po_number(db: Session, year: int) -> str:
     """Generate the next PO number for a given calendar year (PO-YYYY-NNNN)."""
