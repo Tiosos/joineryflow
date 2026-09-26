@@ -300,7 +300,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - `docs/superpowers/plans/2026-05-08-shop-floor.md` — 17-task implementation plan for sub-project #8.
 - `docs/superpowers/plans/2026-05-26-estimating.md` — shipped-state record for sub-project #9a (migrations 0021–0023), backfilled 2026-08-14. Explains *why* the schema and workflow read as they do; this file stays the statement of current state.
 - `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md` + `docs/superpowers/plans/2026-05-27-tracking-2-0.md` — Tracking 2.0 (migration `0035`). **Shipped** — backend, frontend and seed. Authored before the numbers "#10"/"#11" were reassigned to Cutlist and Search; see *Tracking 2.0* below for the numbering note.
-- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Partially shipped** — backend complete — routes mounted, Document Register, item reference-field PATCH, five attachment slots, and tested; all frontend and seed data are still unbuilt. See *Item & Project Detail 2.0* below for the gap list.
+- `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md` + `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md` — Item & Project Detail 2.0 (migration `0036`). **Shipped** — backend, frontend, seed data and an e2e spec are all in. See *Item & Project Detail 2.0* below for what shipped and where it departs from the design doc.
 - `docs/superpowers/specs/2026-09-24-search-design.md` + `docs/superpowers/plans/2026-09-24-search.md` — Global Search (sub-project #11, Plan V1 §13). **Shipped** (migration `0033`); the plan's checkboxes are kept current with a `→` note per task. See *Global Search* below.
 - `docs/superpowers/specs/2026-09-24-material-take-design.md` + `docs/superpowers/plans/2026-09-24-material-take.md` — Material Take → Material Summary (sub-project #12, Plan V1 §19–§20). **Shipped** (migration `0034`); the plan's checkboxes are kept current with a `→` note per task. See *Material Take* below.
 - `docs/superpowers/plans/2026-05-09-cutplan-optimiser.md` — shipped-state record for sub-project #9 (CutPlan optimiser: MaxRects + multi-sheet + board_inventory; migrations 0024 + 0025). Written as a stub plan, superseded in flight — the doc carries a planned-vs-shipped table.
@@ -1456,7 +1456,7 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   was right all along. Pinned by
   `test_get_item_returns_tracking_2_0_fields`.
 
-## Item & Project Detail 2.0 (migration `0036`) — partially shipped
+## Item & Project Detail 2.0 (migration `0036`) — shipped
 
 > Design: `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`;
 > plan: `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md`. Same
@@ -1550,24 +1550,65 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   into a rename or an alias. The web `AttachmentsTab` still shows only the
   three Combined slots; `lib/print.ts` counts only those three so its
   "N of 3" label can't overflow when the new slots are bound via the API.
-- **Not shipped, although the schema exists for it:**
-  - **No frontend.** No `/projects/[id]/page.tsx` (only
-    `/projects/[id]/procurement/...` exists); no `ActionsTab` or
-    `QueryTab` in the item editor (`EditorTabs.tsx` still lists only
-    `cutlist · hardware · board · take · attachments · log`); no
-    SketchUp / CabVision cards in `AttachmentsTab` and no Document Register
-    UI (the APIs above have no caller yet); no "Open full project page →"
-    link on the Tracking modal.
-  - **No seed data.** `seed/hartwood_joinery.py` has zero inserts into
-    `project_contact`, `project_lift_access`, `item_query`, or
-    `item_document`, and never sets `builder`, `classification`, or
-    `closed_at`.
+- **Frontend shipped** (plan tasks T08–T12, `docs/superpowers/plans/
+  2026-05-27-item-project-detail-2-0.md`; each task's `→` note there records
+  what was built and how it was verified):
+  - `EditorTabs.tsx` now carries 8 tabs: `cutlist · hardware · board · take
+    · attachments · actions · query · log`. New **Actions** tab (Set status
+    — reuses the existing `StatusPopup`; Mark REQ done today; Jump to
+    Orderbook) and **Query** tab (ask/answer, `list:write` — `{drafter,
+    manager, admin, editor}`, one role wider than `AttachmentsTab`'s writer
+    set since `item_queries` doesn't add `require_drafter()`).
+  - **Cutlist Printed and the three reference fields (Floor Plan / RLS /
+    Joinery Details) live in `ItemMetadataPanel`'s existing `FIELDS` array**,
+    not a separate header-chip row or Refs panel — Painting Req / Solid
+    Surface Req were already there with the identical pattern. A deliberate
+    simplification versus the design sketch.
+  - **`AttachmentsTab` widened to 5 slots** (`sketchup` / `cabvision` cards
+    now render; `AttachmentSlotCard`'s file-picker `accept` is a per-kind
+    map, not hardcoded `.pdf`), with a small "Combined PDF" badge on the 3
+    slots Combined actually uses. `lib/attachments-types.ts` gained
+    `COMBINED_PDF_KINDS` distinct from the now-5-wide `ATTACHMENT_KINDS`, so
+    `print.ts`'s "N of 3" copy stays correct.
+  - **New page `/projects/[id]`** — header strip (status pill, builder,
+    classification, install/value, Close-out button) + 3-column layout
+    (Details / Contacts / Lift & Access) + a Labour Hours card. **RBAC is
+    split three ways, not one `canEdit`**: Details/close-out gate on the
+    manual `manager`/`admin` check in `projects/routes.py` (not a
+    `require_permission` row); Contacts/Lift-access gate on `tracking:write`
+    (`{editor, drafter, manager, admin}`, one role wider). Status stays a
+    **read-only pill** — no Current/Hold reopen control was added, even
+    though the backend already supports it via a plain PATCH, because
+    nothing in scope asked for that control on this page. `/projects` (the
+    list page) gained a "Details →" link per row, and the Tracking modal
+    gained "Open full project page →" in its footer.
+  - `pm-types.ts` and `attachments-types.ts` had drifted from the Python
+    schemas before this work started (fields the API had served since
+    `0035`/`0036` were simply missing from the TS types) — resynced as a
+    prerequisite.
+- **Seed data shipped.** `seed/hartwood_joinery.py` sets ALF-001's `builder`
+  / `classification` / site address / TG team via the real
+  `patch_project()` query function (not raw SQL), and adds 4 contacts (2
+  office + 2 site), lift access notes + a sketch, 2 `item_query` rows on the
+  first joinery item (1 open, 1 answered), and 2 `item_document` rows —
+  each through the same query functions the API uses, so seeded rows carry
+  real `audit_log` / `item_edit_log` entries.
+- **e2e coverage:** new `tests/e2e/item_project_detail.spec.ts` (3 tests) —
+  the item editor's Query/Actions/Attachments tabs, the project page from
+  both entry points, and close-out's RBAC gate. Deliberately checks that
+  close-out is *invisible* to a drafter rather than actually performing a
+  close-out — doing so would durably close ALF-001 for every other spec
+  sharing one `make e2e` run.
 - **RBAC — no matrix change**, per its design doc: `project_contact`/
   `project_lift_access` reuse `tracking:{read,write}`; `item_query` reuses
   `list:{read,write}`; close-out is admin/manager only.
 - **Tests:** `test_project_enrichment.py` (enriched `ProjectOut`, close-out,
   re-open), `test_project_contacts.py`, `test_project_lift_access.py`,
   `test_item_queries.py`, `test_item_documents.py`, plus the attachment,
-  upload and item-route files extended above. What remains unbuilt is
-  frontend and seed, not backend coverage.
+  upload and item-route files extended above, plus the new e2e spec.
+- **Known pre-existing issue, unrelated, found while smoke-testing:**
+  `PartsGrid.tsx` (Cutlist tab) leaves a stray whitespace text node as a
+  `<tr>` child (a `<th>{/* comment */}` pattern), which React logs as a
+  hydration warning on every item editor load. Predates this sub-project
+  entirely — not fixed here.
 

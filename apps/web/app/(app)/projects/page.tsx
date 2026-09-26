@@ -54,13 +54,14 @@ export default async function ProjectsPage() {
               <th className="px-3 py-2 text-left font-mono text-xs uppercase">
                 Install
               </th>
+              <th className="px-3 py-2 text-left font-mono text-xs uppercase" />
             </tr>
           </thead>
           <tbody>
             {projects.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-3 py-8 text-center text-h-muted"
                 >
                   No projects yet.
@@ -94,6 +95,14 @@ export default async function ProjectsPage() {
                   </td>
                   <td className="px-3 py-2 font-mono text-h-muted">
                     {p.install_start ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Link
+                      href={`/projects/${p.id}`}
+                      className="text-xs text-h-accent hover:underline"
+                    >
+                      Details →
+                    </Link>
                   </td>
                 </tr>
               ))

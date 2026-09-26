@@ -2742,6 +2742,130 @@ def main() -> None:
                 print(f"seeded #12 material take: {len(_take_items) - 1} approved takes "
                       f"(1 at v2), 1 draft, 1 project summary whose lines for that item read stale")
 
+        # ------------------------------------------------------------------
+        # Item & Project Detail 2.0 (#11, migration 0036). Built through the
+        # same query functions the API uses (like #12 above), so seeded rows
+        # carry real audit / edit-log rows. On ALF-001: project metadata +
+        # address + TG team, 2 office + 2 site contacts, lift access notes +
+        # sketch, 2 item_query rows on the first joinery item (1 open, 1
+        # answered), 2 item_document rows on that same item. Idempotent: each
+        # table's ALF-001 rows are dropped before re-inserting (project_lift_
+        # access is upserted instead — it's one row per project already).
+        # ------------------------------------------------------------------
+        from app.item_documents import queries as _idocs
+        from app.item_queries import queries as _iqueries
+        from app.project_contacts import queries as _contacts
+        from app.project_contacts.schemas import CreateContactIn as _CreateContactIn
+        from app.project_lift_access import queries as _lift
+        from app.project_lift_access.schemas import UpsertLiftAccessIn as _UpsertLiftAccessIn
+        from app.projects import queries as _projects
+        from app.projects.schemas import PatchProjectIn as _PatchProjectIn
+
+        _alf = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'"
+                               " AND workspace_id = :w"), {"w": wid}).scalar()
+        _drafter = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND auth_role = 'drafter' ORDER BY id LIMIT 1"),
+                              {"w": wid}).scalar()
+        _manager = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND auth_role = 'manager' ORDER BY id LIMIT 1"),
+                              {"w": wid}).scalar()
+        if _alf and _drafter and _manager:
+            _projects.patch_project(
+                db, project_id=_alf, workspace_id=wid, actor_id=_manager,
+                payload=_PatchProjectIn(
+                    builder="Meridian Construction Group",
+                    classification="Residential — High End",
+                    site_street="42 Wattle Crescent",
+                    site_suburb="Fitzroy",
+                    site_postcode="3065",
+                    site_state="VIC",
+                    tg_project_manager="Rin Park",
+                    tg_coordinator="Noa Lindqvist",
+                ),
+            )
+
+            db.execute(text("DELETE FROM project_contact WHERE project_id = :p"), {"p": _alf})
+            for _kind, _name, _position, _email, _mobile in [
+                ("office", "Priya Nathan", "Contracts Administrator",
+                 "priya.nathan@meridian.test", "0412 555 010"),
+                ("office", "Owen Fitzgerald", "Site Supervisor",
+                 "owen.fitzgerald@meridian.test", "0412 555 011"),
+                ("site", "Marcus Webb", "Site Foreman", None, "0412 555 020"),
+                ("site", "Layla Hassan", "Safety Officer", None, "0412 555 021"),
+            ]:
+                _contacts.create_contact(
+                    db, project_id=_alf, workspace_id=wid, actor_id=_manager,
+                    payload=_CreateContactIn(
+                        kind=_kind, name=_name, position=_position,
+                        email=_email, mobile=_mobile,
+                    ),
+                )
+
+            _sketch_blob = put_seed_file(
+                db, workspace_id=wid, workspace_slug="hartwood-joinery",
+                app_user_id=_drafter, path=_kitchen_pdf,
+            )
+            _lift.upsert_lift_access(
+                db, project_id=_alf, workspace_id=wid, actor_id=_manager,
+                payload=_UpsertLiftAccessIn(
+                    notes="Site access via rear laneway only — lift bay booking "
+                          "required 48h in advance. Max vehicle height 3.2m.",
+                    sketch_file_blob_id=_sketch_blob,
+                ),
+            )
+
+            _item1 = db.execute(text("""
+                SELECT item_id FROM items
+                 WHERE project_id = :p AND row_type = 'joinery_item'
+                 ORDER BY num LIMIT 1
+            """), {"p": _alf}).scalar()
+
+            if _item1:
+                db.execute(text("DELETE FROM item_query WHERE item_id = :i"), {"i": _item1})
+                _iqueries.create_query(
+                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    question="Client wants to confirm handle finish — brushed "
+                             "nickel or matte black?",
+                )
+                _answered = _iqueries.create_query(
+                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    question="Can the island bench overhang be increased to "
+                             "400mm for stool clearance?",
+                )
+                _iqueries.answer_query(
+                    db, query_id=_answered["query_id"], workspace_id=wid,
+                    actor_id=_drafter,
+                    answer="Confirmed with engineering — 400mm overhang is "
+                           "within tolerance, cutlist updated.",
+                )
+
+                db.execute(text("DELETE FROM item_document WHERE item_id = :i"), {"i": _item1})
+                _doc_blob_a = put_seed_file(
+                    db, workspace_id=wid, workspace_slug="hartwood-joinery",
+                    app_user_id=_drafter, path=_kitchen_pdf,
+                )
+                _doc_blob_b = put_seed_file(
+                    db, workspace_id=wid, workspace_slug="hartwood-joinery",
+                    app_user_id=_drafter, path=_bath_pdf,
+                )
+                _idocs.bind_document(
+                    db, item_id=_item1, file_blob_id=_doc_blob_a,
+                    label="Site photos", sort_order=0,
+                    workspace_id=wid, actor_id=_drafter,
+                )
+                _idocs.bind_document(
+                    db, item_id=_item1, file_blob_id=_doc_blob_b,
+                    label="Client correspondence", sort_order=1,
+                    workspace_id=wid, actor_id=_drafter,
+                )
+
+            db.commit()
+            print(
+                "seeded #11 item & project detail: project metadata + address "
+                "+ TG team, 4 contacts, lift access + sketch, 2 item queries "
+                "(1 open, 1 answered), 2 item documents"
+            )
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

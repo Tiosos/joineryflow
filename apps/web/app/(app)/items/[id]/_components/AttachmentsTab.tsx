@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getAttachments } from "@/lib/attachments-fetch";
 import type { AttachmentsBundle } from "@/lib/attachments-types";
-import { ATTACHMENT_KINDS } from "@/lib/attachments-types";
+import { ATTACHMENT_KINDS, COMBINED_PDF_KINDS } from "@/lib/attachments-types";
 import { attachmentsCountLabel } from "@/lib/print";
 
 import AttachmentSlotCard from "./AttachmentSlotCard";
@@ -58,6 +58,7 @@ export default function AttachmentsTab({ itemId, currentUserRole }: Props) {
                 slot={slot}
                 canWrite={canWrite}
                 onChanged={refresh}
+                usedByCombined={COMBINED_PDF_KINDS.includes(kind)}
               />
             );
           })}
