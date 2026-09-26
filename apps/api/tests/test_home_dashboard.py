@@ -334,6 +334,56 @@ def test_dashboard_purchase_officer_metrics_shape():
     assert "open_pos" in keys or "deliveries_this_week" in keys
 
 
+def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspaces():
+    """purchase_orders and approval_workflows have no workspace_id of their own;
+    open_pos and pending_approvals must still not count another workspace's rows."""
+    c, wid, uid = _login(role="purchase_officer")
+    other_c, other_wid, other_uid = _login(role="purchase_officer")
+
+    db = SessionLocal()
+    try:
+        vendor = db.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES('Mine', 'Board', :w) RETURNING vendor_id"),
+            {"w": wid},
+        ).scalar()
+        po = db.execute(
+            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category)
+                    VALUES ('PO-MINE-1', :v, :u, 'mine', 'Board') RETURNING po_id"""),
+            {"v": vendor, "u": uid},
+        ).scalar()
+        db.execute(
+            text("INSERT INTO approval_workflows(po_id, approver_id) VALUES (:p, :u)"),
+            {"p": po, "u": uid},
+        )
+
+        other_vendor = db.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES('Other', 'Board', :w) RETURNING vendor_id"),
+            {"w": other_wid},
+        ).scalar()
+        other_po = db.execute(
+            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category)
+                    VALUES ('PO-OTHER-1', :v, :u, 'not mine', 'Board') RETURNING po_id"""),
+            {"v": other_vendor, "u": other_uid},
+        ).scalar()
+        db.execute(
+            text("INSERT INTO approval_workflows(po_id, approver_id) VALUES (:p, :u)"),
+            {"p": other_po, "u": other_uid},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    metrics = {m["key"]: m["value"] for m in c.get("/home/dashboard").json()["metrics"]}
+    assert metrics["open_pos"] == 1
+    assert metrics["pending_approvals"] == 1
+
+    other_metrics = {m["key"]: m["value"] for m in other_c.get("/home/dashboard").json()["metrics"]}
+    assert other_metrics["open_pos"] == 1
+    assert other_metrics["pending_approvals"] == 1
+
+
 def test_dashboard_includes_team_activity_from_audit_log():
     """Seeded audit_log row appears in team_activity, newest first."""
     c, wid, uid = _login(role="admin")
