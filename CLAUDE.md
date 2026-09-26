@@ -1331,10 +1331,11 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
 - **Web.** `components/chrome/SearchBox.tsx` in `TopBar` (`/` focuses it),
   `/search?q=&type=&include_archived=` (not a tab), and a Search panel on
   `/it`. The browser still only ever talks to the Next proxy.
-- **Known gap found while building.** Four seeded catalog rows (one each in
-  `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) have
-  **`workspace_id` NULL**, so they are invisible on `/catalog` as well as in
-  search. Pre-existing seed gap, not fixed here.
+- **Fixed after the merge.** Four seeded catalog rows (one each in
+  `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire`) had
+  **`workspace_id` NULL**, making them invisible on `/catalog` as well as in
+  search. `seed/hartwood_joinery.py` now sets `workspace_id` on insert and
+  backfills the four rows on any database seeded before the fix.
 
 ## Material Take → Material Summary (sub-project #12)
 
@@ -1606,9 +1607,9 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   re-open), `test_project_contacts.py`, `test_project_lift_access.py`,
   `test_item_queries.py`, `test_item_documents.py`, plus the attachment,
   upload and item-route files extended above, plus the new e2e spec.
-- **Known pre-existing issue, unrelated, found while smoke-testing:**
-  `PartsGrid.tsx` (Cutlist tab) leaves a stray whitespace text node as a
-  `<tr>` child (a `<th>{/* comment */}` pattern), which React logs as a
-  hydration warning on every item editor load. Predates this sub-project
-  entirely — not fixed here.
+- **Fixed later.** `PartsGrid.tsx` (Cutlist tab) left a stray whitespace text
+  node as a `<tr>` child (a `<th /> {/* comment */}` pattern — the space
+  before the comment was a real text child), which React logged as a
+  hydration warning on every item editor load. Predated this sub-project
+  entirely; fixed by dropping the space before each trailing comment.
 
