@@ -194,7 +194,7 @@ IT-defined formulas).
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
 make migrate      # apply Alembic 0001 -> 0040
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (88 test files, ~957 tests; the `meili`-marked
+make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -2345,16 +2345,17 @@ see *PM Workbench* above.
   `claim_or_release_lock`'s transfer permission and `decide_lock_request`'s
   decider permission already use — not a new RBAC action, matching Q508's
   own silence on what should gate it.
-- **Tests:** `test_lock_types_concurrency.py` (new, 13 tests) — Hard Lock
+- **Tests:** `test_lock_types_concurrency.py` (17 tests) — Hard Lock
   set/clear/block-everyone-including-owner/manager-only, Approval Lock
   auto-lock/unlock on status change, field-conflict 409s on all three
   surfaces with `current_value` in the response, correct-version saves
-  succeeding and bumping again, and a same-record-different-field save
-  proving Q366's per-field (not per-record) conflict scope. Full suite
-  (946 passed, 10 skipped, 1 pre-existing unrelated failure — the same
-  local-only `MEILI_URL` gap noted in *Tender Lifecycle + Financials*
-  above) run against a real migrated Postgres 16 instance with zero
-  regressions outside `test_lock_types_concurrency.py` itself.
+  succeeding and bumping again, a same-record-different-field save proving
+  Q366's per-field (not per-record) conflict scope, plus the four review-fix
+  regressions named above. Full suite (950 passed, 10 skipped, 1
+  pre-existing unrelated failure — the same local-only `MEILI_URL` gap noted
+  in *Tender Lifecycle + Financials* above) run against a real migrated
+  Postgres 16 instance with zero regressions outside
+  `test_lock_types_concurrency.py` itself.
 - **Out of scope (deferred):** Q472's rule-engine migration of hand-written
   per-object rules (`require_drafter()`, the not-uploader approve rule,
   creator-or-manager, the 5-minute undo window) into the Dynamic RBAC
