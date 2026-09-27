@@ -1753,8 +1753,10 @@ or department locks — not as a requirement to add project locking in B7.
 any more, and the three events `item.lock_request.{create,approve,reject}`
 replace it. Existing rows stay in `audit_log` as the history of how the old
 advisory lock behaved (Q435). **Q508**'s Hard and Approval locks, **Q511** and
-**Q512** remain unbuilt and now have nowhere to be built — each needs a task of
-its own before §L can be called done. Scope here is `PATCH /items/{id}` alone,
+**Q512** remained unbuilt and had nowhere to be built at the time — each
+needed a task of its own before §L could be called done. **Built 2026-09-27**
+(migration `0040`) — see *Locking + Concurrency* in `CLAUDE.md`. Scope here
+(B7 itself) stays `PATCH /items/{id}` alone,
 the one surface that emitted the override event; `PATCH /items/{id}/status` and
 `/lifecycle/{stage_key}` never consulted the lock and still do not.
 

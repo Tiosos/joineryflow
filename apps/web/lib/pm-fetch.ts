@@ -106,6 +106,12 @@ export const PM = {
   transferLock: (id: number, body: LockTransferIn) =>
     call<ItemOut>(`/api/items/${id}/lock`, { ...jsonInit("POST", body), cache: "no-store" }),
 
+  // ===== §L Hard Lock (Q508) — manager/admin only =====
+  hardLockItem: (id: number) =>
+    call<ItemOut>(`/api/items/${id}/hard-lock`, { method: "POST", cache: "no-store" }),
+  hardUnlockItem: (id: number) =>
+    call<ItemOut>(`/api/items/${id}/hard-lock`, { method: "DELETE", cache: "no-store" }),
+
   // ===== Modules + parts =====
   createModule: (id: number, body: CreateModuleIn) =>
     call<ModuleOut>(`/api/items/${id}/modules`, { ...jsonInit("POST", body), cache: "no-store" }),

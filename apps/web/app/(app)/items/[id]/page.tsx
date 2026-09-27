@@ -6,6 +6,8 @@ import { ItemHeader } from "./_components/ItemHeader";
 import { ItemMetadataPanel } from "./_components/ItemMetadataPanel";
 import { EditorTabs } from "./_components/EditorTabs";
 import { SoftLockBanner } from "./_components/SoftLockBanner";
+import { HardLockBanner } from "./_components/HardLockBanner";
+import { ApprovalLockBanner } from "./_components/ApprovalLockBanner";
 import { EditorFooter } from "./_components/EditorFooter";
 
 async function fetchItem(id: number): Promise<ItemOut | null> {
@@ -49,6 +51,11 @@ export default async function ItemEditorPage({
       {item.lock_warning && (
         <SoftLockBanner warning={item.lock_warning} />
       )}
+      <ApprovalLockBanner item={item} />
+      <HardLockBanner
+        item={item}
+        canManage={me?.auth_role === "manager" || me?.auth_role === "admin"}
+      />
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <ItemMetadataPanel item={item} />
         <EditorTabs item={item} active={tab} currentUserRole={me?.auth_role ?? null} />

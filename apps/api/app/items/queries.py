@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
+from ..concurrency import bump_field_versions, check_field_conflicts
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..row_types import joinery_items_only
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
@@ -70,6 +71,7 @@ _ITEM_COLS = """
     i.cutlist_owner_id,
     u.full_name                                     AS cutlist_owner_name,
     i.item_locked,
+    (i.hard_locked_at IS NOT NULL)                   AS hard_locked,
     -- Q438 + Q568: the CUTLIST column is the *cutlist's* number, which several
     -- items share, not the item's own `num`.  Q540 made the two equal for every
     -- migrated item, which is why reading `num` looked right until a cutlist was
@@ -281,6 +283,7 @@ def list_items_for_project(
                 "cutlist_owner_id": r["cutlist_owner_id"],
                 "cutlist_owner_name": r["cutlist_owner_name"],
                 "item_locked": bool(r["item_locked"]),
+                "hard_locked": bool(r["hard_locked"]),
                 # Q558: the list carries both row kinds; the web nests on these.
                 "row_type": r["row_type"],
                 "parent_item_id": r["parent_item_id"],
@@ -541,10 +544,15 @@ def get_item_detail(
                 i.floor_plan,
                 i.rls,
                 i.joiery_details,
-                i.cutlist_printed
+                i.cutlist_printed,
+                i.hard_locked_at,
+                i.hard_locked_by,
+                hl.full_name                AS hard_locked_by_name,
+                i.field_versions
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN app_user c ON c.id = i.contractor_id
+            LEFT JOIN app_user hl ON hl.id = i.hard_locked_by
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
               AND {_JOINERY_I}
@@ -793,6 +801,10 @@ def get_item_detail(
         "hardware_lines": hardware_lines,
         "edit_log": edit_log,
         "lock_warning": lock_warning,
+        "hard_locked_at": row["hard_locked_at"],
+        "hard_locked_by": row["hard_locked_by"],
+        "hard_locked_by_name": row["hard_locked_by_name"],
+        "field_versions": row["field_versions"] or {},
     }
 
 
@@ -813,13 +825,23 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
     return row is not None
 
 
-def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
+def _item_row(
+    db: Session, *, item_id: int, workspace_id: int, for_update: bool = False
+) -> dict | None:
     """Fetch bare item columns for mutation helpers.  Returns None if 404.
 
     Deliberately **not** filtered to Joinery Items: the related-part routes
     (Q450 own status, Q452 reparent) reach their rows through this helper.
     It returns `row_type` so each caller can decide — see `patch_lifecycle`
     and `claim_or_release_lock`, which refuse related parts.
+
+    `for_update=True` (§L Q511/Q512) locks the row for the rest of the
+    caller's transaction, so a concurrent PATCH on the same item serialises
+    instead of racing on the read-then-write field-version check — the same
+    shape `_lock_order_for_update` / `lock_revision_for_update` already use
+    elsewhere in this codebase. Only the write paths (`patch_item`,
+    `decide_lock_request`'s approval) pass it; plain reads leave it False so
+    a GET never takes a row lock.
     """
     row = db.execute(
         text(
@@ -828,6 +850,7 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.item_id,
                 i.row_type,
                 i.project_id,
+                i.status,
                 i.description,
                 i.qty,
                 i.stage,
@@ -852,10 +875,14 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
                 i.floor_plan,
                 i.rls,
                 i.joiery_details,
-                i.cutlist_printed
+                i.cutlist_printed,
+                i.hard_locked_at,
+                i.hard_locked_by,
+                i.field_versions
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+            {"FOR UPDATE OF i" if for_update else ""}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -1099,11 +1126,32 @@ def _apply_item_changes(
             updates[col] = new_val
             changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
 
+    if changes:
+        # §L Q511/Q512: bump the touched fields' versions in the SAME UPDATE
+        # as the rest of the write, not a second round trip. Area/Room log
+        # under the labels "area"/"room" (see `_resolve_area_room`), which
+        # `_VERSION_KEY_BY_LABEL` maps back to the `expected_versions` keys
+        # a caller actually uses (`area_id`/`room_id`).
+        version_fields = [_VERSION_KEY_BY_LABEL.get(label, label) for label, _o, _n in changes]
+        updates["field_versions"] = bump_field_versions(
+            current.get("field_versions"), version_fields
+        )
+
     if updates:
-        set_clauses = ", ".join(f"{col} = :{col}" for col in updates)
+        set_clauses = ", ".join(
+            f"{col} = CAST(:{col} AS jsonb)" if col == "field_versions" else f"{col} = :{col}"
+            for col in updates
+        )
+        params = {
+            "iid": item_id,
+            **{
+                k: (json.dumps(v) if k == "field_versions" else v)
+                for k, v in updates.items()
+            },
+        }
         db.execute(
             text(f"UPDATE items SET {set_clauses}, updated_at = now() WHERE item_id = :iid"),
-            {"iid": item_id, **updates},
+            params,
         )
         db.flush()
 
@@ -1111,6 +1159,12 @@ def _apply_item_changes(
         write_edit_log_many(db, item_id=item_id, actor_id=author_id, changes=changes)
 
     return changes
+
+
+# Edit-log labels that don't match the payload attribute name used for
+# `expected_versions` — area_id/room_id resolve through _resolve_area_room
+# and log as "area"/"room", but callers version them as "area_id"/"room_id".
+_VERSION_KEY_BY_LABEL = {"area": "area_id", "room": "room_id"}
 
 
 def _changed_fields(payload: PatchItemIn, current: dict) -> dict[str, object]:
@@ -1153,9 +1207,27 @@ def patch_item(
     Returns `{"outcome": "applied"}` or `{"outcome": "lock_request", "request": {...}}`.
     Edit log: one row per changed field.
     """
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    # §L Q511/Q512: locks the row for this whole transaction, so a concurrent
+    # PATCH on the same item serialises instead of racing on the
+    # read-then-write field-version check below.
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return None
+
+    # §L — Hard Lock (Q508): blocks everyone, including the owner, until a
+    # manager/admin explicitly clears it via POST|DELETE /items/{id}/hard-lock.
+    # Checked before everything else — unlike the Controlled Lock, there is no
+    # request-and-approve path around a Hard Lock.
+    if current["hard_locked_at"] is not None:
+        return {"outcome": "HARD_LOCKED", "locked_by": current["hard_locked_by"]}
+
+    # §L — Approval Lock (Q508): "information automatically locks when
+    # approved" binds directly to the existing Status taxonomy's APPROVED
+    # value — there is no separate column to check. Unlocking is moving
+    # status away from APPROVED via PATCH /items/{id}/status, which (like
+    # the Controlled Lock) this endpoint never consults.
+    if current["status"] == "APPROVED":
+        return {"outcome": "APPROVAL_LOCKED"}
 
     # Tracking 2.0: cross-workspace contractor reference blocked at app layer.
     # Checked before the lock branch so an invalid contractor is never held in
@@ -1183,6 +1255,21 @@ def patch_item(
         )
         return {"outcome": "lock_request", "request": request}
 
+    # §L — Q511/Q512: field-level optimistic concurrency, checked only on this
+    # direct-apply path. When the item is Controlled-Locked by someone else
+    # (the branch above), nothing is written here — the save becomes a
+    # pending request instead — so there is no concurrent-write race for
+    # versioning to catch; Controlled Lock already serialises that case
+    # through its own approve/reject flow.
+    conflicts = check_field_conflicts(
+        current.get("field_versions"), payload.expected_versions
+    )
+    if conflicts:
+        row_key_by_attr = {attr: rk for attr, _col, rk in _PATCH_FIELD_MAP}
+        for field, info in conflicts.items():
+            info["current_value"] = current.get(row_key_by_attr.get(field, field))
+        return {"outcome": "FIELD_CONFLICT", "conflicts": conflicts}
+
     extra: dict[str, object] = {}
     if owner_id is None:
         # First-save claim
@@ -1199,6 +1286,8 @@ def patch_item(
     if isinstance(applied, str):
         # The area/room pair does not resolve — see `_resolve_area_room`.
         return {"outcome": applied}
+    # `_apply_item_changes` already bumped field_versions in the same UPDATE
+    # as the changed columns — nothing further to do here.
     return {"outcome": "applied"}
 
 
@@ -1329,7 +1418,34 @@ def patch_item_status(
         old_value=prev_status,
         new_value=status,
     )
+    _write_approval_lock_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        item_id=item_id, prev_status=prev_status, new_status=status,
+    )
     return True
+
+
+def _write_approval_lock_audit(
+    db: Session,
+    *,
+    workspace_id: int,
+    actor_id: int,
+    item_id: int,
+    prev_status: str | None,
+    new_status: str,
+) -> None:
+    """§L Approval Lock (Q508/Q516): every lock/unlock is audited, even though
+    it is derived from `status` rather than a column of its own."""
+    if new_status == "APPROVED" and prev_status != "APPROVED":
+        write_audit(
+            db, workspace_id=workspace_id, actor_id=actor_id,
+            event="item.approval_lock", target=str(item_id), payload={},
+        )
+    elif prev_status == "APPROVED" and new_status != "APPROVED":
+        write_audit(
+            db, workspace_id=workspace_id, actor_id=actor_id,
+            event="item.approval_unlock", target=str(item_id), payload={},
+        )
 
 
 def bulk_patch_item_status(
@@ -1418,6 +1534,10 @@ def bulk_patch_item_status(
             field="item.status",
             old_value=prev_status,
             new_value=status,
+        )
+        _write_approval_lock_audit(
+            db, workspace_id=workspace_id, actor_id=actor_id,
+            item_id=iid, prev_status=prev_status, new_status=status,
         )
         updated_count += 1
 
@@ -1639,6 +1759,65 @@ def claim_or_release_lock(
     return "OK"
 
 
+# ── §L Hard Lock (Q508) ───────────────────────────────────────────────────────
+
+
+def set_hard_lock(
+    db: Session, *, item_id: int, workspace_id: int, actor: AuthUser
+) -> str:
+    """'OK' | 'NOT_FOUND' | 'FORBIDDEN'.
+
+    Manager/admin only — the "authorised management" Q508's wording names.
+    Unlike the Controlled Lock there is nothing to decide: a Hard Lock blocks
+    PATCH /items/{id} for everyone, including the current owner, until this
+    same authority clears it via `clear_hard_lock`.
+    """
+    if actor.auth_role not in ("manager", "admin"):
+        return "FORBIDDEN"
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return "NOT_FOUND"
+
+    db.execute(
+        text(
+            "UPDATE items SET hard_locked_at = now(), hard_locked_by = :a"
+            " WHERE item_id = :iid"
+        ),
+        {"a": actor.id, "iid": item_id},
+    )
+    db.flush()
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor.id,
+        event="item.hard_lock", target=str(item_id), payload={},
+    )
+    return "OK"
+
+
+def clear_hard_lock(
+    db: Session, *, item_id: int, workspace_id: int, actor: AuthUser
+) -> str:
+    """'OK' | 'NOT_FOUND' | 'FORBIDDEN'."""
+    if actor.auth_role not in ("manager", "admin"):
+        return "FORBIDDEN"
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    if current is None:
+        return "NOT_FOUND"
+
+    db.execute(
+        text(
+            "UPDATE items SET hard_locked_at = NULL, hard_locked_by = NULL"
+            " WHERE item_id = :iid"
+        ),
+        {"iid": item_id},
+    )
+    db.flush()
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor.id,
+        event="item.hard_unlock", target=str(item_id), payload={},
+    )
+    return "OK"
+
+
 # ── Controlled Lock: requests (B7 / Q509) ─────────────────────────────────────
 
 _LOCK_REQUEST_COLS = """
@@ -1782,9 +1961,20 @@ def decide_lock_request(
     applied: list[str] = []
 
     if decision == "approved":
-        current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+        # §L Q511/Q512: lock the row for the rest of this transaction, same
+        # as `patch_item`'s own direct-apply path.
+        current = _item_row(
+            db, item_id=item_id, workspace_id=workspace_id, for_update=True
+        )
         if current is None:          # item deleted between request and decision
             return "NOT_FOUND"
+        # §L — Hard Lock / Approval Lock (Q508): a request approved after the
+        # item was locked by either mechanism must not slip through — the
+        # owner deciding is not the same authority as the one who locked it.
+        if current["hard_locked_at"] is not None:
+            return "HARD_LOCKED"
+        if current["status"] == "APPROVED":
+            return "APPROVAL_LOCKED"
         changes = _apply_item_changes(
             db,
             item_id=item_id,

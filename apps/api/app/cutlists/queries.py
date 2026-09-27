@@ -21,10 +21,13 @@ a CHECK cannot reach another table:
   does **not** backfill `item_stages`. There is deliberately no code for it:
   the item stays blank and catches up at the next completion. Do not "fix" it.
 """
+import json
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..concurrency import bump_field_versions, check_field_conflicts
 from ..edit_log import write_edit_log
 from ..orders.queries import sync_orders_for_item
 from ..row_types import joinery_items_only
@@ -42,6 +45,7 @@ _CUTLIST_COLS = """
     u.full_name AS created_by_name,
     c.created_at,
     c.updated_at,
+    c.field_versions,
     (
         SELECT COUNT(*) FROM items li
         WHERE li.cutlist_id = c.cutlist_id
@@ -57,8 +61,16 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
     return row is not None
 
 
-def _cutlist_row(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | None:
-    """Fetch one cutlist, workspace-scoped. None means 404."""
+def _cutlist_row(
+    db: Session, *, cutlist_id: int, workspace_id: int, for_update: bool = False
+) -> dict | None:
+    """Fetch one cutlist, workspace-scoped. None means 404.
+
+    `for_update=True` (§L Q511/Q512) locks the row for the rest of the
+    caller's transaction, so a concurrent PATCH serialises instead of racing
+    on the read-then-write field-version check. Only `patch_cutlist` passes
+    it; every other caller here is a plain read.
+    """
     row = db.execute(
         text(
             f"""
@@ -67,6 +79,7 @@ def _cutlist_row(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | N
             JOIN projects p ON p.project_id = c.project_id
             LEFT JOIN app_user u ON u.id = c.created_by
             WHERE c.cutlist_id = :cid AND p.workspace_id = :w
+            {"FOR UPDATE OF c" if for_update else ""}
             """
         ),
         {"cid": cutlist_id, "w": workspace_id},
@@ -265,19 +278,40 @@ def patch_cutlist(
     workspace_id: int,
     payload: PatchCutlistIn,
     actor_id: int,
-) -> dict | None:
-    """Rename only. `cutlist_no` is system-allocated (Q442) and never editable."""
-    current = _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
+) -> tuple[str, dict | None]:
+    """Rename only. `cutlist_no` is system-allocated (Q442) and never editable.
+
+    Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
+    Q511/Q512 — `data` is the conflicts dict, not the cutlist, in that case).
+    """
+    current = _cutlist_row(
+        db, cutlist_id=cutlist_id, workspace_id=workspace_id, for_update=True
+    )
     if current is None:
-        return None
+        return "NOT_FOUND", None
 
-    fields = payload.model_dump(exclude_unset=True)
+    fields = payload.model_dump(exclude_unset=True, exclude={"expected_versions"})
     if "name" not in fields:
-        return current
+        return "OK", current
 
+    conflicts = check_field_conflicts(
+        current.get("field_versions"), payload.expected_versions
+    )
+    if conflicts:
+        # Generic, not hardcoded to "name" — `expected_versions` may name any
+        # key, including one that was never a real field (its version then
+        # defaults to 0 and conflicts against a nonzero `expected`).
+        for field, info in conflicts.items():
+            info["current_value"] = current.get(field)
+        return "FIELD_CONFLICT", conflicts
+
+    new_versions = bump_field_versions(current.get("field_versions"), ["name"])
     db.execute(
-        text("UPDATE cutlist SET name = :n, updated_at = now() WHERE cutlist_id = :cid"),
-        {"n": payload.name, "cid": cutlist_id},
+        text(
+            "UPDATE cutlist SET name = :n, field_versions = CAST(:v AS jsonb),"
+            " updated_at = now() WHERE cutlist_id = :cid"
+        ),
+        {"n": payload.name, "v": json.dumps(new_versions), "cid": cutlist_id},
     )
     db.flush()
 
@@ -289,7 +323,7 @@ def patch_cutlist(
         target=str(cutlist_id),
         payload={"field": "name", "old": current["name"], "new": payload.name},
     )
-    return _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
+    return "OK", _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
 
 
 def delete_cutlist(

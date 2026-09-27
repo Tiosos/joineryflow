@@ -67,6 +67,8 @@ class OrderOut(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    # §L Q511/Q512 — field-level optimistic concurrency.
+    field_versions: dict[str, int] = {}
 
 
 class OrderDetailOut(OrderOut):
@@ -128,6 +130,11 @@ class PatchOrderIn(BaseModel):
     notes: str | None = None
     internal_comments: str | None = None
     attributes: dict | None = None
+    # §L Q511/Q512 — optional expected versions, read from a prior GET's
+    # `field_versions`. A named field whose version has moved on is a 409
+    # FIELD_CONFLICT rather than a silent overwrite; omitting it (or a field)
+    # keeps last-write-wins for that field.
+    expected_versions: dict[str, int] | None = None
 
 
 class CreateOrderLineIn(BaseModel):

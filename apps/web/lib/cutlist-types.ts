@@ -29,6 +29,13 @@ export interface CutlistOut {
   created_by_name: string | null;
   created_at: string;
   updated_at: string;
+  /** §L Q511/Q512 — field-level optimistic concurrency. */
+  field_versions: Record<string, number>;
+}
+
+export interface PatchCutlistIn {
+  name?: string | null;
+  expected_versions?: Record<string, number>;
 }
 
 /**

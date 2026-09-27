@@ -51,8 +51,35 @@ export interface OrderRow {
 
   created_at: string;
   updated_at: string | null;
+
+  /** §L Q511/Q512 — field-level optimistic concurrency. */
+  field_versions: Record<string, number>;
 }
 
 export interface OrderListOut {
   orders: OrderRow[];
+}
+
+export interface PatchOrderIn {
+  vendor_id?: number | null;
+  description?: string | null;
+  category?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  order_number?: string | null;
+  supplier_ref_no?: string | null;
+  location?: string | null;
+  product_code?: string | null;
+  product_description?: string | null;
+  quantity?: string | null;
+  unit_of_measure?: string | null;
+  unit_cost?: string | null;
+  total_amount?: string | null;
+  required_date?: string | null;
+  date_ordered?: string | null;
+  due_date?: string | null;
+  notes?: string | null;
+  internal_comments?: string | null;
+  attributes?: Record<string, unknown> | null;
+  expected_versions?: Record<string, number>;
 }

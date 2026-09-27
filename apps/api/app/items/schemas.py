@@ -46,6 +46,7 @@ class TrackingItemRow(BaseModel):
     cutlist_owner_id: int | None
     cutlist_owner_name: str | None
     item_locked: bool
+    hard_locked: bool = False  # §L Q508 — derived from hard_locked_at IS NOT NULL
     stages: dict[str, StageDates]   # keyed by stage_key (REQ..INST)
     availability: AvailabilityRollup
     # Plan V1 Q420/Q422: related parts come back in the SAME list, directly
@@ -216,6 +217,12 @@ class ItemOut(BaseModel):
     rls: str | None = None
     joiery_details: str | None = None
     cutlist_printed: bool | None = None
+    # §L — Hard Lock (Q508) and field-level optimistic concurrency (Q511/Q512).
+    # Approval Lock has no column of its own: it is `status == "APPROVED"`.
+    hard_locked_at: datetime | None = None
+    hard_locked_by: int | None = None
+    hard_locked_by_name: str | None = None
+    field_versions: dict[str, int] = {}
 
 
 # ── Write input models (T15) ───────────────────────────────────────────────────
@@ -269,6 +276,12 @@ class PatchItemIn(BaseModel):
     rls: str | None = Field(default=None, max_length=64)
     joiery_details: str | None = Field(default=None, max_length=64)
     cutlist_printed: bool | None = None
+    # §L — Q511/Q512: optional per-field versions this save was based on, read
+    # from a prior GET's `field_versions`. A named field whose stored version
+    # has moved on is a conflict (409 FIELD_CONFLICT); omitting a field (or
+    # the whole map) keeps last-write-wins for it, so every existing caller
+    # is unaffected.
+    expected_versions: dict[str, int] | None = None
 
 
 class LockTransferIn(BaseModel):

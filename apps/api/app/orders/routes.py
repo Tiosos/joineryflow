@@ -125,12 +125,16 @@ def patch_order_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
-    order = q.patch_order(
+    code, order = q.patch_order(
         db, po_id=po_id, workspace_id=user.workspace_id,
         payload=payload, actor_id=user.id,
     )
-    if order is None:
+    if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
+    if code == "FIELD_CONFLICT":
+        raise HTTPException(
+            409, {"code": "FIELD_CONFLICT", "conflicts": order}
+        )
     db.commit()
     return order
 

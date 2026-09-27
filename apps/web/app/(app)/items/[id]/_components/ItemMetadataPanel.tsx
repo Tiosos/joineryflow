@@ -136,20 +136,29 @@ export function ItemMetadataPanel({ item, canEdit = true }: Props) {
       const res = await fetch(`/api/items/${item.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
+        // §L Q511/Q512: carry the version this field was at when the page
+        // loaded, so a save that raced with someone else's is a named
+        // conflict rather than a silent overwrite.
+        body: JSON.stringify({
+          [field]: value,
+          expected_versions: { [field]: item.field_versions?.[field as string] ?? 0 },
+        }),
       });
       if (!res.ok) {
-        // Controlled Lock: a non-owner's save is held for approval, not lost.
-        // The field still reverts, because the item itself has not changed.
-        const held =
-          res.status === 409 &&
-          (await res.json().catch(() => null))?.detail?.code ===
-            "LOCK_REQUEST_CREATED";
+        const body = await res.json().catch(() => null);
+        const code = body?.detail?.code;
         setErrors((e) => ({
           ...e,
-          [field as string]: held
-            ? "Held for the lock owner to approve"
-            : `Save failed (${res.status})`,
+          [field as string]:
+            code === "LOCK_REQUEST_CREATED"
+              ? "Held for the lock owner to approve"
+              : code === "HARD_LOCKED"
+                ? "Hard-locked — a manager or admin must unlock it first"
+                : code === "APPROVAL_LOCKED"
+                  ? "Locked — status is Approved"
+                  : code === "FIELD_CONFLICT"
+                    ? `Changed to "${body.detail.conflicts?.[field as string]?.current_value ?? "…"}" by someone else — reload to see it`
+                    : `Save failed (${res.status})`,
         }));
         return false;
       }
@@ -181,7 +190,18 @@ export function ItemMetadataPanel({ item, canEdit = true }: Props) {
             const res = await fetch(`/api/items/${item.id}`, {
               method: "PATCH",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(next),
+              // AreaRoomPicker's onChange fires with exactly one of the two
+              // keys — only version the field actually being changed, or a
+              // concurrent edit to the *other* one would wrongly conflict
+              // with this save (Q366: different fields must never collide).
+              body: JSON.stringify({
+                ...next,
+                expected_versions: Object.fromEntries(
+                  (Object.keys(next) as Array<keyof typeof next>)
+                    .filter((k) => k === "area_id" || k === "room_id")
+                    .map((k) => [k, item.field_versions?.[k] ?? 0]),
+                ),
+              }),
             });
             if (!res.ok) {
               const body = await res.json().catch(() => null);
@@ -195,7 +215,13 @@ export function ItemMetadataPanel({ item, canEdit = true }: Props) {
                       ? "Choose an area first — rooms belong to one"
                       : code === "BAD_ROOM"
                         ? "That room is not in this area"
-                        : `Save failed (${res.status})`,
+                        : code === "HARD_LOCKED"
+                          ? "Hard-locked — a manager or admin must unlock it first"
+                          : code === "APPROVAL_LOCKED"
+                            ? "Locked — status is Approved"
+                            : code === "FIELD_CONFLICT"
+                              ? "Someone else changed the area/room — reload to see it"
+                              : `Save failed (${res.status})`,
               }));
               return false;
             }

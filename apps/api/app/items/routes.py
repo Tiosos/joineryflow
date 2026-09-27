@@ -8,6 +8,7 @@ from ..projects.queries import get_project
 from .queries import (
     bulk_patch_item_status,
     claim_or_release_lock,
+    clear_hard_lock,
     create_item,
     decide_lock_request,
     delete_item,
@@ -18,6 +19,7 @@ from .queries import (
     patch_item,
     patch_item_status,
     patch_lifecycle,
+    set_hard_lock,
 )
 from .schemas import (
     AvailabilityOut,
@@ -173,6 +175,18 @@ def patch_item_route(
         # Q552: a room lives inside an area, enforced by the composite FK.
         # Refused here so the caller gets a named reason, not a 500.
         raise HTTPException(status_code=409, detail={"code": result["outcome"]})
+    if result["outcome"] == "HARD_LOCKED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HARD_LOCKED", "locked_by": result["locked_by"]},
+        )
+    if result["outcome"] == "APPROVAL_LOCKED":
+        raise HTTPException(status_code=409, detail={"code": "APPROVAL_LOCKED"})
+    if result["outcome"] == "FIELD_CONFLICT":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "FIELD_CONFLICT", "conflicts": result["conflicts"]},
+        )
     if result["outcome"] == "lock_request":
         req = result["request"]
         db.commit()
@@ -362,6 +376,49 @@ def release_lock(
     )
 
 
+# ── §L Hard Lock (Q508) ────────────────────────────────────────────────────────
+
+
+@router.post("/items/{id}/hard-lock", response_model=ItemOut)
+def hard_lock_item(
+    id: int,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Manager/admin only. Blocks PATCH /items/{id} for everyone, including
+    the current owner, until cleared with DELETE on this same path."""
+    result = set_hard_lock(db, item_id=id, workspace_id=user.workspace_id, actor=user)
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="item not found")
+    if result == "FORBIDDEN":
+        raise HTTPException(
+            status_code=403, detail="only a manager or admin can hard-lock an item"
+        )
+    db.commit()
+    return get_item_detail(
+        db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
+    )
+
+
+@router.delete("/items/{id}/hard-lock", response_model=ItemOut)
+def hard_unlock_item(
+    id: int,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    result = clear_hard_lock(db, item_id=id, workspace_id=user.workspace_id, actor=user)
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="item not found")
+    if result == "FORBIDDEN":
+        raise HTTPException(
+            status_code=403, detail="only a manager or admin can clear a hard lock"
+        )
+    db.commit()
+    return get_item_detail(
+        db, item_id=id, workspace_id=user.workspace_id, current_user_id=user.id
+    )
+
+
 # ── Controlled Lock requests (B7 / Q509) ──────────────────────────────────────
 
 
@@ -403,6 +460,10 @@ def _decide(
         raise HTTPException(
             status_code=409, detail={"code": "ALREADY_DECIDED"}
         )
+    if result == "HARD_LOCKED":
+        raise HTTPException(status_code=409, detail={"code": "HARD_LOCKED"})
+    if result == "APPROVAL_LOCKED":
+        raise HTTPException(status_code=409, detail={"code": "APPROVAL_LOCKED"})
     db.commit()
     return result
 
