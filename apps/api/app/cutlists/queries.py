@@ -61,8 +61,16 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
     return row is not None
 
 
-def _cutlist_row(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | None:
-    """Fetch one cutlist, workspace-scoped. None means 404."""
+def _cutlist_row(
+    db: Session, *, cutlist_id: int, workspace_id: int, for_update: bool = False
+) -> dict | None:
+    """Fetch one cutlist, workspace-scoped. None means 404.
+
+    `for_update=True` (§L Q511/Q512) locks the row for the rest of the
+    caller's transaction, so a concurrent PATCH serialises instead of racing
+    on the read-then-write field-version check. Only `patch_cutlist` passes
+    it; every other caller here is a plain read.
+    """
     row = db.execute(
         text(
             f"""
@@ -71,6 +79,7 @@ def _cutlist_row(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | N
             JOIN projects p ON p.project_id = c.project_id
             LEFT JOIN app_user u ON u.id = c.created_by
             WHERE c.cutlist_id = :cid AND p.workspace_id = :w
+            {"FOR UPDATE OF c" if for_update else ""}
             """
         ),
         {"cid": cutlist_id, "w": workspace_id},
@@ -275,7 +284,9 @@ def patch_cutlist(
     Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the cutlist, in that case).
     """
-    current = _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
+    current = _cutlist_row(
+        db, cutlist_id=cutlist_id, workspace_id=workspace_id, for_update=True
+    )
     if current is None:
         return "NOT_FOUND", None
 
@@ -287,7 +298,11 @@ def patch_cutlist(
         current.get("field_versions"), payload.expected_versions
     )
     if conflicts:
-        conflicts["name"]["current_value"] = current["name"]
+        # Generic, not hardcoded to "name" — `expected_versions` may name any
+        # key, including one that was never a real field (its version then
+        # defaults to 0 and conflicts against a nonzero `expected`).
+        for field, info in conflicts.items():
+            info["current_value"] = current.get(field)
         return "FIELD_CONFLICT", conflicts
 
     new_versions = bump_field_versions(current.get("field_versions"), ["name"])

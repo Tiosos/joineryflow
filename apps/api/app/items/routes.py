@@ -460,6 +460,10 @@ def _decide(
         raise HTTPException(
             status_code=409, detail={"code": "ALREADY_DECIDED"}
         )
+    if result == "HARD_LOCKED":
+        raise HTTPException(status_code=409, detail={"code": "HARD_LOCKED"})
+    if result == "APPROVAL_LOCKED":
+        raise HTTPException(status_code=409, detail={"code": "APPROVAL_LOCKED"})
     db.commit()
     return result
 

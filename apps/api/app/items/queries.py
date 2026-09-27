@@ -825,13 +825,23 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
     return row is not None
 
 
-def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
+def _item_row(
+    db: Session, *, item_id: int, workspace_id: int, for_update: bool = False
+) -> dict | None:
     """Fetch bare item columns for mutation helpers.  Returns None if 404.
 
     Deliberately **not** filtered to Joinery Items: the related-part routes
     (Q450 own status, Q452 reparent) reach their rows through this helper.
     It returns `row_type` so each caller can decide — see `patch_lifecycle`
     and `claim_or_release_lock`, which refuse related parts.
+
+    `for_update=True` (§L Q511/Q512) locks the row for the rest of the
+    caller's transaction, so a concurrent PATCH on the same item serialises
+    instead of racing on the read-then-write field-version check — the same
+    shape `_lock_order_for_update` / `lock_revision_for_update` already use
+    elsewhere in this codebase. Only the write paths (`patch_item`,
+    `decide_lock_request`'s approval) pass it; plain reads leave it False so
+    a GET never takes a row lock.
     """
     row = db.execute(
         text(
@@ -872,6 +882,7 @@ def _item_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+            {"FOR UPDATE OF i" if for_update else ""}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -1115,11 +1126,32 @@ def _apply_item_changes(
             updates[col] = new_val
             changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
 
+    if changes:
+        # §L Q511/Q512: bump the touched fields' versions in the SAME UPDATE
+        # as the rest of the write, not a second round trip. Area/Room log
+        # under the labels "area"/"room" (see `_resolve_area_room`), which
+        # `_VERSION_KEY_BY_LABEL` maps back to the `expected_versions` keys
+        # a caller actually uses (`area_id`/`room_id`).
+        version_fields = [_VERSION_KEY_BY_LABEL.get(label, label) for label, _o, _n in changes]
+        updates["field_versions"] = bump_field_versions(
+            current.get("field_versions"), version_fields
+        )
+
     if updates:
-        set_clauses = ", ".join(f"{col} = :{col}" for col in updates)
+        set_clauses = ", ".join(
+            f"{col} = CAST(:{col} AS jsonb)" if col == "field_versions" else f"{col} = :{col}"
+            for col in updates
+        )
+        params = {
+            "iid": item_id,
+            **{
+                k: (json.dumps(v) if k == "field_versions" else v)
+                for k, v in updates.items()
+            },
+        }
         db.execute(
             text(f"UPDATE items SET {set_clauses}, updated_at = now() WHERE item_id = :iid"),
-            {"iid": item_id, **updates},
+            params,
         )
         db.flush()
 
@@ -1127,6 +1159,12 @@ def _apply_item_changes(
         write_edit_log_many(db, item_id=item_id, actor_id=author_id, changes=changes)
 
     return changes
+
+
+# Edit-log labels that don't match the payload attribute name used for
+# `expected_versions` — area_id/room_id resolve through _resolve_area_room
+# and log as "area"/"room", but callers version them as "area_id"/"room_id".
+_VERSION_KEY_BY_LABEL = {"area": "area_id", "room": "room_id"}
 
 
 def _changed_fields(payload: PatchItemIn, current: dict) -> dict[str, object]:
@@ -1169,7 +1207,10 @@ def patch_item(
     Returns `{"outcome": "applied"}` or `{"outcome": "lock_request", "request": {...}}`.
     Edit log: one row per changed field.
     """
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    # §L Q511/Q512: locks the row for this whole transaction, so a concurrent
+    # PATCH on the same item serialises instead of racing on the
+    # read-then-write field-version check below.
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return None
 
@@ -1245,32 +1286,9 @@ def patch_item(
     if isinstance(applied, str):
         # The area/room pair does not resolve — see `_resolve_area_room`.
         return {"outcome": applied}
-    if applied:
-        _bump_item_field_versions(db, item_id=item_id, current=current, changes=applied)
+    # `_apply_item_changes` already bumped field_versions in the same UPDATE
+    # as the changed columns — nothing further to do here.
     return {"outcome": "applied"}
-
-
-# Edit-log labels that don't match the payload attribute name used for
-# `expected_versions` — area_id/room_id resolve through _resolve_area_room
-# and log as "area"/"room", but callers version them as "area_id"/"room_id".
-_VERSION_KEY_BY_LABEL = {"area": "area_id", "room": "room_id"}
-
-
-def _bump_item_field_versions(
-    db: Session,
-    *,
-    item_id: int,
-    current: dict,
-    changes: list[tuple[str, str | None, str | None]],
-) -> None:
-    """Bump `items.field_versions` for every field this write actually changed."""
-    fields = [_VERSION_KEY_BY_LABEL.get(label, label) for label, _o, _n in changes]
-    new_versions = bump_field_versions(current.get("field_versions"), fields)
-    db.execute(
-        text("UPDATE items SET field_versions = CAST(:v AS jsonb) WHERE item_id = :iid"),
-        {"v": json.dumps(new_versions), "iid": item_id},
-    )
-    db.flush()
 
 
 def delete_item(
@@ -1943,9 +1961,20 @@ def decide_lock_request(
     applied: list[str] = []
 
     if decision == "approved":
-        current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+        # §L Q511/Q512: lock the row for the rest of this transaction, same
+        # as `patch_item`'s own direct-apply path.
+        current = _item_row(
+            db, item_id=item_id, workspace_id=workspace_id, for_update=True
+        )
         if current is None:          # item deleted between request and decision
             return "NOT_FOUND"
+        # §L — Hard Lock / Approval Lock (Q508): a request approved after the
+        # item was locked by either mechanism must not slip through — the
+        # owner deciding is not the same authority as the one who locked it.
+        if current["hard_locked_at"] is not None:
+            return "HARD_LOCKED"
+        if current["status"] == "APPROVED":
+            return "APPROVAL_LOCKED"
         changes = _apply_item_changes(
             db,
             item_id=item_id,
@@ -1957,10 +1986,6 @@ def decide_lock_request(
             # The held request named an area or room that no longer resolves —
             # deleted, or renamed out from under it while it waited.
             return changes
-        if changes:
-            _bump_item_field_versions(
-                db, item_id=item_id, current=current, changes=changes
-            )
         applied = [field for field, _old, _new in changes]
 
     db.execute(

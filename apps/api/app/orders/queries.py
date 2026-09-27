@@ -84,9 +84,18 @@ def list_categories(db: Session) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_order(db: Session, *, po_id: int, workspace_id: int) -> dict | None:
+def get_order(
+    db: Session, *, po_id: int, workspace_id: int, for_update: bool = False
+) -> dict | None:
+    """`for_update=True` (§L Q511/Q512) locks the `purchase_orders` row for
+    the rest of the caller's transaction, so a concurrent PATCH serialises
+    instead of racing on the read-then-write field-version check. Only
+    `patch_order` passes it; every other caller here is a plain read."""
     row = db.execute(
-        text(f"SELECT {_ORDER_COLS} {_ORDER_FROM} WHERE po.po_id = :o AND {_ORDER_WORKSPACE}"),
+        text(
+            f"SELECT {_ORDER_COLS} {_ORDER_FROM} WHERE po.po_id = :o"
+            f" AND {_ORDER_WORKSPACE} {'FOR UPDATE OF po' if for_update else ''}"
+        ),
         {"o": po_id, "w": workspace_id},
     ).mappings().first()
     if row is None:
@@ -311,7 +320,7 @@ def patch_order(
 ) -> tuple[str, dict | None]:
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case)."""
-    current = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND", None
 

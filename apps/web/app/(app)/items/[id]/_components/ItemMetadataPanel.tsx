@@ -190,12 +190,17 @@ export function ItemMetadataPanel({ item, canEdit = true }: Props) {
             const res = await fetch(`/api/items/${item.id}`, {
               method: "PATCH",
               headers: { "content-type": "application/json" },
+              // AreaRoomPicker's onChange fires with exactly one of the two
+              // keys — only version the field actually being changed, or a
+              // concurrent edit to the *other* one would wrongly conflict
+              // with this save (Q366: different fields must never collide).
               body: JSON.stringify({
                 ...next,
-                expected_versions: {
-                  area_id: item.field_versions?.area_id ?? 0,
-                  room_id: item.field_versions?.room_id ?? 0,
-                },
+                expected_versions: Object.fromEntries(
+                  (Object.keys(next) as Array<keyof typeof next>)
+                    .filter((k) => k === "area_id" || k === "room_id")
+                    .map((k) => [k, item.field_versions?.[k] ?? 0]),
+                ),
               }),
             });
             if (!res.ok) {

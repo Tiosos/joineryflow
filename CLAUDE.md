@@ -2281,15 +2281,45 @@ see *PM Workbench* above.
     is no concurrent-write race for versioning to catch; the Controlled Lock
     already serialises that case through its own approve/reject flow. A
     version bump also happens when a held request is later approved, so a
-    GET taken after approval reflects the field's new version correctly.
+    GET taken after approval reflects the field's new version correctly —
+    and that approval path re-checks Hard Lock / Approval Lock too (see
+    *Fixed later* below), since the requester's proposal predates either.
   - **`cutlist` has one patchable field** (`name`), so its conflict surface
     is trivial by construction — Q442 already made `cutlist_no` and
     `created_by` immutable.
   - **`purchase_orders`** reuses the module's existing `_PATCHABLE` set;
     every field in it is versioned, not a hand-picked subset.
+- **Fixed later (max-level code review, same day).** The first pass's
+  read-then-write field-version check had no row lock on any of the three
+  surfaces: `patch_item`/`patch_cutlist`/`patch_order` all read the current
+  row with a plain `SELECT`, so two concurrent PATCHes on the same field
+  could both pass `check_field_conflicts()` against the same stale read and
+  the second's write would silently clobber the first's — exactly the
+  "nothing is silently overwritten" guarantee this feature exists to
+  provide, undone by its own race. `_item_row` / `_cutlist_row` / `get_order`
+  now take `for_update: bool = False`; the three `patch_*` functions pass
+  `for_update=True` for their initial read (every other, read-only caller is
+  unaffected), the same `SELECT ... FOR UPDATE` shape `_lock_order_for_update`
+  / `lock_revision_for_update` already use elsewhere in this codebase.
+  Pinned by `test_concurrent_patch_serializes_field_version_check_instead_of_lost_update`
+  (two real DB sessions on separate threads), confirmed to fail against the
+  pre-fix code. Three smaller findings from the same review: `decide_lock_request`'s
+  approval path called `_apply_item_changes()` without ever checking Hard
+  Lock or Approval Lock, so a request approved after either was set would
+  slip through — both are now checked there too (`test_approving_a_lock_request_is_blocked_by_hard_lock`
+  / `..._by_approval_lock`); `patch_cutlist`'s conflict branch hardcoded
+  `conflicts["name"]`, raising an unhandled `KeyError`/500 if
+  `expected_versions` ever named a different key — now generic like the
+  items/orders versions (`test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500`);
+  and `ItemMetadataPanel.tsx`'s Area/Room save sent `expected_versions` for
+  **both** `area_id` and `room_id` even though `AreaRoomPicker.onChange`
+  only ever changes one of them, so a concurrent edit to the *other* field
+  could wrongly reject an unrelated save — it now versions only the key
+  actually present in the payload.
 - **Web.** `ItemMetadataPanel.tsx`'s existing per-field PATCH calls now send
-  `expected_versions` for the field being saved (and for `area_id`/`room_id`
-  together, since `AreaRoomPicker`'s save writes both) and surface
+  `expected_versions` for the field being saved (and, for the Area/Room
+  picker, for whichever of `area_id`/`room_id` that specific change actually
+  touches — never both) and surface
   `FIELD_CONFLICT`/`HARD_LOCKED`/`APPROVAL_LOCKED` inline next to the field,
   alongside the existing `LOCK_REQUEST_CREATED` message — this is the same
   per-field error-banner mechanism, not a new one. `CutlistClient.tsx`'s

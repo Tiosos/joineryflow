@@ -9,6 +9,8 @@
 
 Uses the same truncate/seed/login helper patterns as test_lock_semantics.py.
 """
+import threading
+import time
 import uuid
 
 import pytest
@@ -492,3 +494,153 @@ def test_order_correct_expected_version_succeeds():
     )
     assert r.status_code == 200, r.text
     assert r.json()["description"] == "v2"
+
+
+# ── Regression: concurrent-write race (found by max-level code review) ──────
+
+
+def test_concurrent_patch_serializes_field_version_check_instead_of_lost_update():
+    """Q511/Q512: the read-then-write field-version check must be lock-guarded.
+
+    Without a row lock, two concurrent PATCHes on the same field can both
+    read field_versions={"description": 0}, both pass check_field_conflicts()
+    against their own stale read, and the second's write silently clobbers
+    the first's — exactly the "nothing is silently overwritten" guarantee
+    this feature exists to provide. `_item_row(..., for_update=True)` closes
+    it: B's SELECT ... FOR UPDATE blocks until A commits, then re-reads A's
+    committed field_versions and correctly reports a conflict instead of a
+    lost update.
+    """
+    from app.items.queries import patch_item
+    from app.items.schemas import PatchItemIn
+
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        iid = _insert_item(db, project_id=ctx["pid"], num=3010)
+    finally:
+        db.close()
+
+    lock_acquired = threading.Event()
+
+    def worker_a():
+        s = SessionLocal()
+        try:
+            result = patch_item(
+                s, item_id=iid, workspace_id=ctx["wid"], actor_id=ctx["uid_a"],
+                payload=PatchItemIn(description="A", expected_versions={"description": 0}),
+            )
+            assert result["outcome"] == "applied", result
+            lock_acquired.set()
+            time.sleep(0.4)  # hold the row lock so B is forced to wait
+            s.commit()
+        finally:
+            s.close()
+
+    t = threading.Thread(target=worker_a)
+    t.start()
+    assert lock_acquired.wait(timeout=2), "worker A never reached patch_item"
+
+    s2 = SessionLocal()
+    try:
+        start = time.monotonic()
+        result_b = patch_item(
+            s2, item_id=iid, workspace_id=ctx["wid"], actor_id=ctx["uid_a"],
+            payload=PatchItemIn(description="B", expected_versions={"description": 0}),
+        )
+        elapsed = time.monotonic() - start
+        s2.commit()
+    finally:
+        s2.close()
+    t.join(timeout=2)
+
+    assert elapsed >= 0.3, (
+        f"B's patch_item did not block on A's lock (elapsed={elapsed:.3f}s) "
+        "— the race is back"
+    )
+    assert result_b["outcome"] == "FIELD_CONFLICT", (
+        "B's now-stale expected_versions must be rejected once it sees A's "
+        f"committed write, got {result_b}"
+    )
+    assert _item_field(iid, "description") == "A", "A's committed write must survive"
+
+
+def test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500():
+    """A caller naming a field in expected_versions that was never a real
+    field (its version defaults to 0) must get a clean FIELD_CONFLICT, not
+    an unhandled 500 from code that assumed "name" was the only possible
+    conflicting key."""
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        cid = _insert_cutlist(db, project_id=ctx["pid"], actor_id=ctx["uid_a"])
+    finally:
+        db.close()
+
+    r = ctx["c_a"].patch(
+        f"/cutlists/{cid}",
+        json={"name": "Renamed", "expected_versions": {"not_a_real_field": 1}},
+    )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "FIELD_CONFLICT"
+    assert "not_a_real_field" in detail["conflicts"]
+
+
+# ── Regression: approving a held request must respect the newer locks ───────
+
+
+def _held_request(ctx: dict, *, iid: int) -> dict:
+    db = SessionLocal()
+    try:
+        uid_b, email_b, pw_b = _make_user(
+            db, workspace_id=ctx["wid"], role="drafter", name="Drafter B"
+        )
+    finally:
+        db.close()
+    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+
+    assert ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"}).status_code == 200
+    r = c_b.patch(f"/items/{iid}", json={"description": "B's proposal"})
+    assert r.status_code == 409, r.text
+    return {"rid": r.json()["detail"]["request_id"], "c_b": c_b}
+
+
+def test_approving_a_lock_request_is_blocked_by_hard_lock():
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        iid = _insert_item(db, project_id=ctx["pid"], num=3011)
+    finally:
+        db.close()
+    held = _held_request(ctx, iid=iid)
+
+    assert ctx["c_a"].post(f"/items/{iid}/hard-lock").status_code == 200
+
+    r = ctx["c_a"].post(f"/lock-requests/{held['rid']}/approve")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "HARD_LOCKED"
+    assert _item_field(iid, "description") == "A's edit", (
+        "B's held proposal must not slip through while the item is hard-locked"
+    )
+
+
+def test_approving_a_lock_request_is_blocked_by_approval_lock():
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        iid = _insert_item(db, project_id=ctx["pid"], num=3012)
+    finally:
+        db.close()
+    held = _held_request(ctx, iid=iid)
+
+    assert ctx["c_a"].patch(
+        f"/items/{iid}/status", json={"status": "APPROVED", "note": "done"}
+    ).status_code == 200
+
+    r = ctx["c_a"].post(f"/lock-requests/{held['rid']}/approve")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "APPROVAL_LOCKED"
+    assert _item_field(iid, "description") == "A's edit", (
+        "B's held proposal must not slip through while the item is approval-locked"
+    )
