@@ -210,6 +210,25 @@ def test_delete_cut_plan_succeeds_when_only_cancelled_schedules():
     assert r.status_code == 204
 
 
+def test_delete_cut_plan_blocks_when_done_schedule_exists():
+    """A `done` schedule is a production record, not live work — but it
+    still isn't cancelled, so deleting the plan must not silently cascade
+    it away (CLAUDE.md: 409 on any non-cancelled schedule)."""
+    c, _wid, _uid, pid, _iid, parts = _login("drafter")
+    plan = _make_cut_plan(c, pid, parts)
+    today = date.today().isoformat()
+    sid = c.post(
+        "/cut-schedules",
+        json={"cut_plan_id": plan["id"], "scheduled_for": today},
+    ).json()["id"]
+    assert c.patch(f"/cut-schedules/{sid}", json={"status": "running"}).status_code == 200
+    assert c.patch(f"/cut-schedules/{sid}", json={"status": "done"}).status_code == 200
+
+    r = c.delete(f"/cut-plans/{plan['id']}")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "PLAN_HAS_SCHEDULES"
+
+
 # --- CutSchedule -----------------------------------------------------------
 
 def test_schedule_auto_priority():

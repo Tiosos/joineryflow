@@ -424,15 +424,15 @@ def get_latest_plan_for_item(
 # ---- CutPlan: delete -------------------------------------------------------
 
 def has_active_schedules(db: Session, *, plan_id: int) -> bool:
-    """`done` and `cancelled` schedules don't block plan deletion — only
-    live (planned/running) work does. Cascading delete will sweep the
-    historical rows along with the plan."""
+    """Only `cancelled` schedules don't block plan deletion — a `done`
+    schedule is a production record (the nest was actually cut), and
+    cascading delete would sweep it away silently along with the plan."""
     return db.execute(
         text(
             """
             SELECT 1 FROM cut_schedule
             WHERE cut_plan_id = :pid
-              AND status IN ('planned', 'running')
+              AND status != 'cancelled'
             LIMIT 1
             """
         ),

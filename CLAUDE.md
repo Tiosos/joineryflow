@@ -722,6 +722,16 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   both routes; unvalidated ids get `422`. Pinned by
   `test_create_cut_schedule_rejects_foreign_assigned_to` /
   `test_patch_cut_schedule_rejects_foreign_assigned_to`.
+- **Fixed later.** `has_active_schedules()` (the guard behind
+  `DELETE /cut-plans/{plan_id}`'s `PLAN_HAS_SCHEDULES` 409, above) only
+  blocked `planned`/`running` schedules — contradicting this file's own
+  "non-cancelled" wording and letting a plan with a **`done`** schedule
+  (a record that a nest was actually cut) hard-delete via `CASCADE`, taking
+  that production record with it. `DELETE /cut-plans/{plan_id}` now blocks
+  on any status other than `cancelled`, matching the documented rule; only
+  a cancelled schedule no longer blocks deletion. Pinned by
+  `test_delete_cut_plan_blocks_when_done_schedule_exists`, confirmed to
+  fail (204 instead of 409) against the pre-fix code.
 - Foreign-slot rule: `GET /items/{iid}/cut-plan` returns only sheets
   that contain ≥1 slot for the item (or its modules' parts). Slots
   whose `part_id` is null or belongs to *other* items in the project
