@@ -104,7 +104,8 @@ def test_list_groups_returns_seeded_system_groups_with_grants():
     assert names == {"admin", "manager", "editor", "drafter", "estimator", "purchase_officer", "viewer"}
     admin_row = next(r for r in rows if r["name"] == "admin")
     assert admin_row["is_system"] is True
-    assert len(admin_row["grants"]) == 44
+    # 12 modules x 4 actions since migration 0039 added qc (was 11 x 4 = 44).
+    assert len(admin_row["grants"]) == 48
 
 
 def test_create_group_duplicate_name_returns_existing_id():

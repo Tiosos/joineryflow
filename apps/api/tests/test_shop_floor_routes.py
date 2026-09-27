@@ -344,7 +344,7 @@ def test_board_groups_items_into_stage_columns():
     r = c.get(f"/projects/{pid}/shop-floor/board")
     assert r.status_code == 200
     body = r.json()
-    assert set(body["columns"].keys()) == {"DOWN", "CNC", "EDGED", "PAINTED", "MADE"}
+    assert set(body["columns"].keys()) == {"DOWN", "CNC", "EDGED", "PAINTED", "MADE", "PACKING"}
     down_items = [c["item_id"] for c in body["columns"]["DOWN"]]
     assert items[0] in down_items
 
@@ -361,6 +361,8 @@ def test_station_queue_orders_in_progress_first():
     assert cards[0]["assignment_id"] == a2["assignment_id"]
     assert cards[0]["status"] == "in_progress"
     assert cards[1]["assignment_id"] == a1["assignment_id"]
+    # item_numbers backs the PACKING scan-to-complete check (Q519).
+    assert len(cards[0]["item_numbers"]) == cards[0]["item_count"]
 
 
 # --- RBAC + workspace iso -------------------------------------------------
@@ -661,3 +663,38 @@ def test_can_deactivate_worker_with_no_assignments():
     r = c.patch(f"/users/{worker}", json={"is_active": False})
     assert r.status_code == 200, r.text
     assert r.json()["is_active"] is False
+
+
+def test_packing_is_assignable_and_completes_after_made():
+    """PACKING is the 6th shop-floor stage (migration 0039, Q519). Assigning
+    it before MADE is out-of-order (409); completing it after MADE writes
+    item_stages same as any other stage."""
+    c, _w, _u, worker, pid, items = _bootstrap()
+    for stage in ("DOWN", "CNC", "EDGED", "PAINTED", "MADE"):
+        _start_and_complete(c, pid, items[0], stage, worker)
+
+    r = c.get(f"/projects/{pid}/shop-floor/board")
+    packing_items = [card["item_id"] for card in r.json()["columns"]["PACKING"]]
+    assert items[0] in packing_items
+
+    packed = _start_and_complete(c, pid, items[0], "PACKING", worker)
+    assert packed["next_stage_key"] is None  # PACKING is the last shop-floor stage
+
+    s = SessionLocal()
+    try:
+        done_date = s.execute(
+            text("SELECT done_date FROM item_stages WHERE item_id = :i AND stage_key = 'PACKING'"),
+            {"i": items[0]},
+        ).scalar()
+        assert done_date is not None
+    finally:
+        s.close()
+
+
+def test_packing_before_made_is_out_of_order():
+    c, _w, _u, worker, pid, items = _bootstrap()
+    a = _assign(c, pid, items[0], "PACKING", worker)
+    c.post(f"/assignments/{a['assignment_id']}/start")
+    r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "STAGE_OUT_OF_ORDER"

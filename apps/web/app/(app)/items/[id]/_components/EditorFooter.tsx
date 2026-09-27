@@ -85,6 +85,15 @@ export function EditorFooter({
         >
           Print Combined PDF
         </a>
+        <a
+          href={`/items/${item.id}/label`}
+          target="_blank"
+          rel="noopener"
+          title="QR label for scan-to-complete on the Packing stage"
+          className="rounded border border-h-line px-3 py-1.5 text-sm text-h-ink hover:bg-h-line/40"
+        >
+          Print Label
+        </a>
       </div>
 
       <div className="flex items-center gap-3">

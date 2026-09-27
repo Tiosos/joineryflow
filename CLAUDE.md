@@ -112,31 +112,31 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0038`. Head is `0038_tender_lifecycle_financials` (Plan V1 §I). `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0039`. Head is `0039_qc_rework_packing` (Plan V1 §M). `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
-## Plan V1 — target architecture (five sub-projects built)
+## Plan V1 — target architecture (six sub-projects built)
 
 `docs/plan-v1/` holds **Plan V1**, the customer's specification for a
 company-wide joinery workflow and control platform, with its interview
 questions answered through Q431 (supplied 2026-09-17). It is mostly a
-**target**, not a description of this tree — with five exceptions: **Plan V1 #10
+**target**, not a description of this tree — with six exceptions: **Plan V1 #10
 (Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)**,
 **#12 (Material Take → Summary, §19–§20)**, **§3.4 (Dynamic RBAC engine,
-Q466–473)** and **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)** are
-built, each with its own section below. Everything else in Plan V1 remains
-unimplemented.
+Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)** and
+**§M (QC / Rework / Packing, §26–§28)** are built, each with its own section
+below. Everything else in Plan V1 remains unimplemented.
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
   the 2026-09-18 baseline, **not re-scored** after #10, #11, #12, the RBAC
-  engine or §I (only the §13 search row and the §19 / §20 take and summary
-  rows have been moved, to `PARTIAL`).
+  engine, §I or §M (only the §13 search row and the §19 / §20 take and
+  summary rows have been moved, to `PARTIAL`).
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
   numbering. **150 of 154 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
@@ -160,9 +160,9 @@ unimplemented.
   and 2), built as one change. **Done** — widened by Q542 to take the whole
   Orderbook with it. See *Cutlist + related parts + Orderbook* below.
 
-Apart from #10, #11, #12, the RBAC engine and §I, this section still describes
-a target, and `CLAUDE.md` remains the record of what is actually true in the
-tree.
+Apart from #10, #11, #12, the RBAC engine, §I and §M, this section still
+describes a target, and `CLAUDE.md` remains the record of what is actually
+true in the tree.
 
 **Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
 seven places where Plan V1 contradicted an invariant stated as binding in *this*
@@ -188,7 +188,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0038
+make migrate      # apply Alembic 0001 -> 0039
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (82 test files, ~890 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -210,7 +210,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
 - **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. `apps/api/app/auth/permissions.py`'s static `(role, module) -> set[action]` dict (`MATRIX`) is no longer the live source of truth — see *Dynamic RBAC engine* below — but it still documents each role's grants readably and is the fallback for any user with zero group memberships; the per-sub-project notes below explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
-- **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
+- **12 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, `qc`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
 - FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action, project_param=None)` factory in `apps/api/app/auth/rbac.py`, backed by the DB engine in `apps/api/app/auth/rbac_engine.py`.
 - All authenticated mutations write to `audit_log` via `apps/api/app/auth/audit.py`.
@@ -775,9 +775,11 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 > `worker_assignment.item_id` is **gone**; `stage_completion_log.item_id`
 > survives nullable as pre-`0030` provenance only. Completing a stage fans
 > `item_stages.done_date` out to every linked item whose own order contains it
-> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope is the five
-> production stages only — **DEL and INST are still not assignable** (Q561).
-> The notes below otherwise stand.
+> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope was the
+> five production stages only when B3 shipped — **DEL and INST are still not
+> assignable** (Q561) — but migration `0039` added **Packing** as a real 6th
+> assignable stage (Q519); see *QC / Rework / Packing* further down. The
+> notes below otherwise stand.
 
 - Migration 0020 adds `app_user.is_shop_worker` (bool default false),
   `items.paint_after_assembly` (bool default false; when true the
@@ -837,10 +839,11 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   or cancel first (spec §15 Q3). `shop_floor.queries.active_assignments_for_worker`
   + `users.routes._guard_active_assignments`.
 - Web routes:
-  - **`/shop-floor?project=…`** — Foreman office board. 5-column
-    kanban DOWN | CNC | EDGED | PAINTED | MADE. Per-card status
-    pill + worker chip + reassign select + cancel button. Inline
-    `AssignDialog`. 15-second polling.
+  - **`/shop-floor?project=…`** — Foreman office board. Kanban
+    DOWN | CNC | EDGED | PAINTED | MADE (**+ PACKING, a 6th column
+    since migration `0039`** — see *QC / Rework / Packing* below).
+    Per-card status pill + worker chip + reassign select + cancel
+    button. Inline `AssignDialog`. 15-second polling.
   - **`/shop-floor/station/[worker_id]`** — kiosk display. Active
     card prominent (~70% viewport), big emerald Mark-done button on
     the in-progress card; the worker's own browser session sees the
@@ -2030,3 +2033,173 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   for `_LEGAL_TRANSITIONS` (Q513 already ruled this out generally), and
   moving `Cars/OH&S`/`Scope` tab content onto the new financials card
   (blocked on Q550/Q572, unrelated customer inputs).
+
+## QC / Rework / Packing (Plan V1 §26–§28, Q515–519) — shipped
+
+> Selected by the user over §L (Locking/Concurrency) after §I shipped —
+> chosen as the "bolt on a new subsystem" option, additive to existing
+> surfaces rather than a rewrite of save semantics on the busiest ones.
+> Built directly against `docs/plan-v1/OPEN-QUESTIONS.md` §M — no separate
+> spec or plan doc, the same way #9a, the RBAC engine and §I shipped. This
+> section is its only written record.
+
+- **Migration `0039`** — three new tables (`qc_defect`, `qc_checklist_item`,
+  `rework`), a `PACKING` row in the `stages` lookup (`sort_order 85`,
+  between `MADE=80` and `DEL=90`), widened `worker_assignment` /
+  `stage_completion_log` CHECKs to admit `'PACKING'`, and a backfill of
+  `group_module_grant` for the new `qc` RBAC module across every existing
+  workspace's 7 system groups (see *RBAC* below — this is **not** the same
+  thing as adding `qc` to the static `MATRIX`, and both were required).
+- **QC is a module, not a workflow stage** (Q515) — Plan V1 §22 lists QC
+  among the stages, but §26 describes it as checking *the work just
+  completed* at whatever stage that was, a cross-cutting activity rather
+  than a milestone. `items.stage_key` / `lifecycle_stage` is untouched by
+  QC; only Packing (below) is a real 11th stage.
+- **`qc_defect`** — one row per finding, optionally tagged with the
+  `stage_key` whose work is being checked. Two states only: `open` →
+  `resolved`. Raising/editing a defect is `qc:write`; resolving it is
+  `qc:approve` — a defect a Foreman raises isn't self-closed, matching the
+  shop_drawings not-uploader-approves pattern. A resolved defect is
+  immutable (`409` on edit or on resolving twice).
+- **`qc_checklist_item`** — a per-item QC checklist line (`label`,
+  `is_checked`, `checked_by`/`checked_at`, `sort_order`). Plan V1 §2 lists
+  "QC checklist" among what a duplicated Joinery Item copies and "QC
+  results"/"Defects" among what it must *not* copy — item duplication
+  itself is not built anywhere in this tree yet, so there is nothing to
+  wire that distinction into today; noted for whoever builds it.
+- **`rework`** — **one entity with a `kind` CHECK** (`internal`/`full`),
+  not two entity types (Q516): "they differ in when they occur and how much
+  work they involve, but what must be recorded — cause, scope, cost and
+  responsibility — is the same" (`plan_v1.md` line 1926-1929), and those
+  four fields plus `kind` are exactly the columns. **Rework never reopens a
+  completed stage** (Q517) — it is a parallel record; the original
+  `stage_completion_log` rows stay intact. This also sidesteps a real
+  problem the shared cutlist would otherwise create: production stages
+  belong to the cutlist and are shared by every linked item, so reopening
+  one for a single item would have reopened it for all of them.
+  Closing rework is `qc:approve`, same shape as resolving a defect.
+- **The QC-timing rule (Q518) is guidance, not enforced.** §26 describes
+  what happens depending on how far the work has progressed (before
+  Listing QC doesn't need to know; after Listing but before Assembly the
+  Lister updates the cutlist; after Assembly it's Internal Rework; after
+  Installation it's Full Rework) — none of this is checked in code. The
+  `kind` a defect becomes is the QC operator's call.
+- **Packing (Q519) — a real 11th lifecycle stage, with scanning.** Unlike
+  QC, Packing genuinely is a stage: "the first addition to the workflow
+  stage list since Q459 kept the existing ten" (`plan_v1.md` line 2130).
+  It is the 6th Shop Floor stage — `SHOP_FLOOR_ORDER_DEFAULT` /
+  `_PAINT_LAST` (`apps/api/app/shop_floor/lifecycle.py`) both now end in
+  `PACKING` unconditionally, after `MADE`/`PAINTED` regardless of their
+  relative order, since Packing always comes after all
+  fabrication/finishing. Assignable, start/complete, undo — all exactly
+  like `DOWN`/`CNC`/`EDGED`/`PAINTED`/`MADE`. `DEL`/`INST` remain outside
+  Shop Floor (Q561, unchanged).
+- **Scanning without the native app.** Q519 confirms Packing as "a tracked
+  stage, with scanning," and ties that to Q532's dedicated native site
+  application — which does not exist anywhere in this repo (`apps/api` +
+  `apps/web` is the whole stack). Rather than wait on that separate
+  project, scanning is built **in the browser**: `getUserMedia` + `jsQR`
+  decode QR frames from the camera, no native app and no new backend
+  service. A manual-entry fallback (type the number) covers cameraless
+  browsers, denied permission, and desktop testing.
+  - **`GET /items/{id}/label`** (new page, deliberately **outside** the
+    `(app)` route group so it renders bare, not wrapped in TopBar/SideBar
+    chrome — proxy.ts's `PUBLIC` allowlist is path-based, not
+    route-group-based, so the page still redirects to `/login` without a
+    session) renders a QR code (the `qrcode` npm package, client-side
+    canvas) encoding the item's own `num` — the one value `joinery_number_seq`
+    already guarantees unique, not a new identifier scheme. "Print Label"
+    sits next to the three existing print links in `EditorFooter.tsx`.
+  - **The scan target is the whole cutlist, not a single item.** Shop
+    Floor's unit is the cutlist (migration `0030`); one "Mark Packing
+    done" action completes it for every linked item, and there is no
+    per-item completion state to scan against. Scanning **any one** item's
+    label on the cutlist is enough — `StationCard.item_numbers` (new field,
+    `worker_queue()`'s `array_agg` of the cutlist's item `num`s) is what the
+    scanner checks the decoded value against.
+  - `PackingScanner.tsx` (`shop-floor/station/[worker_id]/_components/`) —
+    only wired into the kiosk's `MarkDoneDialog` when
+    `card.stage_key === "PACKING"`; every other stage keeps the plain
+    confirm button unchanged.
+- **RBAC — new `qc` module, the 12th** (between `estimating` and
+  `it_management` in `_ALL_MODULES`). Mirrors `shop_floor`'s
+  drafter-is-downstream shape, not the elevated-drafter pattern most other
+  modules use — QC is production-floor territory:
+  - admin/manager: `{read,write,approve,comment}`
+  - editor: `{read,write,comment}` — can raise a defect/checklist
+    item/rework, cannot resolve or close one
+  - drafter: `{read,comment}` — same shape as `shop_floor`'s drafter row
+  - estimator/purchase_officer/viewer: `{read}`
+
+  **This needed two separate changes, not one.** Adding `"qc"` to
+  `_ALL_MODULES` and to the static `MATRIX` dict makes it available to
+  `seed_system_groups()` for any workspace created (or re-seeded) *after*
+  this migration — but every already-existing workspace's system groups
+  were populated once, by `0037`'s own hardcoded backfill, and the Dynamic
+  RBAC engine (§F) resolves a user with real memberships from
+  `group_module_grant` alone, never falling back to `MATRIX` for them. So
+  migration `0039` also inserts the 16 `(role, 'qc', action)` rows directly
+  into `group_module_grant` for every workspace's existing 7 system groups
+  — the same shape 0037's own backfill used, scoped to just the new
+  module. Skipping this would have left `qc` invisible to every real user
+  in every workspace that existed before `0039`, while still passing any
+  test that creates a fresh zero-membership user (which falls back to
+  `MATRIX` and would look right for the wrong reason).
+- **Backend module `apps/api/app/qc/`** (`schemas.py`, `queries.py`,
+  `routes.py`), mounted at top-level paths. **12 endpoints**, all
+  Joinery-Items-only (`joinery_items_only()`, the `item_documents`
+  precedent — a related part gets 404) and workspace-isolated through
+  `items → projects.workspace_id`:
+  - `GET/POST /items/{iid}/qc/defects`, `PATCH /qc/defects/{did}`,
+    `POST /qc/defects/{did}/resolve`
+  - `GET/POST /items/{iid}/qc/checklist`, `PATCH /qc/checklist/{cid}`,
+    `DELETE /qc/checklist/{cid}`
+  - `GET/POST /items/{iid}/qc/rework`, `PATCH /qc/rework/{rid}`,
+    `POST /qc/rework/{rid}/close`
+  - Every mutation writes `audit_log` **and** `item_edit_log` in the same
+    transaction, per the PM Workbench invariant. Audit events:
+    `qc.defect.{create,update,resolve}`,
+    `qc.checklist.{add,check,uncheck,update,remove}`,
+    `qc.rework.{create,update,close}`.
+- **Web.** New **QC** tab in the item editor (`EditorTabs.tsx`, between
+  Query and Log) — `QcTab.tsx` renders all three sections (Defects,
+  Checklist, Rework) on one screen, matching the density of
+  `AttachmentsTab`/`QueryTab` rather than three separate tabs. Shop Floor's
+  office board (`ShopFloorClient.tsx`) and its types (`shop-floor-types.ts`)
+  gained the 6th `PACKING` column; the kiosk (`StationClient.tsx`) gained
+  the scan-gated `MarkDoneDialog` path described above.
+- **Seed.** `make seed` on ALF-001's first joinery item: 1 open + 1
+  resolved defect, a 3-item QC checklist (2 checked), 1 open Internal
+  Rework — built through the real `app.qc.queries` functions, so seeded
+  rows carry genuine `audit_log`/`item_edit_log` entries, same as #11/#12's
+  seed blocks. A second item gets one `assigned` `PACKING` `worker_assignment`
+  (raw SQL, matching the pre-existing #8 shop_floor seed block's own idiom)
+  so the board's 6th column isn't empty out of the box. Idempotent —
+  each table's target-item rows are dropped before re-inserting.
+- **Tests:** `test_qc_routes.py` (new, 15 tests — defect/checklist/rework
+  round-trips, `qc:write` vs `qc:approve` split via editor-cannot-resolve/
+  close, resolved/closed immutability, Joinery-Items-only 404s,
+  cross-workspace isolation, audit+edit-log writes), two new PACKING tests
+  in `test_shop_floor_routes.py` (assignable + completes after `MADE`;
+  before `MADE` is `409 STAGE_OUT_OF_ORDER`), `test_shop_floor_lifecycle.py`
+  updated in place for the new 6-stage ordering (existing "last stage has
+  no later stages" tests were pinned to `MADE`, now correctly `PACKING`),
+  and `test_permission_groups_routes.py`'s admin-grant-count assertion
+  updated `44 → 48` (12 modules × 4 actions, was 11 × 4) — the one test in
+  the whole suite that hardcoded a MATRIX-derived total and needed
+  updating for a module addition. Full suite (932 passed, 10 skipped, 1
+  pre-existing unrelated failure — the same local-only `MEILI_URL` gap
+  noted in *Tender Lifecycle + Financials* above) run against a real
+  migrated Postgres 16 instance with zero regressions outside the files
+  named here.
+- **Out of scope (deferred):** the standalone cross-project **QC
+  Dashboard** Plan V1 §4.2 names (this ships the per-item surfaces that
+  would back it, not the dashboard itself); QC checklist templates or
+  per-project configuration (today's checklist is ad-hoc per item, added
+  free-text, matching Simplicity First over building a template system
+  nothing asked for); linking a `rework` row to the `qc_defect` that caused
+  it (Plan V1 doesn't ask for the link, and rework can originate without a
+  formal defect record, e.g. found on site); §L's remaining Hard/Approval
+  lock types and field-level optimistic concurrency (the alternative this
+  round didn't pick); native mobile app work under Q532 (Packing's
+  scanning need is met without it, per above).

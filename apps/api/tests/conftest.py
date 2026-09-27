@@ -18,8 +18,8 @@ _REF_STATUS_OPTIONS = [
 _REF_STAGES = [
     ("REQ", "Required", 1), ("SM", "Shop Material", 2), ("LISTED", "Listed", 3),
     ("DOWN", "Down", 4), ("CNC", "CNC", 5), ("EDGED", "Edged", 6),
-    ("PAINTED", "Painted", 7), ("MADE", "Made", 8), ("DEL", "Delivered", 9),
-    ("INST", "Installed", 10),
+    ("PAINTED", "Painted", 7), ("MADE", "Made", 8), ("PACKING", "Packed", 9),
+    ("DEL", "Delivered", 10), ("INST", "Installed", 11),
 ]
 
 

@@ -10,6 +10,7 @@ import { BoardTab } from "./BoardTab";
 import { MaterialTakeTab } from "./MaterialTakeTab";
 import { ActionsTab } from "./ActionsTab";
 import { QueryTab } from "./QueryTab";
+import { QcTab } from "./QcTab";
 
 interface EditorTabsProps {
   item: ItemOut;
@@ -25,6 +26,7 @@ const TABS = [
   "attachments",
   "actions",
   "query",
+  "qc",
   "log",
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -37,6 +39,7 @@ const TAB_LABELS: Record<Tab, string> = {
   attachments: "Attachments",
   actions: "Actions",
   query: "Query",
+  qc: "QC",
   log: "Log",
 };
 
@@ -86,6 +89,9 @@ export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
         )}
         {current === "query" && (
           <QueryTab itemId={item.id} currentUserRole={currentUserRole} />
+        )}
+        {current === "qc" && (
+          <QcTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
         {current === "log" && <LogTab rows={item.edit_log} />}
       </div>

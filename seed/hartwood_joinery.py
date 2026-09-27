@@ -60,6 +60,7 @@ STAGES: list[tuple[str, str, int]] = [
     ("EDGED",   "Edge Banded",    60),
     ("PAINTED", "Painted",        70),
     ("MADE",    "Assembled",      80),
+    ("PACKING", "Packed",         85),
     ("DEL",     "Delivered",      90),
     ("INST",    "Installed",      100),
 ]
@@ -2966,6 +2967,106 @@ def main() -> None:
                 "+ TG team, 4 contacts, lift access + sketch, 2 item queries "
                 "(1 open, 1 answered), 2 item documents"
             )
+
+        # ------------------------------------------------------------------
+        # QC / Rework / Packing (Plan V1 §26-28, Q515-519, migration 0039).
+        # Built through the same query functions the API uses, so seeded
+        # rows carry real audit / edit-log entries. On ALF-001's first
+        # joinery item: 1 open + 1 resolved defect, a 3-item QC checklist
+        # (2 checked), 1 open Internal Rework. A second item gets a fresh
+        # PACKING assignment so the Shop Floor board's 6th column has a
+        # demo card out of the box. Idempotent: each table's rows for the
+        # target item(s) are dropped before re-inserting.
+        # ------------------------------------------------------------------
+        from app.qc import queries as _qc
+
+        _alf = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'"
+                               " AND workspace_id = :w"), {"w": wid}).scalar()
+        _foreman = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND email = 'juno.okafor@hartwood.test'"),
+                              {"w": wid}).scalar()
+        _manager = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND auth_role = 'manager' ORDER BY id LIMIT 1"),
+                              {"w": wid}).scalar()
+        if _alf and _foreman and _manager:
+            _qc_items = [r[0] for r in db.execute(text("""
+                SELECT item_id FROM items
+                 WHERE project_id = :p AND row_type = 'joinery_item'
+                 ORDER BY num LIMIT 2
+            """), {"p": _alf})]
+            if _qc_items:
+                _qc_item = _qc_items[0]
+                db.execute(text("DELETE FROM qc_defect WHERE item_id = :i"), {"i": _qc_item})
+                db.execute(text("DELETE FROM qc_checklist_item WHERE item_id = :i"), {"i": _qc_item})
+                db.execute(text("DELETE FROM rework WHERE item_id = :i"), {"i": _qc_item})
+
+                _resolved_defect = _qc.create_defect(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    stage_key="EDGED", description="Edge band lifting at the corner.",
+                )
+                _qc.resolve_defect(
+                    db, defect_id=_resolved_defect["defect_id"], workspace_id=wid,
+                    actor_id=_manager, resolved_note="Re-glued and clamped overnight.",
+                )
+                _qc.create_defect(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    stage_key="MADE", description="Small chip on the top edge of the left door.",
+                )
+
+                for _label, _checked in [
+                    ("Doors align flush", True),
+                    ("Hardware operates smoothly", True),
+                    ("Finish free of blemishes", False),
+                ]:
+                    _row = _qc.create_checklist_item(
+                        db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                        label=_label, sort_order=0,
+                    )
+                    if _checked:
+                        _qc.patch_checklist_item(
+                            db, checklist_item_id=_row["checklist_item_id"], workspace_id=wid,
+                            actor_id=_foreman, changes={"is_checked": True},
+                        )
+
+                _qc.create_rework(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    kind="internal", cause="CNC toolpath offset on the last sheet.",
+                    scope="Re-cut the two affected side panels.",
+                    responsibility="Machine team", cost=None,
+                )
+                db.commit()
+                print(
+                    "seeded qc: 1 open + 1 resolved defect, 3-item checklist "
+                    "(2 checked), 1 open internal rework on ALF-001's first item"
+                )
+
+            _packer = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                      " AND email = 'sam.lee@hartwood.test'"),
+                                 {"w": wid}).scalar()
+            if len(_qc_items) >= 2 and _packer:
+                _pack_cutlist = db.execute(
+                    text("SELECT cutlist_id FROM items WHERE item_id = :i"),
+                    {"i": _qc_items[1]},
+                ).scalar()
+                if _pack_cutlist:
+                    db.execute(
+                        text("DELETE FROM worker_assignment"
+                             " WHERE cutlist_id = :c AND stage_key = 'PACKING'"),
+                        {"c": _pack_cutlist},
+                    )
+                    db.execute(
+                        text(
+                            """
+                            INSERT INTO worker_assignment(
+                                cutlist_id, stage_key, worker_id, status, assigned_by
+                            )
+                            VALUES (:c, 'PACKING', :w, 'assigned', :a)
+                            """
+                        ),
+                        {"c": _pack_cutlist, "w": _packer, "a": _foreman},
+                    )
+                    db.commit()
+                    print("seeded packing: 1 assigned PACKING task on ALF-001")
 
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
