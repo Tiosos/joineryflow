@@ -123,6 +123,12 @@ def history(db: Session, item_id: int, workspace_id: int) -> list[dict]:
 
 def generate(db: Session, item_id: int, workspace_id: int, actor_id: int) -> int:
     _item(db, item_id, workspace_id)
+    # Locks the item row for the rest of this transaction, so a concurrent
+    # generate() on the same item serializes instead of both passing the
+    # draft-exists check below and racing on uniq_take_draft / (item_id,
+    # version) — which the route's error handling doesn't catch, unlike the
+    # clean Conflict("DRAFT_EXISTS") this check is meant to give.
+    db.execute(text("SELECT 1 FROM items WHERE item_id = :i FOR UPDATE"), {"i": item_id})
     existing = db.execute(text(
         "SELECT take_id FROM material_take WHERE item_id = :i AND status = 'draft'"),
         {"i": item_id}).scalar()

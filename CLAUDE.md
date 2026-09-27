@@ -1409,6 +1409,22 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   catalog size → else the line is in **m²**. Hardware sums per material.
   Edging and finishing are **manual** `OTHER` lines (Q584 — no data to
   generate from). Related parts never get a take (Q424).
+- **Fixed later.** `generate()` checked for an existing draft with a plain,
+  unlocked `SELECT`, then computed `SELECT COALESCE(MAX(version), 0) + 1`,
+  then inserted — no lock in between. Unlike `shop_drawings` (where the
+  equivalent race is masked by a constraint the route already handles), this
+  module's route (`material_takes/routes.py`'s `_call`) catches only the
+  app-level `NotFound`/`Conflict` exceptions, not `IntegrityError`, so two
+  concurrent `POST /items/{iid}/material-take/generate` calls on an item with
+  no existing draft could both pass the check and race on `uniq_take_draft` /
+  `UNIQUE(item_id, version)` (`0034`) — the loser got a raw 500 instead of the
+  clean `409 DRAFT_EXISTS` the pre-check is meant to give. `generate()` now
+  locks the `items` row (`FOR UPDATE`) before the draft-exists check, so a
+  concurrent call on the same item serializes instead of racing. No
+  migration. Pinned by `test_concurrent_generate_serializes_instead_of_raw_500`
+  (`test_material_take_generate_race.py`), confirmed to fail against the
+  pre-fix code with a raw `UniqueViolation` on
+  `material_take_item_id_version_key`.
 - **Draft → approved → superseded.** Only a draft changes; an approved take is
   immutable (`409 TAKE_NOT_DRAFT`) and a change means version `n + 1`. On a
   generated line, material / unit / description are read-only and changing
