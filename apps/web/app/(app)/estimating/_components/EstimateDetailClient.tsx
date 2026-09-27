@@ -414,9 +414,18 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           />
           <button
             type="button"
+            onClick={withdraw}
+            disabled={busy}
+            className="ml-auto rounded border border-h-line bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-100 disabled:opacity-50"
+            data-testid="withdraw-btn"
+          >
+            Withdraw
+          </button>
+          <button
+            type="button"
             onClick={advance}
             disabled={busy || (nextStageLabel(currentRev?.status) === "Submitted" && lines.length === 0)}
-            className="ml-auto rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
+            className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
             data-testid="advance-btn"
           >
             {nextStageLabel(currentRev?.status) === "Submitted"

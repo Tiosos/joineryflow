@@ -3,8 +3,15 @@ import type { ProjectContract } from "./project-contract-types";
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, { cache: "no-store", ...init });
   if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail?.detail ?? `${init?.method ?? "GET"} ${path} failed: ${r.status}`);
+    const body = await r.json().catch(() => ({}));
+    const detail = body?.detail;
+    // `detail` can be a plain string, or an object like {code: "..."} — coercing
+    // an object straight into Error's message would stringify to "[object Object]".
+    const message =
+      typeof detail === "string" ? detail :
+      typeof detail?.code === "string" ? detail.code :
+      `${init?.method ?? "GET"} ${path} failed: ${r.status}`;
+    throw new Error(message);
   }
   return r.json() as Promise<T>;
 }

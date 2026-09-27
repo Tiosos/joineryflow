@@ -170,6 +170,33 @@ def main() -> None:
         )
 
         # ------------------------------------------------------------------
+        # 2b. Dynamic RBAC engine (§F) — 7 system groups + a workspace-wide
+        # membership per user, matching migration 0037's one-time backfill.
+        # That migration only ran against workspaces that already existed;
+        # this dev workspace is created afterward by `make seed`, so without
+        # this it would have zero groups/memberships and the admin API
+        # (`GET /permission-groups`) would show nothing on a fresh setup.
+        # ------------------------------------------------------------------
+        from app.auth.rbac_engine import seed_system_groups
+
+        seed_system_groups(db, workspace_id=wid)
+        db.execute(
+            text(
+                """
+                INSERT INTO user_group_membership (user_id, group_id, project_id)
+                SELECT u.id, g.group_id, NULL
+                  FROM app_user u
+                  JOIN permission_group g
+                    ON g.workspace_id = u.workspace_id
+                   AND g.name = u.auth_role AND g.is_system = true
+                 WHERE u.workspace_id = :w
+                ON CONFLICT (user_id, group_id, COALESCE(project_id, 0)) DO NOTHING
+                """
+            ),
+            {"w": wid},
+        )
+
+        # ------------------------------------------------------------------
         # 3. Reference tables: stages + status_options
         # ------------------------------------------------------------------
         for stage_key, label, sort_order in STAGES:

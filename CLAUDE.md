@@ -1832,9 +1832,19 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   `test_rbac_drafter.py` / `test_permissions.py` / `test_shop_drawings_rbac.py`
   / `test_users_routes.py` / `test_area_room_routes.py` pass unchanged.
 - **Known gaps, recorded rather than silently left:**
-  - No automatic group provisioning for a workspace created after `0037` —
-    there is no "create workspace" route in v1 today, so this has never come
-    up; `seed_system_groups()` is ready to be called from one when it exists.
+  - No automatic group provisioning for a workspace created through the API —
+    there is no "create workspace" route in v1 today. **`make seed` is a
+    real instance of this**, though: it creates the `hartwood-joinery`
+    workspace *after* `0037`'s one-time backfill already ran, so without a
+    fix the seeded workspace would ship with zero `permission_group`/
+    `group_module_grant`/`user_group_membership` rows and `GET
+    /permission-groups` would show nothing on a fresh `make up && make
+    migrate && make seed`. Fixed: `seed/hartwood_joinery.py` now calls
+    `seed_system_groups()` right after creating the workspace and gives
+    every seeded user a workspace-wide membership matching their
+    `auth_role`, mirroring `0037`'s backfill exactly. `seed_system_groups()`
+    is still ready to be called from a future "create workspace" route when
+    one exists — this fix doesn't add one.
   - No web UI for the admin API (above).
   - Q472, Q470's rule layer, Q473's comments, and the broader project-scoped
     rewire of existing endpoints are open follow-ups, not oversights.

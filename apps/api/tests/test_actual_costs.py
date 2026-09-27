@@ -153,3 +153,38 @@ def test_labour_apportioned_by_part_area_share():
     assert by_item[ids["item_big"]] == pytest.approx(133.33, abs=0.01)
     assert by_item[ids["item_small"]] == pytest.approx(66.67, abs=0.01)
     assert by_item[ids["item_big"]] + by_item[ids["item_small"]] == pytest.approx(200.00, abs=0.01)
+
+
+def test_materials_actual_excludes_cancelled_batch():
+    c, ids = _login()
+    s = SessionLocal()
+    try:
+        s.execute(
+            text(
+                """
+                INSERT INTO procurement_batches(
+                    project_id, material_type, material_id, qty_received, cost_per_unit
+                ) VALUES (:p, 'BOARD', 1, 10, 50.00)
+                """
+            ),
+            {"p": ids["pid"]},
+        )
+        s.execute(
+            text(
+                """
+                INSERT INTO procurement_batches(
+                    project_id, material_type, material_id, qty_received, cost_per_unit, cancelled_at
+                ) VALUES (:p, 'BOARD', 2, 10, 999.00, now())
+                """
+            ),
+            {"p": ids["pid"]},
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    r = c.get(f"/projects/{ids['pid']}/actual-costs")
+    assert r.status_code == 200, r.text
+    # 10 * $50 = $500 from the live batch; the cancelled batch's 10 * $999
+    # must not be added on top.
+    assert float(r.json()["materials_actual"]) == pytest.approx(500.00, abs=0.01)

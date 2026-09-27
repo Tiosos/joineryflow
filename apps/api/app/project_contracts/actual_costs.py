@@ -4,11 +4,14 @@ Pure read, nothing stored — the same "derive, don't capture twice" stance
 as #9's `/optimise` (Q501). Two sources, both already recorded elsewhere:
 
 - **Materials**: `procurement_batches.qty_received * cost_per_unit`, summed
-  per project. This is project-level only (Q492 caps granularity at
-  Project + Item, and there is no per-item allocation path for BOARD/CUSTOM/
-  BENCHTOP batches today — only HARDWARE batches reach an item, through
-  `batch_allocations -> item_hardware_lines`, which #12's Material Summary
-  already treats as a project-level-only gap for the same reason).
+  per project over batches with `cancelled_at IS NULL` — a soft-cancelled
+  batch (#4's `DELETE /batches/{bid}`) never happened, cost-wise, matching
+  the same filter `procurement_v1` already applies elsewhere. This is
+  project-level only (Q492 caps granularity at Project + Item, and there is
+  no per-item allocation path for BOARD/CUSTOM/BENCHTOP batches today — only
+  HARDWARE batches reach an item, through `batch_allocations ->
+  item_hardware_lines`, which #12's Material Summary already treats as a
+  project-level-only gap for the same reason).
 - **Labour**: each `stage_completion_log` row's duration
   (`completed_at - worker_assignment.started_at`) priced at
   `workspace_labour_rate`. Completions belong to a **cutlist** (migration
@@ -42,7 +45,7 @@ def _materials_actual(db: Session, *, project_id: int) -> Decimal:
             """
             SELECT COALESCE(SUM(qty_received * COALESCE(cost_per_unit, 0)), 0)
               FROM procurement_batches
-             WHERE project_id = :p
+             WHERE project_id = :p AND cancelled_at IS NULL
             """
         ),
         {"p": project_id},
