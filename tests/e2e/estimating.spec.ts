@@ -3,7 +3,7 @@
 // glob: tests/e2e/*.spec.ts.
 // data-shape: relies on seed.hartwood_joinery (workspace=hartwood-joinery,
 //   estimator=kai.ngata@hartwood.test, password=hartwood-dev,
-//   EST-2026-0001 draft / EST-2026-0002 sent / EST-2026-0003 accepted).
+//   EST-2026-0001 QUOTE_PREPARED / EST-2026-0002 SUBMITTED / EST-2026-0003 WON).
 // user instruction: "add an estimating system into the current project, fully integrate with joinery items."
 
 import { test, expect } from "@playwright/test";
@@ -26,7 +26,7 @@ test("estimator can view + convert seeded estimate to project", async ({ page })
   await expect(page.getByText("EST-2026-0003")).toBeVisible();
 
   await page.getByText("EST-2026-0003").click();
-  await expect(page.locator('[data-testid="status-pill"]')).toHaveText(/accepted/i);
+  await expect(page.locator('[data-testid="status-pill"]')).toHaveText(/won/i);
   await expect(page.locator('[data-testid="convert-btn"]')).toBeVisible();
 
   await page.locator('[data-testid="convert-btn"]').click();
@@ -35,7 +35,7 @@ test("estimator can view + convert seeded estimate to project", async ({ page })
   await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 30_000 });
 });
 
-test("quote PDF renders for the sent demo estimate", async ({ page, context }) => {
+test("quote PDF renders for the submitted demo estimate", async ({ page, context }) => {
   await page.goto("/login");
   await page.fill('input[type="email"]', "kai.ngata@hartwood.test");
   await page.fill('input[type="password"]', "hartwood-dev");
@@ -44,7 +44,7 @@ test("quote PDF renders for the sent demo estimate", async ({ page, context }) =
 
   await page.goto("/estimating");
   await page.getByText("EST-2026-0002").click();
-  await expect(page.locator('[data-testid="status-pill"]')).toHaveText(/sent/i);
+  await expect(page.locator('[data-testid="status-pill"]')).toHaveText(/submitted/i);
 
   const pdfLink = page.locator('[data-testid="quote-pdf-link"]');
   await expect(pdfLink).toBeVisible();

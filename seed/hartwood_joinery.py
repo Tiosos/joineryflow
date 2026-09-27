@@ -1490,7 +1490,11 @@ def main() -> None:
                     RETURNING revision_id
                     """
                 ),
-                {"e": eid, "st": status if status == "draft" else "draft",
+                # Every revision starts at OPPORTUNITY, the first of the
+                # 12-stage tender lifecycle's 11 sequential stages
+                # (Q487/488) — the final `status` argument below moves it
+                # on from there.
+                {"e": eid, "st": "OPPORTUNITY",
                  "mu": markup_pct, "cb": _estimator_id},
             ).scalar()
             for seq, spec in enumerate(line_specs, start=1):
@@ -1607,13 +1611,24 @@ def main() -> None:
                 ),
                 {"r": rid},
             )
-            # Apply final status (skip draft).
-            if status == "sent":
+            # Apply final status. "draft" (the seed's own keyword, meaning
+            # "still being worked, not yet sent") lands on QUOTE_PREPARED —
+            # further along than the pipeline's first stage, since a demo
+            # quote actively in progress shows the lifecycle better than one
+            # parked at OPPORTUNITY. "sent"/"accepted" map onto the two
+            # stages that carry the same locking/rate-snapshot semantics
+            # they always have: SUBMITTED and WON (Q487/488/548).
+            if status == "draft":
+                s.execute(
+                    text("UPDATE estimate_revision SET status = 'QUOTE_PREPARED' WHERE revision_id = :r"),
+                    {"r": rid},
+                )
+            elif status == "sent":
                 s.execute(
                     text(
                         """
                         UPDATE estimate_revision
-                           SET status = 'sent',
+                           SET status = 'SUBMITTED',
                                sent_at = now(), sent_by = :a,
                                locked_at = now(), locked_by = :a
                          WHERE revision_id = :r
@@ -1626,7 +1641,7 @@ def main() -> None:
                     text(
                         """
                         UPDATE estimate_revision
-                           SET status = 'accepted',
+                           SET status = 'WON',
                                sent_at = now() - interval '1 day',
                                sent_by = :a,
                                locked_at = now() - interval '1 day',
@@ -1819,6 +1834,45 @@ def main() -> None:
 
         s.commit()
         print("seeded #9a estimating_core: 1 estimator + 2 customers + 3 estimates")
+
+        # ==================================================================
+        # === Contract Value + variations (Q491) ==========================
+        # No estimate is actually converted in this seed (EST-2026-0003 is
+        # left WON, ready for a human to click Convert) — a project_contract
+        # row is only ever created by convert_to_project, so there is no
+        # naturally-converted project to seed one from. Demonstrates the
+        # feature directly on ALF-001 instead. Idempotent: delete-then-insert.
+        # ==================================================================
+        _contract_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if _contract_pid is not None:
+            s.execute(
+                text("DELETE FROM project_contract WHERE project_id = :p"),
+                {"p": _contract_pid},
+            )
+            s.execute(
+                text(
+                    """
+                    INSERT INTO project_contract(project_id, original_value, created_by)
+                    VALUES (:p, 185000.00, :a)
+                    """
+                ),
+                {"p": _contract_pid, "a": _estimator_id},
+            )
+            s.execute(
+                text(
+                    """
+                    INSERT INTO project_contract_variation(
+                        project_id, description, amount_delta, created_by
+                    )
+                    VALUES (:p, 'Client-requested benchtop upgrade', 4250.00, :a)
+                    """
+                ),
+                {"p": _contract_pid, "a": _estimator_id},
+            )
+            s.commit()
+            print("seeded project_contract on ALF-001: $185,000.00 + 1 variation")
 
         # ==================================================================
         # === Legacy mocks import =========================================

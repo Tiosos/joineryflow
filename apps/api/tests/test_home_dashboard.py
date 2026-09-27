@@ -433,11 +433,15 @@ def _seed_estimate(
         ),
         {"w": wid, "c": cid, "no": no, "u": uid},
     ).scalar()
+    # locked_at (not status) is what `_metrics_estimator`'s "drafts_open"
+    # card keys off — set it for every post-SUBMITTED status, matching what
+    # the real MGMT_APPROVAL -> SUBMITTED transition always does.
+    locked_at = "now()" if status in ("SUBMITTED", "WON", "LOST", "WITHDRAWN") else "NULL"
     rid = db.execute(
         text(
             "INSERT INTO estimate_revision(estimate_id, rev_no, status, "
-            "expires_at, converted_project_id, created_by) "
-            "VALUES (:e, 1, :s, :exp, :conv, :u) RETURNING revision_id"
+            f"locked_at, expires_at, converted_project_id, created_by) "
+            f"VALUES (:e, 1, :s, {locked_at}, :exp, :conv, :u) RETURNING revision_id"
         ),
         {"e": eid, "s": status, "exp": expires_at,
          "conv": converted_project_id, "u": uid},
@@ -457,15 +461,15 @@ def test_dashboard_estimator_metrics_shape():
     try:
         today = date.today()
         conv_pid = _create_project(db, wid=wid, uid=uid, code="CONV-1")
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-A", status="draft")
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-B", status="draft")
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-C", status="sent")
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-D", status="sent",
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-A", status="OPPORTUNITY")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-B", status="QUOTE_PREPARED")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-C", status="SUBMITTED")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-D", status="SUBMITTED",
                        expires_at=today + timedelta(days=3))
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-E", status="accepted")
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-F", status="accepted",
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-E", status="WON")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-F", status="WON",
                        converted_project_id=conv_pid)
-        _seed_estimate(db, wid=wid, uid=uid, no="EST-G", status="rejected")
+        _seed_estimate(db, wid=wid, uid=uid, no="EST-G", status="LOST")
         db.commit()
     finally:
         db.close()

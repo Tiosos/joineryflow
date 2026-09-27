@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field
 # ----------------------------------------------------------------------------
 
 EstimateStatus = Literal[
-    "draft", "sent", "accepted", "rejected", "expired", "withdrawn"
+    "OPPORTUNITY", "INITIAL_REVIEW", "GO_NO_GO", "INFO_REQUESTED",
+    "DOCS_RECEIVED", "ESTIMATING", "SUPPLIER_PRICING", "INTERNAL_REVIEW",
+    "QUOTE_PREPARED", "MGMT_APPROVAL", "SUBMITTED",
+    "WON", "LOST", "WITHDRAWN",
 ]
 PartMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP"]
 HardwareMaterialType = Literal["HARDWARE", "APPLIANCE"]
@@ -296,6 +299,30 @@ class PatchLabourRatesIn(BaseModel):
 # Convert-to-Project
 # ----------------------------------------------------------------------------
 
+class HandoverPreviewLineOut(BaseModel):
+    line_id: int
+    seq: int
+    description: str
+    qty: Decimal
+    has_breakdown: bool
+    total_sell: Decimal
+
+
+class HandoverPreviewOut(BaseModel):
+    revision_id: int
+    status: EstimateStatus
+    already_converted_project_id: int | None = None
+    proposed_contract_value: Decimal
+    lines: list[HandoverPreviewLineOut] = []
+
+
+class ConvertIn(BaseModel):
+    # None (the default, and what an empty body gives) means every line.
+    include_line_ids: list[int] | None = None
+    # None (the default) means the quote's own GST-inclusive total.
+    contract_value: Decimal | None = Field(default=None, ge=0)
+
+
 class ConvertResultOut(BaseModel):
     project_id: int
     project_code: str
@@ -303,3 +330,4 @@ class ConvertResultOut(BaseModel):
     parts_created: int
     hardware_lines_created: int
     project_hardware_catalog_added: int
+    contract_value: Decimal

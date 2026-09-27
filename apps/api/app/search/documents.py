@@ -298,7 +298,10 @@ def _estimates(db, ids):
             subtitle=_join(r["customer_name"],
                            f"Rev {r['rev_no']}" if r["rev_no"] else None, r["status"]),
             body=_words(r["site_address"]), status=r["status"],
-            archived=r["status"] in ("rejected", "expired", "withdrawn"),
+            # Q580's "rejected / expired / withdrawn" was written against the
+            # 6-state machine; Q548 collapsed rejected+expired onto LOST
+            # under the 12-stage tender lifecycle (Q487/488).
+            archived=r["status"] in ("LOST", "WITHDRAWN"),
             updated_at=r["updated_at"],
             url=f"/estimating/{r['estimate_id']}",
         )

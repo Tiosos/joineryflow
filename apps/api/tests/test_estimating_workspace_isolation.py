@@ -68,7 +68,7 @@ def _seed_two_workspaces(truncate_all):
                 """
                 INSERT INTO estimate_revision(estimate_id, rev_no, status,
                                               created_by)
-                VALUES (:e, 1, 'draft', :u)
+                VALUES (:e, 1, 'OPPORTUNITY', :u)
                 RETURNING revision_id
                 """
             ),
@@ -225,7 +225,7 @@ def test_patch_revision_cross_workspace_returns_404(client, truncate_all):
 # validation before the handler runs, which would leave the workspace check
 # untested. Each entry carries the minimum body that reaches the handler.
 _TRANSITIONS = [
-    ("send", None),
+    ("advance", None),
     ("accept", None),
     ("reject", {"lost_reason": "price"}),   # RejectIn.lost_reason is required
     ("expire", {}),
@@ -249,7 +249,7 @@ def test_revision_transitions_cross_workspace_return_404(
 def test_revision_status_unchanged_after_foreign_transition_attempt(client, truncate_all):
     ids = _seed_two_workspaces(truncate_all)
     _login_b(client)
-    client.post(f"/revisions/{ids['rid_a']}/send")
+    client.post(f"/revisions/{ids['rid_a']}/advance")
     from app.db import SessionLocal
     s = SessionLocal()
     try:
@@ -259,7 +259,7 @@ def test_revision_status_unchanged_after_foreign_transition_attempt(client, trun
         ).scalar()
     finally:
         s.close()
-    assert status == "draft"
+    assert status == "OPPORTUNITY"
 
 
 def test_quote_pdf_cross_workspace_returns_404(client, truncate_all):

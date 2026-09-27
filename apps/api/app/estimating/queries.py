@@ -261,8 +261,16 @@ def list_estimates(
             "(e.title ILIKE :q OR e.estimate_no ILIKE :q OR c.name ILIKE :q)"
         )
         params["q"] = f"%{q}%"
-    active_set = "('draft','sent','accepted')"
-    archive_set = "('rejected','expired','withdrawn')"
+    # "Active" is every non-terminal stage plus WON: a won quote stays
+    # actionable (pending handover) rather than filed away. "Archive" is
+    # the two outcomes that end the tender without a project — LOST also
+    # covers a lapsed (expired) quote (Q548).
+    active_set = (
+        "('OPPORTUNITY','INITIAL_REVIEW','GO_NO_GO','INFO_REQUESTED',"
+        "'DOCS_RECEIVED','ESTIMATING','SUPPLIER_PRICING','INTERNAL_REVIEW',"
+        "'QUOTE_PREPARED','MGMT_APPROVAL','SUBMITTED','WON')"
+    )
+    archive_set = "('LOST','WITHDRAWN')"
     if status:
         where.append("r.status = :st")
         params["st"] = status
@@ -432,7 +440,7 @@ def _insert_blank_revision(
             INSERT INTO estimate_revision(
                 estimate_id, rev_no, status, markup_pct, gst_pct, created_by
             )
-            VALUES (:eid, :rn, 'draft', 0, 10.00, :a)
+            VALUES (:eid, :rn, 'OPPORTUNITY', 0, 10.00, :a)
             RETURNING revision_id
             """
         ),
@@ -488,9 +496,9 @@ def patch_revision(
     if cur is None:
         return None
     draft_only_keys = {"markup_pct", "gst_pct", "terms_text"}
-    if (set(fields.keys()) & draft_only_keys) and cur["status"] != "draft":
+    if (set(fields.keys()) & draft_only_keys) and cur["locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
-    if "expires_at" in fields and cur["status"] != "sent":
+    if "expires_at" in fields and cur["status"] != "SUBMITTED":
         raise ValueError("NOT_SENT")
     columns = {
         "markup_pct": "markup_pct", "gst_pct": "gst_pct",
@@ -511,7 +519,7 @@ def patch_revision(
         ),
         {**fields, "rid": revision_id},
     )
-    if cur["status"] == "draft":
+    if cur["locked_at"] is None:
         _recompute_revision_totals(db, revision_id=revision_id)
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -526,6 +534,11 @@ def patch_revision(
 def revise_estimate(
     db: Session, *, estimate_id: int, workspace_id: int, actor_id: int
 ) -> int:
+    """Clone the current revision into a new one, starting at ESTIMATING
+    rather than OPPORTUNITY (Plan V1 does not say where a revision restarts;
+    recorded here as the chosen default) — the opportunity/review/go-no-go/
+    information-gathering work already happened for this tender and does
+    not need repeating just because the price is being redone."""
     cur_summary = get_estimate_summary(
         db, estimate_id=estimate_id, workspace_id=workspace_id
     )
@@ -535,7 +548,7 @@ def revise_estimate(
         text(
             """
             SELECT revision_id FROM estimate_revision
-             WHERE estimate_id = :eid AND status = 'draft'
+             WHERE estimate_id = :eid AND locked_at IS NULL
             """
         ),
         {"eid": estimate_id},
@@ -571,7 +584,7 @@ def revise_estimate(
                 estimate_id, rev_no, status, markup_pct, gst_pct, terms_text,
                 created_by
             )
-            VALUES (:eid, :rn, 'draft', :markup, :gst, :terms, :a)
+            VALUES (:eid, :rn, 'ESTIMATING', :markup, :gst, :terms, :a)
             RETURNING revision_id
             """
         ),
@@ -699,23 +712,60 @@ def _clone_lines(
 
 
 # ============================================================================
-# Status transitions
+# Status transitions — the 12-stage tender lifecycle (Plan V1 §5, Q487/488/548)
 # ============================================================================
+#
+# 11 sequential pipeline stages, then a 12th, terminal position resolving to
+# one of WON / LOST / WITHDRAWN. `advance_revision()` walks the sequential
+# chain one stage at a time via the single generic action below — Plan V1
+# names these 9 early stages but specifies no data or gate for any of them
+# individually, so they are bare pipeline-position markers. The one step
+# with real business logic (locking the revision, snapshotting labour
+# rates) is MGMT_APPROVAL -> SUBMITTED — the moment the quote actually goes
+# to the client — and that logic lives in `transition_revision`'s
+# `target == "SUBMITTED"` branch, which fires whether reached via
+# `advance_revision()` or directly, so no separate "send" entry point is
+# needed. `accept` / `reject` / `expire` resolve a SUBMITTED revision;
+# `withdraw` is legal from any non-terminal stage at any time (Plan V1 gives
+# no separate "No-Go" outcome — a Go/No-Go decision of "No" is the same act
+# as a withdrawal at any other stage).
+
+TENDER_STAGE_ORDER: tuple[str, ...] = (
+    "OPPORTUNITY", "INITIAL_REVIEW", "GO_NO_GO", "INFO_REQUESTED",
+    "DOCS_RECEIVED", "ESTIMATING", "SUPPLIER_PRICING", "INTERNAL_REVIEW",
+    "QUOTE_PREPARED", "MGMT_APPROVAL", "SUBMITTED",
+)
+TERMINAL_STATUSES: frozenset[str] = frozenset({"WON", "LOST", "WITHDRAWN"})
 
 _LEGAL_TRANSITIONS: dict[str, set[str]] = {
-    "draft":     {"sent", "withdrawn"},
-    "sent":      {"accepted", "rejected", "expired", "withdrawn"},
-    "accepted":  set(),
-    "rejected":  set(),
-    "expired":   set(),
-    "withdrawn": set(),
+    **{
+        stage: {TENDER_STAGE_ORDER[i + 1], "WITHDRAWN"}
+        for i, stage in enumerate(TENDER_STAGE_ORDER[:-1])
+    },
+    "SUBMITTED": {"WON", "LOST", "WITHDRAWN"},
+    "WON": set(), "LOST": set(), "WITHDRAWN": set(),
 }
+
+
+def next_tender_stage(current: str) -> str | None:
+    """The stage `advance()` would move to, or None if `current` has no
+    single well-defined next stage (SUBMITTED resolves via accept/reject/
+    expire, not advance; a terminal status has no next stage)."""
+    if current in TENDER_STAGE_ORDER[:-1]:
+        return TENDER_STAGE_ORDER[TENDER_STAGE_ORDER.index(current) + 1]
+    return None
 
 
 def transition_revision(
     db: Session, *, revision_id: int, workspace_id: int,
     actor_id: int, target: str, lost_reason: str | None = None,
+    lost_kind: str = "rejected",
 ) -> dict:
+    """`lost_kind` distinguishes `reject` from `expire` when `target ==
+    "LOST"` — both collapse onto the same status (Q548), but the route
+    invoked (client said no vs. the validity window lapsed) is still worth
+    a distinct audit event name, so the caller states it explicitly rather
+    than it being inferred from `lost_reason`'s text."""
     cur = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
@@ -732,7 +782,7 @@ def transition_revision(
     sets = ["status = :tgt"]
     params: dict = {"tgt": target, "rid": revision_id}
     audit_payload: dict = {"from": from_status, "to": target}
-    if target == "sent":
+    if target == "SUBMITTED":
         lines = db.execute(
             text(
                 """
@@ -763,28 +813,26 @@ def transition_revision(
         params["a"] = actor_id
         params["rates"] = json.dumps(rates_json)
         audit_event = "estimate.send"
-    elif target == "accepted":
+    elif target == "WON":
         sets += ["accepted_at = :now"]
         params["now"] = now
         audit_event = "estimate.accept"
-    elif target == "rejected":
+    elif target == "LOST":
         sets += ["rejected_at = :now", "lost_reason = :lr"]
         params["now"] = now
         params["lr"] = lost_reason
-        audit_event = "estimate.reject"
+        audit_event = "estimate.expire" if lost_kind == "expired" else "estimate.reject"
         audit_payload["lost_reason"] = lost_reason
-    elif target == "expired":
-        sets += ["lost_reason = :lr"]
-        params["lr"] = lost_reason
-        audit_event = "estimate.expire"
-        audit_payload["lost_reason"] = lost_reason
-    elif target == "withdrawn":
+    elif target == "WITHDRAWN":
         sets += ["lost_reason = :lr"]
         params["lr"] = lost_reason
         audit_event = "estimate.withdraw"
         audit_payload["lost_reason"] = lost_reason
     else:
-        raise ValueError(f"unhandled transition target {target!r}")
+        # One of the 9 bare sequential advances (OPPORTUNITY..QUOTE_PREPARED
+        # -> the next stage). No dedicated column, no gate beyond the graph
+        # above — Plan V1 names these stages but specifies nothing else.
+        audit_event = "estimate.advance"
 
     db.execute(
         text(
@@ -796,7 +844,7 @@ def transition_revision(
         ),
         params,
     )
-    if target == "sent":
+    if target == "SUBMITTED":
         _recompute_revision_totals(db, revision_id=revision_id)
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -809,11 +857,34 @@ def transition_revision(
     )
 
 
+def advance_revision(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+) -> dict:
+    """Move a revision to the next stage in the sequential pipeline
+    (OPPORTUNITY..MGMT_APPROVAL -> the following stage). One generic action
+    covers all 10 forward steps, including MGMT_APPROVAL -> SUBMITTED: that
+    step's lock-and-snapshot business logic lives in `transition_revision`'s
+    `target == "SUBMITTED"` branch, so it fires here too without a separate
+    entry point."""
+    cur = get_revision(db, revision_id=revision_id, workspace_id=workspace_id)
+    if cur is None:
+        raise ValueError("NOT_FOUND")
+    nxt = next_tender_stage(cur["status"])
+    if nxt is None:
+        raise ValueError(
+            json.dumps({"code": "BAD_TRANSITION", "from": cur["status"], "to": None})
+        )
+    return transition_revision(
+        db, revision_id=revision_id, workspace_id=workspace_id,
+        actor_id=actor_id, target=nxt,
+    )
+
+
 # ============================================================================
 # Line CRUD + parts/hardware/labour add/remove
 # ============================================================================
 
-def _assert_draft(
+def _assert_unlocked(
     db: Session, *, revision_id: int, workspace_id: int
 ) -> dict:
     cur = get_revision(
@@ -821,7 +892,7 @@ def _assert_draft(
     )
     if cur is None:
         raise ValueError("NOT_FOUND")
-    if cur["status"] != "draft":
+    if cur["locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     return cur
 
@@ -832,8 +903,8 @@ def _line_in_workspace(
     row = db.execute(
         text(
             """
-            SELECT l.*, r.status AS rev_status, r.revision_id,
-                   e.workspace_id AS _wid
+            SELECT l.*, r.status AS rev_status, r.locked_at AS rev_locked_at,
+                   r.revision_id, e.workspace_id AS _wid
               FROM estimate_line l
               JOIN estimate_revision r ON r.revision_id = l.revision_id
               JOIN estimate e ON e.estimate_id = r.estimate_id
@@ -860,7 +931,7 @@ def create_line(
     )
     if cur is None:
         raise ValueError("NOT_FOUND")
-    if cur["status"] != "draft":
+    if cur["locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     next_seq = db.execute(
         text(
@@ -908,7 +979,7 @@ def patch_line(
     line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if line is None:
         return None
-    if line["rev_status"] != "draft":
+    if line["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
 
     columns = {
@@ -953,7 +1024,7 @@ def delete_line(
     line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if line is None:
         return False
-    if line["rev_status"] != "draft":
+    if line["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     db.execute(
         text("DELETE FROM estimate_line WHERE line_id = :lid"),
@@ -972,7 +1043,7 @@ def reorder_lines(
     db: Session, *, revision_id: int, workspace_id: int,
     actor_id: int, ordered_line_ids: list[int],
 ) -> None:
-    _assert_draft(db, revision_id=revision_id, workspace_id=workspace_id)
+    _assert_unlocked(db, revision_id=revision_id, workspace_id=workspace_id)
     have = {
         int(r) for r in db.execute(
             text(
@@ -1006,7 +1077,7 @@ def add_part(
     line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if line is None:
         raise ValueError("NOT_FOUND")
-    if line["rev_status"] != "draft":
+    if line["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     snap = _resolve_part_snapshot(
         db, workspace_id=workspace_id,
@@ -1070,7 +1141,7 @@ def remove_part(
     row = db.execute(
         text(
             """
-            SELECT p.line_id, l.revision_id, r.status, e.workspace_id AS _wid
+            SELECT p.line_id, l.revision_id, r.locked_at, e.workspace_id AS _wid
               FROM estimate_line_part p
               JOIN estimate_line l ON l.line_id = p.line_id
               JOIN estimate_revision r ON r.revision_id = l.revision_id
@@ -1082,7 +1153,7 @@ def remove_part(
     ).mappings().first()
     if row is None:
         return False
-    if row["status"] != "draft":
+    if row["locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     db.execute(
         text("DELETE FROM estimate_line_part WHERE part_id = :pid"),
@@ -1106,7 +1177,7 @@ def patch_part(
     row = db.execute(
         text(
             """
-            SELECT p.part_id, p.line_id, l.revision_id, r.status AS rev_status
+            SELECT p.part_id, p.line_id, l.revision_id, r.locked_at AS rev_locked_at
               FROM estimate_line_part p
               JOIN estimate_line l ON l.line_id = p.line_id
               JOIN estimate_revision r ON r.revision_id = l.revision_id
@@ -1118,7 +1189,7 @@ def patch_part(
     ).mappings().first()
     if row is None:
         return None
-    if row["rev_status"] != "draft":
+    if row["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     columns = {
         "qty": "qty", "len_mm": "len_mm", "wid_mm": "wid_mm",
@@ -1158,7 +1229,7 @@ def patch_hardware(
     row = db.execute(
         text(
             """
-            SELECT h.hw_id, h.line_id, l.revision_id, r.status AS rev_status
+            SELECT h.hw_id, h.line_id, l.revision_id, r.locked_at AS rev_locked_at
               FROM estimate_line_hardware h
               JOIN estimate_line l ON l.line_id = h.line_id
               JOIN estimate_revision r ON r.revision_id = l.revision_id
@@ -1170,7 +1241,7 @@ def patch_hardware(
     ).mappings().first()
     if row is None:
         return None
-    if row["rev_status"] != "draft":
+    if row["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     columns = {"qty": "qty", "comment": "comment"}
     set_clauses = [
@@ -1206,7 +1277,7 @@ def add_hardware(
     line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if line is None:
         raise ValueError("NOT_FOUND")
-    if line["rev_status"] != "draft":
+    if line["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     snap = _resolve_hardware_snapshot(
         db, workspace_id=workspace_id,
@@ -1266,7 +1337,7 @@ def remove_hardware(
     row = db.execute(
         text(
             """
-            SELECT h.line_id, l.revision_id, r.status, e.workspace_id AS _wid
+            SELECT h.line_id, l.revision_id, r.locked_at, e.workspace_id AS _wid
               FROM estimate_line_hardware h
               JOIN estimate_line l ON l.line_id = h.line_id
               JOIN estimate_revision r ON r.revision_id = l.revision_id
@@ -1278,7 +1349,7 @@ def remove_hardware(
     ).mappings().first()
     if row is None:
         return False
-    if row["status"] != "draft":
+    if row["locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     db.execute(
         text("DELETE FROM estimate_line_hardware WHERE hw_id = :hid"),
@@ -1302,7 +1373,7 @@ def upsert_labour(
     line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if line is None:
         raise ValueError("NOT_FOUND")
-    if line["rev_status"] != "draft":
+    if line["rev_locked_at"] is not None:
         raise ValueError("REVISION_LOCKED")
     rate = db.execute(
         text(
@@ -1675,15 +1746,59 @@ _PHC_TYPE_MAP = {
 }
 
 
+def handover_preview(
+    db: Session, *, revision_id: int, workspace_id: int
+) -> dict | None:
+    """What Q490's PM review screen shows before Convert: the lines that
+    would become Joinery Items, and the contract value Convert will set by
+    default (the quote's own GST-inclusive total — nothing to re-enter)."""
+    rev = get_revision(db, revision_id=revision_id, workspace_id=workspace_id)
+    if rev is None:
+        return None
+    detail = revision_detail(
+        db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    return {
+        "revision_id": revision_id,
+        "status": rev["status"],
+        "already_converted_project_id": (
+            int(rev["converted_project_id"])
+            if rev["converted_project_id"] is not None else None
+        ),
+        "proposed_contract_value": detail["total_inc_gst"],
+        "lines": [
+            {
+                "line_id": int(l["line_id"]),
+                "seq": l["seq"],
+                "description": l["description"],
+                "qty": l["qty"],
+                "has_breakdown": l["has_breakdown"],
+                "total_sell": l["total_sell"],
+            }
+            for l in detail["lines"]
+        ],
+    }
+
+
 def convert_to_project(
-    db: Session, *, revision_id: int, workspace_id: int, actor_id: int
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    include_line_ids: list[int] | None = None,
+    contract_value: Decimal | None = None,
 ) -> dict:
+    """Q490: `include_line_ids` (default: every line) is the PM's selection
+    from the handover-preview screen — an excluded line simply becomes no
+    Joinery Item, everything else about it (its place in the quote) is
+    unaffected. `contract_value` (default: the quote's own GST-inclusive
+    total) becomes the immutable `project_contract.original_value` (Q491) —
+    it is independent of which lines were included, since a lump-sum line
+    left out of the Item list can still be part of what the client is
+    paying for."""
     rev = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
     if rev is None:
         raise ValueError("NOT_FOUND")
-    if rev["status"] != "accepted":
+    if rev["status"] != "WON":
         raise ValueError(
             json.dumps(
                 {"code": "BAD_STATUS", "status": rev["status"]}
@@ -1716,6 +1831,21 @@ def convert_to_project(
 
     detail = revision_detail(
         db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    total_inc_gst = detail["total_inc_gst"]
+    all_line_ids = {int(l["line_id"]) for l in detail["lines"]}
+    if include_line_ids is None:
+        selected_ids = all_line_ids
+    else:
+        unknown = set(include_line_ids) - all_line_ids
+        if unknown:
+            raise ValueError(
+                json.dumps({"code": "UNKNOWN_LINE_IDS", "line_ids": sorted(unknown)})
+            )
+        selected_ids = set(include_line_ids)
+    detail["lines"] = [l for l in detail["lines"] if int(l["line_id"]) in selected_ids]
+    final_contract_value = (
+        contract_value if contract_value is not None else total_inc_gst
     )
 
     failures: list[dict] = []
@@ -1778,6 +1908,16 @@ def convert_to_project(
             "cb": str(actor_id),
         },
     ).scalar()
+
+    db.execute(
+        text(
+            """
+            INSERT INTO project_contract(project_id, original_value, created_by)
+            VALUES (:p, :v, :a)
+            """
+        ),
+        {"p": int(new_project_id), "v": final_contract_value, "a": actor_id},
+    )
 
     distinct_hw: dict[tuple[str, int], None] = {}
     for line in detail["lines"]:
@@ -1946,6 +2086,9 @@ def convert_to_project(
             "parts_created": parts_created,
             "hardware_lines_created": hw_lines_created,
             "project_hardware_catalog_added": phc_added,
+            "included_line_ids": sorted(selected_ids),
+            "excluded_line_ids": sorted(all_line_ids - selected_ids),
+            "contract_value": str(final_contract_value),
         },
     )
     write_audit(
@@ -1966,4 +2109,5 @@ def convert_to_project(
         "parts_created": parts_created,
         "hardware_lines_created": hw_lines_created,
         "project_hardware_catalog_added": phc_added,
+        "contract_value": final_contract_value,
     }

@@ -47,11 +47,19 @@
     .status-pill { display: inline-block; padding: 2pt 8pt; border-radius: 99px;
                    font-size: 8pt; text-transform: uppercase;
                    letter-spacing: 0.5pt; font-weight: 600; }
-    .status-sent { background: #dbeafe; color: #1e3a8a; }
-    .status-accepted { background: #d1fae5; color: #065f46; }
-    .status-rejected { background: #fee2e2; color: #991b1b; }
-    .status-expired { background: #fef3c7; color: #92400e; }
-    .status-withdrawn { background: #e5e7eb; color: #374151; }
+    /* The 12-stage tender lifecycle (Q487/488/548) — pre-SUBMITTED stages
+       share one "in progress" look; SUBMITTED and the three terminal
+       outcomes each get their own, matching the old sent/accepted/
+       rejected/withdrawn palette (expired no longer exists as its own
+       status; it collapses onto LOST). */
+    .status-OPPORTUNITY, .status-INITIAL_REVIEW, .status-GO_NO_GO,
+    .status-INFO_REQUESTED, .status-DOCS_RECEIVED, .status-ESTIMATING,
+    .status-SUPPLIER_PRICING, .status-INTERNAL_REVIEW, .status-QUOTE_PREPARED,
+    .status-MGMT_APPROVAL { background: #f3f4f6; color: #374151; }
+    .status-SUBMITTED { background: #dbeafe; color: #1e3a8a; }
+    .status-WON { background: #d1fae5; color: #065f46; }
+    .status-LOST { background: #fee2e2; color: #991b1b; }
+    .status-WITHDRAWN { background: #e5e7eb; color: #374151; }
     .footer-note { margin-top: 24pt; color: #666; font-size: 9pt;
                    border-top: 1px solid #d4d4d4; padding-top: 10pt; }
     .terms-block { white-space: pre-wrap; }

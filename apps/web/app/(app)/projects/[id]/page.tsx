@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import type { ProjectOut } from "@/lib/pm-types";
+import type { ActualCosts, ProjectContract } from "@/lib/project-contract-types";
 import { can, fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
 import { ProjectHeader } from "./_components/ProjectHeader";
 import { ProjectDetailsPanel } from "./_components/ProjectDetailsPanel";
 import { ProjectContactsPanel } from "./_components/ProjectContactsPanel";
 import { ProjectLiftAccessPanel } from "./_components/ProjectLiftAccessPanel";
 import { ProjectLabourHoursCard } from "./_components/ProjectLabourHoursCard";
+import { ProjectFinancialsCard } from "./_components/ProjectFinancialsCard";
 
 async function fetchProject(id: number, cookieHeader: string): Promise<ProjectOut | null> {
   const apiUrl = process.env.API_URL ?? "http://api:8000";
@@ -16,6 +18,30 @@ async function fetchProject(id: number, cookieHeader: string): Promise<ProjectOu
   }).catch(() => null);
   if (!r || !r.ok) return null;
   return (await r.json()) as ProjectOut;
+}
+
+// null when the project predates Q491 or wasn't created from a converted
+// estimate — no project_contract row exists yet, which is not an error.
+async function fetchContract(id: number, cookieHeader: string): Promise<ProjectContract | null> {
+  const apiUrl = process.env.API_URL ?? "http://api:8000";
+  const r = await fetch(`${apiUrl}/projects/${id}/contract`, {
+    headers: { cookie: cookieHeader },
+    cache: "no-store",
+  }).catch(() => null);
+  if (!r || !r.ok) return null;
+  return (await r.json()) as ProjectContract;
+}
+
+async function fetchActualCosts(id: number, cookieHeader: string): Promise<ActualCosts> {
+  const apiUrl = process.env.API_URL ?? "http://api:8000";
+  const r = await fetch(`${apiUrl}/projects/${id}/actual-costs`, {
+    headers: { cookie: cookieHeader },
+    cache: "no-store",
+  }).catch(() => null);
+  if (!r || !r.ok) {
+    return { project_id: id, materials_actual: "0", labour_actual: "0", total_actual: "0", labour_by_item: {} };
+  }
+  return (await r.json()) as ActualCosts;
 }
 
 export default async function ProjectDetailPage({
@@ -31,9 +57,11 @@ export default async function ProjectDetailPage({
   const tok = c.get(COOKIE_NAME)?.value ?? "";
   const cookieHeader = `${COOKIE_NAME}=${tok}`;
 
-  const [project, me] = await Promise.all([
+  const [project, me, contract, actualCosts] = await Promise.all([
     fetchProject(id, cookieHeader),
     fetchMe(),
+    fetchContract(id, cookieHeader),
+    fetchActualCosts(id, cookieHeader),
   ]);
 
   if (!project) {
@@ -63,6 +91,13 @@ export default async function ProjectDetailPage({
           canEdit={canEditTracking}
         />
       </div>
+
+      <ProjectFinancialsCard
+        projectId={project.id}
+        contract={contract}
+        actualCosts={actualCosts}
+        canEdit={canEditTracking}
+      />
 
       <ProjectLabourHoursCard hours={project.labour_hours} />
     </div>

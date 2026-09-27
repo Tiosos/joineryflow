@@ -21,6 +21,44 @@ def tree(db, workspace_id):
     return make_tree(db, workspace_id)
 
 
+def _make_estimate_revision(db, workspace_id, *, status: str) -> int:
+    cid = db.execute(text(
+        "INSERT INTO customer(workspace_id, name) VALUES (:w, 'C') "
+        "RETURNING customer_id"), {"w": workspace_id}).scalar()
+    eid = db.execute(text(
+        "INSERT INTO estimate(workspace_id, customer_id, estimate_no, title) "
+        "VALUES (:w, :c, :no, 'Job') RETURNING estimate_id"),
+        {"w": workspace_id, "c": cid, "no": f"EST-{status}"}).scalar()
+    rid = db.execute(text(
+        "INSERT INTO estimate_revision(estimate_id, rev_no, status) "
+        "VALUES (:e, 1, :s) RETURNING revision_id"),
+        {"e": eid, "s": status}).scalar()
+    db.execute(text(
+        "UPDATE estimate SET current_revision_id = :r WHERE estimate_id = :e"),
+        {"r": rid, "e": eid})
+    return eid
+
+
+@pytest.mark.parametrize("status,expected_archived", [
+    ("OPPORTUNITY", False),
+    ("SUBMITTED", False),
+    ("WON", False),
+    ("LOST", True),
+    ("WITHDRAWN", True),
+])
+def test_estimate_document_archived_flag_matches_12_stage_lifecycle(
+    db, workspace_id, status, expected_archived
+):
+    """Q580's archived flag was written against the pre-Q548 6-state
+    machine (rejected/expired/withdrawn); Q548 collapsed rejected+expired
+    onto LOST under the 12-stage tender lifecycle (Q487/488) — pin the
+    mapping so a future rename can't silently un-archive lost quotes."""
+    eid = _make_estimate_revision(db, workspace_id, status=status)
+    d = D.load(db, "estimate", [eid])[eid]
+    assert d["archived"] is expected_archived
+    assert d["status"] == status
+
+
 def test_item_document(db, tree):
     d = D.load(db, "item", [tree["item"]])[tree["item"]]
     assert set(d) == KEYS
