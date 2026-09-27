@@ -94,6 +94,9 @@ def workspace_id(db):
 
 
 TRUNCATE_TABLES = (
+    "user_group_membership",
+    "group_module_grant",
+    "permission_group",
     "workspace_counter",
     "estimate_line_labour",
     "estimate_line_hardware",

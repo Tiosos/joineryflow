@@ -171,7 +171,7 @@ file. **All seven are now decided** (re-scored 2026-09-18):
 | 1. **Cutlist owns the workflow** (Q410–Q413) | **Built** (`0027`, `0030`). `item_stages` stays per-item as a **projection**, written by fan-out on completion (Q439). Shop Floor re-keyed to `(cutlist_id, stage_key)`; the `(item_id, 'INST')` half of Q445 turned out to be unreachable — Shop Floor has never been able to hold DEL or INST (**Q561**). |
 | 2. **Related-part rows** (Q416–Q424) | **Built** (`0028`). Rows in `items` with a `row_type` + parent FK (Q447). The measured cost was **50 SQL call sites across 13 modules**; only **35** actually take the filter — `apps/api/app/row_types.py` holds the one definition and B1's note classifies the rest. |
 | 3. **Project files in SharePoint** (Q398–Q400) | **Bounded.** Additive only — `file_blob` survives and keeps serving shop drawings, attachments and sample photos (Q479). Nothing in #5a/#5b/#5c is rewritten. Blocked on three customer inputs. |
-| 4. **RBAC as data** (Plan V1 §3) | **Bounded.** DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles become 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. |
+| 4. **RBAC as data** (Plan V1 §3) | **Built** (`0037`). DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles became 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. See *Dynamic RBAC engine* below — Q472's rule-engine migration and Q473's comments feature are **not** part of this build. |
 | 5. ~~Navigation / Cutlist module~~ | **Closed (Q474).** Cutlist **is** the `List` tab — which the RBAC module name already reflects. The primary six do not grow. |
 | 6. **Area / Room as entities** | **Built** (`0026`). Real project-scoped tables with Room **nested under** Area (Q552) and a composite FK `items (area_id, room_id) → room`. It was *not* the pure rename Q455 anticipated: `items.stage` / `rm_no` / `rm_desc` are **kept and still written** alongside the new FKs (Q435), so the terminology pin below still stands. |
 | 7. **10 vs 14 lifecycle stages** | **Deferred (Q459).** Today's 10 stand; `PAINTED` before `MADE` with `paint_after_assembly` (Q461); one global `stages` lookup (Q462). Packing is the first extra stage to arrive (Q519). |
@@ -186,9 +186,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0036
+make migrate      # apply Alembic 0001 -> 0037
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (76 test files, 841 tests; the `meili`-marked
+make test         # pytest in api container (82 test files, ~890 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -207,10 +207,10 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 ## Auth & RBAC
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
-- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. Static `(role, module) -> set[action]` matrix in `apps/api/app/auth/permissions.py` — that file is the source of truth (Plan V1 §3 would replace it with a DB-backed engine; see `docs/plan-v1/ALIGNMENT.md` §3.4); the per-sub-project notes below only explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
+- **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. `apps/api/app/auth/permissions.py`'s static `(role, module) -> set[action]` dict (`MATRIX`) is no longer the live source of truth — see *Dynamic RBAC engine* below — but it still documents each role's grants readably and is the fallback for any user with zero group memberships; the per-sub-project notes below explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
 - **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
-- FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action)` factory in `apps/api/app/auth/rbac.py`.
+- FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action, project_param=None)` factory in `apps/api/app/auth/rbac.py`, backed by the DB engine in `apps/api/app/auth/rbac_engine.py`.
 - All authenticated mutations write to `audit_log` via `apps/api/app/auth/audit.py`.
 
 ## Web shell
@@ -1692,4 +1692,127 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   before the comment was a real text child), which React logged as a
   hydration warning on every item editor load. Predated this sub-project
   entirely; fixed by dropping the space before each trailing comment.
+
+## Dynamic RBAC engine (Plan V1 §3.4, Q466–473) — shipped
+
+> Built directly against the confirmed decisions in `docs/plan-v1/OPEN-QUESTIONS.md`
+> §F, the same way #9a shipped without a spec or plan — there is no
+> `docs/superpowers/{specs,plans}/` doc for this one; this section is its only
+> written record.
+
+Replaces the static `apps/api/app/auth/permissions.py` matrix as the *live*
+source of truth for `require_permission`, with the DB-backed, project-scoped
+engine Q466 confirmed — while keeping day one bit-for-bit
+behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
+`require_permission(module, action)` call sites.
+
+- **Migration `0037`** adds three tables: `permission_group` (workspace_id,
+  name, is_system — direct `workspace_id` column, Q555's pattern, since a
+  group has no other join path), `group_module_grant` (group_id, module,
+  action), `user_group_membership` (user_id, group_id, `project_id` nullable
+  — NULL means workspace-wide). A unique index on
+  `(user_id, group_id, COALESCE(project_id, 0))` prevents duplicate
+  workspace-wide memberships, since plain UNIQUE treats NULLs as distinct.
+  **Backfill, in the same migration:** every workspace that already existed
+  gets 7 system groups named after the 7 auth roles, with grants copied
+  **verbatim from `MATRIX`** (188 rows, machine-generated from the live dict
+  when the migration was authored, not hand-transcribed); every existing
+  `app_user` gets a workspace-wide membership in the group matching their
+  `auth_role`. Verified on a real Postgres 16 instance: grant counts per role
+  (44/41/27/33/18/15/10 = 188) and one membership per seeded user, exactly
+  matching `MATRIX`.
+- **`apps/api/app/auth/rbac_engine.py`** — `effective_actions(db, user,
+  module, project_id=None)` is the resolver: union of `group_module_grant`
+  rows across every membership where `project_id IS NULL OR project_id =
+  :pid`, most-permissive-wins across a user's groups (Q469). **`MATRIX` is
+  the fallback**, not dead code — a user with **zero** memberships (any test
+  file's raw-SQL `INSERT INTO app_user`, or a workspace created after `0037`
+  ran — there is no "create workspace" route in v1) is governed by it
+  exactly as before; a user with at least one membership is fully
+  DB-governed, and an empty result for them is a real "no", never a
+  fallback trigger. `seed_system_groups(db, workspace_id)` is the live,
+  idempotent equivalent of the migration's one-time backfill — for a
+  workspace created later, or for tests — not wired to any trigger,
+  deliberately (see *Known gaps* below). `swap_default_group_membership(...)`
+  moves a user's workspace-wide membership when their `auth_role` changes.
+- **`require_permission(module, action, project_param=None)`**
+  (`apps/api/app/auth/rbac.py`) is unchanged in effect for every existing
+  call site: omitting `project_param` (all ~181 of them) checks
+  workspace-wide grants only, which is exactly what the `0037` backfill gives
+  every pre-existing user — verified by running the **full existing test
+  suite (881 passed, 10 meili-skipped) with zero regressions**. Passing
+  `project_param="pid"` (the path-parameter name holding a project id) makes
+  the check *also* honour memberships scoped to that one project — a real
+  behaviour difference, safe to add anywhere a project id is directly in the
+  path, since no membership is project-scoped until an admin deliberately
+  creates one. Wired onto `apps/api/app/areas/routes.py`'s two
+  `/projects/{pid}/...` routes as a working demonstration (not a general
+  rewire — see *Known gaps*).
+- **`PATCH /users/{uid}`** (`apps/api/app/users/routes.py`) now calls
+  `swap_default_group_membership` when `auth_role` is in the patch, so a
+  role change doesn't leave the old role's DB grants in effect under the new
+  engine.
+- **Admin CRUD API** — `apps/api/app/permission_groups/` (schemas / queries
+  / routes), mounted at `/permission-groups`, gated `it_management` (read:
+  admin+manager per the existing matrix row; write: admin only — the "IT
+  configures access without a deploy" surface Q466 asked for):
+  - `GET /permission-groups` — every group + its grants.
+  - `POST /permission-groups` — create a group; 409 on a duplicate name,
+    carrying the existing `group_id` (the areas/rooms 409-with-id pattern).
+  - `PUT /permission-groups/{gid}/grants` — replace-all; 422 on an unknown
+    module/action.
+  - `DELETE /permission-groups/{gid}` — 409 `SYSTEM_GROUP` on one of the 7
+    seeded groups, 409 `GROUP_HAS_MEMBERS` while it still has memberships.
+  - `GET/POST /permission-groups/{gid}/memberships`,
+    `DELETE /permission-groups/memberships/{mid}` — 422 `UNKNOWN_USER` /
+    `UNKNOWN_PROJECT` for a foreign id, 409 `MEMBERSHIP_EXISTS` (carrying the
+    existing `membership_id`) on a duplicate.
+  - `GET /permission-groups/users/{uid}/memberships` — one user's
+    memberships across all groups.
+  - Every mutation writes `audit_log` (`permission_group.{create,
+    set_grants,delete}`, `permission_group.membership.{create,delete}`).
+- **No web UI.** The admin API exists; `/it` has no Groups panel yet. IT can
+  configure access today only by calling the API directly — building the
+  panel is unstarted, deliberately left for a follow-up rather than rushed
+  alongside the schema/engine work in this pass.
+- **What Q466–473 answered but this build deliberately does not do:**
+  - **Q472** (move hand-written per-object rules — `require_drafter()`, the
+    not-uploader approve rule, creator-or-manager, the 5-minute undo window
+    — into the engine as rules) is **not built**. They stay exactly where
+    they are, in route handlers. A generic rule language is real design work
+    Q472's own text flags as a cost, not a schema addition.
+  - **Q470**'s critical actions (Lock, Unlock, Override, Configure) stay
+    deliberately **outside** `group_module_grant` — they are not matrix
+    actions, so most-permissive-wins never applies to them, and nothing here
+    tries to express them as grants.
+  - **Q473** (build §29 comments so the `comment` action stops being a dead
+    grant) is **not built** — a new entity, 8 object types and @mentions is
+    a separate feature, not part of the permission engine itself.
+  - **`apps/api/app/search/routes.py`'s `visible_types()`** still filters on
+    `has_permission(auth_role, ...)` (the static matrix), not this engine —
+    flagged, not silently resolved. A user whose grants an admin customised
+    via the new engine (e.g. revoked `list:read` from their group, or gave
+    them a project-scoped-only grant) will not see that reflected in which
+    search result *types* are visible to them. Search's own workspace/project
+    filtering on the results themselves is unaffected.
+  - The **181 existing endpoints were not rewired** to pass `project_param`.
+    They are unaffected (workspace-wide checks, unchanged), but a project id
+    already in most of their paths is not yet exploited — that is additive
+    work for whichever surface needs it next, not a gap in the engine.
+- **Tests:** `test_rbac_engine.py` (resolver: fallback, DB-override,
+  `seed_system_groups` parity with `MATRIX`, project scoping,
+  most-permissive-wins, the `patch_user` auth_role-change swap end-to-end,
+  and the `project_param` HTTP-level proof) and
+  `test_permission_groups_routes.py` (admin CRUD, access control, delete
+  guards, membership validation) — 26 tests, all passing against a real
+  migrated Postgres 16 instance; the pre-existing `test_rbac.py` /
+  `test_rbac_drafter.py` / `test_permissions.py` / `test_shop_drawings_rbac.py`
+  / `test_users_routes.py` / `test_area_room_routes.py` pass unchanged.
+- **Known gaps, recorded rather than silently left:**
+  - No automatic group provisioning for a workspace created after `0037` —
+    there is no "create workspace" route in v1 today, so this has never come
+    up; `seed_system_groups()` is ready to be called from one when it exists.
+  - No web UI for the admin API (above).
+  - Q472, Q470's rule layer, Q473's comments, and the broader project-scoped
+    rewire of existing endpoints are open follow-ups, not oversights.
 

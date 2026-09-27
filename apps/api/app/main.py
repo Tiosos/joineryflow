@@ -11,6 +11,7 @@ from .files.routes import router as files_router
 from .public.routes import router as public_router
 from .hardware_lines.routes import router as hardware_lines_router
 from .parts.routes import router as parts_router
+from .permission_groups.routes import router as permission_groups_router
 from .home.routes import router as home_router
 from .item_attachments.routes import router as item_attachments_router
 from .item_documents.routes import router as item_documents_router
@@ -78,6 +79,7 @@ app.include_router(material_takes_router)
 app.include_router(material_summaries_router)
 app.include_router(hardware_lines_router)
 app.include_router(parts_router)
+app.include_router(permission_groups_router)
 app.include_router(home_router)
 app.include_router(estimating_router)
 

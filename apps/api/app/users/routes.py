@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.rbac import current_user, require_permission
+from ..auth.rbac_engine import swap_default_group_membership
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..shop_floor import queries as sf_queries
@@ -78,6 +79,12 @@ def patch_user(
         raise HTTPException(400, "bad auth_role")
     if fields.get("is_active") is False:
         _guard_active_assignments(db, workspace_id=user.workspace_id, uid=uid)
+    old_role = None
+    if "auth_role" in fields:
+        old_role = db.execute(
+            text("SELECT auth_role FROM app_user WHERE id = :i AND workspace_id = :w"),
+            {"i": uid, "w": user.workspace_id},
+        ).scalar()
     sets = ", ".join(f"{k} = :{k}" for k in fields)
     params = {**fields, "i": uid, "w": user.workspace_id}
     row = db.execute(
@@ -92,6 +99,14 @@ def patch_user(
     ).mappings().first()
     if not row:
         raise HTTPException(404)
+    if old_role is not None and old_role != fields["auth_role"]:
+        swap_default_group_membership(
+            db,
+            workspace_id=user.workspace_id,
+            user_id=uid,
+            old_role=old_role,
+            new_role=fields["auth_role"],
+        )
     write_audit(
         db,
         workspace_id=user.workspace_id,
