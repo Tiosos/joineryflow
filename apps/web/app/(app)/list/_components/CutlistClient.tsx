@@ -64,7 +64,12 @@ export default function CutlistClient({
       });
       if (!r.ok) {
         const body = await r.json().catch(() => null);
-        setError(body?.detail?.code ?? body?.detail ?? `Failed (${r.status})`);
+        const code = body?.detail?.code;
+        setError(
+          code === "FIELD_CONFLICT"
+            ? "Someone else changed this since it was loaded — reload and try again."
+            : code ?? body?.detail ?? `Failed (${r.status})`,
+        );
         return false;
       }
       router.refresh();
@@ -223,9 +228,15 @@ function CutlistDetail({
   async function rename() {
     const name = window.prompt("Cutlist name", cutlist.name ?? "");
     if (name === null) return;
+    // §L Q511/Q512: carry the version this prompt was opened against, so a
+    // rename that raced with someone else's is a named conflict, not a
+    // silent overwrite.
     await call(`/cutlists/${cutlist.cutlist_id}`, {
       method: "PATCH",
-      body: JSON.stringify({ name: name.trim() || null }),
+      body: JSON.stringify({
+        name: name.trim() || null,
+        expected_versions: { name: cutlist.field_versions?.name ?? 0 },
+      }),
     });
   }
 

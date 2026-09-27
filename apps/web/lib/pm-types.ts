@@ -185,6 +185,8 @@ export interface TrackingItemRow {
   row_type: "joinery_item" | "related_part";
   parent_item_id: number | null;
   related_part_type_key: string | null;
+  // §L Q508 — Hard Lock. Derived from hard_locked_at IS NOT NULL.
+  hard_locked?: boolean;
   // Q438: the cutlist this item belongs to. SHARED — several rows carry the
   // same number — and null until one is assigned, which Q440 allows
   // indefinitely. Not the same as item_number, which is the Item ID (Q541).
@@ -323,6 +325,12 @@ export interface ItemOut {
   rls: string | null;
   joiery_details: string | null;
   cutlist_printed: boolean | null;
+  // §L — Hard Lock (Q508) and field-level optimistic concurrency (Q511/Q512).
+  // Approval Lock has no field of its own: it is `status === "APPROVED"`.
+  hard_locked_at: string | null; // datetime → ISO 8601 timestamp
+  hard_locked_by: number | null;
+  hard_locked_by_name: string | null;
+  field_versions: Record<string, number>;
 }
 
 // =============================================================================
@@ -386,6 +394,10 @@ export interface PatchItemIn {
   rls?: string | null;
   joiery_details?: string | null;
   cutlist_printed?: boolean | null;
+  // §L Q511/Q512 — optional per-field versions this save was based on, read
+  // from a prior GET's `field_versions`. Omitting a field (or the whole map)
+  // keeps last-write-wins for it.
+  expected_versions?: Record<string, number>;
 }
 
 export interface LockTransferIn {

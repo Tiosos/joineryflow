@@ -75,12 +75,17 @@ def patch_cutlist_route(
     user: AuthUser = Depends(require_permission("list", "write")),
     db: Session = Depends(get_db),
 ):
-    result = q.patch_cutlist(
+    code, result = q.patch_cutlist(
         db, cutlist_id=cid, workspace_id=user.workspace_id,
         payload=payload, actor_id=user.id,
     )
-    if result is None:
+    if code == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="cutlist not found")
+    if code == "FIELD_CONFLICT":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "FIELD_CONFLICT", "conflicts": result},
+        )
     db.commit()
     return result
 

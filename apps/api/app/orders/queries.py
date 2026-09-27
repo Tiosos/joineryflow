@@ -27,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..concurrency import bump_field_versions, check_field_conflicts
 from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn
 
 # An order reaches its workspace through its project, or, when it has none,
@@ -55,7 +56,7 @@ _ORDER_COLS = """
     po.quantity, po.unit_of_measure, po.unit_cost, po.total_amount, po.currency,
     po.required_date, po.date_ordered, po.due_date,
     po.notes, po.internal_comments, po.attributes,
-    po.created_at, po.updated_at
+    po.created_at, po.updated_at, po.field_versions
 """
 
 _ORDER_FROM = """
@@ -307,19 +308,30 @@ def create_order(
 
 def patch_order(
     db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
-) -> dict | None:
+) -> tuple[str, dict | None]:
+    """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
+    Q511/Q512 — `data` is the conflicts dict, not the order, in that case)."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id)
     if current is None:
-        return None
+        return "NOT_FOUND", None
 
     fields: dict[str, Any] = {
         k: v for k, v in payload.model_dump(exclude_unset=True).items()
         if k in _PATCHABLE
     }
     if not fields:
-        return current
+        return "OK", current
 
-    sets, params = [], {"o": po_id}
+    conflicts = check_field_conflicts(
+        current.get("field_versions"), payload.expected_versions
+    )
+    if conflicts:
+        for field, info in conflicts.items():
+            info["current_value"] = current.get(field)
+        return "FIELD_CONFLICT", conflicts
+
+    new_versions = bump_field_versions(current.get("field_versions"), list(fields))
+    sets, params = [], {"o": po_id, "fv": json.dumps(new_versions)}
     for i, (col, val) in enumerate(fields.items()):
         key = f"v{i}"
         if col == "attributes":
@@ -329,7 +341,8 @@ def patch_order(
             sets.append(f"{col} = :{key}")
             params[key] = val
     db.execute(
-        text(f"UPDATE purchase_orders SET {', '.join(sets)}, updated_at = now()"
+        text(f"UPDATE purchase_orders SET {', '.join(sets)},"
+             " field_versions = CAST(:fv AS jsonb), updated_at = now()"
              " WHERE po_id = :o"),
         params,
     )
@@ -340,7 +353,7 @@ def patch_order(
         event="order.update", target=str(po_id),
         payload={"fields": sorted(fields), "po_number": current["po_number"]},
     )
-    return get_order(db, po_id=po_id, workspace_id=workspace_id)
+    return "OK", get_order(db, po_id=po_id, workspace_id=workspace_id)
 
 
 def cancel_order(

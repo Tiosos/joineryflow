@@ -29,6 +29,8 @@ class CutlistOut(BaseModel):
     created_by_name: str | None
     created_at: datetime
     updated_at: datetime
+    # §L Q511/Q512 — field-level optimistic concurrency.
+    field_versions: dict[str, int] = {}
 
 
 class CutlistPartRow(BaseModel):
@@ -83,6 +85,10 @@ class CreateCutlistIn(BaseModel):
 
 class PatchCutlistIn(BaseModel):
     name: str | None = Field(default=None, max_length=255)
+    # §L Q511/Q512 — optional expected version for `name`, read from a prior
+    # GET's `field_versions`. A stale version is a 409 FIELD_CONFLICT rather
+    # than a silent overwrite; omitting it keeps last-write-wins.
+    expected_versions: dict[str, int] | None = None
 
 
 class LinkItemIn(BaseModel):

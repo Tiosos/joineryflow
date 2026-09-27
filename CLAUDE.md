@@ -112,31 +112,35 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0039`. Head is `0039_qc_rework_packing` (Plan V1 §M). `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0040`. Head is `0040_lock_types_concurrency` (Plan V1 §L). `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
-## Plan V1 — target architecture (six sub-projects built)
+## Plan V1 — target architecture (seven sub-projects built)
 
 `docs/plan-v1/` holds **Plan V1**, the customer's specification for a
 company-wide joinery workflow and control platform, with its interview
 questions answered through Q431 (supplied 2026-09-17). It is mostly a
-**target**, not a description of this tree — with six exceptions: **Plan V1 #10
-(Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)**,
+**target**, not a description of this tree — with seven exceptions: **Plan V1
+#10 (Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)**,
 **#12 (Material Take → Summary, §19–§20)**, **§3.4 (Dynamic RBAC engine,
-Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)** and
-**§M (QC / Rework / Packing, §26–§28)** are built, each with its own section
-below. Everything else in Plan V1 remains unimplemented.
+Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)**,
+**§M (QC / Rework / Packing, §26–§28)** and **§L (Locking, Concurrency,
+§11–§12, Q508/Q511/Q512)** are built, each with its own section below.
+Everything else in Plan V1 remains unimplemented.
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
   the 2026-09-18 baseline, **not re-scored** after #10, #11, #12, the RBAC
-  engine, §I or §M (only the §13 search row and the §19 / §20 take and
-  summary rows have been moved, to `PARTIAL`).
+  engine, §I, §M or §L (only the §13 search row, the §19 / §20 take and
+  summary rows, and the §12 locking row have been updated in place — the
+  first two moved to `PARTIAL`; the locking row's description was updated
+  but stays `PARTIAL`, since Plan V1's ask for locks *below and above* item
+  scope is still unmet by Q510's own confirmed ceiling).
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
   numbering. **150 of 154 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
@@ -160,7 +164,7 @@ below. Everything else in Plan V1 remains unimplemented.
   and 2), built as one change. **Done** — widened by Q542 to take the whole
   Orderbook with it. See *Cutlist + related parts + Orderbook* below.
 
-Apart from #10, #11, #12, the RBAC engine, §I and §M, this section still
+Apart from #10, #11, #12, the RBAC engine, §I, §M and §L, this section still
 describes a target, and `CLAUDE.md` remains the record of what is actually
 true in the tree.
 
@@ -188,9 +192,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0039
+make migrate      # apply Alembic 0001 -> 0040
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (82 test files, ~890 tests; the `meili`-marked
+make test         # pytest in api container (88 test files, ~957 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -2211,5 +2215,123 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   it (Plan V1 doesn't ask for the link, and rework can originate without a
   formal defect record, e.g. found on site); §L's remaining Hard/Approval
   lock types and field-level optimistic concurrency (the alternative this
-  round didn't pick); native mobile app work under Q532 (Packing's
-  scanning need is met without it, per above).
+  round didn't pick — **since built, see *Locking + Concurrency* below**);
+  native mobile app work under Q532 (Packing's scanning need is met without
+  it, per above).
+
+## Locking + Concurrency (Plan V1 §11–§12, Q508/Q511/Q512) — shipped
+
+> Selected as the next sub-project after §M — it is the option §M's own
+> "out of scope" note named as "the alternative this round didn't pick".
+> Built directly against `docs/plan-v1/OPEN-QUESTIONS.md` §L's five
+> confirmed answers, the same way #9a, the RBAC engine, §I and §M shipped:
+> no separate spec or plan doc. This section is its only written record.
+
+Closes out **Q566**'s list of what B7 (the Controlled Lock, migration
+`0032`) left unbuilt: Q508's Hard and Approval lock types, and Q511/Q512's
+field-level optimistic concurrency. Q509 (soft-lock → Controlled Lock) and
+Q510 (item + project granularity, read as a ceiling) were already done —
+see *PM Workbench* above.
+
+- **Migration `0040`** — `items.hard_locked_at` / `hard_locked_by` (Hard
+  Lock, Q508) and a `field_versions jsonb` column on each of `items`,
+  `cutlist` and `purchase_orders` (Q511/Q512's three named surfaces).
+  Approval Lock (also Q508) gets **no column**: "information automatically
+  locks when approved" binds directly to the existing Status taxonomy's
+  `APPROVED` value on `items.status` — there is nothing to store that isn't
+  already there. **Q510 remains a ceiling, not a mandate**: no project-level
+  lock column is added, for the same reason `0032`'s docstring already gave
+  for the Controlled Lock — `projects` has no lock column of any kind, so a
+  project lock would be new functionality with no owner or UI, not a
+  conversion of something that exists.
+- **Hard Lock (Q508 type 1) — item-scoped, `PATCH /items/{id}` only.**
+  Unlike the Controlled Lock, there is no request-and-approve path around
+  it: `POST /items/{id}/hard-lock` (manager/admin only, a manual
+  `auth_role` check matching `claim_or_release_lock`'s transfer-permission
+  pattern, not a new RBAC action) blocks the item for **everyone, including
+  the current owner**, until the same authority clears it with `DELETE` on
+  the same path. Scope matches the Controlled Lock's own documented
+  boundary: `/status` and `/lifecycle/{stage_key}` never consult either
+  lock. Audited as `item.hard_lock` / `item.hard_unlock`.
+- **Approval Lock (Q508 type 3) — derived, not stored.** Setting
+  `items.status` to `APPROVED` (via `PATCH /items/{id}/status` or
+  `POST /items/bulk-status`) locks `PATCH /items/{id}` with
+  `409 APPROVAL_LOCKED`; moving status away from `APPROVED` unlocks it.
+  Both directions are audited (`item.approval_lock` / `item.approval_unlock`)
+  from inside `patch_item_status()`/`bulk_patch_item_status()`, even though
+  there is no lock column for the event to name — Q516 requires every
+  lock/unlock to be audited regardless of mechanism.
+- **Field-level optimistic concurrency (Q511/Q512).** `apps/api/app/
+  concurrency.py` holds the one shared implementation —
+  `check_field_conflicts()` / `bump_field_versions()` — used identically by
+  `items/queries.py::patch_item()`, `cutlists/queries.py::patch_cutlist()`
+  and `orders/queries.py::patch_order()`. A PATCH may carry
+  `expected_versions: {field: version}`, read from a prior GET's own
+  `field_versions`; a named field whose stored version has moved on is a
+  **409 FIELD_CONFLICT** naming just that field (with its `current_value`),
+  not the whole record — Q366's "lock only the fields genuinely in
+  conflict," now actually buildable. **Omitting `expected_versions` (every
+  pre-existing caller, and any field not being changed) keeps
+  last-write-wins for that field** — this is additive, verified by running
+  every existing test in `test_lock_semantics.py`, `test_order_routes.py`
+  and the cutlist suite unchanged and green.
+  - **Checked only on the direct-apply path for items.** When the item is
+    Controlled-Locked by someone else, nothing is written by that PATCH — it
+    becomes a pending request instead (see *PM Workbench* above) — so there
+    is no concurrent-write race for versioning to catch; the Controlled Lock
+    already serialises that case through its own approve/reject flow. A
+    version bump also happens when a held request is later approved, so a
+    GET taken after approval reflects the field's new version correctly.
+  - **`cutlist` has one patchable field** (`name`), so its conflict surface
+    is trivial by construction — Q442 already made `cutlist_no` and
+    `created_by` immutable.
+  - **`purchase_orders`** reuses the module's existing `_PATCHABLE` set;
+    every field in it is versioned, not a hand-picked subset.
+- **Web.** `ItemMetadataPanel.tsx`'s existing per-field PATCH calls now send
+  `expected_versions` for the field being saved (and for `area_id`/`room_id`
+  together, since `AreaRoomPicker`'s save writes both) and surface
+  `FIELD_CONFLICT`/`HARD_LOCKED`/`APPROVAL_LOCKED` inline next to the field,
+  alongside the existing `LOCK_REQUEST_CREATED` message — this is the same
+  per-field error-banner mechanism, not a new one. `CutlistClient.tsx`'s
+  rename prompt does the same for `name`. New `HardLockBanner.tsx`
+  (manager/admin see a toggle; everyone else sees the banner while locked)
+  and `ApprovalLockBanner.tsx` (informational only — unlocking is a status
+  change on the Actions tab, not a button) sit above the metadata panel on
+  `/items/[id]`. **`purchase_orders` has no PATCH-editing UI at all yet** —
+  `orders-types.ts` carries `PatchOrderIn`/`field_versions` for whenever
+  that surface is built, but nothing in this pass invents one.
+- **Deliberately not seeded.** Every other sub-project's seed block leaves a
+  demo row behind, but Hard Lock and Approval Lock each block **every**
+  PATCH on the item they sit on — Hard Lock unconditionally, Approval Lock
+  until status moves off `APPROVED` — and this repo's fixed e2e suite
+  (`tests/e2e/`) PATCHes seeded ALF-001 items across several specs. Locking
+  one of them in `make seed` risks breaking a spec this pass has no way to
+  run and verify (Playwright needs a live browser + full stack). The
+  feature is fully covered by `test_lock_types_concurrency.py` instead;
+  don't add a seeded Hard/Approval lock without first confirming no e2e
+  spec touches that item.
+- **RBAC — no matrix change.** Hard Lock's manager/admin check is a manual
+  `auth_role` check in `items/queries.py`, the same shape
+  `claim_or_release_lock`'s transfer permission and `decide_lock_request`'s
+  decider permission already use — not a new RBAC action, matching Q508's
+  own silence on what should gate it.
+- **Tests:** `test_lock_types_concurrency.py` (new, 13 tests) — Hard Lock
+  set/clear/block-everyone-including-owner/manager-only, Approval Lock
+  auto-lock/unlock on status change, field-conflict 409s on all three
+  surfaces with `current_value` in the response, correct-version saves
+  succeeding and bumping again, and a same-record-different-field save
+  proving Q366's per-field (not per-record) conflict scope. Full suite
+  (946 passed, 10 skipped, 1 pre-existing unrelated failure — the same
+  local-only `MEILI_URL` gap noted in *Tender Lifecycle + Financials*
+  above) run against a real migrated Postgres 16 instance with zero
+  regressions outside `test_lock_types_concurrency.py` itself.
+- **Out of scope (deferred):** Q472's rule-engine migration of hand-written
+  per-object rules (`require_drafter()`, the not-uploader approve rule,
+  creator-or-manager, the 5-minute undo window) into the Dynamic RBAC
+  engine — unaffected by this pass, still open from *Dynamic RBAC engine*
+  above; extending Hard/Approval Lock or field-level concurrency to any
+  surface beyond the three Q508/Q511 named (Q510 is a ceiling, not an
+  invitation to widen); a PATCH-editing UI for orders (above); resolving a
+  `FIELD_CONFLICT` by merging the two versions client-side (today's UI just
+  tells the user to reload — a merge view is real design work Q366 doesn't
+  ask for either).
