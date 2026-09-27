@@ -14,6 +14,7 @@ import type {
   StationCard as StationCardOut,
   StationOut,
 } from "@/lib/shop-floor-types";
+import { PackingScanner } from "./PackingScanner";
 
 interface MeShape {
   id: number;
@@ -267,6 +268,10 @@ function MarkDoneDialog({
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Q519: Packing needs a scan before it can be confirmed done. Every other
+  // stage keeps the plain confirm button.
+  const needsScan = card.stage_key === "PACKING";
+  const [scannedItem, setScannedItem] = useState<number | null>(null);
 
   async function submit() {
     setSubmitting(true);
@@ -308,40 +313,72 @@ function MarkDoneDialog({
           Cutlist #{card.cutlist_no} · {card.item_count} item{card.item_count === 1 ? "" : "s"}
         </p>
 
-        <label className="mt-4 block text-sm text-h-muted">
-          Note (optional)
-        </label>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={3}
-          className="mt-1 w-full rounded border border-h-line bg-h-surface px-3 py-2 text-base text-h-ink"
-          autoFocus
-        />
-
-        {error && (
-          <div className="mt-3 rounded border border-red-500 bg-red-50 p-3 text-sm text-red-900">
-            {error}
+        {needsScan && scannedItem === null ? (
+          <div className="mt-4">
+            <p className="mb-2 text-sm text-h-ink">
+              Scan an item label from this cutlist to confirm.
+            </p>
+            <PackingScanner
+              expectedItemNumbers={card.item_numbers}
+              onConfirmed={setScannedItem}
+            />
           </div>
+        ) : (
+          <>
+            {needsScan && (
+              <p className="mt-4 rounded border border-emerald-600 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                Scanned item #{scannedItem}.
+              </p>
+            )}
+
+            <label className="mt-4 block text-sm text-h-muted">
+              Note (optional)
+            </label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded border border-h-line bg-h-surface px-3 py-2 text-base text-h-ink"
+              autoFocus
+            />
+
+            {error && (
+              <div className="mt-3 rounded border border-red-500 bg-red-50 p-3 text-sm text-red-900">
+                {error}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-h-line px-5 py-3 text-base text-h-ink hover:bg-h-surface"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={submit}
+                className="rounded-lg border-2 border-emerald-600 bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {submitting ? "Marking…" : "Confirm done"}
+              </button>
+            </div>
+          </>
         )}
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-h-line px-5 py-3 text-base text-h-ink hover:bg-h-surface"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={submit}
-            className="rounded-lg border-2 border-emerald-600 bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {submitting ? "Marking…" : "Confirm done"}
-          </button>
-        </div>
+        {needsScan && scannedItem === null && (
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-h-line px-5 py-3 text-base text-h-ink hover:bg-h-surface"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

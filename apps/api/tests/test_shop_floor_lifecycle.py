@@ -53,24 +53,24 @@ def test_prior_stages_paint_last_for_made_excludes_painted():
 
 def test_later_stages_is_inverse_of_prior_stages():
     assert later_stages("DOWN", painting_req=True, paint_after_assembly=False) == (
-        "CNC", "EDGED", "PAINTED", "MADE",
+        "CNC", "EDGED", "PAINTED", "MADE", "PACKING",
     )
 
 
 def test_later_stages_for_last_stage_is_empty():
-    assert later_stages("MADE", painting_req=True, paint_after_assembly=False) == ()
+    assert later_stages("PACKING", painting_req=True, paint_after_assembly=False) == ()
 
 
 def test_later_stages_skips_painted_when_no_painting():
     assert later_stages(
         "CNC", painting_req=False, paint_after_assembly=False
-    ) == ("EDGED", "MADE")
+    ) == ("EDGED", "MADE", "PACKING")
 
 
 def test_later_stages_paint_last_for_edged_puts_made_before_painted():
     assert later_stages(
         "EDGED", painting_req=True, paint_after_assembly=True
-    ) == ("MADE", "PAINTED")
+    ) == ("MADE", "PAINTED", "PACKING")
 
 
 def test_later_stages_unknown_stage_raises():

@@ -60,6 +60,7 @@ STAGES: list[tuple[str, str, int]] = [
     ("EDGED",   "Edge Banded",    60),
     ("PAINTED", "Painted",        70),
     ("MADE",    "Assembled",      80),
+    ("PACKING", "Packed",         85),
     ("DEL",     "Delivered",      90),
     ("INST",    "Installed",      100),
 ]
@@ -163,6 +164,33 @@ def main() -> None:
                 """
                 UPDATE app_user SET auth_role='drafter'
                 WHERE workspace_id=:w AND email='noa.lindqvist@hartwood.test'
+                """
+            ),
+            {"w": wid},
+        )
+
+        # ------------------------------------------------------------------
+        # 2b. Dynamic RBAC engine (§F) — 7 system groups + a workspace-wide
+        # membership per user, matching migration 0037's one-time backfill.
+        # That migration only ran against workspaces that already existed;
+        # this dev workspace is created afterward by `make seed`, so without
+        # this it would have zero groups/memberships and the admin API
+        # (`GET /permission-groups`) would show nothing on a fresh setup.
+        # ------------------------------------------------------------------
+        from app.auth.rbac_engine import seed_system_groups
+
+        seed_system_groups(db, workspace_id=wid)
+        db.execute(
+            text(
+                """
+                INSERT INTO user_group_membership (user_id, group_id, project_id)
+                SELECT u.id, g.group_id, NULL
+                  FROM app_user u
+                  JOIN permission_group g
+                    ON g.workspace_id = u.workspace_id
+                   AND g.name = u.auth_role AND g.is_system = true
+                 WHERE u.workspace_id = :w
+                ON CONFLICT (user_id, group_id, COALESCE(project_id, 0)) DO NOTHING
                 """
             ),
             {"w": wid},
@@ -1490,7 +1518,11 @@ def main() -> None:
                     RETURNING revision_id
                     """
                 ),
-                {"e": eid, "st": status if status == "draft" else "draft",
+                # Every revision starts at OPPORTUNITY, the first of the
+                # 12-stage tender lifecycle's 11 sequential stages
+                # (Q487/488) — the final `status` argument below moves it
+                # on from there.
+                {"e": eid, "st": "OPPORTUNITY",
                  "mu": markup_pct, "cb": _estimator_id},
             ).scalar()
             for seq, spec in enumerate(line_specs, start=1):
@@ -1607,13 +1639,24 @@ def main() -> None:
                 ),
                 {"r": rid},
             )
-            # Apply final status (skip draft).
-            if status == "sent":
+            # Apply final status. "draft" (the seed's own keyword, meaning
+            # "still being worked, not yet sent") lands on QUOTE_PREPARED —
+            # further along than the pipeline's first stage, since a demo
+            # quote actively in progress shows the lifecycle better than one
+            # parked at OPPORTUNITY. "sent"/"accepted" map onto the two
+            # stages that carry the same locking/rate-snapshot semantics
+            # they always have: SUBMITTED and WON (Q487/488/548).
+            if status == "draft":
+                s.execute(
+                    text("UPDATE estimate_revision SET status = 'QUOTE_PREPARED' WHERE revision_id = :r"),
+                    {"r": rid},
+                )
+            elif status == "sent":
                 s.execute(
                     text(
                         """
                         UPDATE estimate_revision
-                           SET status = 'sent',
+                           SET status = 'SUBMITTED',
                                sent_at = now(), sent_by = :a,
                                locked_at = now(), locked_by = :a
                          WHERE revision_id = :r
@@ -1626,7 +1669,7 @@ def main() -> None:
                     text(
                         """
                         UPDATE estimate_revision
-                           SET status = 'accepted',
+                           SET status = 'WON',
                                sent_at = now() - interval '1 day',
                                sent_by = :a,
                                locked_at = now() - interval '1 day',
@@ -1819,6 +1862,45 @@ def main() -> None:
 
         s.commit()
         print("seeded #9a estimating_core: 1 estimator + 2 customers + 3 estimates")
+
+        # ==================================================================
+        # === Contract Value + variations (Q491) ==========================
+        # No estimate is actually converted in this seed (EST-2026-0003 is
+        # left WON, ready for a human to click Convert) — a project_contract
+        # row is only ever created by convert_to_project, so there is no
+        # naturally-converted project to seed one from. Demonstrates the
+        # feature directly on ALF-001 instead. Idempotent: delete-then-insert.
+        # ==================================================================
+        _contract_pid = s.execute(
+            text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'")
+        ).scalar()
+        if _contract_pid is not None:
+            s.execute(
+                text("DELETE FROM project_contract WHERE project_id = :p"),
+                {"p": _contract_pid},
+            )
+            s.execute(
+                text(
+                    """
+                    INSERT INTO project_contract(project_id, original_value, created_by)
+                    VALUES (:p, 185000.00, :a)
+                    """
+                ),
+                {"p": _contract_pid, "a": _estimator_id},
+            )
+            s.execute(
+                text(
+                    """
+                    INSERT INTO project_contract_variation(
+                        project_id, description, amount_delta, created_by
+                    )
+                    VALUES (:p, 'Client-requested benchtop upgrade', 4250.00, :a)
+                    """
+                ),
+                {"p": _contract_pid, "a": _estimator_id},
+            )
+            s.commit()
+            print("seeded project_contract on ALF-001: $185,000.00 + 1 variation")
 
         # ==================================================================
         # === Legacy mocks import =========================================
@@ -2912,6 +2994,106 @@ def main() -> None:
                 "+ TG team, 4 contacts, lift access + sketch, 2 item queries "
                 "(1 open, 1 answered), 2 item documents"
             )
+
+        # ------------------------------------------------------------------
+        # QC / Rework / Packing (Plan V1 §26-28, Q515-519, migration 0039).
+        # Built through the same query functions the API uses, so seeded
+        # rows carry real audit / edit-log entries. On ALF-001's first
+        # joinery item: 1 open + 1 resolved defect, a 3-item QC checklist
+        # (2 checked), 1 open Internal Rework. A second item gets a fresh
+        # PACKING assignment so the Shop Floor board's 6th column has a
+        # demo card out of the box. Idempotent: each table's rows for the
+        # target item(s) are dropped before re-inserting.
+        # ------------------------------------------------------------------
+        from app.qc import queries as _qc
+
+        _alf = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'"
+                               " AND workspace_id = :w"), {"w": wid}).scalar()
+        _foreman = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND email = 'juno.okafor@hartwood.test'"),
+                              {"w": wid}).scalar()
+        _manager = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                   " AND auth_role = 'manager' ORDER BY id LIMIT 1"),
+                              {"w": wid}).scalar()
+        if _alf and _foreman and _manager:
+            _qc_items = [r[0] for r in db.execute(text("""
+                SELECT item_id FROM items
+                 WHERE project_id = :p AND row_type = 'joinery_item'
+                 ORDER BY num LIMIT 2
+            """), {"p": _alf})]
+            if _qc_items:
+                _qc_item = _qc_items[0]
+                db.execute(text("DELETE FROM qc_defect WHERE item_id = :i"), {"i": _qc_item})
+                db.execute(text("DELETE FROM qc_checklist_item WHERE item_id = :i"), {"i": _qc_item})
+                db.execute(text("DELETE FROM rework WHERE item_id = :i"), {"i": _qc_item})
+
+                _resolved_defect = _qc.create_defect(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    stage_key="EDGED", description="Edge band lifting at the corner.",
+                )
+                _qc.resolve_defect(
+                    db, defect_id=_resolved_defect["defect_id"], workspace_id=wid,
+                    actor_id=_manager, resolved_note="Re-glued and clamped overnight.",
+                )
+                _qc.create_defect(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    stage_key="MADE", description="Small chip on the top edge of the left door.",
+                )
+
+                for _label, _checked in [
+                    ("Doors align flush", True),
+                    ("Hardware operates smoothly", True),
+                    ("Finish free of blemishes", False),
+                ]:
+                    _row = _qc.create_checklist_item(
+                        db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                        label=_label, sort_order=0,
+                    )
+                    if _checked:
+                        _qc.patch_checklist_item(
+                            db, checklist_item_id=_row["checklist_item_id"], workspace_id=wid,
+                            actor_id=_foreman, changes={"is_checked": True},
+                        )
+
+                _qc.create_rework(
+                    db, item_id=_qc_item, workspace_id=wid, actor_id=_foreman,
+                    kind="internal", cause="CNC toolpath offset on the last sheet.",
+                    scope="Re-cut the two affected side panels.",
+                    responsibility="Machine team", cost=None,
+                )
+                db.commit()
+                print(
+                    "seeded qc: 1 open + 1 resolved defect, 3-item checklist "
+                    "(2 checked), 1 open internal rework on ALF-001's first item"
+                )
+
+            _packer = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
+                                      " AND email = 'sam.lee@hartwood.test'"),
+                                 {"w": wid}).scalar()
+            if len(_qc_items) >= 2 and _packer:
+                _pack_cutlist = db.execute(
+                    text("SELECT cutlist_id FROM items WHERE item_id = :i"),
+                    {"i": _qc_items[1]},
+                ).scalar()
+                if _pack_cutlist:
+                    db.execute(
+                        text("DELETE FROM worker_assignment"
+                             " WHERE cutlist_id = :c AND stage_key = 'PACKING'"),
+                        {"c": _pack_cutlist},
+                    )
+                    db.execute(
+                        text(
+                            """
+                            INSERT INTO worker_assignment(
+                                cutlist_id, stage_key, worker_id, status, assigned_by
+                            )
+                            VALUES (:c, 'PACKING', :w, 'assigned', :a)
+                            """
+                        ),
+                        {"c": _pack_cutlist, "w": _packer, "a": _foreman},
+                    )
+                    db.commit()
+                    print("seeded packing: 1 assigned PACKING task on ALF-001")
 
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "

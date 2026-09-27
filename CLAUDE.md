@@ -112,30 +112,31 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0036`. Head is `0036_item_project_detail` (Item & Project Detail 2.0; `0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12); `0033_search_outbox` is Global Search, #11). Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0039`. Head is `0039_qc_rework_packing` (Plan V1 §M). `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
-## Plan V1 — target architecture (three sub-projects built)
+## Plan V1 — target architecture (six sub-projects built)
 
 `docs/plan-v1/` holds **Plan V1**, the customer's specification for a
 company-wide joinery workflow and control platform, with its interview
 questions answered through Q431 (supplied 2026-09-17). It is mostly a
-**target**, not a description of this tree — with three exceptions: **Plan V1 #10
-(Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)** and
-**#12 (Material Take → Summary, §19–§20)** are built, each with its own
-section below. Everything else in Plan V1 remains
-unimplemented.
+**target**, not a description of this tree — with six exceptions: **Plan V1 #10
+(Cutlist + related parts + Orderbook)**, **#11 (Global Search, §13)**,
+**#12 (Material Take → Summary, §19–§20)**, **§3.4 (Dynamic RBAC engine,
+Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)** and
+**§M (QC / Rework / Packing, §26–§28)** are built, each with its own section
+below. Everything else in Plan V1 remains unimplemented.
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
   state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
-  the 2026-09-18 baseline, **not re-scored** after #10, #11 or #12 (only the
-  §13 search row and the §19 / §20 take and summary rows have been moved, to
-  `PARTIAL`).
+  the 2026-09-18 baseline, **not re-scored** after #10, #11, #12, the RBAC
+  engine, §I or §M (only the §13 search row and the §19 / §20 take and
+  summary rows have been moved, to `PARTIAL`).
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
   numbering. **150 of 154 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
@@ -159,8 +160,9 @@ unimplemented.
   and 2), built as one change. **Done** — widened by Q542 to take the whole
   Orderbook with it. See *Cutlist + related parts + Orderbook* below.
 
-Apart from #10, #11 and #12, this section still describes a target, and `CLAUDE.md` remains
-the record of what is actually true in the tree.
+Apart from #10, #11, #12, the RBAC engine, §I and §M, this section still
+describes a target, and `CLAUDE.md` remains the record of what is actually
+true in the tree.
 
 **Before building anything from Plan V1, read `ALIGNMENT.md` §3.** It lists
 seven places where Plan V1 contradicted an invariant stated as binding in *this*
@@ -186,7 +188,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0037
+make migrate      # apply Alembic 0001 -> 0039
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (82 test files, ~890 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -208,7 +210,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 - Self-built auth: argon2id passwords (`apps/api/app/auth/passwords.py`), opaque 32-byte tokens (sha256 stored), httpOnly `jf_session` cookie, sliding 14d / hard-cap 30d (`apps/api/app/auth/sessions.py`).
 - **7 auth roles**: `admin`, `manager`, `editor`, `drafter`, `estimator`, `purchase_officer`, `viewer`. `apps/api/app/auth/permissions.py`'s static `(role, module) -> set[action]` dict (`MATRIX`) is no longer the live source of truth — see *Dynamic RBAC engine* below — but it still documents each role's grants readably and is the fallback for any user with zero group memberships; the per-sub-project notes below explain *why* a row reads as it does. `purchase_officer` has read+comment on tracking, full read+write+approve on orderbook.
-- **11 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, and admin-only `it_management`.
+- **12 modules** (`_ALL_MODULES`): the 6 IA tabs `dashboard`, `tracking`, `list`, `shop_dwgs`, `isample`, `orderbook`, then `catalog`, `cut_floor`, `shop_floor`, `estimating`, `qc`, and admin-only `it_management`.
 - 4 actions: `read`, `write`, `approve`, `comment`.
 - FastAPI deps: `current_user` (resolves cookie -> AuthUser) and `require_permission(module, action, project_param=None)` factory in `apps/api/app/auth/rbac.py`, backed by the DB engine in `apps/api/app/auth/rbac_engine.py`.
 - All authenticated mutations write to `audit_log` via `apps/api/app/auth/audit.py`.
@@ -773,9 +775,11 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 > `worker_assignment.item_id` is **gone**; `stage_completion_log.item_id`
 > survives nullable as pre-`0030` provenance only. Completing a stage fans
 > `item_stages.done_date` out to every linked item whose own order contains it
-> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope is the five
-> production stages only — **DEL and INST are still not assignable** (Q561).
-> The notes below otherwise stand.
+> (Q439 + Q562), and undo reverses the whole cutlist (Q446). Scope was the
+> five production stages only when B3 shipped — **DEL and INST are still not
+> assignable** (Q561) — but migration `0039` added **Packing** as a real 6th
+> assignable stage (Q519); see *QC / Rework / Packing* further down. The
+> notes below otherwise stand.
 
 - Migration 0020 adds `app_user.is_shop_worker` (bool default false),
   `items.paint_after_assembly` (bool default false; when true the
@@ -835,10 +839,11 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   or cancel first (spec §15 Q3). `shop_floor.queries.active_assignments_for_worker`
   + `users.routes._guard_active_assignments`.
 - Web routes:
-  - **`/shop-floor?project=…`** — Foreman office board. 5-column
-    kanban DOWN | CNC | EDGED | PAINTED | MADE. Per-card status
-    pill + worker chip + reassign select + cancel button. Inline
-    `AssignDialog`. 15-second polling.
+  - **`/shop-floor?project=…`** — Foreman office board. Kanban
+    DOWN | CNC | EDGED | PAINTED | MADE (**+ PACKING, a 6th column
+    since migration `0039`** — see *QC / Rework / Packing* below).
+    Per-card status pill + worker chip + reassign select + cancel
+    button. Inline `AssignDialog`. 15-second polling.
   - **`/shop-floor/station/[worker_id]`** — kiosk display. Active
     card prominent (~70% viewport), big emerald Mark-done button on
     the in-progress card; the worker's own browser session sees the
@@ -875,6 +880,18 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 > sub-project; it shipped after #9a, which is why estimating holds
 > migration slots 0021–0023 and the optimiser's `grain_locked` landed
 > as 0024.
+
+> **Superseded by Plan V1 §I (migration `0038`).** The six-state
+> `draft → sent → accepted/rejected/expired/withdrawn` workflow described
+> below is **replaced**, not extended, by the 12-stage tender lifecycle —
+> see *Tender Lifecycle + Financials* further down for the current state
+> machine, Convert behaviour and endpoint list. The schema (`estimate`,
+> `estimate_revision`, lines, snapshot columns), migrations 0021–0023, the
+> `estimator` role and the RBAC/module points below all still stand
+> unchanged; only the status enum, `_LEGAL_TRANSITIONS`, and the
+> send/convert routes were rewritten. Kept here for the parts that are
+> still accurate; don't read the "Revision workflow" or "Convert-to-Project"
+> bullets below as current.
 
 - New backend module `apps/api/app/estimating/` (`schemas.py`,
   `queries.py`, `routes.py`, `pdf.py` + `templates/quote.html`).
@@ -935,21 +952,23 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   (`test_estimating_line_seq_race.py`), which reproduces the race with two
   real DB sessions on separate threads and confirms it fails against the
   pre-fix code (`[1, 1]` instead of `[1, 2]`).
-- **Revision workflow (binding).** `_LEGAL_TRANSITIONS` in `queries.py`:
-  `draft → sent|withdrawn`; `sent → accepted|rejected|expired|withdrawn`;
-  `accepted/rejected/expired/withdrawn` are terminal. Any illegal
-  transition → `409 {code:"BAD_TRANSITION", from, to}`. `revise` clones
-  the current revision into a new `draft` (`rev_no+1`). `approve` action
-  gates lock-and-send + Convert.
-- **Convert-to-Project.** `POST /revisions/{rid}/convert` requires
-  status `accepted` (`409 BAD_STATUS` otherwise), rejects
-  already-converted (`409 ALREADY_CONVERTED` with the existing
-  `project_id`) and archived-customer, re-resolves each part snapshot,
-  and creates a project wired to `projects.estimate_revision_id`.
-- **32 endpoints** — Customers CRUD + archive; estimates list/detail/
-  create/patch/revise; revision detail + patch + the 6 status
-  transitions (`send/accept/reject/expire/withdraw/convert`); line
-  CRUD + reorder; per-line part / hardware / labour add/patch/delete;
+- **Revision workflow (superseded — see *Tender Lifecycle + Financials*).**
+  `_LEGAL_TRANSITIONS` in `queries.py` was the six-state
+  `draft → sent|withdrawn`; `sent → accepted|rejected|expired|withdrawn`
+  graph. Migration `0038` replaced it with the 12-stage lifecycle;
+  `send` no longer exists as an action (folded into `advance`).
+- **Convert-to-Project (superseded — see *Tender Lifecycle + Financials*).**
+  `POST /revisions/{rid}/convert` still requires status `WON`
+  (`409 BAD_STATUS` otherwise) and still rejects already-converted
+  (`409 ALREADY_CONVERTED`) and archived-customer, but now also takes a
+  body selecting which lines convert (Q490) and creates a
+  `project_contract` row (Q491) alongside the project.
+- **Endpoint count changed** — `/revisions/{rid}/send` was retired in
+  favour of `/revisions/{rid}/advance`, and `/revisions/{rid}/handover-preview`
+  was added; see *Tender Lifecycle + Financials* for the current list.
+  Otherwise unchanged: Customers CRUD + archive; estimates list/detail/
+  create/patch/revise; revision detail + patch + status transitions;
+  line CRUD + reorder; per-line part / hardware / labour add/patch/delete;
   `GET /it/labour-rates` + `PATCH /it/labour-rates`;
   `GET /revisions/{rid}/quote.pdf` (WeasyPrint, `inline` with RFC 8187
   dual filename).
@@ -970,8 +989,9 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   (`kai.ngata@hartwood.test`, role `estimator`), 10 `workspace_labour_rate`
   rows (one per stage), 2 customers, and 3 demo `EST-2026-*` estimates.
   Idempotent — wipes `EST-2026-*` for the workspace before reinserting.
-- Out of scope (deferred): PO/supplier-order generation from an accepted
-  quote (Convert stops at project creation), multi-currency, client
+- Out of scope (deferred): PO/supplier-order generation from a won quote
+  (Convert still stops at project + contract creation — see *Tender
+  Lifecycle + Financials* for what Convert gained), multi-currency, client
   e-signature / portal, estimate templates, per-line margin overrides
   beyond `unit_sell_override`, revision diff UI.
 
@@ -1747,7 +1767,10 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   path, since no membership is project-scoped until an admin deliberately
   creates one. Wired onto `apps/api/app/areas/routes.py`'s two
   `/projects/{pid}/...` routes as a working demonstration (not a general
-  rewire — see *Known gaps*).
+  rewire — see *Known gaps*). `apps/api/app/project_contracts/routes.py`
+  (added by §I, migration `0038`) is the second adopter — its three
+  `/projects/{pid}/contract...` / `/projects/{pid}/actual-costs` routes pass
+  `project_param="pid"` from the day they were written, not retrofitted.
 - **`PATCH /users/{uid}`** (`apps/api/app/users/routes.py`) now calls
   `swap_default_group_membership` when `auth_role` is in the patch, so a
   role change doesn't leave the old role's DB grants in effect under the new
@@ -1809,10 +1832,384 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   `test_rbac_drafter.py` / `test_permissions.py` / `test_shop_drawings_rbac.py`
   / `test_users_routes.py` / `test_area_room_routes.py` pass unchanged.
 - **Known gaps, recorded rather than silently left:**
-  - No automatic group provisioning for a workspace created after `0037` —
-    there is no "create workspace" route in v1 today, so this has never come
-    up; `seed_system_groups()` is ready to be called from one when it exists.
+  - No automatic group provisioning for a workspace created through the API —
+    there is no "create workspace" route in v1 today. **`make seed` is a
+    real instance of this**, though: it creates the `hartwood-joinery`
+    workspace *after* `0037`'s one-time backfill already ran, so without a
+    fix the seeded workspace would ship with zero `permission_group`/
+    `group_module_grant`/`user_group_membership` rows and `GET
+    /permission-groups` would show nothing on a fresh `make up && make
+    migrate && make seed`. Fixed: `seed/hartwood_joinery.py` now calls
+    `seed_system_groups()` right after creating the workspace and gives
+    every seeded user a workspace-wide membership matching their
+    `auth_role`, mirroring `0037`'s backfill exactly. `seed_system_groups()`
+    is still ready to be called from a future "create workspace" route when
+    one exists — this fix doesn't add one.
   - No web UI for the admin API (above).
   - Q472, Q470's rule layer, Q473's comments, and the broader project-scoped
     rewire of existing endpoints are open follow-ups, not oversights.
 
+
+## Tender Lifecycle + Financials (Plan V1 §5–§6/§16–§17, Q487–494/548–549) — shipped
+
+> Selected by the user as the largest coherent block of decided-but-unbuilt
+> Plan V1 questions after §F (Dynamic RBAC engine). Built directly against
+> the confirmed decisions in `docs/plan-v1/OPEN-QUESTIONS.md` — no separate
+> spec or plan doc, the same way #9a and the RBAC engine shipped. This
+> section is its only written record. **Replaces**, not extends, the
+> six-state workflow described in the *Estimating (sub-project #9a)* section
+> above — see the superseded-callout there before reading its "Revision
+> workflow" / "Convert-to-Project" bullets.
+
+- **Migration `0038`** — widens `estimate_revision.status` from 6 values to
+  the **12-stage tender lifecycle** of Plan V1 §5: 11 sequential stages
+  (`OPPORTUNITY, INITIAL_REVIEW, GO_NO_GO, INFO_REQUESTED, DOCS_RECEIVED,
+  ESTIMATING, SUPPLIER_PRICING, INTERNAL_REVIEW, QUOTE_PREPARED,
+  MGMT_APPROVAL, SUBMITTED`) plus one terminal position resolving to
+  `WON` / `LOST` / `WITHDRAWN` (Q488). Existing rows are remapped
+  (Q435 data-preserving): `draft → QUOTE_PREPARED`, `sent → SUBMITTED`,
+  `accepted → WON`, `rejected → LOST`, `expired → LOST` (Q548 — Plan V1's
+  12 stages have no Expired terminal; mapping onto Lost keeps the reason
+  distinguishable in the audit event name even though the status collapses),
+  `withdrawn → WITHDRAWN`. A `draft` row lands at **QUOTE_PREPARED**, not
+  stage 1 — an in-flight quote already did the opportunity/review/pricing
+  work the new early stages describe, and restarting it would make it walk
+  stages that, in substance, already happened.
+- **`locked_at` generalises "draft".** The old partial unique index
+  `uniq_estimate_draft` (`WHERE status = 'draft'`) becomes
+  `uniq_estimate_unlocked` (`WHERE locked_at IS NULL`) — the same "at most
+  one revision per estimate not yet sent to the client" invariant, now
+  correct across all 10 pre-Submitted stages instead of naming just one of
+  them. `locked_at` is set exactly once, at `MGMT_APPROVAL → SUBMITTED`, and
+  never cleared. Every former `status == "draft"` gate in `queries.py`
+  (line create/patch/delete, part/hardware/labour mutation, patch of the
+  revision itself) is now a `locked_at IS NULL` check — `_assert_draft` was
+  renamed `_assert_unlocked`. **Migration data-integrity note**: a row
+  inserted directly by raw SQL with a locked status but no `locked_at` set
+  would collide with the new index against a genuinely-unlocked sibling —
+  the migration backfills
+  `locked_at = COALESCE(locked_at, sent_at, accepted_at, rejected_at, created_at)`
+  for every row in a locked status before creating the index, so this can't
+  happen even against pre-existing data with hand-inserted rows.
+- **`project_contract` (one row per project, immutable `original_value`) +
+  `project_contract_variation`** (append-only). `current_value` is
+  **computed on read** as `original_value + SUM(variation.amount_delta)`,
+  never stored — the same "nowhere to drift" stance `material_summary`
+  (#12) already takes (Q491).
+- **`_LEGAL_TRANSITIONS`** (`apps/api/app/estimating/queries.py`) — each of
+  the 10 sequential stages permits its successor or `WITHDRAWN`;
+  `SUBMITTED` permits `WON` / `LOST` / `WITHDRAWN`; the three terminals
+  permit nothing. `next_tender_stage()` reads the fixed
+  `TENDER_STAGE_ORDER` tuple. Any illegal transition → `409
+  {code:"BAD_TRANSITION", from, to}`, unchanged from #9a.
+- **One generic `advance()` action covers all 10 forward steps**,
+  including `MGMT_APPROVAL → SUBMITTED` — that step's lock-and-snapshot
+  business logic (the labour-rate snapshot, `locked_at`, `sent_at`) lives
+  in `transition_revision()`'s `target == "SUBMITTED"` branch and fires
+  here too, so there is no separate `/send` entry point any more.
+  `POST /revisions/{rid}/advance` replaces `/revisions/{rid}/send`
+  (**404, retired** — not aliased).
+- **`reject` vs `expire` still write distinct audit events** despite both
+  landing on the same `LOST` status (Q548 collapses the status, not the
+  audit trail) — `transition_revision()` takes an explicit `lost_kind`
+  param (`"rejected"` default, `"expired"` from the `/expire` route) rather
+  than inferring intent from `lost_reason`'s text.
+- **`revise()` restarts a new draft at `ESTIMATING`, not `OPPORTUNITY`**
+  (design decision — Plan V1 does not say where a revision restarts): the
+  opportunity/review/go-no-go/info-gathering work already happened for this
+  tender and doesn't need repeating just because the price is being redone.
+- **Handover review screen (Q490).** `GET /revisions/{rid}/handover-preview`
+  returns the lines that would become Joinery Items plus the contract value
+  Convert would default to (the quote's own GST-inclusive total). The PM
+  reviews before converting rather than Convert running unconditionally —
+  warranted because Q489 has handover generating a project's entire Joinery
+  Item list, not just the project shell.
+- **Convert-to-Project, extended.** `POST /revisions/{rid}/convert` still
+  requires status `WON` (`409 BAD_STATUS`), still rejects already-converted
+  (`409 ALREADY_CONVERTED`, carrying the existing `project_id`) and
+  archived-customer, and still re-resolves every part/hardware snapshot
+  against the live catalog before writing anything (`409 CATALOG_GONE`
+  listing every failure). New: an optional `include_line_ids` body field —
+  omitted converts every line (old behaviour unchanged by default), an
+  excluded line simply produces no Joinery Item while the rest of the quote
+  is unaffected — and an optional `contract_value` override (defaults to
+  the quote's own total). The `project_contract` row is created in the same
+  transaction as the project, `items`, `modules`, `parts` and
+  `project_hardware_catalog` rows Convert already wrote in #9a.
+- **Documentation error found and corrected while building this.**
+  `docs/plan-v1/OPEN-QUESTIONS.md`'s Q489 claimed "Estimate lines currently
+  do **not** become items on convert" — false from the day it was written:
+  `convert_to_project()` has created real Joinery Items since #9a's
+  original commit (`a7b8d3d`), before Q489 was ever asked. There was no
+  line-to-item mapping gap to build; what this sub-project actually added
+  on top of the existing mapping is the *selective* handover (`include_line_ids`)
+  Q490 asked for. Corrected in place in `OPEN-QUESTIONS.md` rather than
+  silently rewritten — see the note under Q489 there.
+- **Actual costs rollup (Q493/Q549), `apps/api/app/project_contracts/
+  actual_costs.py`.** Pure read, nothing stored — the same "derive, don't
+  capture twice" stance #9's `/optimise` already takes. Two sources:
+  - **Materials** — `procurement_batches.qty_received * cost_per_unit`,
+    summed per project. Project-level only (Q492 caps granularity at
+    Project + Item, and there is no per-item allocation path for
+    BOARD/CUSTOM/BENCHTOP batches today, the same gap #12's Material
+    Summary already lives with for the same reason).
+  - **Labour** — each `stage_completion_log` row's duration
+    (`completed_at - worker_assignment.started_at`) priced at
+    `workspace_labour_rate`. A completion belongs to a **cutlist**
+    (migration `0030`), shared by every item on it, so its cost is
+    **apportioned across the cutlist's items by each item's share of total
+    part area** (`len_mm * wid_mm * qty`, summed per item) — falling back
+    to an equal split when no item on the cutlist has any measurable part
+    area yet. A completion with no `assignment_id` (nullable — pre-`0030`
+    provenance rows) is excluded, not zero-costed: there is no `started_at`
+    to derive a duration from.
+  - `GET /projects/{pid}/actual-costs` returns `materials_actual`,
+    `labour_actual`, `total_actual` and a `labour_by_item` breakdown map.
+- **Backend module `apps/api/app/project_contracts/`** (`schemas.py`,
+  `queries.py`, `actual_costs.py`, `routes.py`), mounted at top-level paths.
+  3 endpoints, all gated `("tracking", action, project_param="pid")` — the
+  **second adopter** of the Dynamic RBAC engine's project-scoped check
+  (`apps/api/app/areas/routes.py` was the first, written before this
+  sub-project as a demonstration only):
+  - `GET /projects/{pid}/contract` — 404 if the project has none yet
+    (predates Q491 or wasn't created from a converted estimate — not an
+    error).
+  - `POST /projects/{pid}/contract/variations` — creating the row *is* the
+    decision (§6: "the PM decides whether a change becomes a Variation");
+    there is no separate approval step here — whoever can write already
+    decided.
+  - `GET /projects/{pid}/actual-costs` — always 200 (zeros when nothing to
+    roll up yet), 404 only for a foreign/missing project.
+- **RBAC — no matrix change.** Contract/actual-costs routes reuse
+  `tracking:{read,write}`, same as `project_contacts` / `project_lift_access`
+  (Item & Project Detail 2.0) — Contract Value lives on the project page
+  alongside them.
+- **Web.**
+  - `apps/web/lib/estimating-types.ts` — `TENDER_STAGE_ORDER`,
+    `TENDER_STAGE_LABELS`, the widened 14-value `EstimateStatus` union,
+    `HandoverPreview*`, `ConvertResult` (now carries `contract_value`).
+  - `apps/web/lib/project-contract-types.ts` + `-fetch.ts` (new) —
+    `ProjectContract`, `ContractVariation`, `ActualCosts`,
+    `projectContractApi.addVariation()`.
+  - `EstimateDetailClient.tsx` — the single "Send" button became
+    `advance()` + a dynamic label (`nextStageLabel()` reads
+    `TENDER_STAGE_LABELS[TENDER_STAGE_ORDER[i+1]]`; shows "Submit to
+    client" rather than "Advance → Submitted" on the last hop, and disables
+    when advancing to Submitted with zero lines). `ConvertPreviewDialog`
+    now renders one checkbox per line (backed by a `Set<number>` selection
+    state) sourced from the handover-preview endpoint, instead of a single
+    confirm button.
+  - New `ProjectFinancialsCard.tsx` on `/projects/[id]` — Contract Value
+    (original + current) + an inline "+ Add variation" form, plus the
+    read-only Materials / Labour / Total actual-costs strip. Renders "No
+    contract on this project yet" rather than hiding itself when the
+    project predates Q491.
+  - `CustomerDetailClient.tsx` and `EstimatingClient.tsx`'s
+    `STATUS_COLOURS` maps widened to all 14 statuses (found via `tsc
+    --noEmit`, not the initial grep — `CustomerDetailClient` lives outside
+    `estimating/` and was missed on the first pass).
+- **Seed.** `make seed` now lands the three demo estimates on
+  `QUOTE_PREPARED` / `SUBMITTED` / `WON` (was `draft` / `sent` / `accepted`)
+  and adds one `project_contract` row on ALF-001 (`$185,000.00`) with one
+  variation (`+$4,250.00`, "Client-requested benchtop upgrade") — through
+  the same query functions the API uses, so the seeded row carries a real
+  `audit_log` entry. Idempotent (`DELETE FROM project_contract WHERE
+  project_id = :p` before insert).
+- **Tests:** `test_estimating_lifecycle.py` (new — full 12-stage transition
+  graph, including `/send`'s 404 retirement), `test_estimating_handover.py`
+  (new — preview + selective convert), `test_project_contracts_routes.py`
+  (new — contract CRUD + RBAC), `test_actual_costs.py` (new — labour
+  apportionment, a 2:1 item-area split verified against a $200 completion
+  → $133.33 / $66.67), plus `test_estimating_routes.py` /
+  `test_estimating_workspace_isolation.py` / `test_home_dashboard.py`
+  updated in place for the new status literals and transition actions.
+  Full suite (915 passed, 10 skipped, 1 failed) run against a real migrated
+  Postgres 16 instance with zero regressions outside the files above. The
+  one failure, `test_search_reindex.py::test_real_reindex_swaps_and_drops_temp`,
+  is a pre-existing local-environment gap unrelated to this work: unlike its
+  sibling `meili`-marked tests it reads `os.environ["MEILI_URL"]` directly
+  instead of skipping when unset, so it only runs (and fails) when no
+  Meilisearch instance is reachable — `make test`'s docker-compose
+  environment always sets `MEILI_URL`, so CI never sees this.
+- **`tests/e2e/estimating.spec.ts` updated** for the new seed statuses
+  (`QUOTE_PREPARED` / `SUBMITTED` / `WON` in place of
+  `draft` / `sent` / `accepted`); the Convert button and quote-PDF link
+  gates it exercises (`WON` / `SUBMITTED` respectively) were unchanged by
+  this rewrite.
+- **Out of scope (deferred):** PO/supplier-order generation from a won
+  quote (Convert still stops at project + contract creation), Q472-style
+  per-object rule migration into the RBAC engine for this module's
+  hand-written gates (unaffected — none were added here), a rollback path
+  for `_LEGAL_TRANSITIONS` (Q513 already ruled this out generally), and
+  moving `Cars/OH&S`/`Scope` tab content onto the new financials card
+  (blocked on Q550/Q572, unrelated customer inputs).
+
+## QC / Rework / Packing (Plan V1 §26–§28, Q515–519) — shipped
+
+> Selected by the user over §L (Locking/Concurrency) after §I shipped —
+> chosen as the "bolt on a new subsystem" option, additive to existing
+> surfaces rather than a rewrite of save semantics on the busiest ones.
+> Built directly against `docs/plan-v1/OPEN-QUESTIONS.md` §M — no separate
+> spec or plan doc, the same way #9a, the RBAC engine and §I shipped. This
+> section is its only written record.
+
+- **Migration `0039`** — three new tables (`qc_defect`, `qc_checklist_item`,
+  `rework`), a `PACKING` row in the `stages` lookup (`sort_order 85`,
+  between `MADE=80` and `DEL=90`), widened `worker_assignment` /
+  `stage_completion_log` CHECKs to admit `'PACKING'`, and a backfill of
+  `group_module_grant` for the new `qc` RBAC module across every existing
+  workspace's 7 system groups (see *RBAC* below — this is **not** the same
+  thing as adding `qc` to the static `MATRIX`, and both were required).
+- **QC is a module, not a workflow stage** (Q515) — Plan V1 §22 lists QC
+  among the stages, but §26 describes it as checking *the work just
+  completed* at whatever stage that was, a cross-cutting activity rather
+  than a milestone. `items.stage_key` / `lifecycle_stage` is untouched by
+  QC; only Packing (below) is a real 11th stage.
+- **`qc_defect`** — one row per finding, optionally tagged with the
+  `stage_key` whose work is being checked. Two states only: `open` →
+  `resolved`. Raising/editing a defect is `qc:write`; resolving it is
+  `qc:approve` — a defect a Foreman raises isn't self-closed, matching the
+  shop_drawings not-uploader-approves pattern. A resolved defect is
+  immutable (`409` on edit or on resolving twice).
+- **`qc_checklist_item`** — a per-item QC checklist line (`label`,
+  `is_checked`, `checked_by`/`checked_at`, `sort_order`). Plan V1 §2 lists
+  "QC checklist" among what a duplicated Joinery Item copies and "QC
+  results"/"Defects" among what it must *not* copy — item duplication
+  itself is not built anywhere in this tree yet, so there is nothing to
+  wire that distinction into today; noted for whoever builds it.
+- **`rework`** — **one entity with a `kind` CHECK** (`internal`/`full`),
+  not two entity types (Q516): "they differ in when they occur and how much
+  work they involve, but what must be recorded — cause, scope, cost and
+  responsibility — is the same" (`plan_v1.md` line 1926-1929), and those
+  four fields plus `kind` are exactly the columns. **Rework never reopens a
+  completed stage** (Q517) — it is a parallel record; the original
+  `stage_completion_log` rows stay intact. This also sidesteps a real
+  problem the shared cutlist would otherwise create: production stages
+  belong to the cutlist and are shared by every linked item, so reopening
+  one for a single item would have reopened it for all of them.
+  Closing rework is `qc:approve`, same shape as resolving a defect.
+- **The QC-timing rule (Q518) is guidance, not enforced.** §26 describes
+  what happens depending on how far the work has progressed (before
+  Listing QC doesn't need to know; after Listing but before Assembly the
+  Lister updates the cutlist; after Assembly it's Internal Rework; after
+  Installation it's Full Rework) — none of this is checked in code. The
+  `kind` a defect becomes is the QC operator's call.
+- **Packing (Q519) — a real 11th lifecycle stage, with scanning.** Unlike
+  QC, Packing genuinely is a stage: "the first addition to the workflow
+  stage list since Q459 kept the existing ten" (`plan_v1.md` line 2130).
+  It is the 6th Shop Floor stage — `SHOP_FLOOR_ORDER_DEFAULT` /
+  `_PAINT_LAST` (`apps/api/app/shop_floor/lifecycle.py`) both now end in
+  `PACKING` unconditionally, after `MADE`/`PAINTED` regardless of their
+  relative order, since Packing always comes after all
+  fabrication/finishing. Assignable, start/complete, undo — all exactly
+  like `DOWN`/`CNC`/`EDGED`/`PAINTED`/`MADE`. `DEL`/`INST` remain outside
+  Shop Floor (Q561, unchanged).
+- **Scanning without the native app.** Q519 confirms Packing as "a tracked
+  stage, with scanning," and ties that to Q532's dedicated native site
+  application — which does not exist anywhere in this repo (`apps/api` +
+  `apps/web` is the whole stack). Rather than wait on that separate
+  project, scanning is built **in the browser**: `getUserMedia` + `jsQR`
+  decode QR frames from the camera, no native app and no new backend
+  service. A manual-entry fallback (type the number) covers cameraless
+  browsers, denied permission, and desktop testing.
+  - **`GET /items/{id}/label`** (new page, deliberately **outside** the
+    `(app)` route group so it renders bare, not wrapped in TopBar/SideBar
+    chrome — proxy.ts's `PUBLIC` allowlist is path-based, not
+    route-group-based, so the page still redirects to `/login` without a
+    session) renders a QR code (the `qrcode` npm package, client-side
+    canvas) encoding the item's own `num` — the one value `joinery_number_seq`
+    already guarantees unique, not a new identifier scheme. "Print Label"
+    sits next to the three existing print links in `EditorFooter.tsx`.
+  - **The scan target is the whole cutlist, not a single item.** Shop
+    Floor's unit is the cutlist (migration `0030`); one "Mark Packing
+    done" action completes it for every linked item, and there is no
+    per-item completion state to scan against. Scanning **any one** item's
+    label on the cutlist is enough — `StationCard.item_numbers` (new field,
+    `worker_queue()`'s `array_agg` of the cutlist's item `num`s) is what the
+    scanner checks the decoded value against.
+  - `PackingScanner.tsx` (`shop-floor/station/[worker_id]/_components/`) —
+    only wired into the kiosk's `MarkDoneDialog` when
+    `card.stage_key === "PACKING"`; every other stage keeps the plain
+    confirm button unchanged.
+- **RBAC — new `qc` module, the 12th** (between `estimating` and
+  `it_management` in `_ALL_MODULES`). Mirrors `shop_floor`'s
+  drafter-is-downstream shape, not the elevated-drafter pattern most other
+  modules use — QC is production-floor territory:
+  - admin/manager: `{read,write,approve,comment}`
+  - editor: `{read,write,comment}` — can raise a defect/checklist
+    item/rework, cannot resolve or close one
+  - drafter: `{read,comment}` — same shape as `shop_floor`'s drafter row
+  - estimator/purchase_officer/viewer: `{read}`
+
+  **This needed two separate changes, not one.** Adding `"qc"` to
+  `_ALL_MODULES` and to the static `MATRIX` dict makes it available to
+  `seed_system_groups()` for any workspace created (or re-seeded) *after*
+  this migration — but every already-existing workspace's system groups
+  were populated once, by `0037`'s own hardcoded backfill, and the Dynamic
+  RBAC engine (§F) resolves a user with real memberships from
+  `group_module_grant` alone, never falling back to `MATRIX` for them. So
+  migration `0039` also inserts the 16 `(role, 'qc', action)` rows directly
+  into `group_module_grant` for every workspace's existing 7 system groups
+  — the same shape 0037's own backfill used, scoped to just the new
+  module. Skipping this would have left `qc` invisible to every real user
+  in every workspace that existed before `0039`, while still passing any
+  test that creates a fresh zero-membership user (which falls back to
+  `MATRIX` and would look right for the wrong reason).
+- **Backend module `apps/api/app/qc/`** (`schemas.py`, `queries.py`,
+  `routes.py`), mounted at top-level paths. **12 endpoints**, all
+  Joinery-Items-only (`joinery_items_only()`, the `item_documents`
+  precedent — a related part gets 404) and workspace-isolated through
+  `items → projects.workspace_id`:
+  - `GET/POST /items/{iid}/qc/defects`, `PATCH /qc/defects/{did}`,
+    `POST /qc/defects/{did}/resolve`
+  - `GET/POST /items/{iid}/qc/checklist`, `PATCH /qc/checklist/{cid}`,
+    `DELETE /qc/checklist/{cid}`
+  - `GET/POST /items/{iid}/qc/rework`, `PATCH /qc/rework/{rid}`,
+    `POST /qc/rework/{rid}/close`
+  - Every mutation writes `audit_log` **and** `item_edit_log` in the same
+    transaction, per the PM Workbench invariant. Audit events:
+    `qc.defect.{create,update,resolve}`,
+    `qc.checklist.{add,check,uncheck,update,remove}`,
+    `qc.rework.{create,update,close}`.
+- **Web.** New **QC** tab in the item editor (`EditorTabs.tsx`, between
+  Query and Log) — `QcTab.tsx` renders all three sections (Defects,
+  Checklist, Rework) on one screen, matching the density of
+  `AttachmentsTab`/`QueryTab` rather than three separate tabs. Shop Floor's
+  office board (`ShopFloorClient.tsx`) and its types (`shop-floor-types.ts`)
+  gained the 6th `PACKING` column; the kiosk (`StationClient.tsx`) gained
+  the scan-gated `MarkDoneDialog` path described above.
+- **Seed.** `make seed` on ALF-001's first joinery item: 1 open + 1
+  resolved defect, a 3-item QC checklist (2 checked), 1 open Internal
+  Rework — built through the real `app.qc.queries` functions, so seeded
+  rows carry genuine `audit_log`/`item_edit_log` entries, same as #11/#12's
+  seed blocks. A second item gets one `assigned` `PACKING` `worker_assignment`
+  (raw SQL, matching the pre-existing #8 shop_floor seed block's own idiom)
+  so the board's 6th column isn't empty out of the box. Idempotent —
+  each table's target-item rows are dropped before re-inserting.
+- **Tests:** `test_qc_routes.py` (new, 15 tests — defect/checklist/rework
+  round-trips, `qc:write` vs `qc:approve` split via editor-cannot-resolve/
+  close, resolved/closed immutability, Joinery-Items-only 404s,
+  cross-workspace isolation, audit+edit-log writes), two new PACKING tests
+  in `test_shop_floor_routes.py` (assignable + completes after `MADE`;
+  before `MADE` is `409 STAGE_OUT_OF_ORDER`), `test_shop_floor_lifecycle.py`
+  updated in place for the new 6-stage ordering (existing "last stage has
+  no later stages" tests were pinned to `MADE`, now correctly `PACKING`),
+  and `test_permission_groups_routes.py`'s admin-grant-count assertion
+  updated `44 → 48` (12 modules × 4 actions, was 11 × 4) — the one test in
+  the whole suite that hardcoded a MATRIX-derived total and needed
+  updating for a module addition. Full suite (932 passed, 10 skipped, 1
+  pre-existing unrelated failure — the same local-only `MEILI_URL` gap
+  noted in *Tender Lifecycle + Financials* above) run against a real
+  migrated Postgres 16 instance with zero regressions outside the files
+  named here.
+- **Out of scope (deferred):** the standalone cross-project **QC
+  Dashboard** Plan V1 §4.2 names (this ships the per-item surfaces that
+  would back it, not the dashboard itself); QC checklist templates or
+  per-project configuration (today's checklist is ad-hoc per item, added
+  free-text, matching Simplicity First over building a template system
+  nothing asked for); linking a `rework` row to the `qc_defect` that caused
+  it (Plan V1 doesn't ask for the link, and rework can originate without a
+  formal defect record, e.g. found on site); §L's remaining Hard/Approval
+  lock types and field-level optimistic concurrency (the alternative this
+  round didn't pick); native mobile app work under Q532 (Packing's
+  scanning need is met without it, per above).

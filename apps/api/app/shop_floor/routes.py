@@ -47,7 +47,7 @@ from .schemas import (
 
 router = APIRouter(tags=["shop_floor"])
 
-SHOP_FLOOR_STAGES = ("DOWN", "CNC", "EDGED", "PAINTED", "MADE")
+SHOP_FLOOR_STAGES = ("DOWN", "CNC", "EDGED", "PAINTED", "MADE", "PACKING")
 
 
 def _is_admin_or_manager(role: str) -> bool:

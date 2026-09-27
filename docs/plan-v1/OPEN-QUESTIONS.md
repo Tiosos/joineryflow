@@ -1192,6 +1192,18 @@ Estimate lines currently do **not** become items on convert.
 1. Yes — handover creates items from the preliminary ones.
 2. No — the PM creates items fresh.
 
+> **Documentation error, found while building §I (2026-09-27).** The premise
+> above was wrong from the day this question was answered, not something that
+> went stale later: `convert_to_project()` has created real Joinery Items
+> (with modules and parts) from `estimate_line` rows since #9a's original
+> commit (`a7b8d3d`), before Q489 was ever asked. There never was a
+> line-to-item mapping gap to scope (contra the "§I round 1" note below) — the
+> mapping already existed and Q489's "yes" simply confirmed keeping it. What
+> §I actually added on top is the **selective** handover Q490 asked for:
+> `POST /revisions/{rid}/convert` now takes `include_line_ids` so the PM
+> chooses which lines become items, rather than converting every line
+> unconditionally.
+
 ### Q548 — Where does `expired` go in the 12-stage lifecycle? *(new — forced by Q488)*
 **Option 2 confirmed (2026-09-18).** Map `expired` onto **Lost** — commercially,
 a quote that lapsed did not win. Stays within §5's twelve stages.

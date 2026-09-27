@@ -593,7 +593,7 @@ def board_cards(
                         -- board once their existing rows are done.
                         SELECT so.stage_key
                         FROM (VALUES
-                            ('DOWN'), ('CNC'), ('EDGED'), ('PAINTED'), ('MADE')
+                            ('DOWN'), ('CNC'), ('EDGED'), ('PAINTED'), ('MADE'), ('PACKING')
                         ) AS so(stage_key)
                         LEFT JOIN item_stages s
                                ON s.item_id = i.item_id
@@ -606,13 +606,13 @@ def board_cards(
                                     CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'MADE' THEN 4
-                                        WHEN 'PAINTED' THEN 5
+                                        WHEN 'PAINTED' THEN 5 WHEN 'PACKING' THEN 6
                                     END
                                 ELSE
                                     CASE so.stage_key
                                         WHEN 'DOWN' THEN 1 WHEN 'CNC' THEN 2
                                         WHEN 'EDGED' THEN 3 WHEN 'PAINTED' THEN 4
-                                        WHEN 'MADE' THEN 5
+                                        WHEN 'MADE' THEN 5 WHEN 'PACKING' THEN 6
                                     END
                             END
                         )
@@ -665,6 +665,10 @@ def worker_queue(
                      WHERE li.cutlist_id = wa.cutlist_id
                        AND li.row_type = 'joinery_item'
                        AND li.deleted = false) AS item_count,
+                   (SELECT COALESCE(array_agg(li.num), '{{}}') FROM items li
+                     WHERE li.cutlist_id = wa.cutlist_id
+                       AND li.row_type = 'joinery_item'
+                       AND li.deleted = false) AS item_numbers,
                    wa.stage_key, wa.status, wa.note,
                    wa.assigned_at, wa.started_at
             FROM worker_assignment wa

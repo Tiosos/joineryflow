@@ -15,6 +15,14 @@ import type {
   PartMaterialType,
   StageKey,
 } from "@/lib/estimating-types";
+import { TENDER_STAGE_LABELS, TENDER_STAGE_ORDER } from "@/lib/estimating-types";
+
+function nextStageLabel(status: EstimateStatus | undefined): string | null {
+  if (!status) return null;
+  const idx = (TENDER_STAGE_ORDER as readonly string[]).indexOf(status);
+  if (idx === -1 || idx === TENDER_STAGE_ORDER.length - 1) return null;
+  return TENDER_STAGE_LABELS[TENDER_STAGE_ORDER[idx + 1]];
+}
 
 interface CatalogRow {
   material_id: number;
@@ -58,13 +66,23 @@ const STAGE_KEYS: StageKey[] = [
   "PAINTED", "MADE", "DEL", "INST",
 ];
 
+// The 10 pre-SUBMITTED pipeline stages (Q487/488) share one "in progress"
+// look; SUBMITTED and the three terminal outcomes each get their own.
 const STATUS_COLOURS: Record<EstimateStatus, string> = {
-  draft: "bg-gray-200 text-gray-700",
-  sent: "bg-blue-100 text-blue-800",
-  accepted: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-800",
-  expired: "bg-amber-100 text-amber-800",
-  withdrawn: "bg-gray-100 text-gray-600",
+  OPPORTUNITY: "bg-gray-200 text-gray-700",
+  INITIAL_REVIEW: "bg-gray-200 text-gray-700",
+  GO_NO_GO: "bg-gray-200 text-gray-700",
+  INFO_REQUESTED: "bg-gray-200 text-gray-700",
+  DOCS_RECEIVED: "bg-gray-200 text-gray-700",
+  ESTIMATING: "bg-gray-200 text-gray-700",
+  SUPPLIER_PRICING: "bg-gray-200 text-gray-700",
+  INTERNAL_REVIEW: "bg-gray-200 text-gray-700",
+  QUOTE_PREPARED: "bg-gray-200 text-gray-700",
+  MGMT_APPROVAL: "bg-gray-200 text-gray-700",
+  SUBMITTED: "bg-blue-100 text-blue-800",
+  WON: "bg-green-100 text-green-800",
+  LOST: "bg-red-100 text-red-800",
+  WITHDRAWN: "bg-gray-100 text-gray-600",
 };
 
 function fmtMoney(s: string | null | undefined): string {
@@ -115,7 +133,10 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
   const canWrite =
     me.auth_role === "admin" || me.auth_role === "manager" || me.auth_role === "estimator";
-  const isDraft = selectedRev?.status === "draft" && isViewingCurrent;
+  // "Draft" now means "not yet locked" — any of the 10 pre-SUBMITTED
+  // pipeline stages (Q487/488), not a single named status. Matches the
+  // backend's own `locked_at IS NULL` gate on line/part/hardware mutations.
+  const isDraft = selectedRev?.locked_at == null && isViewingCurrent;
 
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/estimates/${estimate.estimate_id}`);
@@ -158,9 +179,9 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     if (r.ok) await refresh();
   }
 
-  async function send() {
+  async function advance() {
     if (!currentRev) return;
-    const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/send`, {});
+    const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/advance`, {});
     if (r.ok) await refresh();
   }
 
@@ -203,10 +224,14 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     if (r.ok) await refresh();
   }
 
-  async function doConvert() {
+  async function doConvert(includeLineIds: number[]) {
     if (!currentRev) return;
     setShowConvert(false);
-    const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/convert`);
+    const r = await callApi(
+      "POST",
+      `/api/revisions/${currentRev.revision_id}/convert`,
+      { include_line_ids: includeLineIds },
+    );
     if (r.ok && r.data && typeof r.data === "object" && "project_id" in r.data) {
       const pid = (r.data as { project_id: number }).project_id;
       router.push(`/projects/${pid}`);
@@ -309,7 +334,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
               {selectedRev.status}
             </span>
           ) : null}
-          {selectedRev?.status === "sent" && isViewingCurrent && canWrite ? (
+          {selectedRev?.status === "SUBMITTED" && isViewingCurrent && canWrite ? (
             <label className="flex items-center gap-1 text-xs text-h-muted">
               <span>Expires</span>
               <input
@@ -389,17 +414,28 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           />
           <button
             type="button"
-            onClick={send}
-            disabled={busy || lines.length === 0}
-            className="ml-auto rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
-            data-testid="lock-send-btn"
+            onClick={withdraw}
+            disabled={busy}
+            className="ml-auto rounded border border-h-line bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-100 disabled:opacity-50"
+            data-testid="withdraw-btn"
           >
-            Lock &amp; send
+            Withdraw
+          </button>
+          <button
+            type="button"
+            onClick={advance}
+            disabled={busy || (nextStageLabel(currentRev?.status) === "Submitted" && lines.length === 0)}
+            className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
+            data-testid="advance-btn"
+          >
+            {nextStageLabel(currentRev?.status) === "Submitted"
+              ? "Lock & send"
+              : `Advance → ${nextStageLabel(currentRev?.status) ?? "…"}`}
           </button>
         </div>
       ) : null}
 
-      {canWrite && isViewingCurrent && currentRev?.status === "sent" ? (
+      {canWrite && isViewingCurrent && currentRev?.status === "SUBMITTED" ? (
         <div className="flex gap-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm">
           <button
             type="button"
@@ -446,7 +482,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
         </div>
       ) : null}
 
-      {canWrite && isViewingCurrent && currentRev?.status === "accepted" && !currentRev?.converted_project_id ? (
+      {canWrite && isViewingCurrent && currentRev?.status === "WON" && !currentRev?.converted_project_id ? (
         <div className="flex items-center gap-3 rounded border border-green-200 bg-green-50 p-3">
           <span className="text-sm text-green-900">Ready to materialise into a real project.</span>
           <button
@@ -492,19 +528,35 @@ interface ConvertPreviewDialogProps {
   estimateNo: string;
   lines: Line[];
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (includeLineIds: number[]) => void;
   onCancel: () => void;
 }
 
 function ConvertPreviewDialog({
   estimateNo, lines, busy, onConfirm, onCancel,
 }: ConvertPreviewDialogProps) {
-  const items = lines.length;
-  const parts = lines.reduce((acc, l) => acc + l.parts.length, 0);
-  const hardware = lines.reduce((acc, l) => acc + l.hardware.length, 0);
-  const labour = lines.reduce(
+  // Q490's PM review-and-select screen: every line starts selected (nothing
+  // re-entered that's already known), and deselecting one just means it
+  // doesn't become a Joinery Item — the rest of the handover is unaffected.
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(lines.map((l) => l.line_id)),
+  );
+  const selectedLines = lines.filter((l) => selected.has(l.line_id));
+  const items = selectedLines.length;
+  const parts = selectedLines.reduce((acc, l) => acc + l.parts.length, 0);
+  const hardware = selectedLines.reduce((acc, l) => acc + l.hardware.length, 0);
+  const labour = selectedLines.reduce(
     (acc, l) => acc + l.labour.filter((x) => parseFloat(x.hours) > 0).length, 0,
   );
+
+  function toggle(lineId: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
@@ -516,9 +568,24 @@ function ConvertPreviewDialog({
           Convert {estimateNo} to project
         </h2>
         <p className="text-sm text-h-muted">
-          This materialises the snapshot into items, parts, hardware lines, and
-          labour assignments. The new project will reference this revision.
+          Choose which lines become Joinery Items. This materialises the
+          selection into items, parts, hardware lines, and labour
+          assignments. The new project will reference this revision.
         </p>
+        <ul className="max-h-48 space-y-1 overflow-y-auto rounded border border-h-line p-2 text-sm">
+          {lines.map((l) => (
+            <li key={l.line_id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selected.has(l.line_id)}
+                onChange={() => toggle(l.line_id)}
+                data-testid={`convert-line-${l.line_id}`}
+              />
+              <span className="flex-1">{l.description}</span>
+              <span className="font-mono text-h-muted">{fmtMoney(l.total_sell)}</span>
+            </li>
+          ))}
+        </ul>
         <dl className="grid grid-cols-2 gap-y-2 rounded border border-h-line bg-h-surface p-3 text-sm">
           <dt className="text-h-muted">Items to create</dt>
           <dd className="text-right font-mono">{items}</dd>
@@ -539,8 +606,8 @@ function ConvertPreviewDialog({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={busy}
+            onClick={() => onConfirm(Array.from(selected))}
+            disabled={busy || selected.size === 0}
             className="rounded bg-green-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
             data-testid="convert-confirm-btn"
           >

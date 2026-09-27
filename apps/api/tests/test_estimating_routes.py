@@ -160,13 +160,26 @@ def _make_estimate(c: TestClient, title: str = "Job") -> dict:
     return r.json()
 
 
+def _advance_to_submitted(c: TestClient, rid: int) -> dict:
+    """Walk the 12-stage lifecycle's 10 forward steps (OPPORTUNITY ->
+    SUBMITTED) — the sequence `POST /revisions/{rid}/send` used to do in one
+    call before Q487/488's tender lifecycle replaced the 6-state machine."""
+    r = None
+    for _ in range(10):
+        r = c.post(f"/revisions/{rid}/advance")
+        assert r.status_code == 200, r.text
+        if r.json()["status"] == "SUBMITTED":
+            break
+    return r.json()
+
+
 def test_create_estimate_assigns_est_number_and_draft_rev():
     c, *_ = _bootstrap()
     est = _make_estimate(c)
     assert est["estimate_no"].startswith("EST-")
     assert est["current_revision_id"] is not None
     assert est["revisions"][0]["rev_no"] == 1
-    assert est["revisions"][0]["status"] == "draft"
+    assert est["revisions"][0]["status"] == "OPPORTUNITY"
 
 
 def test_revise_blocks_when_draft_exists_409():
@@ -185,13 +198,17 @@ def test_status_transition_blocks_illegal_arrow():
     assert r.status_code == 409
     body = r.json()["detail"]
     assert body["code"] == "BAD_TRANSITION"
-    assert body["from"] == "draft" and body["to"] == "accepted"
+    assert body["from"] == "OPPORTUNITY" and body["to"] == "WON"
 
 
 def test_send_empty_revision_409():
     c, *_ = _bootstrap()
     rid = _make_estimate(c)["current_revision_id"]
-    r = c.post(f"/revisions/{rid}/send")
+    # advance to MGMT_APPROVAL (9 steps); the 10th, into SUBMITTED, is the
+    # one that checks for at least one line.
+    for _ in range(9):
+        assert c.post(f"/revisions/{rid}/advance").status_code == 200
+    r = c.post(f"/revisions/{rid}/advance")
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "EMPTY_REVISION"
 
@@ -219,9 +236,8 @@ def test_locked_revision_blocks_line_mutation():
     rid = _make_estimate(c)["current_revision_id"]
     lid = c.post(f"/revisions/{rid}/lines",
                  json={"description": "X", "qty": 1}).json()["line_id"]
-    r = c.post(f"/revisions/{rid}/send")
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "sent"
+    rev = _advance_to_submitted(c, rid)
+    assert rev["status"] == "SUBMITTED"
     r = c.patch(f"/lines/{lid}", json={"description": "renamed"})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "REVISION_LOCKED"
@@ -235,12 +251,12 @@ def test_revise_clones_lines_into_new_draft():
                json={"description": "L1", "qty": 1})
     c.post(f"/lines/{r.json()['line_id']}/parts",
            json={"material_type": "BOARD", "material_id": board_id, "qty": 1})
-    c.post(f"/revisions/{rid}/send")
+    _advance_to_submitted(c, rid)
     r = c.post(f"/estimates/{est['estimate_id']}/revise")
     assert r.status_code == 201, r.text
     new_rev = r.json()
     assert new_rev["rev_no"] == 2
-    assert new_rev["status"] == "draft"
+    assert new_rev["status"] == "ESTIMATING"
     assert len(new_rev["lines"]) == 1
     assert len(new_rev["lines"][0]["parts"]) == 1
 
@@ -258,7 +274,7 @@ def test_convert_materialises_project_items_parts_and_hardware():
            json={"material_type": "HARDWARE", "material_id": hw_id, "qty": 6})
     c.post(f"/revisions/{rid}/lines",
            json={"description": "Mirror cabinet", "qty": 1})
-    c.post(f"/revisions/{rid}/send")
+    _advance_to_submitted(c, rid)
     c.post(f"/revisions/{rid}/accept")
     r = c.post(f"/revisions/{rid}/convert")
     assert r.status_code == 200, r.text
@@ -279,7 +295,7 @@ def test_convert_rejected_when_catalog_row_archived():
                  json={"description": "Box", "qty": 1}).json()["line_id"]
     c.post(f"/lines/{lid}/parts",
            json={"material_type": "BOARD", "material_id": board_id, "qty": 1})
-    c.post(f"/revisions/{rid}/send")
+    _advance_to_submitted(c, rid)
     c.post(f"/revisions/{rid}/accept")
     s = SessionLocal()
     try:
@@ -319,7 +335,7 @@ def test_quote_pdf_renders_for_sent_revision():
                  json={"description": "L1", "qty": 1}).json()["line_id"]
     c.post(f"/lines/{lid}/parts",
            json={"material_type": "BOARD", "material_id": board_id, "qty": 1})
-    c.post(f"/revisions/{rid}/send")
+    _advance_to_submitted(c, rid)
     r = c.get(f"/revisions/{rid}/quote.pdf")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/pdf")
@@ -455,8 +471,7 @@ def test_patch_part_locked_revision_409():
     c, _wid, _uid, board_id, _hw = _bootstrap()
     _lid, pid = _seed_line_with_part(c, board_id)
     rid = c.get("/estimates").json()["estimates"][0]["current_revision_id"]
-    r = c.post(f"/revisions/{rid}/send")
-    assert r.status_code == 200, r.text
+    _advance_to_submitted(c, rid)
     r = c.patch(f"/estimate-parts/{pid}", json={"qty": "9"})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "REVISION_LOCKED"
@@ -491,8 +506,7 @@ def test_patch_hardware_locked_revision_409():
     c, _wid, _uid, _board, hw_id = _bootstrap()
     _lid, hid = _seed_line_with_hardware(c, hw_id)
     rid = c.get("/estimates").json()["estimates"][0]["current_revision_id"]
-    r = c.post(f"/revisions/{rid}/send")
-    assert r.status_code == 200, r.text
+    _advance_to_submitted(c, rid)
     r = c.patch(f"/hardware/{hid}", json={"qty": "1"})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "REVISION_LOCKED"
@@ -510,13 +524,13 @@ def test_patch_revision_expires_at_when_sent():
     c, _wid, _uid, board_id, _hw = _bootstrap()
     _lid, _pid = _seed_line_with_part(c, board_id)
     rid = c.get("/estimates").json()["estimates"][0]["current_revision_id"]
-    assert c.post(f"/revisions/{rid}/send").status_code == 200
+    _advance_to_submitted(c, rid)
     r = c.patch(f"/revisions/{rid}", json={"expires_at": "2026-12-31"})
     assert r.status_code == 200, r.text
     assert r.json()["expires_at"] == "2026-12-31"
 
 
-def test_patch_revision_expires_at_blocked_on_draft_409():
+def test_patch_revision_expires_at_blocked_before_submitted_409():
     c, *_ = _bootstrap()
     rid = _make_estimate(c)["current_revision_id"]
     r = c.patch(f"/revisions/{rid}", json={"expires_at": "2026-12-31"})
@@ -536,7 +550,7 @@ def test_quote_pdf_on_draft_renders_with_watermark():
 # Revision transitions — reject / expire / withdraw ----------------
 
 def _send_revision(c: TestClient, board_id: int) -> int:
-    """Create estimate, add a line+part, send it. Returns rid."""
+    """Create estimate, add a line+part, advance it to SUBMITTED. Returns rid."""
     rid = _make_estimate(c)["current_revision_id"]
     lid = c.post(
         f"/revisions/{rid}/lines",
@@ -546,8 +560,8 @@ def _send_revision(c: TestClient, board_id: int) -> int:
         f"/lines/{lid}/parts",
         json={"material_type": "BOARD", "material_id": board_id, "qty": 1},
     )
-    r = c.post(f"/revisions/{rid}/send")
-    assert r.status_code == 200, r.text
+    rev = _advance_to_submitted(c, rid)
+    assert rev["status"] == "SUBMITTED"
     return rid
 
 
@@ -557,7 +571,7 @@ def test_reject_revision_sets_status_and_stores_reason():
     r = c.post(f"/revisions/{rid}/reject", json={"lost_reason": "Too expensive"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["status"] == "rejected"
+    assert body["status"] == "LOST"
     assert body["lost_reason"] == "Too expensive"
 
 
@@ -573,7 +587,7 @@ def test_expire_revision_sets_status():
     rid = _send_revision(c, board_id)
     r = c.post(f"/revisions/{rid}/expire", json={"lost_reason": "Quote lapsed"})
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "expired"
+    assert r.json()["status"] == "LOST"
 
 
 def test_withdraw_revision_sets_status():
@@ -581,7 +595,7 @@ def test_withdraw_revision_sets_status():
     rid = _send_revision(c, board_id)
     r = c.post(f"/revisions/{rid}/withdraw", json={"lost_reason": None})
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "withdrawn"
+    assert r.json()["status"] == "WITHDRAWN"
 
 
 # Remove operations — part / hardware / line -----------------------

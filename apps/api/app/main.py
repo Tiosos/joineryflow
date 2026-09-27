@@ -27,8 +27,10 @@ from .procurement_v1.batches.routes import router as proc_v1_batches_router
 from .procurement_v1.materials.routes import router as proc_v1_materials_router
 from .procurement_v1.queue.routes import router as proc_v1_queue_router
 from .project_contacts.routes import router as project_contacts_router
+from .project_contracts.routes import router as project_contracts_router
 from .project_lift_access.routes import router as project_lift_access_router
 from .projects.routes import router as projects_router
+from .qc.routes import router as qc_router
 from .related_parts.routes import router as related_parts_router
 from .samples.routes import router as samples_router
 from .search.routes import router as search_router
@@ -72,6 +74,7 @@ app.include_router(proc_v1_alloc_router)
 app.include_router(proc_v1_queue_router)
 app.include_router(projects_router)
 app.include_router(project_contacts_router)
+app.include_router(project_contracts_router)
 app.include_router(project_lift_access_router)
 app.include_router(items_router)
 app.include_router(item_queries_router)
@@ -82,6 +85,7 @@ app.include_router(parts_router)
 app.include_router(permission_groups_router)
 app.include_router(home_router)
 app.include_router(estimating_router)
+app.include_router(qc_router)
 
 
 @app.get("/health")

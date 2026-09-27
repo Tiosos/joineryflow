@@ -9,10 +9,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 SHOP_FLOOR_ORDER_DEFAULT: tuple[str, ...] = (
-    "DOWN", "CNC", "EDGED", "PAINTED", "MADE",
+    "DOWN", "CNC", "EDGED", "PAINTED", "MADE", "PACKING",
 )
 SHOP_FLOOR_ORDER_PAINT_LAST: tuple[str, ...] = (
-    "DOWN", "CNC", "EDGED", "MADE", "PAINTED",
+    "DOWN", "CNC", "EDGED", "MADE", "PAINTED", "PACKING",
 )
 
 UNDO_WINDOW = timedelta(minutes=5)

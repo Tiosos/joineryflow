@@ -34,13 +34,14 @@ interface Props {
   initialProjectId: number | null;
 }
 
-const STAGE_ORDER: ShopFloorStage[] = ["DOWN", "CNC", "EDGED", "PAINTED", "MADE"];
+const STAGE_ORDER: ShopFloorStage[] = ["DOWN", "CNC", "EDGED", "PAINTED", "MADE", "PACKING"];
 const STAGE_LABEL: Record<ShopFloorStage, string> = {
   DOWN: "Marked Down",
   CNC: "CNC Cut",
   EDGED: "Edge Banded",
   PAINTED: "Painted",
   MADE: "Assembled",
+  PACKING: "Packed",
 };
 
 const POLL_MS = 15_000;
@@ -151,7 +152,7 @@ export function ShopFloorClient({ me, projects, initialProjectId }: Props) {
           Pick a project to view its shop-floor board.
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-5">
+        <div className="grid gap-3 lg:grid-cols-6">
           {STAGE_ORDER.map((stage) => {
             const cards = board.columns[stage] ?? [];
             return (

@@ -1,10 +1,36 @@
+// The 12-stage tender lifecycle (Plan V1 §5, Q487/488/548) — 11 sequential
+// stages then a 12th, terminal position resolving to WON / LOST / WITHDRAWN.
+// Replaces the old 6-value draft/sent/accepted/rejected/expired/withdrawn
+// enum; `expired` no longer exists on its own (Q548 maps a lapsed quote
+// onto LOST).
+export const TENDER_STAGE_ORDER = [
+  "OPPORTUNITY", "INITIAL_REVIEW", "GO_NO_GO", "INFO_REQUESTED",
+  "DOCS_RECEIVED", "ESTIMATING", "SUPPLIER_PRICING", "INTERNAL_REVIEW",
+  "QUOTE_PREPARED", "MGMT_APPROVAL", "SUBMITTED",
+] as const;
+
 export type EstimateStatus =
-  | "draft"
-  | "sent"
-  | "accepted"
-  | "rejected"
-  | "expired"
-  | "withdrawn";
+  | (typeof TENDER_STAGE_ORDER)[number]
+  | "WON"
+  | "LOST"
+  | "WITHDRAWN";
+
+export const TENDER_STAGE_LABELS: Record<EstimateStatus, string> = {
+  OPPORTUNITY: "Opportunity",
+  INITIAL_REVIEW: "Initial Review",
+  GO_NO_GO: "Go / No-Go",
+  INFO_REQUESTED: "Information Requested",
+  DOCS_RECEIVED: "Documents Received",
+  ESTIMATING: "Estimating",
+  SUPPLIER_PRICING: "Supplier Pricing",
+  INTERNAL_REVIEW: "Internal Review",
+  QUOTE_PREPARED: "Quote Prepared",
+  MGMT_APPROVAL: "Management Approval",
+  SUBMITTED: "Submitted",
+  WON: "Won",
+  LOST: "Lost",
+  WITHDRAWN: "Withdrawn",
+};
 
 export type PartMaterialType = "BOARD" | "CUSTOM" | "BENCHTOP";
 export type HardwareMaterialType = "HARDWARE" | "APPLIANCE";
@@ -137,4 +163,31 @@ export interface LabourRate {
   hourly_rate: string;
   effective_from: string;
   updated_at: string;
+}
+
+export interface HandoverPreviewLine {
+  line_id: number;
+  seq: number;
+  description: string;
+  qty: string;
+  has_breakdown: boolean;
+  total_sell: string;
+}
+
+export interface HandoverPreview {
+  revision_id: number;
+  status: EstimateStatus;
+  already_converted_project_id: number | null;
+  proposed_contract_value: string;
+  lines: HandoverPreviewLine[];
+}
+
+export interface ConvertResult {
+  project_id: number;
+  project_code: string;
+  items_created: number;
+  parts_created: number;
+  hardware_lines_created: number;
+  project_hardware_catalog_added: number;
+  contract_value: string;
 }

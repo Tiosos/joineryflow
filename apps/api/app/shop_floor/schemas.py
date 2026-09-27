@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ShopFloorStage = Literal["DOWN", "CNC", "EDGED", "PAINTED", "MADE"]
+ShopFloorStage = Literal["DOWN", "CNC", "EDGED", "PAINTED", "MADE", "PACKING"]
 AssignmentStatus = Literal["assigned", "in_progress", "done", "cancelled"]
 
 
@@ -92,6 +92,7 @@ class StationCard(BaseModel):
     cutlist_no: int
     cutlist_name: str | None = None
     item_count: int
+    item_numbers: list[int] = []
     project_code: str
     stage_key: ShopFloorStage
     status: AssignmentStatus

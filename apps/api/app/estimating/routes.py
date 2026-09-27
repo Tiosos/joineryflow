@@ -26,12 +26,14 @@ from .schemas import (
     ConvertResultOut,
     CreateCustomerIn,
     CreateEstimateIn,
+    ConvertIn,
     CreateLineIn,
     CustomerOut,
     EstimateDetailOut,
     EstimateListOut,
     EstimateSummaryOut,
     ExpireIn,
+    HandoverPreviewOut,
     LabourRateOut,
     LineHardwareOut,
     LineOut,
@@ -331,12 +333,13 @@ def patch_revision_route(
 
 def _transition_route(
     rid: int, user: AuthUser, db: Session,
-    target: str, lost_reason: str | None,
+    target: str, lost_reason: str | None, lost_kind: str = "rejected",
 ) -> RevisionDetailOut:
     try:
         q.transition_revision(
             db, revision_id=rid, workspace_id=user.workspace_id,
             actor_id=user.id, target=target, lost_reason=lost_reason,
+            lost_kind=lost_kind,
         )
     except ValueError as exc:
         decoded = _decode_value_error(exc)
@@ -352,13 +355,34 @@ def _transition_route(
     return RevisionDetailOut(**detail)
 
 
-@router.post("/revisions/{rid}/send")
-def send_revision_route(
+@router.post("/revisions/{rid}/advance")
+def advance_revision_route(
     rid: int,
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> RevisionDetailOut:
-    return _transition_route(rid, user, db, target="sent", lost_reason=None)
+    """Move to the next stage in the 12-stage tender lifecycle (Q487/488) —
+    one generic action for all 10 forward steps (OPPORTUNITY..MGMT_APPROVAL
+    -> the following stage), including the MGMT_APPROVAL -> SUBMITTED step,
+    which locks the revision as a side effect (unchanged from the old
+    dedicated `send` action)."""
+    try:
+        q.advance_revision(
+            db, revision_id=rid, workspace_id=user.workspace_id,
+            actor_id=user.id,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        if decoded.get("code") == "NOT_FOUND":
+            raise HTTPException(404, decoded)
+        raise HTTPException(409, decoded)
+    db.commit()
+    detail = q.revision_detail(
+        db, revision_id=rid, workspace_id=user.workspace_id
+    )
+    if detail is None:
+        raise HTTPException(404, "revision not found after transition")
+    return RevisionDetailOut(**detail)
 
 
 @router.post("/revisions/{rid}/accept")
@@ -367,7 +391,7 @@ def accept_revision_route(
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> RevisionDetailOut:
-    return _transition_route(rid, user, db, target="accepted", lost_reason=None)
+    return _transition_route(rid, user, db, target="WON", lost_reason=None)
 
 
 @router.post("/revisions/{rid}/reject")
@@ -377,8 +401,8 @@ def reject_revision_route(
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> RevisionDetailOut:
-    return _transition_route(rid, user, db, target="rejected",
-                             lost_reason=body.lost_reason)
+    return _transition_route(rid, user, db, target="LOST",
+                             lost_reason=body.lost_reason, lost_kind="rejected")
 
 
 @router.post("/revisions/{rid}/expire")
@@ -388,8 +412,8 @@ def expire_revision_route(
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> RevisionDetailOut:
-    return _transition_route(rid, user, db, target="expired",
-                             lost_reason=body.lost_reason)
+    return _transition_route(rid, user, db, target="LOST",
+                             lost_reason=body.lost_reason, lost_kind="expired")
 
 
 @router.post("/revisions/{rid}/withdraw")
@@ -399,24 +423,38 @@ def withdraw_revision_route(
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> RevisionDetailOut:
-    return _transition_route(rid, user, db, target="withdrawn",
+    return _transition_route(rid, user, db, target="WITHDRAWN",
                              lost_reason=body.lost_reason)
 
 
 # ============================================================================
-# Convert-to-Project
+# Handover (Q490 review-and-select) + Convert-to-Project
 # ============================================================================
+
+@router.get("/revisions/{rid}/handover-preview")
+def handover_preview_route(
+    rid: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+) -> HandoverPreviewOut:
+    row = q.handover_preview(db, revision_id=rid, workspace_id=user.workspace_id)
+    if row is None:
+        raise HTTPException(404, "revision not found")
+    return HandoverPreviewOut(**row)
+
 
 @router.post("/revisions/{rid}/convert")
 def convert_revision_route(
     rid: int,
+    body: ConvertIn = ConvertIn(),
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> ConvertResultOut:
     try:
         result = q.convert_to_project(
             db, revision_id=rid, workspace_id=user.workspace_id,
-            actor_id=user.id,
+            actor_id=user.id, include_line_ids=body.include_line_ids,
+            contract_value=body.contract_value,
         )
     except ValueError as exc:
         decoded = _decode_value_error(exc)
@@ -738,7 +776,7 @@ def quote_pdf_route(
     )
     if detail is None:
         raise HTTPException(404, "revision not found")
-    is_draft = detail["status"] == "draft"
+    is_draft = detail["locked_at"] is None
     estimate = q.estimate_detail(
         db, estimate_id=detail["estimate_id"], workspace_id=user.workspace_id
     )

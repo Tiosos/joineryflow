@@ -1262,7 +1262,7 @@ def delete_item(
 
 VALID_STAGE_KEYS = (
     "REQ", "SM", "LISTED", "DOWN", "CNC",
-    "EDGED", "PAINTED", "MADE", "DEL", "INST",
+    "EDGED", "PAINTED", "MADE", "PACKING", "DEL", "INST",
 )
 
 

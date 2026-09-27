@@ -41,6 +41,7 @@ _ALL_MODULES: tuple[str, ...] = (
     "cut_floor",
     "shop_floor",
     "estimating",
+    "qc",
     "it_management",
 )
 
@@ -55,7 +56,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
     "editor": {
         m: {"read", "write", "comment"}
         for m in ("dashboard", "tracking", "list", "shop_dwgs", "isample",
-                  "cut_floor", "shop_floor")
+                  "cut_floor", "shop_floor", "qc")
     }
     | {
         "orderbook":     {"read", "comment"},
@@ -74,6 +75,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "cut_floor":     {"read", "write", "approve", "comment"},
         "shop_floor":    {"read", "comment"},
         "estimating":    {"read", "comment"},
+        "qc":            {"read", "comment"},
         "it_management": set(),
     },
     "estimator": {
@@ -87,6 +89,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "cut_floor":     {"read"},
         "shop_floor":    {"read"},
         "estimating":    {"read", "write", "approve", "comment"},
+        "qc":            {"read"},
         "it_management": set(),
     },
     "purchase_officer": {
@@ -100,6 +103,7 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         "cut_floor": {"read"},
         "shop_floor": {"read"},
         "estimating": {"read"},
+        "qc": {"read"},
         "it_management": set(),
     },
     "viewer": {m: {"read"} for m in _ALL_MODULES if m != "it_management"}

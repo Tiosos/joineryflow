@@ -5,7 +5,8 @@ export type ShopFloorStage =
   | "CNC"
   | "EDGED"
   | "PAINTED"
-  | "MADE";
+  | "MADE"
+  | "PACKING";
 
 export type AssignmentStatus =
   | "assigned"
@@ -64,6 +65,8 @@ export interface StationCard {
   cutlist_no: number;
   cutlist_name: string | null;
   item_count: number;
+  /** Backs the PACKING scan-to-complete check (Q519). */
+  item_numbers: number[];
   project_code: string;
   stage_key: ShopFloorStage;
   status: AssignmentStatus;

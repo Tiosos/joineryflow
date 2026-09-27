@@ -221,15 +221,20 @@ def _metrics_estimator(db: Session, *, user: AuthUser, today: date) -> list[Metr
     bearing on someone who quotes work that has no project yet."""
     wid = user.workspace_id
     horizon = today + timedelta(days=7)
+    # "Drafts Open" now spans the 10 pre-SUBMITTED pipeline stages (Q487/488's
+    # 12-stage tender lifecycle replaced the old single 'draft' state) —
+    # `locked_at IS NULL` is exactly that set, since locking happens only at
+    # the SUBMITTED transition, regardless of which of the 10 stages a
+    # revision is sitting in.
     row = db.execute(
         text(
             """
             SELECT
-                COUNT(*) FILTER (WHERE r.status = 'draft')             AS drafts,
-                COUNT(*) FILTER (WHERE r.status = 'sent')              AS awaiting,
-                COUNT(*) FILTER (WHERE r.status = 'accepted'
+                COUNT(*) FILTER (WHERE r.locked_at IS NULL)             AS drafts,
+                COUNT(*) FILTER (WHERE r.status = 'SUBMITTED')          AS awaiting,
+                COUNT(*) FILTER (WHERE r.status = 'WON'
                                    AND r.converted_project_id IS NULL) AS accepted_unconverted,
-                COUNT(*) FILTER (WHERE r.status = 'sent'
+                COUNT(*) FILTER (WHERE r.status = 'SUBMITTED'
                                    AND r.expires_at IS NOT NULL
                                    AND r.expires_at BETWEEN :today AND :horizon) AS expiring
             FROM estimate e
@@ -249,25 +254,25 @@ def _metrics_estimator(db: Session, *, user: AuthUser, today: date) -> list[Metr
             key="drafts_open",
             label="Drafts Open",
             value=drafts,
-            href="/estimating?status=draft",
+            href="/estimating?subtab=active",
         ),
         MetricCard(
             key="awaiting_response",
             label="Awaiting Response",
             value=awaiting,
-            href="/estimating?status=sent",
+            href="/estimating?status=SUBMITTED",
         ),
         MetricCard(
             key="accepted_unconverted",
             label="Accepted · Unconverted",
             value=accepted,
-            href="/estimating?status=accepted",
+            href="/estimating?status=WON",
         ),
         MetricCard(
             key="expiring_soon",
             label="Expiring ≤7d",
             value=expiring,
-            href="/estimating?status=sent",
+            href="/estimating?status=SUBMITTED",
         ),
     ]
 

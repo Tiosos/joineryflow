@@ -20,12 +20,20 @@ interface Props {
 }
 
 const STATUS_COLOURS: Record<EstimateStatus, string> = {
-  draft: "bg-gray-200 text-gray-700",
-  sent: "bg-blue-100 text-blue-800",
-  accepted: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-800",
-  expired: "bg-amber-100 text-amber-800",
-  withdrawn: "bg-gray-100 text-gray-600",
+  OPPORTUNITY: "bg-gray-200 text-gray-700",
+  INITIAL_REVIEW: "bg-gray-200 text-gray-700",
+  GO_NO_GO: "bg-gray-200 text-gray-700",
+  INFO_REQUESTED: "bg-gray-200 text-gray-700",
+  DOCS_RECEIVED: "bg-gray-200 text-gray-700",
+  ESTIMATING: "bg-gray-200 text-gray-700",
+  SUPPLIER_PRICING: "bg-gray-200 text-gray-700",
+  INTERNAL_REVIEW: "bg-gray-200 text-gray-700",
+  QUOTE_PREPARED: "bg-gray-200 text-gray-700",
+  MGMT_APPROVAL: "bg-gray-200 text-gray-700",
+  SUBMITTED: "bg-blue-100 text-blue-800",
+  WON: "bg-green-100 text-green-800",
+  LOST: "bg-red-100 text-red-800",
+  WITHDRAWN: "bg-gray-100 text-gray-600",
 };
 
 export default function EstimatingClient({
