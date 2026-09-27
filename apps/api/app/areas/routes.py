@@ -4,6 +4,13 @@ Gated `("tracking", action)`: Areas and Rooms describe *where an item is*, which
 is Tracking's own data, and the item fields they replace are edited under the
 same gate. Creation additionally takes `require_drafter()`, matching every other
 item-shaping mutation (#2/#3's drafter-narrow rule).
+
+The two `/projects/{pid}/...` routes pass `project_param="pid"` to
+`require_permission` (Q466) — a real demonstration of project-scoped grants:
+a membership scoped to one project now genuinely differs from a
+workspace-wide one here. `POST /areas/{aid}/rooms` is one hop removed from a
+project id (through the area) and is left workspace-wide-only, consistent
+with Q466's "not item, not tab" ceiling.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -20,7 +27,7 @@ router = APIRouter(tags=["areas"])
 @router.get("/projects/{pid}/areas", response_model=AreaListOut)
 def list_areas_route(
     pid: int,
-    user: AuthUser = Depends(require_permission("tracking", "read")),
+    user: AuthUser = Depends(require_permission("tracking", "read", project_param="pid")),
     db: Session = Depends(get_db),
 ):
     """The project's areas with their rooms nested (Q552)."""
@@ -38,7 +45,7 @@ def list_areas_route(
 def create_area_route(
     pid: int,
     payload: CreateAreaIn,
-    user: AuthUser = Depends(require_permission("tracking", "write")),
+    user: AuthUser = Depends(require_permission("tracking", "write", project_param="pid")),
     db: Session = Depends(get_db),
 ):
     outcome, area = q.create_area(
