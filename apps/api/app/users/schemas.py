@@ -1,11 +1,18 @@
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class UserOut(BaseModel):
     id: int
-    email: EmailStr
+    # Plain str, not EmailStr — same reasoning as auth/schemas.py: format is
+    # enforced upstream, and this is an *output* echo of a stored value, not
+    # input validation. EmailStr response-validates on read, which 500s for
+    # any real `*.hartwood.test` seeded user once email-validator enforces
+    # RFC 2606 reserved-TLD rejection (`.test` is one) — a real bug, not a
+    # theoretical one: `GET /users` and `PATCH /users/{uid}` both use this
+    # model and both broke against the dev seed.
+    email: str
     full_name: str
     auth_role: str
     jtbd_role: str | None = None
