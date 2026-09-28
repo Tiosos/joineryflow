@@ -33,11 +33,14 @@ from .schemas import (
     EstimateListOut,
     EstimateSummaryOut,
     ExpireIn,
+    GenerateOrdersIn,
+    GenerateOrdersResultOut,
     HandoverPreviewOut,
     LabourRateOut,
     LineHardwareOut,
     LineOut,
     LinePartOut,
+    OrderPreviewOut,
     PatchCustomerIn,
     PatchEstimateIn,
     PatchHardwareIn,
@@ -463,6 +466,43 @@ def convert_revision_route(
         raise HTTPException(409, decoded)
     db.commit()
     return ConvertResultOut(**result)
+
+
+# ============================================================================
+# Generate Orders — PO generation from a won quote
+# ============================================================================
+
+@router.get("/revisions/{rid}/order-preview")
+def order_preview_route(
+    rid: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+) -> OrderPreviewOut:
+    row = q.order_preview(db, revision_id=rid, workspace_id=user.workspace_id)
+    if row is None:
+        raise HTTPException(404, "revision not found")
+    return OrderPreviewOut(**row)
+
+
+@router.post("/revisions/{rid}/generate-orders")
+def generate_orders_route(
+    rid: int,
+    body: GenerateOrdersIn = GenerateOrdersIn(),
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+) -> GenerateOrdersResultOut:
+    try:
+        result = q.generate_orders(
+            db, revision_id=rid, workspace_id=user.workspace_id,
+            actor_id=user.id, include_line_ids=body.include_line_ids,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        if decoded.get("code") == "NOT_FOUND":
+            raise HTTPException(404, decoded)
+        raise HTTPException(409, decoded)
+    db.commit()
+    return GenerateOrdersResultOut(**result)
 
 
 # ============================================================================

@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log
+from ..orders import queries as orders_q
+from ..orders.schemas import CreateOrderIn, CreateOrderLineIn
 
 
 STAGE_KEYS: tuple[str, ...] = (
@@ -81,6 +83,57 @@ def _resolve_hardware_snapshot(
     )
     row = db.execute(sql, {"mid": material_id, "w": workspace_id}).mappings().first()
     return dict(row) if row else None
+
+
+# One catalog table per material_type, for PO generation (below). Merges
+# _PART_CATALOG_BY_TYPE and _HW_CATALOG_BY_TYPE — their keys never overlap.
+_CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
+    **_PART_CATALOG_BY_TYPE, **_HW_CATALOG_BY_TYPE,
+}
+
+# Purchasing unit per material_type — there is no `unit`/`cost_unit` column
+# on any of the six catalog tables (CLAUDE.md's "abstract interface" note:
+# verify before relying on it), so this is a fixed, sensible default rather
+# than a DB lookup.
+_ORDER_UNIT_BY_TYPE: dict[str, str] = {
+    "BOARD": "sheet", "CUSTOM": "EA", "BENCHTOP": "slab",
+    "HARDWARE": "EA", "APPLIANCE": "EA",
+}
+
+
+def _resolve_order_sources_batch(
+    db: Session, *, workspace_id: int, material_type: str, material_ids: list[int],
+) -> dict[int, dict]:
+    """Live sku/description/cost/supplier for every given catalog row of one
+    material_type, in a single query — the same batched-by-table shape
+    `revision_detail()` already uses for parts/hardware/labour (`WHERE
+    line_id = ANY(:ids)`), so a quote referencing N distinct materials costs
+    at most 5 queries (one per catalog table) instead of N. Unlike
+    `_resolve_part_snapshot` / `_resolve_hardware_snapshot`, this also
+    resolves the real vendor — `default_supplier_id` (migration 0029), not
+    the free-text `default_supplier` those two read — because a purchase
+    order needs a real `vendors.vendor_id` to attach to, not a name string.
+    Reads **current** catalog pricing deliberately: Plan V1 §21 requires
+    stale project-specific pricing to be caught before PO creation, and
+    generation typically happens well after the quote was priced."""
+    cfg = _CATALOG_BY_TYPE.get(material_type)
+    if cfg is None or not material_ids:
+        return {}
+    table, id_col, sku_col, _supplier_col, cost_col = cfg
+    sql = text(
+        f"""
+        SELECT t.{id_col} AS material_id, t.{sku_col} AS sku, t.description,
+               t.{cost_col} AS cost,
+               t.default_supplier_id AS supplier_id, v.name AS supplier_name
+          FROM {table} t
+          LEFT JOIN vendors v
+            ON v.vendor_id = t.default_supplier_id AND v.workspace_id = :w
+         WHERE t.{id_col} = ANY(:ids) AND t.workspace_id = :w
+           AND t.archived_at IS NULL
+        """
+    )
+    rows = db.execute(sql, {"ids": material_ids, "w": workspace_id}).mappings().all()
+    return {int(r["material_id"]): dict(r) for r in rows}
 
 
 # ============================================================================
@@ -1611,7 +1664,7 @@ def revision_detail(
             """
             SELECT line_id, seq, description, qty, unit, has_breakdown,
                    material_cost, labour_cost, total_cost,
-                   unit_sell_override, notes
+                   unit_sell_override, notes, included_at_convert
               FROM estimate_line
              WHERE revision_id = :rid
              ORDER BY seq, line_id
@@ -1847,6 +1900,17 @@ def convert_to_project(
     final_contract_value = (
         contract_value if contract_value is not None else total_inc_gst
     )
+    # Records which lines actually became Joinery Items — `generate_orders`
+    # (below) defaults to this set rather than every line in the revision,
+    # so a line the PM excluded here never gets its materials ordered.
+    if selected_ids:
+        db.execute(
+            text(
+                "UPDATE estimate_line SET included_at_convert = true"
+                " WHERE line_id = ANY(:ids)"
+            ),
+            {"ids": list(selected_ids)},
+        )
 
     failures: list[dict] = []
     for line in detail["lines"]:
@@ -2008,7 +2072,7 @@ def convert_to_project(
             {"i": item_id},
         ).scalar()
 
-        for p in line["parts"]:
+        for part_seq, p in enumerate(line["parts"], start=1):
             board_mid = (
                 int(p["material_id"])
                 if p["material_type"] == "BOARD" and p.get("material_id") is not None
@@ -2030,7 +2094,16 @@ def convert_to_project(
                 ),
                 {
                     "m": int(module_id),
-                    "s": 1,
+                    # Fixed later. Was hardcoded 1 for every part in a
+                    # module — fine while every seed/test fixture had at
+                    # most one part per line, but `uq_parts_module_seq`
+                    # (module_id, seq) rejects a second part with the same
+                    # seq, so any WON quote line with more than one part
+                    # failed to convert. Found live-testing PO generation
+                    # (#13's `test_generate_orders_creates_one_po_per_
+                    # supplier_with_consolidated_lines`-style fixture, a
+                    # line with two different BOARD parts).
+                    "s": part_seq,
                     "q": int(Decimal(str(p["qty"])).quantize(Decimal("1"))),
                     "n": p.get("description_snapshot") or p.get("sku_snapshot") or "part",
                     "l": p.get("len_mm"),
@@ -2110,4 +2183,269 @@ def convert_to_project(
         "hardware_lines_created": hw_lines_created,
         "project_hardware_catalog_added": phc_added,
         "contract_value": final_contract_value,
+    }
+
+
+# ============================================================================
+# Generate Orders — PO generation from a won quote
+# ============================================================================
+#
+# Sources from the revision's own line breakdown (estimate_line_part /
+# estimate_line_hardware), not the converted project's items: `parts` only
+# retains a real material FK for BOARD (Q447's `board_material_id`), so
+# CUSTOM/BENCHTOP catalog links survive only as a comment string there —
+# reading the revision directly keeps every material_id real. Also not from
+# the Material Summary (#12): Q585 confirmed "no create-order-from-line in
+# v1" for that surface.
+
+def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
+    """Consolidates every parts/hardware breakdown row with a real
+    material_id across `lines`, summing qty per distinct (material_type,
+    material_id) — the same SKU quoted on five different lines becomes one
+    PO line for the total quantity, not five. Cut dimensions (len_mm/wid_mm)
+    are deliberately dropped: they're cutting information for Production,
+    not purchasing information for a PO."""
+    materials: dict[tuple[str, int], dict] = {}
+    for line in lines:
+        for r in line["parts"] + line["hardware"]:
+            if r.get("material_id") is None:
+                continue
+            key = (r["material_type"], int(r["material_id"]))
+            m = materials.setdefault(key, {
+                "material_type": r["material_type"],
+                "material_id": int(r["material_id"]),
+                "qty": Decimal("0"),
+                "fallback_sku": r.get("sku_snapshot"),
+                "fallback_description": r.get("description_snapshot"),
+                "fallback_cost": r.get("cost_per_unit_snapshot"),
+            })
+            m["qty"] += Decimal(str(r["qty"]))
+    return materials
+
+
+def _build_order_groups(
+    db: Session, *, workspace_id: int, lines: list[dict],
+) -> tuple[dict[int, dict], list[dict]]:
+    """Groups every distinct material referenced by `lines` by its live
+    default supplier. Returns (groups keyed by supplier_id, unassigned
+    list) — a material with no default supplier can't become a PO line
+    automatically (`purchase_orders.vendor_id` is NOT NULL) and is
+    surfaced for the PM to order by hand instead of blocking the suppliers
+    that DO have one."""
+    materials = _collect_order_materials(lines)
+    ids_by_type: dict[str, list[int]] = {}
+    for mtype, mid in materials:
+        ids_by_type.setdefault(mtype, []).append(mid)
+    sources: dict[tuple[str, int], dict] = {}
+    for mtype, ids in ids_by_type.items():
+        batch = _resolve_order_sources_batch(
+            db, workspace_id=workspace_id, material_type=mtype, material_ids=ids,
+        )
+        for mid, src in batch.items():
+            sources[(mtype, mid)] = src
+
+    groups: dict[int, dict] = {}
+    unassigned: list[dict] = []
+    for (mtype, mid), m in materials.items():
+        src = sources.get((mtype, mid))
+        entry = {
+            "material_type": mtype,
+            "material_id": mid,
+            "sku": src["sku"] if src else m["fallback_sku"],
+            "description": src["description"] if src else m["fallback_description"],
+            "qty": m["qty"],
+            "unit": _ORDER_UNIT_BY_TYPE.get(mtype, "EA"),
+            "unit_cost": (
+                (src["cost"] if src else m["fallback_cost"]) or Decimal("0")
+            ),
+        }
+        supplier_id = src["supplier_id"] if src else None
+        if supplier_id is None:
+            unassigned.append(entry)
+            continue
+        group = groups.setdefault(int(supplier_id), {
+            "supplier_id": int(supplier_id),
+            "supplier_name": src["supplier_name"],
+            "lines": [],
+            "_type_counts": {},
+        })
+        group["lines"].append(entry)
+        group["_type_counts"][mtype] = group["_type_counts"].get(mtype, 0) + 1
+    for group in groups.values():
+        # The PO header's category is the material_type most represented in
+        # it — most suppliers specialise, so this is a group's dominant type
+        # in practice, not an arbitrary pick. Values match order_category's
+        # joinery keys (0031) exactly: "BOARD".capitalize() == "Board", etc.
+        dominant = max(group["_type_counts"].items(), key=lambda kv: kv[1])[0]
+        group["category"] = dominant.capitalize()
+        del group["_type_counts"]
+    return groups, unassigned
+
+
+def order_preview(
+    db: Session, *, revision_id: int, workspace_id: int
+) -> dict | None:
+    """The review screen before `generate_orders`: every distinct material
+    across the revision's lines, grouped by its live default supplier —
+    same shape Convert's own `handover_preview` established for Q490. Once
+    converted, only lines actually included at Convert are considered
+    (`included_at_convert`) — a line the PM excluded there has no Joinery
+    Item in the project and shouldn't have materials ordered for it either.
+    Before conversion nothing has been decided yet, so every line is shown
+    as a what-if preview."""
+    rev = get_revision(db, revision_id=revision_id, workspace_id=workspace_id)
+    if rev is None:
+        return None
+    detail = revision_detail(
+        db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    lines = detail["lines"]
+    if rev["converted_project_id"] is not None:
+        lines = [l for l in lines if l.get("included_at_convert")]
+    groups, unassigned = _build_order_groups(
+        db, workspace_id=workspace_id, lines=lines,
+    )
+    return {
+        "revision_id": revision_id,
+        "status": rev["status"],
+        "converted_project_id": (
+            int(rev["converted_project_id"])
+            if rev["converted_project_id"] is not None else None
+        ),
+        "orders_generated_at": rev["orders_generated_at"],
+        "groups": sorted(
+            groups.values(), key=lambda g: g["supplier_name"] or ""
+        ),
+        "unassigned": unassigned,
+    }
+
+
+def generate_orders(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    include_line_ids: list[int] | None = None,
+) -> dict:
+    """Plan V1 §21's "Create PO" (Q505) made real: materialises the
+    revision's material breakdown into draft purchase orders, one per
+    supplier, reusing the existing orders module end-to-end (`create_order`
+    / `add_line`) rather than inventing a parallel order entity — the same
+    "purchase_orders + po_line_items ARE the order layer" stance Q502/Q553
+    already established for #10.
+
+    Requires the revision already converted (a PO needs a real project to
+    attach to — `409 NOT_CONVERTED` otherwise) and runs at most once per
+    revision (`409 ORDERS_ALREADY_GENERATED` on a second call) —
+    `orders_generated_at` is set here and never cleared, mirroring the
+    "quote is frozen" stance `locked_at` already takes; there is no
+    legitimate reason to regenerate from a breakdown that cannot change.
+    Materials with no default supplier are returned as `unassigned` rather
+    than blocking the suppliers that DO have orders generated for them."""
+    rev = lock_revision_for_update(
+        db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    if rev is None:
+        raise ValueError("NOT_FOUND")
+    if rev["converted_project_id"] is None:
+        raise ValueError("NOT_CONVERTED")
+    if rev["orders_generated_at"] is not None:
+        raise ValueError("ORDERS_ALREADY_GENERATED")
+
+    estimate_no = db.execute(
+        text("SELECT estimate_no FROM estimate WHERE estimate_id = :eid"),
+        {"eid": rev["estimate_id"]},
+    ).scalar()
+
+    detail = revision_detail(
+        db, revision_id=revision_id, workspace_id=workspace_id
+    )
+    all_line_ids = {int(l["line_id"]) for l in detail["lines"]}
+    if include_line_ids is None:
+        # Only lines actually included at Convert (`included_at_convert`) —
+        # not every line in the revision. A line the PM excluded at Convert
+        # has no Joinery Item in the project; defaulting to the whole
+        # revision would purchase-order materials for work that isn't
+        # part of the project.
+        selected_ids = {
+            int(l["line_id"]) for l in detail["lines"] if l.get("included_at_convert")
+        }
+    else:
+        unknown = set(include_line_ids) - all_line_ids
+        if unknown:
+            raise ValueError(
+                json.dumps({"code": "UNKNOWN_LINE_IDS", "line_ids": sorted(unknown)})
+            )
+        selected_ids = set(include_line_ids)
+    selected_lines = [l for l in detail["lines"] if int(l["line_id"]) in selected_ids]
+
+    groups, unassigned = _build_order_groups(
+        db, workspace_id=workspace_id, lines=selected_lines,
+    )
+
+    po_ids: list[int] = []
+    lines_created = 0
+    for group in groups.values():
+        code, order = orders_q.create_order(
+            db, workspace_id=workspace_id,
+            payload=CreateOrderIn(
+                vendor_id=group["supplier_id"],
+                description=(
+                    f"Materials for {estimate_no} — "
+                    f"{group['supplier_name'] or 'supplier'}"
+                ),
+                category=group["category"],
+                project_id=int(rev["converted_project_id"]),
+                attributes={"generated_from_revision_id": revision_id},
+            ),
+            actor_id=actor_id,
+        )
+        if code != "OK":
+            # Every default_supplier_id write path today keeps the vendor
+            # workspace-consistent, so this shouldn't be reachable — but
+            # the FK itself carries no workspace check, and failing loudly
+            # beats an unhandled TypeError on `order["po_id"]` below.
+            raise ValueError(
+                json.dumps({"code": code, "supplier_id": group["supplier_id"]})
+            )
+        po_ids.append(int(order["po_id"]))
+        for entry in group["lines"]:
+            orders_q.add_line(
+                db, po_id=order["po_id"], workspace_id=workspace_id,
+                payload=CreateOrderLineIn(
+                    item_description=entry["description"] or entry["sku"] or "material",
+                    quantity=entry["qty"],
+                    unit_price=entry["unit_cost"],
+                    sku=entry["sku"],
+                    unit=entry["unit"],
+                    material_table=_CATALOG_BY_TYPE[entry["material_type"]][0],
+                    material_id=entry["material_id"],
+                ),
+                actor_id=actor_id,
+            )
+            lines_created += 1
+
+    db.execute(
+        text(
+            "UPDATE estimate_revision SET orders_generated_at = now()"
+            " WHERE revision_id = :rid"
+        ),
+        {"rid": revision_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="estimate.generate_orders", target=str(revision_id),
+        payload={
+            "revision_id": revision_id,
+            "project_id": int(rev["converted_project_id"]),
+            "orders_created": len(po_ids),
+            "lines_created": lines_created,
+            "po_ids": po_ids,
+            "unassigned_count": len(unassigned),
+            "included_line_ids": sorted(selected_ids),
+        },
+    )
+    db.flush()
+    return {
+        "orders_created": len(po_ids),
+        "lines_created": lines_created,
+        "po_ids": po_ids,
+        "unassigned": unassigned,
     }
