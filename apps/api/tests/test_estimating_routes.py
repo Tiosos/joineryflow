@@ -288,6 +288,31 @@ def test_convert_materialises_project_items_parts_and_hardware():
     assert r.json()["detail"]["code"] == "ALREADY_CONVERTED"
 
 
+def test_convert_line_with_two_parts_does_not_collide_on_seq():
+    """Fixed later. Every part's `seq` in `convert_to_project()` was
+    hardcoded to 1, not incremented per part in the module — harmless while
+    no seed/test fixture had more than one part per line, but
+    `uq_parts_module_seq (module_id, seq)` rejects a second part with the
+    same seq, so any WON quote line with two or more parts raised a raw
+    IntegrityError/500 instead of converting. Found live-testing PO
+    generation (a line quoting two different board materials). Two
+    estimate_line_part rows on the same line, even referencing the same
+    catalog material twice, reproduce it."""
+    c, _wid, _uid, board_id, _hw = _bootstrap()
+    rid = _make_estimate(c, title="TwoParts")["current_revision_id"]
+    lid = c.post(f"/revisions/{rid}/lines",
+                 json={"description": "Carcass", "qty": 1}).json()["line_id"]
+    c.post(f"/lines/{lid}/parts",
+           json={"material_type": "BOARD", "material_id": board_id, "qty": 2})
+    c.post(f"/lines/{lid}/parts",
+           json={"material_type": "BOARD", "material_id": board_id, "qty": 1})
+    _advance_to_submitted(c, rid)
+    c.post(f"/revisions/{rid}/accept")
+    r = c.post(f"/revisions/{rid}/convert")
+    assert r.status_code == 200, r.text
+    assert r.json()["parts_created"] == 2
+
+
 def test_convert_rejected_when_catalog_row_archived():
     c, _wid, _uid, board_id, _hw = _bootstrap()
     rid = _make_estimate(c, title="ArchTest")["current_revision_id"]

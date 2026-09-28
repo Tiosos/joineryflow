@@ -142,6 +142,7 @@ export interface Revision {
   expires_at?: string | null;
   lost_reason?: string | null;
   converted_project_id?: number | null;
+  orders_generated_at?: string | null;
   created_at: string;
   lines: Line[];
 }
@@ -190,4 +191,37 @@ export interface ConvertResult {
   hardware_lines_created: number;
   project_hardware_catalog_added: number;
   contract_value: string;
+}
+
+export interface OrderPreviewLine {
+  material_type: PartMaterialType | HardwareMaterialType;
+  material_id: number;
+  sku?: string | null;
+  description?: string | null;
+  qty: string;
+  unit: string;
+  unit_cost: string;
+}
+
+export interface OrderPreviewGroup {
+  supplier_id: number;
+  supplier_name?: string | null;
+  category: string;
+  lines: OrderPreviewLine[];
+}
+
+export interface OrderPreview {
+  revision_id: number;
+  status: EstimateStatus;
+  converted_project_id: number | null;
+  orders_generated_at?: string | null;
+  groups: OrderPreviewGroup[];
+  unassigned: OrderPreviewLine[];
+}
+
+export interface GenerateOrdersResult {
+  orders_created: number;
+  lines_created: number;
+  po_ids: number[];
+  unassigned: OrderPreviewLine[];
 }

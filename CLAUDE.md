@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0040`. Head is `0040_lock_types_concurrency` (Plan V1 §L). `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0041`. Head is `0041_estimate_orders_generated` (PO Generation from a Won Quote, Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
@@ -993,9 +993,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   (`kai.ngata@hartwood.test`, role `estimator`), 10 `workspace_labour_rate`
   rows (one per stage), 2 customers, and 3 demo `EST-2026-*` estimates.
   Idempotent — wipes `EST-2026-*` for the workspace before reinserting.
-- Out of scope (deferred): PO/supplier-order generation from a won quote
-  (Convert still stops at project + contract creation — see *Tender
-  Lifecycle + Financials* for what Convert gained), multi-currency, client
+- Out of scope (deferred): ~~PO/supplier-order generation from a won quote~~
+  **built, see *PO Generation from a Won Quote* below** (Convert still stops
+  at project + contract creation — see *Tender Lifecycle + Financials* for
+  what Convert gained), multi-currency, client
   e-signature / portal, estimate templates, per-line margin overrides
   beyond `unit_sell_override`, revision diff UI.
 
@@ -2062,8 +2063,8 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   `draft` / `sent` / `accepted`); the Convert button and quote-PDF link
   gates it exercises (`WON` / `SUBMITTED` respectively) were unchanged by
   this rewrite.
-- **Out of scope (deferred):** PO/supplier-order generation from a won
-  quote (Convert still stops at project + contract creation), Q472-style
+- **Out of scope (deferred):** ~~PO/supplier-order generation from a won
+  quote~~ **built, see *PO Generation from a Won Quote* below**, Q472-style
   per-object rule migration into the RBAC engine for this module's
   hand-written gates (unaffected — none were added here), a rollback path
   for `_LEGAL_TRANSITIONS` (Q513 already ruled this out generally), and
@@ -2388,3 +2389,155 @@ see *PM Workbench* above.
   `FIELD_CONFLICT` by merging the two versions client-side (today's UI just
   tells the user to reload — a merge view is real design work Q366 doesn't
   ask for either).
+
+
+## PO Generation from a Won Quote (Plan V1 §21, Q505) — shipped
+
+> Selected by the user as the next sub-project after §L, closing the gap
+> named twice as deferred — in *Estimating* and *Tender Lifecycle +
+> Financials* — since Convert-to-Project shipped: Convert stops at project
+> + contract creation, and every material the quote priced still had to be
+> re-entered by hand into the Orderbook. Built directly against Plan V1
+> §21's "Create PO" (Q505) and the existing orders/catalog schema — no
+> separate spec or plan doc, the same way #9a, the RBAC engine, §I, §M and
+> §L shipped. This section is its only written record.
+
+- **Sources from the revision's own line breakdown**
+  (`estimate_line_part` / `estimate_line_hardware`), not the converted
+  project's items and not the Material Summary. Two reasons, both found
+  during design, not assumed:
+  - The converted project's `parts` table only retains a real material FK
+    for **BOARD** (`board_material_id`) — CUSTOM/BENCHTOP catalog links
+    survive there only as a `[material: {type}#{id}]` comment string
+    (#9a's own schema constraint note). Reading the revision directly
+    keeps every `material_id` real for all five order-eligible types.
+  - The Material Summary (#12) was considered and rejected: **Q585**
+    already confirmed "no create-order-from-line in v1" for that surface,
+    deferring it to §21's full required/ordered/received/outstanding
+    design. Building it there now would have contradicted a settled
+    answer, not filled a gap.
+- **Live catalog pricing, not the quote's frozen snapshot.** Each material
+  is re-resolved against its catalog row at generation time (sku,
+  description, cost, `default_supplier_id`) rather than reusing
+  `cost_per_unit_snapshot` — Plan V1 §21 requires stale project-specific
+  pricing to be caught before PO creation, and generation typically
+  happens well after the quote was priced (Convert already requires
+  `WON`, and there is no deadline after that). `_resolve_order_source()`
+  (`apps/api/app/estimating/queries.py`) is a sibling of the existing
+  `_resolve_part_snapshot` / `_resolve_hardware_snapshot` used when a line
+  is first priced — same tables, but reading current values and the real
+  `default_supplier_id` FK (migration `0029`) instead of the free-text
+  `default_supplier` those two read.
+- **Grouped by live default supplier, one PO per supplier.** Every
+  distinct `(material_type, material_id)` referenced anywhere in the
+  selected lines is **consolidated into one PO line with a summed
+  quantity** — the same SKU quoted on five lines becomes one line for the
+  total, not five, because a real procurement PO groups by SKU. Cut
+  dimensions (`len_mm`/`wid_mm`) are deliberately dropped: they're cutting
+  information for Production, not purchasing information for a PO. A
+  material with no `default_supplier_id` can't become a PO line
+  automatically (`purchase_orders.vendor_id` is `NOT NULL`) and is
+  returned as `unassigned` instead — surfaced for the PM to order by hand
+  via the existing per-item Create Order flow, never blocking the
+  suppliers that DO have one. A PO's `category` is the material_type most
+  represented in its lines (`"BOARD".capitalize() == "Board"`, matching
+  `order_category`'s joinery keys from migration `0031` exactly — most
+  suppliers specialise, so this is usually unambiguous, not an arbitrary
+  pick on a tie).
+- **Reuses the orders module end-to-end** (`orders.queries.create_order` /
+  `add_line`) rather than inventing a parallel order entity — the same
+  "`purchase_orders` + `po_line_items` ARE the order layer" stance
+  Q502/Q553 already established for #10. Each generated PO carries
+  `attributes: {"generated_from_revision_id": <rid>}` for traceability (no
+  new column) and lands at the module's own default `status = 'Draft'` —
+  Procurement reviews and edits from there like any other order.
+- **Migration `0041`** — one column, `estimate_revision.orders_generated_at
+  timestamptz NULL`. Guards `generate_orders()` to run **at most once per
+  revision**: the revision is already locked by the time it's WON, so its
+  line breakdown is frozen and there is no legitimate reason to
+  regenerate from it. Set once, never cleared — the same "quote is
+  frozen" stance `locked_at` already takes.
+- **Backend** — `apps/api/app/estimating/{queries,schemas,routes}.py`
+  (no new module; PO generation is estimating's own concern, keyed by
+  revision like Convert and the handover preview):
+  - `GET /revisions/{rid}/order-preview` — the review screen before
+    generating, same shape Convert's own `handover_preview` established
+    for Q490: every group + the unassigned list, computed fresh, nothing
+    written.
+  - `POST /revisions/{rid}/generate-orders` — `include_line_ids` (default:
+    every line, same shape as `ConvertIn`). Requires the revision already
+    **converted** (`409 NOT_CONVERTED` otherwise — a PO needs a real
+    project to attach to) and rejects a second call
+    (`409 ORDERS_ALREADY_GENERATED`). `409 UNKNOWN_LINE_IDS` on a foreign
+    line id, mirroring Convert.
+  - Both gated `estimating:approve`, the same gate Convert and the
+    handover preview use (admin/manager/estimator).
+  - Audit: `estimate.generate_orders` on the revision, plus the orders
+    module's own `order.create` / `order.line_add` per PO/line it creates
+    (reused, not duplicated).
+- **Fixed later, found live-testing this feature.** `convert_to_project()`
+  hardcoded every `parts` row's `seq` to `1` instead of incrementing per
+  part in the module — harmless while no seed or test fixture had more
+  than one part on a single quote line, but `uq_parts_module_seq
+  (module_id, seq)` (migration `0007`-era constraint) rejects a second
+  part with the same seq, so **any WON quote line with two or more
+  parts — of any material type, not just duplicates — raised a raw
+  `IntegrityError`/500 instead of converting.** This had shipped
+  undetected since #9a's original commit; the seed data and every
+  existing test fixture happen to give each line at most one part. Found
+  because verifying PO generation live needed a line quoting two
+  different board materials to exercise both the "assigned" and
+  "unassigned" grouping paths in one request. Fixed by enumerating
+  `part_seq` per module instead of a literal `1`. Pinned by
+  `test_convert_line_with_two_parts_does_not_collide_on_seq`
+  (`test_estimating_routes.py`), confirmed to fail
+  (`UniqueViolation` on `uq_parts_module_seq`) against the pre-fix code.
+- **Web.** `EstimateDetailClient.tsx` gains a "Generate orders" button
+  (visible once `converted_project_id` is set and `orders_generated_at`
+  isn't) opening `OrderPreviewDialog` — styled like the existing
+  `ConvertPreviewDialog`: one card per supplier group with its lines and
+  live unit cost, an amber unassigned-materials card, and a confirm button
+  that calls `generate-orders` with no line filter (the API supports
+  `include_line_ids`; the v1 UI doesn't expose per-line selection for
+  this action — Simplicity First, and every converted line is normally
+  meant to be ordered). After generating, a result banner names the
+  order/line counts and any unassigned materials, links to the Orderbook,
+  and the button is replaced by a permanent "Orders generated {time}"
+  note on reload — read from the same `orders_generated_at` the backend
+  guards on, not local component state.
+- **RBAC — no matrix change.** Reuses `estimating:approve`, already
+  granted to admin/manager/estimator.
+- **Tests:** `test_estimating_generate_orders.py` (new, 13 tests) —
+  supplier grouping, quantity consolidation across lines, the unassigned
+  path, both 409s (`NOT_CONVERTED`, `ORDERS_ALREADY_GENERATED`),
+  `include_line_ids` filtering, `UNKNOWN_LINE_IDS`, workspace isolation,
+  the `estimating:approve` RBAC gate (via a second same-workspace user —
+  no role has `estimating:write` without also having `approve`, so
+  testing the gate needs a lesser-privileged user looking at a quote
+  someone else built), and the audit row + `orders_generated_at` write.
+  Plus the `convert_to_project` regression test above. Full suite (965
+  passed, 10 skipped, 1 pre-existing unrelated failure — the same
+  local-only `MEILI_URL` gap noted in *Tender Lifecycle + Financials*
+  above) run against a real migrated Postgres 16 instance with zero
+  regressions outside the files named here.
+- **Deliberately not seeded.** None of the seed's three demo estimates
+  are converted — the WON one is left that way on purpose (§I's seed
+  note: "ready for a human to click Convert"), and auto-converting it in
+  `make seed` would silently remove the Convert button
+  `tests/e2e/estimating.spec.ts` exercises against it. Verified instead
+  by live-testing the full flow (create quote → WON → Convert → Generate
+  orders → Orderbook) against a real browser and a real migrated
+  Postgres, per this session's UI-testing requirement — the same
+  live-testing pass that surfaced the `convert_to_project` seq bug above.
+- **Out of scope (deferred):** per-line selection in the Generate Orders
+  dialog (the API already supports `include_line_ids`; nothing in this
+  pass builds the UI for it); §21's much larger Procurement target
+  (supplier comparison, PO → Confirmation → Receipt → Inspection flow,
+  procurement exceptions, supplier performance tracking, claims/credits,
+  deposits/progress payments) — this ships only "Create PO" (Q505)'s real
+  purchase order, not the surrounding workflow Plan V1 describes around
+  it; regenerating orders after a partial run (there is no legitimate way
+  to add more once `orders_generated_at` is set — the revision is
+  frozen); rolling generated-order cost back onto the item or project
+  (Q543's "item cost does not roll up" stance is unaffected — orders
+  carry cost, nothing aggregates it further here either).

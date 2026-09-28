@@ -8,10 +8,12 @@ import type { Me } from "@/lib/session";
 import type {
   EstimateDetail,
   EstimateStatus,
+  GenerateOrdersResult,
   HardwareMaterialType,
   Line,
   LineHardware,
   LinePart,
+  OrderPreview,
   PartMaterialType,
   StageKey,
 } from "@/lib/estimating-types";
@@ -96,6 +98,17 @@ function isPartKind(k: MaterialKind): k is PartMaterialType {
   return k === "BOARD" || k === "CUSTOM" || k === "BENCHTOP";
 }
 
+function summariseGenerateResult(result: GenerateOrdersResult): string {
+  const orderWord = result.orders_created === 1 ? "order" : "orders";
+  const lineWord = result.lines_created === 1 ? "line" : "lines";
+  let msg = `${result.orders_created} ${orderWord} generated (${result.lines_created} ${lineWord}).`;
+  if (result.unassigned.length > 0) {
+    const materialWord = result.unassigned.length === 1 ? "material has" : "materials have";
+    msg += ` ${result.unassigned.length} ${materialWord} no default supplier and need to be ordered by hand.`;
+  }
+  return msg;
+}
+
 type CallApiFn = (
   method: string,
   url: string,
@@ -119,6 +132,8 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConvert, setShowConvert] = useState(false);
+  const [orderPreview, setOrderPreview] = useState<OrderPreview | null>(null);
+  const [generateResult, setGenerateResult] = useState<GenerateOrdersResult | null>(null);
 
   const currentRev =
     estimate.revisions.find((r) => r.revision_id === estimate.current_revision_id)
@@ -235,6 +250,30 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     if (r.ok && r.data && typeof r.data === "object" && "project_id" in r.data) {
       const pid = (r.data as { project_id: number }).project_id;
       router.push(`/projects/${pid}`);
+    }
+  }
+
+  async function openOrderPreview() {
+    if (!currentRev) return;
+    const r = await callApi("GET", `/api/revisions/${currentRev.revision_id}/order-preview`);
+    if (r.ok) setOrderPreview(r.data as OrderPreview);
+  }
+
+  async function confirmGenerateOrders() {
+    if (!currentRev) return;
+    // Close before awaiting, same as doConvert() — on failure (e.g. a
+    // stale preview racing a second tab's already-completed generation)
+    // this leaves the top-level error banner visible instead of hidden
+    // behind the still-open modal.
+    setOrderPreview(null);
+    const r = await callApi(
+      "POST",
+      `/api/revisions/${currentRev.revision_id}/generate-orders`,
+      {},
+    );
+    if (r.ok) {
+      setGenerateResult(r.data as GenerateOrdersResult);
+      await refresh();
     }
   }
 
@@ -520,6 +559,55 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           onCancel={() => setShowConvert(false)}
         />
       ) : null}
+
+      {canWrite && isViewingCurrent && currentRev?.converted_project_id
+      && !currentRev?.orders_generated_at ? (
+        <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 p-3">
+          <span className="text-sm text-blue-900">
+            Converted — materials can now be ordered from this quote.
+          </span>
+          <button
+            type="button"
+            onClick={openOrderPreview}
+            disabled={busy}
+            className="ml-auto rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
+            data-testid="generate-orders-btn"
+          >
+            Generate orders
+          </button>
+        </div>
+      ) : null}
+
+      {currentRev?.orders_generated_at ? (
+        <div className="rounded border border-h-line bg-h-surface p-3 text-sm text-h-muted">
+          Orders generated {new Date(currentRev.orders_generated_at).toLocaleString()}
+          {currentRev.converted_project_id ? (
+            <>
+              {" — see "}
+              <Link href={`/orderbook`} className="text-h-accent underline">
+                the Orderbook
+              </Link>
+              {"."}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {generateResult ? (
+        <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+          <span>{summariseGenerateResult(generateResult)}</span>{" "}
+          <Link href="/orderbook" className="underline">Open the Orderbook →</Link>
+        </div>
+      ) : null}
+
+      {orderPreview ? (
+        <OrderPreviewDialog
+          preview={orderPreview}
+          busy={busy}
+          onConfirm={confirmGenerateOrders}
+          onCancel={() => setOrderPreview(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -612,6 +700,92 @@ function ConvertPreviewDialog({
             data-testid="convert-confirm-btn"
           >
             {busy ? "Converting…" : "Convert"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface OrderPreviewDialogProps {
+  preview: OrderPreview;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function OrderPreviewDialog({ preview, busy, onConfirm, onCancel }: OrderPreviewDialogProps) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+      <div
+        className="w-full max-w-lg space-y-3 rounded border border-h-line bg-white p-5 shadow-xl"
+        data-testid="order-preview-dialog"
+      >
+        <h2 className="text-lg font-semibold text-h-ink">Generate orders</h2>
+        <p className="text-sm text-h-muted">
+          One draft purchase order per supplier, grouped from this quote&apos;s
+          material breakdown at today&apos;s catalog pricing. Review before
+          creating them — each PO can still be edited in the Orderbook
+          afterwards.
+        </p>
+        <div className="max-h-72 space-y-3 overflow-y-auto">
+          {preview.groups.length === 0 ? (
+            <p className="text-sm text-h-muted">Nothing to order — no line has a real material link.</p>
+          ) : (
+            preview.groups.map((g) => (
+              <div key={g.supplier_id} className="rounded border border-h-line p-3" data-testid="order-preview-group">
+                <div className="mb-1 flex items-center justify-between text-sm font-medium text-h-ink">
+                  <span>{g.supplier_name ?? `Vendor #${g.supplier_id}`}</span>
+                  <span className="rounded-full border border-h-line px-1.5 py-0.5 text-xs text-h-muted">
+                    {g.category}
+                  </span>
+                </div>
+                <ul className="space-y-0.5 text-xs text-h-muted">
+                  {g.lines.map((l) => (
+                    <li key={`${l.material_type}-${l.material_id}`} className="flex justify-between gap-2">
+                      <span className="truncate">
+                        {l.description ?? l.sku ?? "material"} × {l.qty} {l.unit}
+                      </span>
+                      <span className="font-mono whitespace-nowrap">{fmtMoney(l.unit_cost)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+          {preview.unassigned.length > 0 ? (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3">
+              <div className="mb-1 text-sm font-medium text-amber-900">
+                No default supplier — order these by hand
+              </div>
+              <ul className="space-y-0.5 text-xs text-amber-900">
+                {preview.unassigned.map((l) => (
+                  <li key={`${l.material_type}-${l.material_id}`}>
+                    {l.description ?? l.sku ?? "material"} × {l.qty} {l.unit}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-h-line bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy || preview.groups.length === 0}
+            className="rounded bg-green-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
+            data-testid="generate-orders-confirm-btn"
+          >
+            {busy
+              ? "Generating…"
+              : `Generate ${preview.groups.length} order${preview.groups.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>

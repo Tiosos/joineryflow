@@ -200,6 +200,7 @@ class RevisionDetailOut(BaseModel):
     expires_at: date | None = None
     lost_reason: str | None = None
     converted_project_id: int | None = None
+    orders_generated_at: datetime | None = None
     created_at: datetime
     lines: list[LineOut] = []
 
@@ -331,3 +332,45 @@ class ConvertResultOut(BaseModel):
     hardware_lines_created: int
     project_hardware_catalog_added: int
     contract_value: Decimal
+
+
+# ----------------------------------------------------------------------------
+# Generate Orders — PO generation from a won quote
+# ----------------------------------------------------------------------------
+
+class OrderPreviewLineOut(BaseModel):
+    material_type: str
+    material_id: int
+    sku: str | None = None
+    description: str | None = None
+    qty: Decimal
+    unit: str
+    unit_cost: Decimal
+
+
+class OrderPreviewGroupOut(BaseModel):
+    supplier_id: int
+    supplier_name: str | None = None
+    category: str
+    lines: list[OrderPreviewLineOut] = []
+
+
+class OrderPreviewOut(BaseModel):
+    revision_id: int
+    status: EstimateStatus
+    converted_project_id: int | None = None
+    orders_generated_at: datetime | None = None
+    groups: list[OrderPreviewGroupOut] = []
+    unassigned: list[OrderPreviewLineOut] = []
+
+
+class GenerateOrdersIn(BaseModel):
+    # None (the default) means every line — same shape as ConvertIn.
+    include_line_ids: list[int] | None = None
+
+
+class GenerateOrdersResultOut(BaseModel):
+    orders_created: int
+    lines_created: int
+    po_ids: list[int]
+    unassigned: list[OrderPreviewLineOut] = []
