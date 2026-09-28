@@ -1798,10 +1798,32 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
     memberships across all groups.
   - Every mutation writes `audit_log` (`permission_group.{create,
     set_grants,delete}`, `permission_group.membership.{create,delete}`).
-- **No web UI.** The admin API exists; `/it` has no Groups panel yet. IT can
-  configure access today only by calling the API directly — building the
-  panel is unstarted, deliberately left for a follow-up rather than rushed
-  alongside the schema/engine work in this pass.
+- **Web — Groups panel on `/it` (shipped later, follow-up pass).**
+  `PermissionGroupsPanel.tsx` (`apps/web/app/(app)/it/_components/`), a new
+  `libs/permission-groups-{types,fetch}.ts` pair, and one new line in
+  `it/page.tsx`. Sidebar list of all groups (name, `system` badge, grant
+  count) + a detail pane: a 12-module × 4-action grants grid with dirty-state
+  tracking (Save button only enables when changed, and switching groups or
+  creating a new one while dirty prompts a discard confirm — the same
+  `window.confirm` shape `removeGroup` already used), and a Members table
+  (add/remove, workspace-wide vs. project-scoped). System groups hide the
+  Delete button; deleting a group that still has members surfaces the
+  backend's `409 GROUP_HAS_MEMBERS` inline. Verified end-to-end in a real
+  browser against a live migrated stack (group create/select/delete,
+  grants save, membership add, the two 409 paths) — this is the first
+  sub-project in this file verified that way rather than by `tsc`/`next
+  build`/pytest alone, per this session's UI-testing requirement.
+  **Fixed along the way — `GET /users` / `PATCH /users/{uid}` 500'd for
+  every real seeded user.** `UserOut.email` (`apps/api/app/users/schemas.py`)
+  was `EmailStr`, a *response*-validation type, and `email-validator>=2.2`
+  rejects `.test` as an RFC 2606 reserved TLD — so both routes broke against
+  any `*.hartwood.test` address the moment a real browser (not the test
+  suite's `@example.com` fixtures) exercised them. This was silently
+  breaking the already-shipped `WorkerRosterPanel` (#8) too, not just the
+  new membership picker here. Fixed to plain `str`, matching
+  `auth/schemas.py`'s existing stance that email format is enforced upstream
+  and an output field just echoes what's stored. Pinned by
+  `test_admin_lists_users_with_reserved_tld_email`.
 - **What Q466–473 answered but this build deliberately does not do:**
   - **Q472** (move hand-written per-object rules — `require_drafter()`, the
     not-uploader approve rule, creator-or-manager, the 5-minute undo window
@@ -1849,7 +1871,7 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
     `auth_role`, mirroring `0037`'s backfill exactly. `seed_system_groups()`
     is still ready to be called from a future "create workspace" route when
     one exists — this fix doesn't add one.
-  - No web UI for the admin API (above).
+  - No web UI for the admin API — **closed, see above.**
   - Q472, Q470's rule layer, Q473's comments, and the broader project-scoped
     rewire of existing endpoints are open follow-ups, not oversights.
 

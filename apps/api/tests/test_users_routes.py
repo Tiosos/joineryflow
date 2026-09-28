@@ -65,6 +65,45 @@ def test_admin_lists_users():
     assert len(r.json()) == 1
 
 
+def test_admin_lists_users_with_reserved_tld_email():
+    """Fixed later. UserOut.email was EmailStr, a response-validation type —
+    not just input validation. email-validator >=2.2 rejects `.test` as an
+    IANA-reserved special-use TLD (RFC 2606), so this 500'd for every real
+    seeded user (`*.hartwood.test`) even though `_login()`'s own
+    `@example.com` fixture never touched the bug. Plain str now, matching
+    auth/schemas.py's existing "format enforced upstream" stance."""
+    suffix = uuid.uuid4().hex[:8]
+    slug = f"h-{suffix}"
+    db = SessionLocal()
+    try:
+        wid = db.execute(
+            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
+            {"s": slug},
+        ).scalar()
+        db.execute(
+            text(
+                """
+                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+                VALUES (:w, :e, 'Admin', :p, 'admin')
+                """
+            ),
+            {"w": wid, "e": f"admin-{suffix}@hartwood.test", "p": hash_password("pw")},
+        )
+        db.commit()
+    finally:
+        db.close()
+    c = TestClient(app)
+    r = c.post(
+        "/auth/login",
+        json={"workspace_slug": slug, "email": f"admin-{suffix}@hartwood.test", "password": "pw"},
+    )
+    assert r.status_code == 200, r.text
+
+    r = c.get("/users")
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["email"] == f"admin-{suffix}@hartwood.test"
+
+
 def test_editor_cannot_list_users():
     c, _, _ = _login("editor")
     r = c.get("/users")
