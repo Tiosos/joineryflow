@@ -2541,3 +2541,319 @@ see *PM Workbench* above.
   frozen); rolling generated-order cost back onto the item or project
   (Q543's "item cost does not roll up" stance is unaffected — orders
   carry cost, nothing aggregates it further here either).
+
+## Orderbook — Purchase Order editing UI — shipped
+
+> Selected as the next sub-project after PO Generation from a Won Quote —
+> the gap that surfaced live-testing it: a generated PO's consolidated
+> lines (summed quantities, live-catalog cost at generation time) had no
+> way to be corrected before sending to a supplier, and the Orders tab
+> itself was entirely read-only. Built directly against the existing
+> `orders/` module and §L's field-version machinery — no separate spec or
+> plan doc, the same way most sub-projects after #9a have shipped. This
+> section is its only written record.
+
+- **The order header PATCH already existed** (built for §L) — this
+  sub-project closes the two gaps around it: no way to edit or remove an
+  individual `po_line_items` row once added (only `POST .../lines`
+  existed), and no web UI at all for either the header PATCH or the line
+  endpoints.
+- **`PATCH /orders/{po_id}/lines/{line_id}`** and
+  **`DELETE /orders/{po_id}/lines/{line_id}`** (`apps/api/app/orders/
+  {schemas,queries,routes}.py`), both gated `orderbook:write`, both
+  workspace-isolated through the same `_ORDER_WORKSPACE` join every other
+  route in the module uses. `patch_line()` / `remove_line()` reuse
+  `_lock_order_for_update()` — the same row lock `add_line()` already took
+  to serialize against `UNIQUE (po_id, line_number)` — so a concurrent
+  edit and a concurrent add on the same order can't race either.
+  `PatchOrderLineIn` covers `item_description` / `sku` / `quantity` /
+  `unit` / `unit_price`; `line_number` and the provenance columns
+  (`material_table`, `material_id` — which catalog row a generated line
+  came from, if any) are not patchable. Both routes return the full
+  `OrderDetailOut` (order + refreshed `lines`), matching `add_line`'s
+  existing return shape.
+- **No `expected_versions` on lines, deliberately.** §L's field-level
+  optimistic concurrency (Q511/Q512) is scoped to exactly three named
+  surfaces — items, cutlist, and the order **header** — and lines were
+  never one of them; widening it to per-line versioning here would be
+  scope creep the user never asked for, the same "Q510 is a ceiling, not
+  an invitation to widen" reasoning this file already states for a
+  different boundary. Line edits stay last-write-wins, like every
+  pre-existing field on every surface §L didn't name.
+- **`DELETE /orders/{po_id}/lines/{line_id}` returns `200 OrderDetailOut`,
+  not the `204` its sibling `DELETE /orders/{po_id}` (whole-order
+  soft-cancel) uses** — a deliberate, noted departure: the web UI needs
+  the refreshed `lines` array immediately after removing one, and a line
+  delete is a hard delete (no soft-cancel state to represent), unlike the
+  order-level endpoint it otherwise resembles.
+- **Web — `/orderbook`'s Orders tab is no longer read-only.**
+  `orderbook/page.tsx` now fetches `me` (it never had before — the one
+  page-level file under `(app)/` missing it) and threads it through
+  `OrderbookTabs.tsx` to `OrdersClient.tsx`, which computes
+  `canEdit = can(me, "orderbook", "write")`. Selecting a row now fetches
+  the full `GET /orders/{po_id}` detail (with `lines` and `field_versions`)
+  instead of reusing the already-fetched list row, which never carried
+  either. The detail panel:
+  - Editable header fields (status / priority selects; order number /
+    supplier ref / notes / internal comments as blur-to-save inputs;
+    required/ordered/ETA dates) follow the same `patchField` +
+    `expected_versions` pattern `ItemMetadataPanel.tsx` established for
+    §L — a `FIELD_CONFLICT` names the one field and its `current_value`
+    rather than failing the whole save.
+  - An editable lines table (inline blur-to-save per cell, a Remove button
+    per row) plus an Add-line mini-form, wired to the three line
+    endpoints. All editing controls are hidden — not just disabled — for
+    a caller without `orderbook:write`, matching the rest of this app's
+    read-only-role convention.
+  - Q418's existing `?order=<po_number>` deep link is unaffected: it still
+    selects and scrolls to the row; the panel that opens under it is what
+    changed.
+- **RBAC — no matrix change.** Reuses `orderbook:{read,write}`, already
+  granted per the existing matrix (drafter has full read+write+approve+
+  comment on `orderbook` since Procurement Workbench's elevated-drafter
+  pattern; purchase_officer has read+write+approve; editor/viewer/
+  estimator read-only).
+- **`purchase_orders.total_amount` is now kept in sync with its lines.**
+  The column predates `po_line_items` and was never wired to it — every PO
+  `generate_orders` (§21/Q505) creates gets its lines via `add_line()` but
+  `total_amount` stays at its 0.00 default forever, so the Orderbook and
+  this new detail panel showed "Total: $0.00" under a stack of real-dollar
+  lines. `add_line()` / `patch_line()` / `remove_line()` now all call a
+  shared `_recompute_total_amount()` (`SUM(line_total)` over the PO's
+  lines) after their write, and it bumps `field_versions["total_amount"]`
+  too (a plain UPDATE bypassing that would let a stale header PATCH
+  silently clobber the freshly-summed total with no `FIELD_CONFLICT` — see
+  *Fixed later* below) — a no-op when the sum hasn't actually changed, so
+  it never bumps the version for nothing. Deliberately narrow: `quantity` /
+  `unit_cost` (singular fields with no coherent value across multiple
+  lines) are left untouched, and a header-only order that never gets a
+  line (the original per-item Create Order flow) is unaffected, since
+  nothing there calls these three functions. **Known gap, not fixed**:
+  neither this nor the pre-existing header PATCH blocks editing a line (or
+  any header field) on a `Cancelled`/`Delivered` order — there is no
+  order-status guard anywhere in this module, on lines or on the header,
+  so this isn't a new inconsistency this sub-project introduced, but it
+  remains open.
+- **Tests:** 16 new cases in `test_order_routes.py` — line PATCH updates
+  editable fields and recomputes `line_total`, 404 for an unknown line
+  (both with a real patch body and with an empty/non-patchable one — see
+  *Fixed later* below) and for a line on a different order, line DELETE
+  removes it and 404s the same way, both routes 403 for a `viewer`-role
+  same-workspace user, a cross-workspace PATCH 404s, a parametrized case
+  rejecting an explicit `null` for each of the three `NOT NULL` fields, two
+  cases pinning the `total_amount` rollup (single line, and summed across
+  two), one proving its version bump is real bookkeeping, one proving a
+  direct header PATCH to `total_amount` is a no-op once lines exist (but
+  still works on a header-only order), one proving a `FIELD_CONFLICT`'s
+  `current_value` for a Decimal field stays a string, and one proving a
+  stale `total_amount` version in a batch PATCH's `expected_versions`
+  doesn't block an unrelated field in the same call. Full suite green
+  against a real migrated Postgres 16 instance (existing 14 + new 17 in
+  the module; zero regressions elsewhere).
+- **Fixed later (six rounds of max-level code review, same day).**
+  `patch_line()`'s empty-fields early return (a PATCH with `{}` or a
+  non-patchable key like `line_number`) skipped the line-existence check
+  the UPDATE's rowcount otherwise performs, so it 200'd with the order
+  instead of 404ing for a line that doesn't exist on this PO — now checks
+  existence explicitly before returning, pinned by
+  `test_patch_line_404_for_unknown_line_with_no_patchable_fields`.
+  `LineRow`'s local input state never resynced to the server's canonical
+  value after a successful save (`quantity: "5"` round-trips as `"5.000"`,
+  a `numeric(10,3)` column) — the next blur's dirty check
+  (`quantity !== line.quantity`) kept firing an unnecessary PATCH and a
+  fresh `order.line_update` audit row on every blur of that cell for the
+  rest of the panel's life, even with no further edit; each of the five
+  editable fields now has a `useEffect` resyncing local state to the
+  matching `line.*` prop. The same missing-resync shape existed on the
+  three header-field helpers (`EditableField`, `EditableDateField`,
+  `BlurTextArea`) with a sharper consequence: after any *other* field's
+  save refreshed `order` (and its `field_versions`), a stale local value
+  left in an untouched field would be resubmitted with the now-current
+  `expected_versions`, passing the conflict check and **silently
+  overwriting a concurrent edit with no 409** — defeating §L/Q511-Q512's
+  whole guarantee. All three now resync via `useEffect` on their value
+  prop, and (a second finding on the same components) now skip the save
+  entirely when the value is unchanged from props, matching `LineRow`'s
+  existing dirty-check and stopping a bare tab-through from firing a
+  no-op PATCH that bumps `field_versions` and hands the next real editor a
+  false `FIELD_CONFLICT`. `fieldErrorMessage`'s `NOT_FOUND` branch checked
+  `body.detail.code === "NOT_FOUND"`, but `patch_order_route`'s 404 is a
+  plain string detail (`"order not found"`, matching every other 404 in
+  this module) — the branch was unreachable dead code; it now checks
+  `res.status === 404` instead. `EditableDateField` saved on every
+  `onChange` rather than `onBlur` (the pattern every other editable field
+  in this file, and `ItemMetadataPanel.tsx`'s own fields, follow) — a
+  native `<input type="date">` fires `onChange` with `""` after each
+  keystroke while typing a date directly, so the first keystroke into
+  Required-by/Ordered/ETA immediately PATCHed the field to `null`, wiping
+  an existing date before the user finished typing a new one; now saves on
+  blur like its siblings. `PatchOrderLineIn` typed `item_description` /
+  `quantity` / `unit_price` nullable (to allow *omitting* them) with
+  nothing rejecting an explicit `null` for these `NOT NULL` columns, so
+  `{"quantity": null}` passed validation and hit the UPDATE as a raw
+  `IntegrityError`/500; a `model_validator` now rejects an explicit null
+  for the three with a clean 422, pinned by the parametrized test above.
+  The `total_amount` rollup above was also raised in this pass, as a
+  pre-existing gap (predating this sub-project, in `add_line()`) that this
+  sub-project's own new line-mutation surface made worse by giving PMs new
+  ways (edit, remove) to drift the header further from the lines under it.
+  A fourth pass, after the rollup landed, found two more: the rollup's own
+  plain `UPDATE` bypassed `bump_field_versions()`, so a stale header PATCH
+  read before a line changed the total could pass its `FIELD_CONFLICT`
+  check and silently clobber the freshly-summed value — writing that fix
+  exposed a **second, older, latent bug it was the first to actually
+  trigger**: `patch_order_route`'s 409 handler puts `current_value`
+  straight into `HTTPException`'s `detail`, which Starlette serializes
+  with plain `json.dumps` (bypassing the response_model's Pydantic
+  encoding) — a `Decimal` (`quantity`/`unit_cost`/`total_amount`) or a
+  `date` (`required_date`/`date_ordered`/`due_date`) in that dict 500s
+  instead of returning the 409. This has been reachable since §L shipped
+  `patch_order`'s field-conflict path — no existing test exercised a
+  conflict on any of those six fields, only string ones — and is fixed
+  here, scoped to the `orders` module alone, by wrapping the detail in
+  `jsonable_encoder()`; the identical shape likely exists in `items`'s and
+  `cutlist`'s own conflict paths too (neither touched by this diff), left
+  as a known gap rather than fixed opportunistically outside this module.
+  Pinned by `test_recomputed_total_amount_bumps_its_field_version` (the
+  version bump) and `test_field_conflict_current_value_serializes_decimal_as_string`
+  (the encoder fix, added in the next pass below — this test alone would
+  have failed differently, with a raw 500, before it). Separately,
+  `removeLine()`'s error path showed
+  "Remove failed" for a 404 on a line already removed (a double-click
+  before the confirm dialog, or a second user's earlier removal) even
+  though the goal — the line being gone — was already achieved; it now
+  treats that 404 as success and skips the request entirely when the line
+  is already absent from the last-known order.
+
+  A fifth pass found the version-bump fix above had only patched the
+  *symptom*, not the actual defect it was describing: `total_amount` was
+  still directly `PATCH`-able via the header at the same time
+  `_recompute_total_amount()` was writing it from the lines — two writers
+  for one field, and a version bump doesn't resolve that, because the
+  rollup isn't submitting an "expected prior value" to check against, it's
+  deriving one; a manual header PATCH could still land after a line change
+  and silently discard the freshly-summed total with no error either way.
+  `patch_order()` now drops `total_amount` from a PATCH's patchable fields
+  once the order has ≥1 line — the same way `_LINE_PATCHABLE` already
+  drops `line_number` — so once the rollup starts writing it, it's the
+  field's only writer; a header-only order (no lines, the original
+  per-item Create Order flow) is unaffected and keeps direct access. Also
+  from this pass: `jsonable_encoder()` (the previous pass's own fix, above)
+  encodes a `Decimal` as a JSON **number**, breaking this codebase's own
+  pinned convention that every money/quantity field serializes as a
+  string (`orders-types.ts`'s header comment, restated in nearly every
+  `-types.ts` file this session has touched) — `current_value` now goes
+  through a small `_conflict_safe_value()` that stringifies
+  `Decimal`/`date`/`datetime` before `jsonable_encoder` ever sees it, so
+  the type stays consistent regardless of which layer serializes the
+  response. And `AddLineForm.submit()`'s `setBusy(false)` sat after an
+  unguarded `await onAdd(...)`, so a thrown network error or invalid-JSON
+  response left "+ Add line" stuck disabled on "Adding…" for the rest of
+  the panel's life; it now runs in a `finally`. Pinned by
+  `test_total_amount_is_not_directly_patchable_once_lines_exist` and
+  `test_field_conflict_current_value_serializes_decimal_as_string`.
+  **Noted, not fixed:** `generate_orders()` (§21) calls `add_line()` once
+  per consolidated material, so each now triggers its own
+  `_recompute_total_amount()` — a SUM-and-conditional-UPDATE round trip per
+  line instead of one after the whole batch. For the PO sizes this
+  produces (materials consolidated per supplier on one quote) this is
+  negligible; summing once after the loop would need a parameter threaded
+  through a different module's function and isn't worth that coupling for
+  a micro-optimization with no observed correctness cost.
+
+  A sixth pass found the fifth pass's own `total_amount` fix was itself
+  incomplete: dropping `total_amount` from `fields` left it in
+  `payload.expected_versions` untouched, and `check_field_conflicts()`
+  evaluates every key in that map regardless of whether `fields` still
+  includes it — so a batch PATCH naming both `status` and `total_amount`
+  together (each with its own `expected_versions`, the exact pattern this
+  module's own docstring describes) would raise a spurious
+  `FIELD_CONFLICT` on `total_amount` once its version had moved via the
+  rollup, blocking the unrelated `status` write it was never meant to
+  gate. Fixed narrowly — `total_amount` alone is dropped from
+  `expected_versions` too, once lines exist — **not** by filtering to
+  `fields` in general: `test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500`
+  (§L, cutlist) already pins the opposite behavior on purpose for every
+  *other* field — a caller naming an unrelated/bogus key in
+  `expected_versions` is meant to conflict, not be silently dropped — so a
+  blanket filter would have broken that established, tested contract
+  instead of fixing this one field's specific tension. Pinned by
+  `test_stale_total_amount_expected_version_does_not_block_an_unrelated_write`.
+  Separately: none of `patchField()` / `patchLine()` / `removeLine()` /
+  `addLine()` in `OrdersClient.tsx` wrapped their `fetch()`/`res.json()` in
+  try/catch, unlike the established pattern (`ItemMetadataPanel.tsx`'s own
+  `patchField`) — a thrown network error left the calling field's onBlur
+  handler mid-await with no revert and no visible error, looking saved
+  while nothing had reached the server; all four now catch and report,
+  matching that pattern exactly (`AddLineForm.submit()`'s `finally` from
+  the fourth pass stays as defense in depth, but `addLine` itself no
+  longer throws).
+
+  A seventh pass found one more real gap and confirmed two prior notes were
+  the right call to leave alone: `_recompute_total_amount()`'s `UPDATE`
+  never set `updated_at`, unlike every other mutation in this module
+  (`patch_order`, `cancel_order`, `sync_orders_for_item` all set
+  `updated_at = now()`) — a line add/edit/remove genuinely changes the
+  order, so its timestamp should move too; fixed, pinned inline in
+  `test_add_line_returns_the_order_with_the_new_line`. Re-raised but
+  **not fixed, on inspection**: rejecting a negative `quantity` /
+  `unit_price` on the new line-PATCH endpoint — checked against every
+  sibling Decimal field in this codebase (`estimate_line`'s `qty` /
+  `cost_per_unit_snapshot`, this same module's own pre-existing
+  `CreateOrderLineIn`) and **none** carry a `gt=0`/`ge=0` constraint
+  anywhere; only percentage fields do. Adding one here alone would be a
+  new, unprecedented rule for this one endpoint, not a fix to something
+  this sub-project broke — left alone, consistent with the rest of the
+  codebase. The order-status guard and the `EditableField`/
+  `EditableDateField`/`BlurTextArea` duplication were both re-raised too;
+  both already had their own notes above (*Known gap* and *Known
+  duplication, not fixed*) and stand unchanged.
+- **Known duplication, not fixed.** `EditableField` / `EditableDateField` /
+  `BlurTextArea` re-implement the same per-field PATCH +
+  `expected_versions` + resync-and-dirty-check shape `ItemMetadataPanel.tsx`
+  (`MetaField` / `NotesField`) and `CutlistClient.tsx` already carry as
+  independent copies — a third one here. Flagged, not extracted into a
+  shared hook: pulling three call sites with slightly different save
+  signatures into one helper is a real refactor with its own risk, out of
+  scope for a PATCH-editing UI on one more surface.
+- **Out of scope (deferred):** per-line `expected_versions` (above);
+  bulk line operations (multi-select delete, CSV re-import into an
+  existing order); a PATCH-editing UI for anything on the Delivery Queue
+  tab (`procurement_batches` — untouched, still #4's surface); reordering
+  lines (`line_number` is immutable, matching `add_line`'s own
+  auto-increment-only stance).
+
+## Deferred options (recorded, not built)
+
+Three alternatives were proposed alongside Purchase Order editing (above)
+when this session was asked to suggest the next sub-project; the user chose
+PO editing and asked that the other three be recorded rather than dropped
+silently. None of the three is started.
+
+- **Option B — Comments (Plan V1 §29, Q473).** A generic comment/mention
+  system over 8 object types, the feature that would finally give the
+  `comment` RBAC action (present on every module in the matrix since
+  Foundation) something real to gate — today it is a dead grant everywhere
+  except `isample`/`shop_drawings`-style review notes, which are bespoke
+  fields, not this. Sized larger than PO editing: a new entity, @mentions,
+  and a decision on which 8 object types get a comment thread first.
+  Already named once as deferred, in *Dynamic RBAC engine* above (Q473).
+- **Option C — QC Dashboard (Plan V1 §4.2).** The standalone cross-project
+  dashboard the *QC / Rework / Packing* section above explicitly named as
+  out of scope when that sub-project shipped the per-item QC surfaces
+  (defects/checklist/rework tabs, PACKING stage) that would back it. This
+  ships only the aggregation view on top of data that already exists —
+  lower schema risk than B, but needs a design decision on what it
+  aggregates across (open defects by project? by supplier? by stage?)
+  that Plan V1 doesn't spell out.
+- **Option D — Sync Global Search's RBAC check to the Dynamic RBAC
+  engine.** Flagged as a known gap in *Dynamic RBAC engine* above:
+  `apps/api/app/search/routes.py`'s `visible_types()` still filters on the
+  static `MATRIX` via `has_permission()`, not `effective_actions()` — so a
+  workspace admin who customises a group's grants through the Permission
+  Groups admin UI (built earlier this session) won't see that reflected in
+  which search result *types* are visible to a member of that group. The
+  smallest of the three: one function call to swap, but needs a `project_id`
+  decision (search has no single project in scope, so it would always pass
+  `project_id=None`, i.e. workspace-wide grants only — worth stating
+  explicitly rather than assuming).

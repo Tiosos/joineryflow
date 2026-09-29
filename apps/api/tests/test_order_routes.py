@@ -419,3 +419,268 @@ def test_workspace_list_is_isolated_from_other_workspaces(ctx):
     ids = [o["po_id"] for o in rows]
     assert mine["po_id"] in ids
     assert foreign_po not in ids
+
+
+# Line CRUD ----------------------------------------------------------------
+# PATCH/DELETE on an individual po_line_items row — the gap left after PO
+# generation (#13) started creating real multi-line orders with nothing to
+# edit them with; add_line() (POST) already existed but had no HTTP-level
+# test of its own either.
+
+def _make_order_with_line(ctx: dict) -> dict:
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    line = c.post(f"/orders/{po['po_id']}/lines", json={
+        "item_description": "18mm MDF", "quantity": "3", "unit_price": "45.00",
+        "sku": "BM-001", "unit": "sheet",
+    }).json()
+    line_id = line["lines"][0]["line_id"]
+    return {"po_id": po["po_id"], "line_id": line_id}
+
+
+def test_add_line_returns_the_order_with_the_new_line(ctx):
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    r = c.post(f"/orders/{po['po_id']}/lines", json={
+        "item_description": "18mm MDF", "quantity": "3", "unit_price": "45.00",
+    })
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert len(body["lines"]) == 1
+    assert body["lines"][0]["item_description"] == "18mm MDF"
+    assert float(body["lines"][0]["line_total"]) == 135.0
+    # the rollup's write is a real mutation, matching every other order
+    # mutation's own updated_at behavior
+    assert body["updated_at"] != po["updated_at"]
+    # header total_amount (0.00 by default — create_order never sets it)
+    # now reflects the line just added.
+    assert float(body["total_amount"]) == 135.0
+
+
+def test_add_line_sums_multiple_lines_into_header_total(ctx):
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    c.post(f"/orders/{po['po_id']}/lines", json={
+        "item_description": "18mm MDF", "quantity": "3", "unit_price": "45.00",
+    })
+    r = c.post(f"/orders/{po['po_id']}/lines", json={
+        "item_description": "Hinges", "quantity": "10", "unit_price": "2.50",
+    })
+    assert float(r.json()["total_amount"]) == 160.0  # 135.00 + 25.00
+
+
+def test_recomputed_total_amount_bumps_its_field_version(ctx):
+    # `add_line`'s rollup must be a real write to `total_amount` (bumping
+    # its version), not a bypass — otherwise stale bookkeeping could make a
+    # later conflict check on this field lie about what actually changed.
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    assert po.get("field_versions", {}).get("total_amount", 0) == 0
+    after_line = c.post(f"/orders/{po['po_id']}/lines", json={
+        "item_description": "18mm MDF", "quantity": "3", "unit_price": "45.00",
+    }).json()
+    assert after_line["field_versions"]["total_amount"] == 1
+
+
+def test_total_amount_is_not_directly_patchable_once_lines_exist(ctx):
+    # Two writers for one field (a manual header PATCH and the line rollup)
+    # would defeat §L regardless of which one loses, so once an order has
+    # lines the rollup is its only writer: a direct PATCH is silently
+    # ignored rather than raced against, clobbered, or conflict-checked.
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()
+    assert before["total_amount"] == "135.00"
+    r = c.patch(f"/orders/{ids['po_id']}", json={"total_amount": "999.00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["total_amount"] == "135.00"  # unchanged, not 999.00
+    # a header-only order (no lines) keeps direct PATCH access
+    po2 = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "no lines", "category": "Board",
+    }).json()
+    r2 = c.patch(f"/orders/{po2['po_id']}", json={"total_amount": "50.00"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["total_amount"] == "50.00"
+
+
+def test_stale_total_amount_expected_version_does_not_block_an_unrelated_write(ctx):
+    # A batch PATCH naming both `status` and `total_amount` (each with its
+    # own `expected_versions`, per the documented "read from a prior GET"
+    # pattern) must not fail on total_amount's version alone once lines
+    # exist and it's no longer a field this PATCH actually writes — that
+    # would block the unrelated, legitimate `status` change.
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()
+    stale_total_version = before["field_versions"]["total_amount"]
+    # move total_amount's version on, so `stale_total_version` really is stale
+    c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "9"})
+    r = c.patch(f"/orders/{ids['po_id']}", json={
+        "status": "Approved",
+        "total_amount": "1.00",  # ignored anyway (lines exist), but still sent
+        "expected_versions": {"status": 0, "total_amount": stale_total_version},
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Approved"
+
+
+def test_field_conflict_current_value_serializes_decimal_as_string(ctx):
+    # `current_value` must match this API's own Decimal-as-string
+    # convention (orders-types.ts) — jsonable_encoder alone would turn it
+    # into a JSON number instead.
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    assert c.patch(f"/orders/{po['po_id']}", json={"unit_cost": "12.50"}).status_code == 200
+    r = c.patch(f"/orders/{po['po_id']}", json={
+        "unit_cost": "1.00", "expected_versions": {"unit_cost": 0},
+    })
+    assert r.status_code == 409
+    current_value = r.json()["detail"]["conflicts"]["unit_cost"]["current_value"]
+    assert isinstance(current_value, str)
+    assert float(current_value) == 12.50
+
+
+def test_patch_line_updates_editable_fields(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.patch(
+        f"/orders/{ids['po_id']}/lines/{ids['line_id']}",
+        json={"quantity": "5", "unit_price": "50.00"},
+    )
+    assert r.status_code == 200, r.text
+    line = r.json()["lines"][0]
+    assert float(line["quantity"]) == 5.0
+    assert float(line["unit_price"]) == 50.0
+    assert float(line["line_total"]) == 250.0
+    # sku/description untouched by a partial patch
+    assert line["item_description"] == "18mm MDF"
+    assert float(r.json()["total_amount"]) == 250.0
+
+
+@pytest.mark.parametrize("field", ["item_description", "quantity", "unit_price"])
+def test_patch_line_rejects_null_for_not_null_columns(ctx, field):
+    # These three are NOT NULL on po_line_items — an explicit null must be a
+    # clean 422, not a raw IntegrityError/500 from the UPDATE.
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={field: None})
+    assert r.status_code == 422
+
+
+def test_patch_line_404_for_unknown_line(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}/lines/999999", json={"quantity": "1"})
+    assert r.status_code == 404
+
+
+def test_patch_line_404_for_unknown_line_with_no_patchable_fields(ctx):
+    # An empty body (or one naming only a non-patchable field, e.g.
+    # `line_number`) must still 404 for a line that doesn't exist — the
+    # no-op early-return path can't skip the existence check.
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}/lines/999999", json={})
+    assert r.status_code == 404
+
+
+def test_patch_line_404_when_line_belongs_to_a_different_order(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    other_po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "other", "category": "Board",
+    }).json()
+    r = c.patch(
+        f"/orders/{other_po['po_id']}/lines/{ids['line_id']}",
+        json={"quantity": "1"},
+    )
+    assert r.status_code == 404
+
+
+def test_remove_line_deletes_it(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.delete(f"/orders/{ids['po_id']}/lines/{ids['line_id']}")
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"] == []
+    # no lines left -> header total drops back to 0.00
+    assert float(r.json()["total_amount"]) == 0.0
+
+
+def test_remove_line_404_for_unknown_line(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    r = c.delete(f"/orders/{ids['po_id']}/lines/999999")
+    assert r.status_code == 404
+
+
+def test_line_routes_require_orderbook_write(ctx):
+    ids = _make_order_with_line(ctx)
+    suffix = uuid.uuid4().hex[:8]
+    s = SessionLocal()
+    try:
+        s.execute(
+            text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                 " VALUES (:w, :e, 'Viewer', :p, 'viewer')"),
+            {"w": ctx["wid"], "e": f"viewer-{suffix}@x.test", "p": hash_password("pw")},
+        )
+        s.commit()
+    finally:
+        s.close()
+    c2 = TestClient(app)
+    r = c2.post("/auth/login", json={
+        "workspace_slug": _workspace_slug(ctx["wid"]), "email": f"viewer-{suffix}@x.test", "password": "pw",
+    })
+    assert r.status_code == 200, r.text
+    assert c2.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}",
+                    json={"quantity": "1"}).status_code == 403
+    assert c2.delete(f"/orders/{ids['po_id']}/lines/{ids['line_id']}").status_code == 403
+
+
+def test_patch_line_cross_workspace_404(ctx):
+    ids = _make_order_with_line(ctx)
+    other = _bootstrap_other_workspace_client()
+    r = other.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "1"})
+    assert r.status_code == 404
+
+
+def _workspace_slug(wid: int) -> str:
+    s = SessionLocal()
+    try:
+        return s.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid}).scalar()
+    finally:
+        s.close()
+
+
+def _bootstrap_other_workspace_client() -> TestClient:
+    suffix = uuid.uuid4().hex[:8]
+    slug = f"ord-line-other-{suffix}"
+    email = f"buyer-{suffix}@x.test"
+    s = SessionLocal()
+    try:
+        wid = s.execute(
+            text("INSERT INTO workspace(slug, name) VALUES(:s,'Other Line WS') RETURNING id"),
+            {"s": slug},
+        ).scalar()
+        s.execute(
+            text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                 " VALUES (:w, :e, 'Buyer', :p, 'purchase_officer')"),
+            {"w": wid, "e": email, "p": hash_password("pw")},
+        )
+        s.commit()
+    finally:
+        s.close()
+    c = TestClient(app)
+    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
+    assert r.status_code == 200, r.text
+    return c

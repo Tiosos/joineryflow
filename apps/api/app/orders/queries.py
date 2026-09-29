@@ -21,6 +21,8 @@ cutlist link/unlink paths. It is deliberately in this module rather than in
 `cutlists/`: the orders own the column being written.
 """
 import json
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -28,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..concurrency import bump_field_versions, check_field_conflicts
-from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn
+from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn, PatchOrderLineIn
 
 # An order reaches its workspace through its project, or, when it has none,
 # through its vendor (Q554/Q555).
@@ -315,6 +317,22 @@ def create_order(
     return "OK", order
 
 
+def _conflict_safe_value(v: Any) -> Any:
+    """A `FIELD_CONFLICT`'s `current_value` reuses whatever type the column
+    holds — but `orders-types.ts`'s own documented invariant (and every
+    money/quantity field elsewhere in this API) is that Decimal serializes
+    as a **string**, never a JSON number (`toFixed is not a function`
+    otherwise). `jsonable_encoder` alone would encode a Decimal as a float,
+    breaking that; stringify Decimal/date/datetime here so the conflict
+    payload matches the rest of the API regardless of which encoder wraps
+    the final response."""
+    if isinstance(v, Decimal):
+        return str(v)
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    return v
+
+
 def patch_order(
     db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
 ) -> tuple[str, dict | None]:
@@ -328,15 +346,43 @@ def patch_order(
         k: v for k, v in payload.model_dump(exclude_unset=True).items()
         if k in _PATCHABLE
     }
+    # Once an order has lines, `total_amount` has a second writer —
+    # `_recompute_total_amount()`, called from every line mutation — that
+    # doesn't (can't: it isn't submitting an "expected" prior value, it's
+    # deriving one) go through `check_field_conflicts()`. Two writers for
+    # one field defeats §L's guarantee regardless of which one loses, so
+    # once lines exist this header PATCH stops being the field's other
+    # writer: it's dropped from `fields` like an unrecognized key, the same
+    # way `_LINE_PATCHABLE` already drops `line_number`. A header-only order
+    # (no lines) is unaffected — `total_amount` stays directly patchable.
+    expected_versions = payload.expected_versions
+    if current["lines"]:
+        fields.pop("total_amount", None)
+        # `total_amount`'s version keeps moving via the rollup (above) even
+        # though this PATCH no longer writes it — leaving a stale entry for
+        # it in `expected_versions` (a batch call naming {status,
+        # total_amount} together, the documented "read from a prior GET's
+        # field_versions" pattern applied to both) would still raise a
+        # spurious FIELD_CONFLICT on a field the write no longer touches,
+        # blocking the unrelated field it was never meant to gate. Every
+        # *other* unrelated key in `expected_versions` still conflicts by
+        # design — `test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500`
+        # pins that a bogus key is treated as a real conflict, not silently
+        # dropped — so only `total_amount` is carved out here, not a
+        # general filter to `fields`.
+        if expected_versions and "total_amount" in expected_versions:
+            expected_versions = {
+                k: v for k, v in expected_versions.items() if k != "total_amount"
+            }
     if not fields:
         return "OK", current
 
     conflicts = check_field_conflicts(
-        current.get("field_versions"), payload.expected_versions
+        current.get("field_versions"), expected_versions
     )
     if conflicts:
         for field, info in conflicts.items():
-            info["current_value"] = current.get(field)
+            info["current_value"] = _conflict_safe_value(current.get(field))
         return "FIELD_CONFLICT", conflicts
 
     new_versions = bump_field_versions(current.get("field_versions"), list(fields))
@@ -402,6 +448,44 @@ def _lock_order_for_update(db: Session, *, po_id: int, workspace_id: int) -> boo
     return row is not None
 
 
+def _recompute_total_amount(db: Session, *, po_id: int) -> None:
+    """`purchase_orders.total_amount` (and the `gst_amount` / `grand_total`
+    columns generated from it) predate `po_line_items` and were never wired
+    to it — a header-only order (the original per-item Create Order flow)
+    still sets `total_amount` directly and never calls this. A PO with real
+    lines (every order `generate_orders` creates, and now anything edited
+    through this module's line endpoints) should have its Total reflect
+    them, so every line mutation keeps it in sync rather than leaving it
+    frozen at whatever `create_order` set (typically nothing, i.e. 0.00).
+    `quantity` / `unit_cost` are left alone — they're singular fields with
+    no coherent value across multiple lines, unlike a summed total.
+
+    Bumps `field_versions["total_amount"]` too — a plain `UPDATE` bypassing
+    it would let a stale `PATCH .../orders/{po_id}` (read before this ran,
+    `expected_versions: {"total_amount": <old>}`) silently clobber the
+    freshly-summed total with no `FIELD_CONFLICT`, defeating §L for this
+    one field. Caller already holds the row lock via
+    `_lock_order_for_update`, so this read-then-write can't itself race."""
+    row = db.execute(
+        text(
+            "SELECT total_amount, field_versions,"
+            " (SELECT COALESCE(SUM(line_total), 0) FROM po_line_items WHERE po_id = :o) AS new_total"
+            " FROM purchase_orders WHERE po_id = :o"
+        ),
+        {"o": po_id},
+    ).mappings().one()
+    if row["new_total"] == row["total_amount"]:
+        return
+    new_versions = bump_field_versions(row["field_versions"], ["total_amount"])
+    db.execute(
+        text(
+            "UPDATE purchase_orders SET total_amount = :t,"
+            " field_versions = CAST(:fv AS jsonb), updated_at = now() WHERE po_id = :o"
+        ),
+        {"o": po_id, "t": row["new_total"], "fv": json.dumps(new_versions)},
+    )
+
+
 def add_line(
     db: Session, *, po_id: int, workspace_id: int,
     payload: CreateOrderLineIn, actor_id: int,
@@ -428,11 +512,82 @@ def add_line(
          "mid": payload.material_id,
          "a": json.dumps(payload.attributes or {})},
     )
+    _recompute_total_amount(db, po_id=po_id)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="order.line_add", target=str(po_id),
         payload={"line_number": next_no, "description": payload.item_description},
+    )
+    return get_order(db, po_id=po_id, workspace_id=workspace_id)
+
+
+_LINE_PATCHABLE = frozenset({"item_description", "sku", "quantity", "unit", "unit_price"})
+
+
+def patch_line(
+    db: Session, *, po_id: int, line_id: int, workspace_id: int,
+    payload: PatchOrderLineIn, actor_id: int,
+) -> dict | None:
+    """Edits a generated (or manually added) line — quantity/price/sku the
+    live-catalog resolution at generation time got wrong, or the PM wants to
+    adjust before sending to the supplier. Returns None for NOT_FOUND (no
+    such line on this order, in this workspace)."""
+    if not _lock_order_for_update(db, po_id=po_id, workspace_id=workspace_id):
+        return None
+    fields = {
+        k: v for k, v in payload.model_dump(exclude_unset=True).items()
+        if k in _LINE_PATCHABLE
+    }
+    if not fields:
+        exists = db.execute(
+            text("SELECT 1 FROM po_line_items WHERE line_id = :l AND po_id = :o"),
+            {"l": line_id, "o": po_id},
+        ).first()
+        if exists is None:
+            return None
+        return get_order(db, po_id=po_id, workspace_id=workspace_id)
+    sets, params = [], {"l": line_id, "o": po_id}
+    for i, (col, val) in enumerate(fields.items()):
+        key = f"v{i}"
+        sets.append(f"{col} = :{key}")
+        params[key] = val
+    result = db.execute(
+        text(f"UPDATE po_line_items SET {', '.join(sets)}"
+             " WHERE line_id = :l AND po_id = :o"),
+        params,
+    )
+    if result.rowcount == 0:
+        return None
+    _recompute_total_amount(db, po_id=po_id)
+    db.flush()
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="order.line_update", target=str(po_id),
+        payload={"line_id": line_id, "fields": sorted(fields)},
+    )
+    return get_order(db, po_id=po_id, workspace_id=workspace_id)
+
+
+def remove_line(
+    db: Session, *, po_id: int, line_id: int, workspace_id: int, actor_id: int,
+) -> dict | None:
+    """Removes one line — e.g. a consolidated material the PM decided not to
+    order through this PO after all. Returns None for NOT_FOUND."""
+    if not _lock_order_for_update(db, po_id=po_id, workspace_id=workspace_id):
+        return None
+    result = db.execute(
+        text("DELETE FROM po_line_items WHERE line_id = :l AND po_id = :o"),
+        {"l": line_id, "o": po_id},
+    )
+    if result.rowcount == 0:
+        return None
+    _recompute_total_amount(db, po_id=po_id)
+    db.flush()
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="order.line_remove", target=str(po_id),
+        payload={"line_id": line_id},
     )
     return get_order(db, po_id=po_id, workspace_id=workspace_id)
 

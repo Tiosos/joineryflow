@@ -8,7 +8,7 @@ accepting one from a caller would let it drift.
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OrderLineOut(BaseModel):
@@ -146,6 +146,34 @@ class CreateOrderLineIn(BaseModel):
     material_table: str | None = None
     material_id: int | None = None
     attributes: dict = Field(default_factory=dict)
+
+
+class PatchOrderLineIn(BaseModel):
+    """`material_table` / `material_id` are provenance (which catalog row a
+    generated line came from, if any) and `line_number` is immutable — none
+    are patchable here. No `expected_versions`: field-level optimistic
+    concurrency (§L Q511/Q512) is scoped to the three named surfaces
+    (items, cutlist, the *order header*) and lines were never one of them.
+
+    `item_description` / `quantity` / `unit_price` are `NOT NULL` columns on
+    `po_line_items` (`CreateOrderLineIn` requires them for the same reason)
+    — typed nullable only so the field can be *omitted* (unlike `sku` /
+    `unit`, which the column allows to genuinely become NULL); the validator
+    below rejects an explicit `null` for the three before it ever reaches
+    `patch_line()`'s UPDATE, which would otherwise 500 on the column's own
+    constraint instead of a clean 422."""
+    item_description: str | None = None
+    sku: str | None = None
+    quantity: Decimal | None = None
+    unit: str | None = None
+    unit_price: Decimal | None = None
+
+    @model_validator(mode="after")
+    def _no_null_for_not_null_columns(self) -> "PatchOrderLineIn":
+        for field in ("item_description", "quantity", "unit_price"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class CategoryOut(BaseModel):
