@@ -3078,14 +3078,31 @@ see *PM Workbench* above.
     threads live on the Areas & Rooms card
     (`ProjectAreasCommentsCard.tsx`, placed there by the user): the project's
     areas with their nested rooms, each with a comment-count badge, and the
-    selected one's `CommentThread` beside the list. The selection is in the
-    URL (`?area=<id>` / `?room=<id>`, set with `history.replaceState` so
-    picking a row does not re-run the whole server page), which is exactly what
-    a notification for an Area or Room comment deep-links to
-    (`/projects/{pid}?area=…`); a link to an area or room that has since been
-    deleted says so instead of showing nothing. Posting, replying, editing or
-    deleting refreshes the badges (`CommentThread`'s `onMutated`). A project
-    with no areas says areas are created from an item's Area picker.
+    selected one's `CommentThread` beside the list. The selection lives in the
+    URL (`?area=<id>` / `?room=<id>`) so it can be linked to, and that is
+    exactly what a notification for an Area or Room comment deep-links to
+    (`/projects/{pid}?area=…`). **Local state is updated first, then the URL**
+    (`router.replace(…, {scroll: false})`), and a URL change that did not come
+    from a click — a notification followed *while already on this page*, or
+    back/forward — is synced back into state. **A deep link scrolls the card
+    into view** (it is the last card on the page, 1447px down against a 720px
+    viewport); a click on a row does not. A link to an area or room that has
+    since been deleted says so instead of showing nothing. Posting, replying,
+    editing or deleting refreshes the badges (`CommentThread`'s `onMutated`;
+    only the newest refresh may write, so two quick posts cannot leave a stale
+    count). A project with no areas says areas are created from an item's Area
+    picker. A room's notification label names its area (`R01 Kitchen (Level 1)`),
+    because "R01" alone is ambiguous across areas.
+  - **Found in review, worth remembering: do not make the URL the *only* source
+    of truth for a selection that has a live input beside it.** The first cut
+    derived the selection purely from `useSearchParams()`. `router.replace`
+    lands only after a server round trip, and until then the *previous* thread's
+    input is still on screen — a test typed into it, and the text was thrown
+    away when the thread remounted (Playwright reported "element was detached
+    from the DOM"). The same first cut had used raw `history.replaceState`,
+    which left a same-page notification link unable to switch the thread at
+    all; both are why it is now optimistic state + `router.replace` + a
+    URL→state sync.
   - `NotificationBell` in the `TopBar` (unread badge, six most recent,
     mark-all-read; **polls once a minute and on window focus — there is no
     push channel, by Q521**) and a `/notifications` page (not a tab).

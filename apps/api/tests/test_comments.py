@@ -285,7 +285,7 @@ def test_area_and_room_notifications_deep_link_to_the_projects_card(ws):
         "room": f"/projects/{pid}?room={ws['rid']}",
     }
     labels = {n["object_type"]: n["object_label"] for n in _inbox(ws, "manager")["notifications"]}
-    assert labels["area"] == "Level 1" and labels["room"] == "R01"
+    assert labels["area"] == "Level 1" and labels["room"] == "R01 (Level 1)"
 
 
 @pytest.mark.parametrize("who", ["foreign", "inactive", "unknown"])

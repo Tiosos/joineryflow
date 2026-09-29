@@ -3177,7 +3177,7 @@ def main() -> None:
                 _code, _ = _cm.create_comment(
                     db, actor=_cm_drafter, object_type="area", object_id=_cm_area,
                     parent_id=None,
-                    body="Level 1 is still being fitted out - keep the corridor clear on "
+                    body="Fit-out is still in progress here - keep the corridor clear on "
                          "delivery days.",
                     mentioned_user_ids=[],
                 )

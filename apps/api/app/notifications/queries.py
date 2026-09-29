@@ -44,7 +44,10 @@ def list_notifications(
                    CASE c.object_type
                         WHEN 'project' THEN p.project_code
                         WHEN 'area'    THEN a.name
-                        WHEN 'room'    THEN r.rm_no
+                        -- the area is named too: "R01" alone is ambiguous when
+                        -- several areas each have an R01
+                        WHEN 'room'    THEN r.rm_no || COALESCE(' ' || r.rm_desc, '')
+                                            || ' (' || ra.name || ')'
                         ELSE '#' || i.num::text || COALESCE(' ' || i.description, '')
                    END AS object_label
               FROM notification n
@@ -64,12 +67,13 @@ def list_notifications(
         ),
         {"u": user_id, "w": workspace_id, "lim": limit, "off": offset},
     ).mappings().all()
+    notifications = []
+    for r in rows:
+        row = dict(r)
+        project_id = row.pop("project_id")  # only needed to build the link
+        notifications.append({**row, "url": _url(row["object_type"], row["object_id"], project_id)})
     return {
-        "notifications": [
-            {**{k: v for k, v in dict(r).items() if k != "project_id"},
-             "url": _url(r["object_type"], r["object_id"], r["project_id"])}
-            for r in rows
-        ],
+        "notifications": notifications,
         "unread_count": unread_count(
             db, user_id=user_id, workspace_id=workspace_id, include_items=include_items
         ),

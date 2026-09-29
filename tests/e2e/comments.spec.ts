@@ -141,13 +141,13 @@ test("Areas & Rooms card: counts, an area's and a room's thread, and the count f
 
   await areaRow.click();
   await expect(card.getByTestId("thread-heading")).toContainText("Area ·");
-  await expect(card.getByText("Level 1 is still being fitted out")).toBeVisible();
+  await expect(card.getByText("Fit-out is still in progress here")).toBeVisible();
   await expect(page).toHaveURL(/\?area=\d+/);                       // the selection is in the URL
 
   await roomRow.click();
   await expect(card.getByTestId("thread-heading")).toContainText("Room ·");
   await expect(card.getByText("finish sample in this room")).toBeVisible();
-  await expect(card.getByText("Level 1 is still being fitted out")).toHaveCount(0);
+  await expect(card.getByText("Fit-out is still in progress here")).toHaveCount(0);
 
   // posting updates that row's badge without a reload
   const before = await badgeCount(roomRow);
@@ -156,29 +156,49 @@ test("Areas & Rooms card: counts, an area's and a room's thread, and the count f
   await expect(roomRow.getByTestId("comment-badge")).toContainText(String(before + 1));
 });
 
-test("a mention on an area's thread deep-links the notification to that thread", async ({ page }) => {
-  const note = `Area handover note ${Date.now()}`;
+test("a mention on an area's or room's thread deep-links the notification to that thread", async ({
+  page,
+}) => {
+  const stamp = Date.now();
+  const areaNote = `Area handover note ${stamp}`;
+  const roomNote = `Room handover note ${stamp}`;
   await login(page, "noa.lindqvist@hartwood.test");
   await openAlfredProjectPage(page);
   const card = page.getByTestId("areas-card");
-  await card.locator('[data-testid^="area-row-"]').first().click();
 
-  const input = card.getByTestId("comment-input");
-  await input.click();
-  await input.pressSequentially("@Rin");
-  await card.getByTestId("mention-suggestions").getByText("Rin Park").click();
-  await input.pressSequentially(`${note}`);
-  await card.getByTestId("comment-submit").click();
-  await expect(card.getByText(note)).toBeVisible();
+  // mention Rin on an area's thread, then on a room's
+  for (const [rowSelector, note] of [
+    ['[data-testid^="area-row-"]', areaNote],
+    ['[data-testid^="room-row-"]', roomNote],
+  ] as const) {
+    await card.locator(rowSelector).first().click();
+    const input = card.getByTestId("comment-input");
+    await input.click();
+    await input.pressSequentially("@Rin");
+    await card.getByTestId("mention-suggestions").getByText("Rin Park").click();
+    await input.pressSequentially(note);
+    await card.getByTestId("comment-submit").click();
+    await expect(card.getByText(note)).toBeVisible();
+  }
 
   await page.context().clearCookies();
   await login(page, "rin.park@hartwood.test");
-  await page.getByTestId("notification-bell").click();
-  await page.getByText(note).click();
 
+  // from another page: the link lands on the card, thread open, card in view
+  await page.getByTestId("notification-bell").click();
+  await page.getByText(areaNote).click();
   await expect(page).toHaveURL(/\/projects\/\d+\?area=\d+/, { timeout: 30_000 });
   await expect(page.getByTestId("thread-heading")).toContainText("Area ·");
-  await expect(page.getByTestId("areas-card").getByText(note)).toBeVisible();
+  await expect(page.getByTestId("areas-card").getByText(areaNote)).toBeVisible();
+  await expect(page.getByTestId("areas-card")).toBeInViewport();       // it is the last card on the page
+
+  // and while already on this page: the second link switches the thread in place
+  await page.getByTestId("notification-bell").click();
+  await page.getByText(roomNote).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\?room=\d+/, { timeout: 30_000 });
+  await expect(page.getByTestId("thread-heading")).toContainText("Room ·");
+  await expect(page.getByTestId("areas-card").getByText(roomNote)).toBeVisible();
+  await expect(page.getByTestId("areas-card").getByText(areaNote)).toHaveCount(0);
 });
 
 test("the project page carries the project's own thread", async ({ page }) => {

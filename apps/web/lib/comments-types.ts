@@ -56,14 +56,6 @@ export interface CommentCounts {
   rooms: Record<number, number>;
 }
 
-/** One project's areas with their nested rooms (`GET /projects/{pid}/areas`). */
-export interface AreaWithRooms {
-  area_id: number;
-  name: string;
-  item_count: number;
-  rooms: { room_id: number; area_id: number; rm_no: string; rm_desc: string | null; item_count: number }[];
-}
-
 /** The slice of `/workspace/team` the mention picker needs. */
 export interface Mentionable {
   id: number;

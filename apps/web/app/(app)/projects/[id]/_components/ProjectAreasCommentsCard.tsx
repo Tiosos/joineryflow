@@ -1,12 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CommentThread } from "@/components/comments/CommentThread";
 import { commentsApi } from "@/lib/comments-fetch";
-import type { AreaWithRooms, CommentCounts } from "@/lib/comments-types";
+import type { CommentCounts } from "@/lib/comments-types";
+import type { AreaRow } from "../../../items/[id]/_components/AreaRoomPicker";
 
 type Selection = { type: "area" | "room"; id: number };
+
+/** `?room=<id>` wins over `?area=<id>`; anything that is not a positive integer
+ *  is ignored. The URL is the only place the selection lives. */
+function selectionFrom(params: URLSearchParams): Selection | null {
+  for (const type of ["room", "area"] as const) {
+    const raw = params.get(type);
+    const id = Number(raw);
+    if (raw && Number.isInteger(id) && id > 0) return { type, id };
+  }
+  return null;
+}
 
 function CountBadge({ n }: { n: number }) {
   if (!n) return null;
@@ -24,49 +37,93 @@ function CountBadge({ n }: { n: number }) {
 /** The Areas & Rooms card on `/projects/[id]` (Plan V1 §29): a project's areas
  *  with their rooms, each with its comment count, and the selected one's
  *  thread beside it. Area and Room have no page of their own, so this is where
- *  their threads live; the selection is kept in the URL (`?area=` / `?room=`),
- *  which is what a notification for one deep-links to. */
+ *  their threads live.
+ *
+ *  The selection lives in the URL (`?area=` / `?room=`) so it can be linked to,
+ *  and a notification for an Area or Room comment links straight to it — also
+ *  when followed while already on this page. A click updates local state
+ *  **first**, then the URL: the URL only lands after a server round trip, and
+ *  until it does the previous thread's input would still be on screen, typed
+ *  into and then thrown away when the thread switched. A URL change that did
+ *  not come from a click is synced back into state. */
 export function ProjectAreasCommentsCard({
   projectId,
   currentUserId,
   currentUserRole,
   canComment,
-  initialSelection,
 }: {
   projectId: number;
   currentUserId: number | null;
   currentUserRole: string | null;
   canComment: boolean;
-  initialSelection: Selection | null;
 }) {
-  const [areas, setAreas] = useState<AreaWithRooms[] | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlSelection = selectionFrom(searchParams);
+  const urlKey = urlSelection ? `${urlSelection.type}-${urlSelection.id}` : "";
+
+  const cardRef = useRef<HTMLElement>(null);
+  const ownClick = useRef(false);
+  const [selected, setSelected] = useState<Selection | null>(urlSelection);
+  const [areas, setAreas] = useState<AreaRow[] | null>(null);
   const [counts, setCounts] = useState<CommentCounts>({ areas: {}, rooms: {} });
-  const [selected, setSelected] = useState<Selection | null>(initialSelection);
   const [error, setError] = useState<string | null>(null);
 
+  // Two quick posts fire two refreshes; only the latest request may write, so a
+  // slow earlier one cannot put an older, lower count back.
+  const countsSeq = useRef(0);
   const loadCounts = useCallback(async () => {
+    const mine = ++countsSeq.current;
     try {
-      setCounts(await commentsApi.counts(projectId));
+      const c = await commentsApi.counts(projectId);
+      if (mine === countsSeq.current) setCounts(c);
     } catch {
       // Counts are decoration: a failed refresh keeps the last known ones.
     }
   }, [projectId]);
 
   useEffect(() => {
-    commentsApi
-      .areas(projectId)
-      .then((a) => {
-        setAreas(a);
+    fetch(`/api/projects/${projectId}/areas`, { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Failed to load areas (${r.status})`);
+        setAreas((await r.json()).areas ?? []);
         setError(null);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load areas"));
     void loadCounts();
   }, [projectId, loadCounts]);
 
+  // The URL changed (a notification link, back/forward, a shared URL): follow it.
+  // After our own click this just re-sets what is already selected.
+  useEffect(() => {
+    setSelected(urlSelection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the URL's selection
+  }, [urlKey]);
+
+  // A link that selects something can land with the card below the fold, since
+  // it is the last card on the page — bring it into view. A click on a row is
+  // already in view and must not scroll.
+  const loaded = areas !== null;
+  useEffect(() => {
+    if (!urlKey || !loaded) return;
+    if (ownClick.current) {
+      ownClick.current = false;
+      return;
+    }
+    cardRef.current?.scrollIntoView({ block: "start" });
+  }, [urlKey, loaded]);
+
   function select(s: Selection) {
     setSelected(s);
-    // Keep the URL shareable without re-running the whole server page.
-    window.history.replaceState(null, "", `?${s.type}=${s.id}`);
+    // Only flag it as ours when the URL is really about to change; otherwise the
+    // flag would linger and swallow the next genuine deep link's scroll.
+    ownClick.current = urlKey !== `${s.type}-${s.id}`;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("area");
+    next.delete("room");
+    next.set(s.type, String(s.id));
+    router.replace(`${pathname}?${next}`, { scroll: false });
   }
 
   const area =
@@ -79,7 +136,11 @@ export function ProjectAreasCommentsCard({
   const stale = !!areas && !!selected && !area && !room;
 
   return (
-    <section className="rounded-lg border border-h-line bg-h-surface p-4" data-testid="areas-card">
+    <section
+      ref={cardRef}
+      className="rounded-lg border border-h-line bg-h-surface p-4"
+      data-testid="areas-card"
+    >
       <h2 className="mb-3 text-sm font-semibold text-h-ink">Areas &amp; Rooms</h2>
 
       {error && <p className="text-sm text-red-800">{error}</p>}
