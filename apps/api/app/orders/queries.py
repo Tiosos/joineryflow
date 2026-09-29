@@ -67,6 +67,25 @@ _ORDER_FROM = """
     LEFT JOIN items   i ON i.item_id   = po.item_id
 """
 
+# End-of-life statuses: a cancelled order is dead, and a delivered one has been
+# reconciled against goods received and invoices, so neither should change
+# silently after the fact. Lines and every header field except `status` are
+# read-only on these — `status` stays writable as the audited way to reopen.
+# Scope is this module's own routes: the legacy `/procurement/*` namespace
+# writes `Delivered`/`Cancelled` itself and is untouched, and
+# `sync_orders_for_item` still rewrites CUTLIST NO. on a frozen order because
+# that is the system keeping a reference true, not a person editing the order.
+FROZEN_STATUSES = frozenset({"Cancelled", "Delivered"})
+
+
+class OrderLocked(Exception):
+    """A line mutation was attempted on an order in a frozen status."""
+
+    def __init__(self, status: str):
+        super().__init__(status)
+        self.status = status
+
+
 _PATCHABLE = frozenset({
     "vendor_id", "description", "category", "status", "priority",
     "order_number", "supplier_ref_no", "location", "product_code",
@@ -337,7 +356,8 @@ def patch_order(
     db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
 ) -> tuple[str, dict | None]:
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
-    Q511/Q512 — `data` is the conflicts dict, not the order, in that case)."""
+    Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
+    'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`)."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND", None
@@ -374,6 +394,16 @@ def patch_order(
             expected_versions = {
                 k: v for k, v in expected_versions.items() if k != "total_amount"
             }
+    # A frozen order (`FROZEN_STATUSES`) accepts a header PATCH that changes
+    # `status` and nothing else — status is the deliberate way back in, so a
+    # mistaken cancel/delivery can be reopened (audited and versioned like any
+    # header write). Anything else is refused whole, not trimmed: a caller
+    # asking for {status, notes} gets a 409 and can send two calls, rather than
+    # a 200 that quietly dropped half the request.
+    if current["status"] in FROZEN_STATUSES:
+        blocked = sorted(set(fields) - {"status"})
+        if blocked:
+            return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
     if not fields:
         return "OK", current
 
@@ -414,16 +444,24 @@ def patch_order(
 def cancel_order(
     db: Session, *, po_id: int, workspace_id: int, actor_id: int
 ) -> str:
-    """Soft-cancel, matching #4's batch rule. 'OK' | 'NOT_FOUND' | 'ALREADY_CANCELLED'."""
-    current = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    """Soft-cancel, matching #4's batch rule. 'OK' | 'NOT_FOUND' | 'ALREADY_CANCELLED'.
+
+    Cancelling is a status change like any header PATCH of `status`, and it is
+    one of the two ways into a frozen state, so it takes the same row lock and
+    bumps `field_versions["status"]`: without that, a panel that loaded the
+    order before it was cancelled could PATCH `status` back with a still-valid
+    `expected_versions` and silently undo the cancel, and two concurrent
+    cancels could both pass the ALREADY_CANCELLED check."""
+    current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND"
     if current["status"] == "Cancelled":
         return "ALREADY_CANCELLED"
+    new_versions = bump_field_versions(current.get("field_versions"), ["status"])
     db.execute(
-        text("UPDATE purchase_orders SET status = 'Cancelled', updated_at = now()"
-             " WHERE po_id = :o"),
-        {"o": po_id},
+        text("UPDATE purchase_orders SET status = 'Cancelled', updated_at = now(),"
+             " field_versions = CAST(:fv AS jsonb) WHERE po_id = :o"),
+        {"o": po_id, "fv": json.dumps(new_versions)},
     )
     db.flush()
     write_audit(
@@ -437,15 +475,24 @@ def cancel_order(
 def _lock_order_for_update(db: Session, *, po_id: int, workspace_id: int) -> bool:
     """Locks the purchase_orders row for the rest of this transaction, so a
     concurrent add_line() on the same order serializes instead of racing on
-    the (po_id, line_number) unique constraint (0002)."""
+    the (po_id, line_number) unique constraint (0002).
+
+    Also the single choke point for "may this order's lines change?": it
+    raises `OrderLocked` for a frozen status (`FROZEN_STATUSES`), reading the
+    status under the same lock so a concurrent status change can't slip an
+    edit past the check. Every line mutation goes through here."""
     row = db.execute(
         text(
-            f"SELECT 1 FROM purchase_orders po"
+            f"SELECT po.status FROM purchase_orders po"
             f" WHERE po.po_id = :o AND {_ORDER_WORKSPACE} FOR UPDATE OF po"
         ),
         {"o": po_id, "w": workspace_id},
     ).first()
-    return row is not None
+    if row is None:
+        return False
+    if row[0] in FROZEN_STATUSES:
+        raise OrderLocked(row[0])
+    return True
 
 
 def _recompute_total_amount(db: Session, *, po_id: int) -> None:
@@ -490,6 +537,10 @@ def add_line(
     db: Session, *, po_id: int, workspace_id: int,
     payload: CreateOrderLineIn, actor_id: int,
 ) -> dict | None:
+    """Appends a line. None = order not found. Raises `OrderLocked` on a frozen
+    order (`FROZEN_STATUSES`) — the routes turn that into a 409; a caller
+    outside them (`estimating.generate_orders` only ever adds to orders it has
+    just created as Draft) must not assume every order accepts lines."""
     if not _lock_order_for_update(db, po_id=po_id, workspace_id=workspace_id):
         return None
     next_no = db.execute(

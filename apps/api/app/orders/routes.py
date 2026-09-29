@@ -28,6 +28,10 @@ from .schemas import (
 router = APIRouter(tags=["orders"])
 
 
+def _locked(e: q.OrderLocked) -> HTTPException:
+    return HTTPException(409, {"code": "ORDER_LOCKED", "status": e.status})
+
+
 @router.get("/order-categories", response_model=list[CategoryOut])
 def list_categories_route(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
@@ -133,6 +137,8 @@ def patch_order_route(
     )
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
+    if code == "ORDER_LOCKED":
+        raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
     if code == "FIELD_CONFLICT":
         # `current_value` can be a Decimal (quantity/unit_cost/total_amount)
         # or a date (required_date/date_ordered/due_date) — HTTPException's
@@ -171,10 +177,13 @@ def add_line_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
-    order = q.add_line(
-        db, po_id=po_id, workspace_id=user.workspace_id,
-        payload=payload, actor_id=user.id,
-    )
+    try:
+        order = q.add_line(
+            db, po_id=po_id, workspace_id=user.workspace_id,
+            payload=payload, actor_id=user.id,
+        )
+    except q.OrderLocked as e:
+        raise _locked(e)
     if order is None:
         raise HTTPException(404, "order not found")
     db.commit()
@@ -189,10 +198,13 @@ def patch_line_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
-    order = q.patch_line(
-        db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
-        payload=payload, actor_id=user.id,
-    )
+    try:
+        order = q.patch_line(
+            db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
+            payload=payload, actor_id=user.id,
+        )
+    except q.OrderLocked as e:
+        raise _locked(e)
     if order is None:
         raise HTTPException(404, "order or line not found")
     db.commit()
@@ -206,10 +218,13 @@ def remove_line_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
-    order = q.remove_line(
-        db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
-        actor_id=user.id,
-    )
+    try:
+        order = q.remove_line(
+            db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
+            actor_id=user.id,
+        )
+    except q.OrderLocked as e:
+        raise _locked(e)
     if order is None:
         raise HTTPException(404, "order or line not found")
     db.commit()
