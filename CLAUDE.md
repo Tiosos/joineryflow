@@ -3014,13 +3014,23 @@ see *PM Workbench* above.
     `item_documents` / `qc` precedent and §29's own wording.
   - **Mentions are ids, not parsed text.** The client sends
     `mentioned_user_ids`; the body's `@Name` is presentation. Each id must be
-    an **active user of this workspace who can read `tracking`** (checked
-    against the Dynamic RBAC engine, workspace-wide) or the whole request is
-    refused `422 BAD_MENTION` listing the ids and **nothing is written** — a
-    notification linking someone to a record they cannot open is worse than
-    refusing. A mention notifies the mentioned user (never yourself); a reply
+    an **active user of this workspace who can read what the thread links
+    to** (checked against the Dynamic RBAC engine, workspace-wide) or the whole
+    request is refused `422 BAD_MENTION` listing the ids and **nothing is
+    written** — a notification linking someone to a record they cannot open is
+    worse than refusing. "Can read" is `tracking:read` for a Project / Area /
+    Room thread and **`tracking:read` + `list:read` for an Item thread**,
+    because the notification opens the item editor and `GET /items/{id}` is
+    gated on `list` (the engine lets an admin grant one without the other; every
+    default role holds both). The same pair gates *reading and posting* to an
+    item thread (`403` without `list:read`). At most **20** mentions per
+    comment. Only *newly added* mentions are validated on an edit: one already
+    on the comment must not block an unrelated typo fix because its owner has
+    since lost access. A mention notifies the mentioned user (never yourself); a reply
     notifies the parent's author, **unless they were also mentioned** (the
-    mention wins, one row). Editing replaces the mention set: a *newly added*
+    mention wins, one row) **and only if that author can still read the thread**
+    — a reply is never refused over its recipient, it is just not sent to
+    someone who could no longer open it. Editing replaces the mention set: a *newly added*
     mention is notified, a *removed* one keeps the notice already sent (they
     were told), and an unchanged edit is a no-op (no `edited_at`, no audit).
   - Notifications (`current_user` only, no RBAC row — like `/search`, it shows
@@ -3029,8 +3039,17 @@ see *PM Workbench* above.
     `POST /notifications/{nid}/read` (404 if it is not yours),
     `POST /notifications/read-all`. **Notifications whose comment was
     deleted are hidden and not counted** — a badge pointing at nothing would
-    be a lie. Marking read is personal state (like project favourites) and
-    writes no audit row.
+    be a lie. **So are notifications the recipient can no longer read**: an
+    excerpt is comment text, so without `tracking:read` the inbox is empty and
+    without `list:read` item threads are left out (hidden, not deleted — they
+    return if access is restored). Marking read is audited
+    (`notification.read`, `notification.read_all`), **once per real change** —
+    re-marking a read notification, or a read-all that marks none, writes
+    nothing — so "every authenticated mutation is audited" holds without
+    bending it. (A first draft skipped this on the project-favourites
+    precedent; the review pointed at the stated rule.)
+  - Creating a comment takes `FOR KEY SHARE` on its object's row, so a hard
+    delete racing the INSERT waits instead of surfacing as a raw FK 500.
   - Every comment mutation writes `audit_log` (`comment.{create,edit,delete}`)
     and — on an item — `item_edit_log` in the same transaction, per the PM
     Workbench invariant (`_comment_create`, `comment.{id}`, `_comment_delete`).
@@ -3041,10 +3060,15 @@ see *PM Workbench* above.
   - `components/comments/CommentThread.tsx` (+ `MentionTextarea`,
     `mentions.ts`) — one component for any object type: post, one-level
     reply, edit own, delete (own, or manager / admin), with an `@` picker fed
-    from `/workspace/team` (arrow keys / Enter / Escape). Which members get
-    notified is derived from the **final text** (`mentionedIds`), so deleting
-    an inserted `@Name` un-mentions it; only names the API confirmed are
-    highlighted in a stored body. `canComment` mirrors `tracking:comment`;
+    from `/workspace/team` (arrow keys / Enter / Escape; a full name with a
+    space can be typed). Which members get notified is derived from the
+    **final text** (`mentionedIds`, longest name first with each match
+    consumed, so `@Ann Lee` does not also mention `Ann`), so deleting an
+    inserted `@Name` un-mentions it; only names the API confirmed are
+    highlighted in a stored body. Two members with the very same full name
+    cannot be told apart by text — only the first is mentioned. Timestamps
+    render in the viewer's own zone (`formatLocalTs`), not as sliced server
+    time. `canComment` mirrors `tracking:comment`;
     the API enforces it regardless.
   - **Surfaces: the item editor's new Comments tab
     (`/items/[id]?tab=comments`) and a Comments card on `/projects/[id]`.**
@@ -3062,7 +3086,7 @@ see *PM Workbench* above.
   Lindqvist's at 2. Idempotent (the demo item's and project's threads are
   dropped first; notifications cascade).
 - **RBAC — no matrix change.** `tracking:{read,comment}`, already granted.
-- **Tests.** `test_comments.py` (35 cases): each object type round-trips;
+- **Tests.** `test_comments.py` (42 cases): each object type round-trips;
   the `comment` action is enforced; body trim / bounds; related part 404;
   workspace isolation on every verb; replies inherit the object, refuse
   reply-to-reply, and the DB itself rejects reply-to-reply, two objects and
@@ -3071,7 +3095,13 @@ see *PM Workbench* above.
   notified); bad mentions (foreign, inactive, unknown, and a user whose only
   group grants nothing on `tracking`) refused whole with nothing written;
   author-only edit, author-or-manager delete, deleted-thread shapes, hidden
-  notifications; inbox read-state and ownership; audit + `item_edit_log`.
+  notifications; inbox read-state and ownership; audit + `item_edit_log`;
+  and seven regression tests for the review fixes above (item threads need
+  `list:read`, an unchanged mention never blocks an edit, no reply to a parent
+  author who lost access, the inbox hides what is no longer readable, mark-read
+  audited once, the FOR KEY SHARE lock, the 20-mention cap) — six were
+  confirmed to **fail against the pre-fix code**; the cap test was tightened
+  after it turned out to pass there for the wrong reason.
   `tests/e2e/comments.spec.ts` (4 tests) was run against a live migrated,
   seeded stack: a mention reaches the bell and opens the item's Comments tab
   with the mention highlighted and the reply nested; the `@` picker, edit,
@@ -3082,6 +3112,10 @@ see *PM Workbench* above.
     Revision have no thread at all (above).
   - A mention of a user who is later deactivated is left in the stored body;
     editing the comment drops that mention (the roster no longer lists them).
+  - `_readers` asks the RBAC engine once per mentioned user (one or two
+    queries each), which is why mentions are capped at 20; resolving a whole
+    id set in one query would mean re-implementing the engine's
+    membership-fallback rule beside it (the same call Global Search made).
   - The bell's poll is a plain interval: a comment made in another window
     shows up within a minute, not instantly.
   - Who may be mentioned is decided from workspace-wide grants only — a user
