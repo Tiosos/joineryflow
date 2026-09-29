@@ -149,8 +149,9 @@ export default function ShopDwgsClient(props: Props) {
         <DrawingDrawer
           drawingId={props.initialDrawingId}
           initialRevId={props.initialRevId}
+          commentsOpen={sp?.get("comments") === "1"}
           me={props.me}
-          onClose={() => updateUrl({ drawing: null, rev: null })}
+          onClose={() => updateUrl({ drawing: null, rev: null, comments: null })}
           onChanged={() => {
             if (projectId != null) {
               listDrawings({ projectId, subtab, room, q })

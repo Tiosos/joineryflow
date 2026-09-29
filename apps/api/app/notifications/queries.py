@@ -16,9 +16,20 @@ _VISIBLE = """
 """
 
 
-def _url(object_type: str, object_id: int, project_id: int | None) -> str | None:
+def _url(
+    object_type: str, object_id: int, project_id: int | None,
+    parent_id: int | None = None,
+) -> str | None:
+    """`parent_id` is the module's item / the revision's drawing."""
     if object_type == "item":
         return f"/items/{object_id}?tab=comments"
+    if object_type == "module" and parent_id is not None:
+        # The item editor's Cutlist tab opens the module named in the query.
+        return f"/items/{parent_id}?tab=cutlist&module={object_id}"
+    if object_type == "revision" and parent_id is not None and project_id is not None:
+        # `comments=1` opens the drawer's comment panel on arrival.
+        return (f"/shop-dwgs?project={project_id}&drawing={parent_id}"
+                f"&rev={object_id}&comments=1")
     if object_type == "project":
         return f"/projects/{object_id}"
     # Area and Room threads live on the project page's Areas & Rooms card, which
@@ -30,17 +41,21 @@ def _url(object_type: str, object_id: int, project_id: int | None) -> str | None
 
 def list_notifications(
     db: Session, *, user_id: int, workspace_id: int, unread_only: bool,
-    limit: int, offset: int, include_items: bool = True,
+    limit: int, offset: int, types: list[str],
 ) -> dict:
+    """`types` are the object types the recipient can currently read; the caller
+    works them out, this only filters."""
     rows = db.execute(
         text(
             f"""
             SELECT n.notification_id, n.kind, n.created_at, n.read_at, n.actor_id,
                    ua.full_name AS actor_name, c.comment_id,
                    left(c.body, 140) AS excerpt, c.object_type,
-                   COALESCE(c.project_id, c.area_id, c.room_id, c.item_id) AS object_id,
-                   COALESCE(c.project_id, a.project_id, ra.project_id, i.project_id)
-                       AS project_id,
+                   COALESCE(c.project_id, c.area_id, c.room_id, c.item_id,
+                            c.module_id, c.revision_id) AS object_id,
+                   COALESCE(c.project_id, a.project_id, ra.project_id, i.project_id,
+                            mi.project_id, sd.project_id) AS project_id,
+                   COALESCE(mo.item_id, sr.drawing_id) AS parent_id,
                    CASE c.object_type
                         WHEN 'project' THEN p.project_code
                         WHEN 'area'    THEN a.name
@@ -48,6 +63,9 @@ def list_notifications(
                         -- several areas each have an R01
                         WHEN 'room'    THEN r.rm_no || COALESCE(' ' || r.rm_desc, '')
                                             || ' (' || ra.name || ')'
+                        WHEN 'module'  THEN mo.module_no || COALESCE(' ' || mo.name, '')
+                                            || ' (#' || mi.num::text || ')'
+                        WHEN 'revision' THEN sd.title || ' · v' || sr.rev_no::text
                         ELSE '#' || i.num::text || COALESCE(' ' || i.description, '')
                    END AS object_label
               FROM notification n
@@ -58,35 +76,43 @@ def list_notifications(
               LEFT JOIN room r     ON r.room_id    = c.room_id
               LEFT JOIN area ra    ON ra.area_id   = r.area_id
               LEFT JOIN items i    ON i.item_id    = c.item_id
+              LEFT JOIN modules mo ON mo.module_id = c.module_id
+              LEFT JOIN items mi   ON mi.item_id   = mo.item_id
+              LEFT JOIN shop_drawing_revision sr ON sr.revision_id = c.revision_id
+              LEFT JOIN shop_drawing sd ON sd.drawing_id = sr.drawing_id
              WHERE n.recipient_id = :u AND n.workspace_id = :w
+               AND c.object_type = ANY(:types)
                {"AND n.read_at IS NULL" if unread_only else ""}
-               {"" if include_items else "AND c.item_id IS NULL"}
              ORDER BY n.created_at DESC, n.notification_id DESC
              LIMIT :lim OFFSET :off
             """
         ),
-        {"u": user_id, "w": workspace_id, "lim": limit, "off": offset},
+        {"u": user_id, "w": workspace_id, "lim": limit, "off": offset, "types": types},
     ).mappings().all()
     notifications = []
     for r in rows:
         row = dict(r)
         project_id = row.pop("project_id")  # only needed to build the link
-        notifications.append({**row, "url": _url(row["object_type"], row["object_id"], project_id)})
+        parent_id = row.pop("parent_id")
+        notifications.append({
+            **row,
+            "url": _url(row["object_type"], row["object_id"], project_id, parent_id),
+        })
     return {
         "notifications": notifications,
         "unread_count": unread_count(
-            db, user_id=user_id, workspace_id=workspace_id, include_items=include_items
+            db, user_id=user_id, workspace_id=workspace_id, types=types
         ),
     }
 
 
 def unread_count(
-    db: Session, *, user_id: int, workspace_id: int, include_items: bool = True
+    db: Session, *, user_id: int, workspace_id: int, types: list[str]
 ) -> int:
     return db.execute(
         text(f"SELECT count(*) {_VISIBLE} AND n.read_at IS NULL"
-             + ("" if include_items else " AND c.item_id IS NULL")),
-        {"u": user_id, "w": workspace_id},
+             " AND c.object_type = ANY(:types)"),
+        {"u": user_id, "w": workspace_id, "types": types},
     ).scalar_one()
 
 

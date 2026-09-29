@@ -1,11 +1,13 @@
-"""SQL helpers for comments (migration 0042, Plan V1 §29).
+"""SQL helpers for comments (migrations 0042 + 0043, Plan V1 §29).
 
-One thread entity over Project / Area / Room / Joinery Item. The object is one
-of four real FK columns (`_OBJECT_COL`); replies inherit their parent's object
-and are one level deep (a DB rule, see the migration).
+One thread entity over Project / Area / Room / Joinery Item / Module /
+Shop-drawing revision. The object is one of six real FK columns
+(`_OBJECT_COL`); replies inherit their parent's object and are one level deep
+(a DB rule, see the migration).
 
-Every mutation writes `audit_log`; a comment on an item also writes
-`item_edit_log` in the same transaction, per the PM Workbench invariant.
+Every mutation writes `audit_log`; a comment on an item or on one of its modules
+also writes `item_edit_log` in the same transaction, per the PM Workbench
+invariant (a shop-drawing revision belongs to no item, so it writes none).
 Workspace isolation: `comment.workspace_id` is set from the resolved object and
 every read/write filters on it, so another workspace's id is a 404.
 """
@@ -21,27 +23,41 @@ from ..row_types import joinery_items_only
 # Fixed map — the only place a column name is interpolated into SQL.
 _OBJECT_COL = {
     "project": "project_id", "area": "area_id", "room": "room_id", "item": "item_id",
+    "module": "module_id", "revision": "revision_id",
 }
 
-# All four object types are governed by the `tracking` module: Project, Area,
-# Room and Item are Tracking's own hierarchy (areas/rooms already gate on it).
+# Project, Area, Room and Item are Tracking's own hierarchy (areas/rooms already
+# gate on it), so `tracking` governs their threads. A Module belongs to the item
+# editor's Cutlist tab (`list`) and a shop-drawing revision to `shop_dwgs`; each
+# thread is governed by the module its object lives under, not by `tracking`,
+# so a group that cannot open a drawing cannot read the discussion about it.
 MODULE = "tracking"
 
-# An item's thread also needs `list:read`, because its notification links to the
+# The module whose `comment` grant posts, edits and deletes in a thread.
+COMMENT_MODULE = {
+    "project": MODULE, "area": MODULE, "room": MODULE, "item": MODULE,
+    "module": "list", "revision": "shop_dwgs",
+}
+
+# Every module whose `read` grant is needed to open what the thread links to. An
+# item's thread also needs `list:read`, because its notification links to the
 # item editor and `GET /items/{id}` is gated on `list` — the Dynamic RBAC engine
 # lets an admin grant one without the other, and a link the recipient cannot open
 # is the failure `BAD_MENTION` exists to prevent. Every default role holds both.
+# A module's link opens the same editor (`list`); a revision's opens the
+# shop-drawings drawer (`shop_dwgs`).
 READ_MODULES = {
     "project": (MODULE,), "area": (MODULE,), "room": (MODULE,),
-    "item": (MODULE, "list"),
+    "item": (MODULE, "list"), "module": ("list",), "revision": ("shop_dwgs",),
 }
 
 _EXCERPT = 200
 
 _COMMENT_COLS = """
     c.comment_id, c.workspace_id, c.object_type,
-    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id) AS object_id,
-    c.item_id, c.parent_comment_id, c.author_id, ua.full_name AS author_name,
+    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id, c.module_id, c.revision_id)
+        AS object_id,
+    c.parent_comment_id, c.author_id, ua.full_name AS author_name,
     c.body, c.created_at, c.edited_at, c.deleted_at
 """
 _COMMENT_JOIN = "LEFT JOIN app_user ua ON ua.id = c.author_id"
@@ -66,10 +82,32 @@ def _object_in_workspace(
         "item": f"""SELECT 1 FROM items i JOIN projects p ON p.project_id = i.project_id
                      WHERE i.item_id = :id AND p.workspace_id = :w
                        AND {joinery_items_only("i")}""",
+        # A module's item must be a Joinery Item too: the thread's link opens it.
+        "module": f"""SELECT 1 FROM modules m JOIN items i ON i.item_id = m.item_id
+                       JOIN projects p ON p.project_id = i.project_id
+                      WHERE m.module_id = :id AND p.workspace_id = :w
+                        AND {joinery_items_only("i")}""",
+        "revision": """SELECT 1 FROM shop_drawing_revision v
+                         JOIN shop_drawing d ON d.drawing_id = v.drawing_id
+                         JOIN projects p ON p.project_id = d.project_id
+                        WHERE v.revision_id = :id AND p.workspace_id = :w""",
     }[object_type]
     if lock:
-        sql += " FOR KEY SHARE OF " + {"project": "p", "area": "a", "room": "r", "item": "i"}[object_type]
+        sql += " FOR KEY SHARE OF " + {
+            "project": "p", "area": "a", "room": "r", "item": "i",
+            "module": "m", "revision": "v",
+        }[object_type]
     return db.execute(text(sql), {"id": object_id, "w": workspace_id}).first() is not None
+
+
+def object_type_of(db: Session, *, comment_id: int, workspace_id: int) -> str | None:
+    """The object type a comment belongs to, or None if it is not in this
+    workspace. The routes need it *before* the permission check: which module
+    gates a comment depends on what it is a comment on."""
+    return db.execute(
+        text("SELECT object_type FROM comment WHERE comment_id = :c AND workspace_id = :w"),
+        {"c": comment_id, "w": workspace_id},
+    ).scalar()
 
 
 def _row(
@@ -279,8 +317,19 @@ def _log_item(
     db: Session, row: dict, *, actor_id: int, field: str,
     old: str | None, new: str | None,
 ) -> None:
-    if row.get("item_id") is not None:
-        write_edit_log(db, item_id=row["item_id"], actor_id=actor_id,
+    """`row` needs `object_type` and `object_id`. An item's thread logs against
+    the item, a module's against the module's item; nothing else has one."""
+    if row["object_type"] == "item":
+        item_id = row["object_id"]
+    elif row["object_type"] == "module":
+        item_id = db.execute(
+            text("SELECT item_id FROM modules WHERE module_id = :m"),
+            {"m": row["object_id"]},
+        ).scalar()
+    else:
+        return
+    if item_id is not None:
+        write_edit_log(db, item_id=item_id, actor_id=actor_id,
                        field=field, old_value=old, new_value=new)
 
 
@@ -346,7 +395,7 @@ def create_comment(
         target=f"{object_type}:{object_id}",
         payload={"comment_id": cid, "parent_comment_id": parent_id, "mentions": ids},
     )
-    _log_item(db, {"item_id": object_id if object_type == "item" else None},
+    _log_item(db, {"object_type": object_type, "object_id": object_id},
               actor_id=actor.id, field="_comment_create", old=None,
               new=f"comment {cid}: {body[:_EXCERPT]}")
     return "OK", _load_one(db, comment_id=cid, workspace_id=ws)

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CommentThread } from "@/components/comments/CommentThread";
+import { can } from "@/lib/permissions";
 import type { DrawingDetail } from "@/lib/shop-drawings-types";
 import { getDrawing } from "@/lib/shop-drawings-fetch";
 import type { Me } from "@/lib/session";
@@ -12,6 +14,9 @@ import StatusPill from "./StatusPill";
 interface Props {
   drawingId: number;
   initialRevId: number | null;
+  /** Open the selected revision's comment thread on arrival — a notification
+   *  for a revision comment links here with `?comments=1`. */
+  commentsOpen?: boolean;
   me: Me;
   onClose: () => void;
   onChanged: () => void;
@@ -27,6 +32,17 @@ export default function DrawingDrawer(props: Props) {
   const [detail, setDetail] = useState<DrawingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRevId, setSelectedRevId] = useState<number>(props.initialRevId ?? 0);
+  const [commentsOpen, setCommentsOpen] = useState(props.commentsOpen ?? false);
+
+  // The URL named a revision (a notification followed while this drawer is
+  // already open, back/forward): follow it. After a click of ours the URL
+  // catches up to what is already selected, so this changes nothing.
+  useEffect(() => {
+    if (props.initialRevId) setSelectedRevId(props.initialRevId);
+  }, [props.initialRevId]);
+  useEffect(() => {
+    if (props.commentsOpen) setCommentsOpen(true);
+  }, [props.commentsOpen, props.initialRevId]);
 
   const refresh = useCallback(async () => {
     try {
@@ -119,6 +135,30 @@ export default function DrawingDrawer(props: Props) {
               onSelect={(rev) => { setSelectedRevId(rev); props.onSelectRevision(rev); }}
             />
           )}
+
+          <section data-testid="revision-comments" className="border-t border-h-line">
+            <button
+              type="button"
+              onClick={() => setCommentsOpen((o) => !o)}
+              aria-expanded={commentsOpen}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-h-ink hover:bg-h-surface"
+            >
+              <span>Comments on v{selectedRev.rev_no}</span>
+              <span aria-hidden className="text-h-muted">{commentsOpen ? "▾" : "▸"}</span>
+            </button>
+            {commentsOpen && (
+              <div className="max-h-72 overflow-y-auto border-t border-h-line p-3">
+                <CommentThread
+                  key={selectedRev.revision_id}
+                  objectType="revision"
+                  objectId={selectedRev.revision_id}
+                  currentUserId={props.me.id}
+                  currentUserRole={props.me.auth_role}
+                  canComment={can(props.me, "shop_dwgs", "comment")}
+                />
+              </div>
+            )}
+          </section>
 
           {detail && (
             <footer className="flex flex-wrap items-center gap-2 p-3">

@@ -3119,15 +3119,18 @@ def main() -> None:
                     print("seeded packing: 1 assigned PACKING task on ALF-001")
 
         # ------------------------------------------------------------------
-        # Comments + mentions + notifications (Plan V1 §29, migration 0042).
+        # Comments + mentions + notifications (Plan V1 §29, migrations 0042 + 0043).
         # Built through the same query functions the API uses, so the rows
         # carry real audit / edit-log entries and the notification inbox
         # fills in exactly as it would live: on ALF-001's first joinery item
         # a drafter mentions the foreman, the foreman replies, and a manager
         # adds a comment; the project gets one comment mentioning the
         # drafter. So the foreman's bell shows a mention and the drafter's a
-        # reply + mention out of the box. Idempotent: the demo project's and
-        # item's threads are dropped first (notifications cascade).
+        # reply + mention out of the box. The item's first module and the
+        # project's in-review shop-drawing revision each get one comment with no
+        # mention (so the bell counts above are unchanged). Idempotent: the demo
+        # project's, item's, module's and revisions' threads are dropped first
+        # (notifications cascade).
         # ------------------------------------------------------------------
         from app.auth.sessions import AuthUser as _AuthUser
         from app.comments import queries as _cm
@@ -3158,6 +3161,10 @@ def main() -> None:
                     OR room_id IN (SELECT r.room_id FROM room r
                                      JOIN area a ON a.area_id = r.area_id
                                     WHERE a.project_id = :p)
+                    OR module_id IN (SELECT module_id FROM modules WHERE item_id = :i)
+                    OR revision_id IN (SELECT v.revision_id FROM shop_drawing_revision v
+                                         JOIN shop_drawing d ON d.drawing_id = v.drawing_id
+                                        WHERE d.project_id = :p)
                 )
             """), {"w": wid, "p": _cm_project, "i": _cm_item})
 
@@ -3214,10 +3221,41 @@ def main() -> None:
                     mentioned_user_ids=[],
                 )
                 assert _code == "OK", _code
+            # A module and a shop-drawing revision (0043). Each is looked up, not
+            # assumed: a database seeded before the module / drawing blocks may
+            # have neither.
+            _cm_module = db.execute(text(
+                "SELECT module_id FROM modules WHERE item_id = :i ORDER BY module_no, module_id LIMIT 1"
+            ), {"i": _cm_item}).scalar()
+            if _cm_module:
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_foreman, object_type="module", object_id=_cm_module,
+                    parent_id=None,
+                    body="Allow a 3mm scribe on the wall side of this carcass - the wall is out "
+                         "of plumb.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
+            _cm_revision = db.execute(text("""
+                SELECT v.revision_id FROM shop_drawing_revision v
+                  JOIN shop_drawing d ON d.drawing_id = v.drawing_id
+                 WHERE d.project_id = :p AND d.archived_at IS NULL
+                 ORDER BY (v.status = 'pending') DESC, v.revision_id LIMIT 1
+            """), {"p": _cm_project}).scalar()
+            if _cm_revision:
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_manager, object_type="revision", object_id=_cm_revision,
+                    parent_id=None,
+                    body="Elevation dimensions need re-checking against the site measure "
+                         "before this is approved.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
             db.commit()
             print(
                 "seeded comments: 3 on ALF-001's first item (1 reply, 1 mention), "
-                "1 on the project (1 mention), 1 on its area and 1 on its room"
+                "1 on the project (1 mention), 1 on its area and 1 on its room, "
+                "1 on the item's first module and 1 on a shop-drawing revision"
             )
 
         print(

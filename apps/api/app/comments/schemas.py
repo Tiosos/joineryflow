@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-ObjectType = Literal["project", "area", "room", "item"]
+ObjectType = Literal["project", "area", "room", "item", "module", "revision"]
 
 # Stripped *before* the length check, so a whitespace-only body is a clean 422
 # here rather than a raw CHECK violation (`ck_comment_body_len`) from the DB.

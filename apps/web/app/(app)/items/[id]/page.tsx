@@ -64,6 +64,7 @@ export default async function ItemEditorPage({
           currentUserRole={me?.auth_role ?? null}
           currentUserId={me?.id ?? null}
           canComment={can(me, "tracking", "comment")}
+          canCommentOnModule={can(me, "list", "comment")}
         />
       </div>
       <EditorFooter
