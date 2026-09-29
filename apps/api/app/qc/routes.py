@@ -1,10 +1,14 @@
 """QC module routes: defects, checklist, rework (Q515-517)."""
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..shop_floor.queries import project_in_workspace
+from . import dashboard as dash
 from . import queries as q
 from .schemas import (
     ChecklistItemOut,
@@ -16,6 +20,7 @@ from .schemas import (
     PatchChecklistItemIn,
     PatchDefectIn,
     PatchReworkIn,
+    QcDashboardOut,
     ResolveDefectIn,
     ReworkOut,
 )
@@ -25,6 +30,30 @@ router = APIRouter(tags=["qc"])
 
 def _conflict(exc: q.Conflict) -> HTTPException:
     return HTTPException(status_code=409, detail={"code": str(exc)})
+
+
+# ============================================================================
+# Dashboard (Plan V1 §4.2) — read-only
+# ============================================================================
+
+@router.get("/qc/dashboard", response_model=QcDashboardOut)
+def qc_dashboard_route(
+    project_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: AuthUser = Depends(require_permission("qc", "read")),
+    db: Session = Depends(get_db),
+):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from is after date_to")
+    if project_id is not None and project_in_workspace(
+        db, project_id=project_id, workspace_id=user.workspace_id
+    ) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return dash.dashboard(
+        db, workspace_id=user.workspace_id, project_id=project_id,
+        date_from=date_from, date_to=date_to,
+    )
 
 
 # ============================================================================

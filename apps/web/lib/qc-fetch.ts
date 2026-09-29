@@ -1,4 +1,10 @@
-import type { ChecklistItemOut, DefectOut, ReworkOut } from "./qc-types";
+import type {
+  ChecklistItemOut,
+  DefectOut,
+  QcDashboard,
+  QcDashboardFilters,
+  ReworkOut,
+} from "./qc-types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, { cache: "no-store", ...init });
@@ -23,6 +29,15 @@ function jsonInit(method: string, body: unknown): RequestInit {
 }
 
 export const qcApi = {
+  dashboard: (f: QcDashboardFilters) => {
+    const q = new URLSearchParams();
+    if (f.projectId != null) q.set("project_id", String(f.projectId));
+    if (f.dateFrom) q.set("date_from", f.dateFrom);
+    if (f.dateTo) q.set("date_to", f.dateTo);
+    const qs = q.toString();
+    return call<QcDashboard>(`/api/qc/dashboard${qs ? `?${qs}` : ""}`);
+  },
+
   listDefects: (itemId: number) => call<DefectOut[]>(`/api/items/${itemId}/qc/defects`),
   createDefect: (itemId: number, description: string, stageKey?: string | null) =>
     call<DefectOut>(`/api/items/${itemId}/qc/defects`,

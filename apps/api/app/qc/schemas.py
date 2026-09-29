@@ -95,3 +95,63 @@ class ReworkOut(BaseModel):
     created_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+# ---- QC Dashboard (Plan V1 §4.2) — read-only aggregation -------------------
+
+class DashboardStageCount(BaseModel):
+    stage_key: str | None       # None = a defect raised without a stage
+    label: str
+    open: int
+
+
+class DashboardDefectProject(BaseModel):
+    project_id: int
+    project_code: str
+    project_name: str
+    open: int
+    oldest_open_at: datetime
+    by_stage: list[DashboardStageCount]
+
+
+class DashboardReworkProject(BaseModel):
+    project_id: int
+    project_code: str
+    project_name: str
+    internal: int
+    full: int
+    cost_total: Decimal         # sum of the costs that were recorded
+    cost_missing: int           # open rework with no cost yet — total under-counts by these
+    oldest_open_at: datetime
+
+
+class DashboardItem(BaseModel):
+    item_id: int
+    num: int
+    item_code: str | None
+    description: str | None
+    project_id: int
+    project_code: str
+    open_defects: int
+    open_rework: int
+    oldest_open_at: datetime
+
+
+class DashboardScope(BaseModel):
+    items_in_scope: int
+    # Open records on items whose cutlist has not started, has finished, or does
+    # not exist: kept out of every number below, but never hidden.
+    open_defects_out_of_scope: int
+    open_rework_out_of_scope: int
+
+
+class QcDashboardOut(BaseModel):
+    scope: DashboardScope
+    defects_open: int
+    defects_by_stage: list[DashboardStageCount]
+    defects_by_project: list[DashboardDefectProject]
+    rework_open: int
+    rework_cost_total: Decimal
+    rework_cost_missing: int
+    rework_by_project: list[DashboardReworkProject]
+    items: list[DashboardItem]
