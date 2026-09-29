@@ -1,4 +1,6 @@
 import type {
+  AreaWithRooms,
+  CommentCounts,
   CommentObjectType,
   CommentOut,
   CommentThread,
@@ -44,6 +46,12 @@ export const commentsApi = {
     })),
   remove: (commentId: number) =>
     call<void>(`/api/comments/${commentId}`, { method: "DELETE" }),
+  counts: (projectId: number) =>
+    call<CommentCounts>(`/api/projects/${projectId}/comment-counts`),
+  areas: async (projectId: number): Promise<AreaWithRooms[]> => {
+    const r = await call<{ areas: AreaWithRooms[] }>(`/api/projects/${projectId}/areas`);
+    return r.areas;
+  },
   mentionable: async (): Promise<Mentionable[]> => {
     const t = await call<{ members: Mentionable[] }>("/api/workspace/team");
     return t.members;

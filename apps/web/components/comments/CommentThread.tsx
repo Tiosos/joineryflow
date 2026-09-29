@@ -27,12 +27,16 @@ export function CommentThread({
   currentUserId,
   currentUserRole,
   canComment,
+  onMutated,
 }: {
   objectType: CommentObjectType;
   objectId: number;
   currentUserId: number | null;
   currentUserRole: string | null;
   canComment: boolean;
+  /** Called after a post, reply, edit or delete has succeeded and the thread
+   *  has reloaded — lets a parent refresh anything derived from it (counts). */
+  onMutated?: () => void;
 }) {
   const [comments, setComments] = useState<CommentOut[] | null>(null);
   const [members, setMembers] = useState<Mentionable[]>([]);
@@ -61,6 +65,11 @@ export function CommentThread({
 
   const mentionable = members.filter((m) => m.id !== currentUserId);
 
+  const changed = useCallback(async () => {
+    await load();
+    onMutated?.();
+  }, [load, onMutated]);
+
   async function post(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim()) return;
@@ -69,7 +78,7 @@ export function CommentThread({
     try {
       await commentsApi.create(objectType, objectId, text.trim(), mentionedIds(text, mentionable));
       setText("");
-      await load();
+      await changed();
     } catch (err) {
       setError(errorMessage(err, "Failed to post comment"));
     } finally {
@@ -129,7 +138,7 @@ export function CommentThread({
               currentUserRole={currentUserRole}
               canComment={canComment}
               canReply
-              onChanged={load}
+              onChanged={changed}
               onError={setError}
             />
             {c.replies.length > 0 && (
@@ -143,7 +152,7 @@ export function CommentThread({
                       currentUserRole={currentUserRole}
                       canComment={canComment}
                       canReply={false}
-                      onChanged={load}
+                      onChanged={changed}
                       onError={setError}
                     />
                   </li>

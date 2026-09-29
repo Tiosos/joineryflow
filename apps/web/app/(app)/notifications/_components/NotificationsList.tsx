@@ -92,7 +92,6 @@ export function NotificationsList() {
               {n.object_label && <span className="text-xs text-h-muted"> · {n.object_label}</span>}
               <span className="mt-0.5 block text-xs text-h-muted">
                 {formatLocalTs(n.created_at)}
-                {!n.url && " · no page for this yet"}
               </span>
               <span className="mt-1 block text-sm">{n.excerpt}</span>
             </button>

@@ -10,6 +10,7 @@ import { ProjectLiftAccessPanel } from "./_components/ProjectLiftAccessPanel";
 import { ProjectLabourHoursCard } from "./_components/ProjectLabourHoursCard";
 import { ProjectFinancialsCard } from "./_components/ProjectFinancialsCard";
 import { ProjectCommentsCard } from "./_components/ProjectCommentsCard";
+import { ProjectAreasCommentsCard } from "./_components/ProjectAreasCommentsCard";
 
 async function fetchProject(id: number, cookieHeader: string): Promise<ProjectOut | null> {
   const apiUrl = process.env.API_URL ?? "http://api:8000";
@@ -45,12 +46,28 @@ async function fetchActualCosts(id: number, cookieHeader: string): Promise<Actua
   return (await r.json()) as ActualCosts;
 }
 
+// `?area=<id>` / `?room=<id>` open that thread on the Areas & Rooms card — what
+// a notification for an Area or Room comment links to.
+function initialSelection(sp: {
+  area?: string;
+  room?: string;
+}): { type: "area" | "room"; id: number } | null {
+  const room = Number(sp.room);
+  if (sp.room && Number.isInteger(room) && room > 0) return { type: "room", id: room };
+  const area = Number(sp.area);
+  if (sp.area && Number.isInteger(area) && area > 0) return { type: "area", id: area };
+  return null;
+}
+
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ area?: string; room?: string }>;
 }) {
   const { id: idStr } = await params;
+  const sp = await searchParams;
   const id = Number(idStr);
   if (isNaN(id)) redirect("/projects");
 
@@ -107,6 +124,14 @@ export default async function ProjectDetailPage({
         currentUserId={me?.id ?? null}
         currentUserRole={me?.auth_role ?? null}
         canComment={can(me, "tracking", "comment")}
+      />
+
+      <ProjectAreasCommentsCard
+        projectId={project.id}
+        currentUserId={me?.id ?? null}
+        currentUserRole={me?.auth_role ?? null}
+        canComment={can(me, "tracking", "comment")}
+        initialSelection={initialSelection(sp)}
       />
     </div>
   );

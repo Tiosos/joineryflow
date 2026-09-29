@@ -14,6 +14,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from . import queries as q
 from .schemas import (
+    CommentCountsOut,
     CommentOut,
     CommentThreadOut,
     CreateCommentIn,
@@ -57,6 +58,20 @@ def list_comments_route(
     if rows is None:
         raise HTTPException(404, "not found")
     return {"comments": rows}
+
+
+@router.get("/projects/{pid}/comment-counts", response_model=CommentCountsOut)
+def comment_counts_route(
+    pid: int,
+    user: AuthUser = Depends(require_permission(q.MODULE, "read")),
+    db: Session = Depends(get_db),
+):
+    """Backs the project page's Areas & Rooms card: how many live comments each
+    area and room has. Read-only; same gate as reading a thread."""
+    out = q.counts_for_project(db, project_id=pid, workspace_id=user.workspace_id)
+    if out is None:
+        raise HTTPException(404, "not found")
+    return out
 
 
 @router.post("/comments", response_model=CommentOut, status_code=201)

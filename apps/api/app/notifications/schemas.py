@@ -17,7 +17,7 @@ class NotificationOut(BaseModel):
     object_type: Literal["project", "area", "room", "item"]
     object_id: int
     object_label: str | None = None
-    # None for Area / Room: neither has a page of its own yet.
+    # Area / Room threads open on the project page's Areas & Rooms card.
     url: str | None = None
 
 

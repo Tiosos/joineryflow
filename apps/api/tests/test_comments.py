@@ -271,12 +271,21 @@ def test_a_mention_beats_a_reply_notification(ws):
     assert [x["kind"] for x in _inbox(ws, "drafter")["notifications"]] == ["mention"]
 
 
-def test_project_thread_links_to_the_project_page_and_area_has_no_link(ws):
+def test_area_and_room_notifications_deep_link_to_the_projects_card(ws):
+    """Area and Room threads live on the project page's Areas & Rooms card,
+    which opens the thread named in the query string."""
     d = _client(ws, "drafter")
-    _post(d, ws, "p", "project", mentioned_user_ids=[ws["uid"]["manager"]])
-    _post(d, ws, "a", "area", mentioned_user_ids=[ws["uid"]["manager"]])
+    for kind in ("project", "area", "room"):
+        _post(d, ws, kind, kind, mentioned_user_ids=[ws["uid"]["manager"]])
     urls = {n["object_type"]: n["url"] for n in _inbox(ws, "manager")["notifications"]}
-    assert urls == {"project": f"/projects/{ws['pid']}", "area": None}
+    pid = ws["pid"]
+    assert urls == {
+        "project": f"/projects/{pid}",
+        "area": f"/projects/{pid}?area={ws['aid']}",
+        "room": f"/projects/{pid}?room={ws['rid']}",
+    }
+    labels = {n["object_type"]: n["object_label"] for n in _inbox(ws, "manager")["notifications"]}
+    assert labels["area"] == "Level 1" and labels["room"] == "R01"
 
 
 @pytest.mark.parametrize("who", ["foreign", "inactive", "unknown"])
@@ -572,3 +581,61 @@ def test_a_comment_can_mention_at_most_twenty_people(ws):
     r = _post(d, ws, "x", mentioned_user_ids=list(range(1, 22)))
     # rejected by the schema (a validation-error list), not by BAD_MENTION (a dict)
     assert r.status_code == 422 and isinstance(r.json()["detail"], list)
+
+
+# ------------------------------------------------ Areas & Rooms card counts ---
+
+def _counts(c, ws, pid=None):
+    r = c.get(f"/projects/{pid or ws['pid']}/comment-counts")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_counts_are_per_area_and_per_room_and_ignore_other_objects(ws):
+    d = _client(ws, "drafter")
+    assert _counts(d, ws) == {"areas": {}, "rooms": {}}
+    top = _post(d, ws, "a1", "area").json()["comment_id"]
+    d.post("/comments", json={"parent_id": top, "body": "a1 reply"})   # replies count too
+    _post(d, ws, "r1", "room")
+    _post(d, ws, "on the item", "item")                                 # not an area/room thread
+    _post(d, ws, "on the project", "project")
+    assert _counts(d, ws) == {"areas": {str(ws["aid"]): 2}, "rooms": {str(ws["rid"]): 1}}
+
+
+def test_deleted_comments_are_not_counted(ws):
+    d, m = _client(ws, "drafter"), _client(ws, "manager")
+    keep = _post(d, ws, "keep", "area").json()["comment_id"]
+    gone = _post(d, ws, "gone", "area").json()["comment_id"]
+    m.delete(f"/comments/{gone}")
+    assert _counts(d, ws)["areas"] == {str(ws["aid"]): 1}
+    d.delete(f"/comments/{keep}")
+    assert _counts(d, ws) == {"areas": {}, "rooms": {}}
+
+
+def test_counts_are_scoped_to_the_project(ws):
+    """Another project's areas in the same workspace never leak into this one."""
+    s = SessionLocal()
+    try:
+        pid2 = s.execute(text("""INSERT INTO projects(project_code,name,workspace_id)
+                                 VALUES ('OTHER','Other',:w) RETURNING project_id"""),
+                         {"w": ws["wid"]}).scalar()
+        aid2 = s.execute(text("INSERT INTO area(project_id, name) VALUES(:p,'Other L1') RETURNING area_id"),
+                         {"p": pid2}).scalar()
+        s.commit()
+    finally:
+        s.close()
+    d = _client(ws, "drafter")
+    assert d.post("/comments", json={"object_type": "area", "object_id": aid2, "body": "x"}).status_code == 201
+    _post(d, ws, "mine", "area")
+    assert _counts(d, ws)["areas"] == {str(ws["aid"]): 1}
+    assert _counts(d, ws, pid2)["areas"] == {str(aid2): 1}
+
+
+def test_counts_need_tracking_read_and_a_project_in_this_workspace(ws):
+    other = _workspace()
+    assert _client(ws, "viewer").get(f"/projects/{ws['pid']}/comment-counts").status_code == 200
+    assert _client(other, "manager").get(f"/projects/{ws['pid']}/comment-counts").status_code == 404
+    assert _client(ws, "manager").get("/projects/999999/comment-counts").status_code == 404
+    _restrict(ws, "editor", [])
+    assert _client(ws, "editor").get(f"/projects/{ws['pid']}/comment-counts").status_code == 403
+    assert TestClient(app).get(f"/projects/{ws['pid']}/comment-counts").status_code == 401
