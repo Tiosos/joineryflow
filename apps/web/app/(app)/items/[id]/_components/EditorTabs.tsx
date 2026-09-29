@@ -20,6 +20,8 @@ interface EditorTabsProps {
   currentUserId: number | null;
   /** `tracking:comment` — comments on an item are gated by Tracking's grant. */
   canComment: boolean;
+  /** `list:comment` — a module's thread is governed by the Cutlist's own grant. */
+  canCommentOnModule: boolean;
 }
 
 const TABS = [
@@ -55,6 +57,7 @@ export function EditorTabs({
   currentUserRole,
   currentUserId,
   canComment,
+  canCommentOnModule,
 }: EditorTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,7 +90,14 @@ export function EditorTabs({
       </div>
 
       <div className="pt-4">
-        {current === "cutlist" && <CutlistTab item={item} />}
+        {current === "cutlist" && (
+          <CutlistTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+            canComment={canCommentOnModule}
+          />
+        )}
         {current === "hardware" && <HardwareTab item={item} />}
         {current === "board" && <BoardTab itemId={item.id} />}
         {current === "take" && (

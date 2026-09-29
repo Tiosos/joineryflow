@@ -1,7 +1,13 @@
 // Mirrors apps/api/app/comments/schemas.py and notifications/schemas.py
-// (migration 0042, Plan V1 §29). Timestamps arrive as ISO strings.
+// (migrations 0042 + 0043, Plan V1 §29). Timestamps arrive as ISO strings.
 
-export type CommentObjectType = "project" | "area" | "room" | "item";
+export type CommentObjectType =
+  | "project"
+  | "area"
+  | "room"
+  | "item"
+  | "module"
+  | "revision";
 
 export interface CommentMention {
   user_id: number;
@@ -41,7 +47,9 @@ export interface NotificationOut {
   object_type: CommentObjectType;
   object_id: number;
   object_label: string | null;
-  /** null for Area / Room — neither has a page of its own yet. */
+  /** null only when the link cannot be built. Area / Room open the project
+   *  page's card, a module the item editor's Cutlist tab, a revision the
+   *  shop-drawings drawer. */
   url: string | null;
 }
 

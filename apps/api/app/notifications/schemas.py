@@ -14,7 +14,7 @@ class NotificationOut(BaseModel):
     actor_name: str | None = None
     comment_id: int
     excerpt: str
-    object_type: Literal["project", "area", "room", "item"]
+    object_type: Literal["project", "area", "room", "item", "module", "revision"]
     object_id: int
     object_label: str | None = None
     # Area / Room threads open on the project page's Areas & Rooms card.

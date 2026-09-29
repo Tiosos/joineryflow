@@ -112,10 +112,10 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0042`. Head is `0042_comments_notifications` (Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below). `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 17 Playwright specs / 53 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 18 Playwright specs / 57 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -131,8 +131,9 @@ Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)**,
 **§M (QC / Rework / Packing, §26–§28)** and **§L (Locking, Concurrency,
 §11–§12, Q508/Q511/Q512)** are built, each with its own section below.
 Everything else in Plan V1 remains unimplemented, apart from **§29 Comments** (a
-partial build: 4 of its 8 object types, replies and @mentions, plus a minimal
-in-app inbox — see *Comments, mentions and notifications*).
+partial build: 6 of its 8 object types, replies and @mentions, plus a minimal
+in-app inbox — see *Comments, mentions and notifications* and *Comment threads
+on Modules and shop-drawing revisions*).
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
@@ -194,7 +195,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0042
+make migrate      # apply Alembic 0001 -> 0043
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -2953,7 +2954,9 @@ see *PM Workbench* above.
 > were already confirmed.
 
 - **Settled scope (user).**
-  1. **Four object types, not eight.** §29 names Project, Area, Room, Joinery
+  1. **Four object types, not eight** (*since six — Module and shop-drawing
+     revision were added by `0043`, see the section below; Task and Change are
+     still not built*). §29 names Project, Area, Room, Joinery
      Item, Component, Task, Change and Revision. **Task and Change are not
      entities in this tree** (Q524 decided a `task` table, nobody built it;
      §11's change engine is unbuilt), and **Component / Revision are
@@ -2996,8 +2999,9 @@ see *PM Workbench* above.
     `DELETE /comments/{cid}`, and `GET /projects/{pid}/comment-counts`
     (`tracking:read`; live comments per area and per room of one project —
     deleted ones are not counted, an area or room with none is simply absent). **This is the first place the `comment` action
-    is enforced** — all four object types are governed by the `tracking`
-    module (areas / rooms already gate on it). A viewer (read only) can read
+    is enforced** — the four original object types are governed by the
+    `tracking` module (areas / rooms already gate on it); a Module and a
+    revision are governed by `list` and `shop_dwgs` instead (*see below*). A viewer (read only) can read
     a thread and cannot post; editor, drafter, purchase officer, estimator,
     manager and admin can.
   - **Edit is author-only — even a manager cannot edit someone else's words**
@@ -3150,7 +3154,9 @@ see *PM Workbench* above.
   notification to that thread; the project page's thread. The migration
   downgrades and re-upgrades cleanly.
 - **Known gaps, recorded rather than silently left.**
-  - Task / Change / Component / Revision have no thread at all (above).
+  - Task and Change have no thread at all (above); Component and Revision got
+    one in `0043` (as a Module and a shop-drawing revision — an estimate
+    revision still has none).
     (Area / Room had no UI when Comments first shipped; the Areas & Rooms card
     closed that.)
   - The Areas & Rooms card lives only on `/projects/[id]`: an item's editor
@@ -3176,7 +3182,8 @@ see *PM Workbench* above.
   - Who may be mentioned is decided from workspace-wide grants only — a user
     whose only `tracking` access is a project-scoped membership cannot be
     mentioned, the same ceiling Global Search documents.
-- **Out of scope (deferred):** the four other §29 object types; attachments /
+- **Out of scope (deferred):** Task and Change threads (Component and Revision
+  were built by `0043`); attachments /
   photos, decisions, internal notes and discussion areas; §30's rules engine,
   preferences, email / push, grouping and escalation; search over comments;
   a comment count on the Tracking grid.
@@ -3596,3 +3603,164 @@ since been built.**
   - The **legacy `/procurement/*`** namespace has its own order writes and was not
     touched.
   - An **archived category** can still be assigned (above).
+
+## Comment threads on Modules and shop-drawing revisions (Plan V1 §29, migration `0043`) — shipped
+
+> Chosen by the user ("Next task is comment threads for Task, Change, Component
+> and Revision"). Two of the four had no entity and two were ambiguous, so the
+> user was asked before any code was written; the four answers below are
+> **settled decisions**, not assumptions. No spec or plan doc; this section is
+> its written record. It extends *Comments, mentions and notifications* above,
+> which records why v1 stopped at four object types.
+
+- **Settled scope (user).**
+  1. **Task and Change: skipped.** Neither is a table (grep of migrations
+     `0001`–`0042` finds none; Q524 decided a `task` table nobody built, §11's
+     change engine is unbuilt). Building either would mean inventing the entity,
+     and Change has no defined shape outside that unbuilt engine. They get a
+     thread when their entity exists — a nullable FK column + one `object_type`
+     branch, as before.
+  2. **Component = a Module** (`modules`, one level below a Joinery Item), not a
+     Part. Parts number in the hundreds per item after a CV import and are rarely
+     discussed one by one.
+  3. **Revision = a shop-drawing revision** (`shop_drawing_revision`), not an
+     estimate revision — §29's "approval discussions" and drawing references, and
+     the approve / reject flow already exists to hang discussion on. An estimate
+     revision has no thread.
+  4. **Each type's own module governs its thread**, instead of `tracking` for
+     all: a Module by `list`, a revision by `shop_dwgs`. See below — this is the
+     one change that reaches back into the four original types' code.
+- **Migration `0043`** — `comment.module_id` and `comment.revision_id`, both real
+  FKs with `ON DELETE CASCADE`; `ck_comment_one_object` widened to exactly one of
+  **six**; `object_type` regenerated (Postgres cannot alter a generation
+  expression, so it is dropped and re-added — nothing depends on it, and
+  `varchar(8)` still fits: `revision` is exactly 8). Downgrade deletes module /
+  revision threads (they have no home in the `0042` shape) and restores it; the
+  upgrade / downgrade / upgrade cycle was run on a database holding real rows.
+  Not searchable (no `0033` trigger).
+- **Per-type permissions** (`comments/queries.py`: `COMMENT_MODULE`,
+  `READ_MODULES`). `comment` on the object's own module posts, edits and
+  deletes; `read` on every module the thread links into reads it:
+
+  | Type | `comment` | `read` |
+  | --- | --- | --- |
+  | project / area / room | `tracking` | `tracking` |
+  | item | `tracking` | `tracking` + `list` |
+  | **module** | **`list`** | **`list`** |
+  | **revision** | **`shop_dwgs`** | **`shop_dwgs`** |
+
+  The default roles differ from `tracking` in exactly the way that shows the gate
+  works: `purchase_officer` holds `tracking:comment` but only `read` on `list` and
+  `shop_dwgs`, so it can comment on an item and can read but not write a module
+  or revision thread. Without this a user who cannot open a drawing could read
+  the discussion about it — the leak class the item thread's `list:read` rule
+  already exists to avoid. Mentions (`_readers`) and the inbox follow the same
+  table, so a mention needs `read` on the object's own modules.
+- **The routes no longer carry a fixed `require_permission("tracking", …)`.**
+  Which module gates a comment depends on what it is a comment *on*, so the
+  routes use `current_user` and check per type: `GET` and top-level `POST`
+  know the type from the request; **`PATCH`, `DELETE` and a reply look the
+  comment's type up first** (`queries.object_type_of`, workspace-scoped) and
+  then check. Consequence: `PATCH`/`DELETE` on an unknown comment is now `404`
+  for everyone, where a caller without `tracking:comment` used to get `403`
+  first. The project comment-counts route is unchanged (`tracking:read`).
+- **A reply now needs the read modules too — a tightening of existing
+  behaviour, found while doing this.** A reply names no object, so the old route
+  had no type to check and skipped the read check for it: a user holding
+  `tracking:comment` but not `list:read` could reply to an item thread, although
+  *Comments* above says the pair gates "reading and posting". The type now comes
+  from the parent, so a reply to an item thread without `list:read` is `403`
+  (pinned by `test_a_reply_on_an_item_thread_now_needs_list_read_too`). No
+  default role is affected — every one holds both.
+- **Joinery Items only, again.** A module of a related part has no thread (404):
+  the thread's link opens the item editor. A revision has no such rule (a
+  drawing belongs to a project, not an item).
+- **Edit log.** A module comment writes `item_edit_log` against **the module's
+  item** (`_comment_create`, `comment.{id}`, `_comment_delete`), per the PM
+  Workbench invariant; a revision belongs to no item and writes `audit_log`
+  only (`comment.*`, target `module:{id}` / `revision:{id}`).
+- **Notifications.** `notifications/routes.py` now decides visibility **per
+  object type** from `READ_MODULES` instead of "empty without `tracking:read`,
+  item threads need `list:read`": a notification is shown while the recipient can
+  read every module its thread links into. So a user holding `list:read` but no
+  `tracking` at all now sees module notifications (before, the whole inbox was
+  empty for them). `list_notifications` / `unread_count` take a `types` list in
+  place of `include_items`. Links and labels:
+  - module → `/items/{item_id}?tab=cutlist&module={module_id}`,
+    label `M01 Base (#297871)`;
+  - revision → `/shop-dwgs?project={pid}&drawing={did}&rev={rid}&comments=1`,
+    label `Vanity plan · v1`.
+- **Web.**
+  - **Module** — the item editor's Cutlist tab shows the active module's thread
+    under its parts (`data-testid="module-comments"`). The selection is now
+    `?module=<id>` — a click sets state and the URL together, synchronously
+    (`history.replaceState`), and a URL change that is not from a click (a
+    notification followed while already on the page) is synced back into state,
+    the same reasoning the Areas & Rooms card documents.
+    `EditorTabs` gained a `canCommentOnModule` prop (`list:comment`) beside
+    `canComment` (`tracking:comment`, the item thread's).
+  - **Revision** — `DrawingDrawer` gets a **collapsible** "Comments on vN" panel
+    for the selected revision (`data-testid="revision-comments"`), collapsed by
+    default so it never squeezes the PDF viewer; `?comments=1` (what the
+    notification link carries) opens it on arrival. The drawer used to read
+    `?rev=` only as its *initial* state, so a notification for another revision
+    followed while the drawer was already open was ignored; it now follows the
+    URL. `canComment` is `can(me, "shop_dwgs", "comment")`.
+  - `CommentObjectType` / `NotificationOut.object_type` widened in
+    `lib/comments-types.ts`. `NotificationBell` and `/notifications` needed no
+    change: they render `url` and `object_label`.
+- **Seed.** ALF-001's first item's first module gets a foreman comment, and the
+  project's first non-archived shop-drawing revision (pending preferred) a
+  manager comment — **no mentions**, so the seeded bell counts (Juno 1, Noa 2) are
+  unchanged. Both are looked up rather than assumed, and dropped first so a
+  re-run does not stack them (verified: two runs, one comment each).
+- **RBAC — no matrix change.** `list:comment` and `shop_dwgs:comment` were
+  already granted.
+- **Tests.** `test_comments_module_revision.py` (29): both new types round-trip
+  with replies; threads stay per-object across all six; the DB holds exactly one
+  object and regenerates `object_type`; a related part's module has no thread;
+  workspace isolation on every verb; cascade on module / revision delete; the
+  `FOR KEY SHARE` lock for both; the default roles (purchase_officer, viewer,
+  editor); a group with **only** `list` (or only `shop_dwgs`) can read and post,
+  while **`tracking` alone cannot reach the thread**; `comment` without `read` is
+  refused; edit and delete follow the comment's own module; replies gated on the
+  parent's module (and the item-reply tightening); mentions need read on the
+  object's modules; both notification links and labels; the inbox following each
+  type's modules including "no `tracking` at all"; audit + edit log. **Eight of
+  them were confirmed to fail** with `comments/routes.py` reverted to the fixed
+  `tracking` gate (the other 21 pass there — the schema, queries and
+  notifications are unchanged in that run — so they are controls, not gate
+  tests). The 46 existing `test_comments.py` cases pass **unchanged** on the
+  refactored routes. `tests/e2e/comments_module_revision.spec.ts` (4) was run
+  against a live migrated, seeded stack: a drafter's module comment mentioning a
+  manager and the manager's bell opening that module; a viewer reading but not
+  posting to a module thread; a manager's revision comment mentioning a drafter
+  and the drafter's bell opening the drawer with the panel expanded; a viewer
+  reading but not posting to a revision thread. A same-page follow (notification
+  for the item's *second* module while its first was selected) was checked
+  separately and works with no reload; it is not a permanent spec because it
+  needs an item with two modules, which only the seed's "SS Bench" has.
+- **Known gaps, recorded.**
+  - **Deleting a module deletes its thread — and a CV re-import with
+    `?mode=replace` deletes the threads on every module of the item.** Both
+    remove modules by `DELETE` (`parts/queries.py`, `cv/queries.py`; see the CV
+    Import section), and a comment cascades with the module it is on. That follows from
+    the user's choice of Module as Component with the cascade the migration
+    documents — SET NULL would violate the exactly-one CHECK — but nothing warns
+    about it: `cv.import.replace_wipe`'s audit payload lists the deleted module
+    ids and not how many comments went with them. Not fixed; a warning in the
+    replace confirmation or a count in that audit row is the smallest fix.
+  - **No comment counts for modules or revisions.** The Areas & Rooms card has
+    badges (`GET /projects/{pid}/comment-counts`); the module list and the
+    revision history strip do not, so a thread is found by opening it (or by a
+    mention). One count endpoint per parent would close it.
+  - **A module's thread is not shown on the Hardware or other item tabs**, only
+    on Cutlist, and a revision's only in the drawer.
+  - The same workspace-wide-grants ceiling as the other comment routes: a
+    project-scoped `list` / `shop_dwgs` membership is not consulted.
+  - An **estimate** revision still has no thread, and Component means Module, not
+    Part — both are the user's settled scope, not oversights.
+- **Out of scope (deferred):** Task and Change threads; Part and estimate-revision
+  threads; counts / badges on the module list and revision strip; everything the
+  *Comments* section already defers (attachments, decisions, internal notes,
+  discussion areas, §30's rules engine).

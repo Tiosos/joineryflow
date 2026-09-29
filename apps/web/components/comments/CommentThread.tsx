@@ -17,9 +17,12 @@ function errorMessage(e: unknown, fallback: string): string {
   return code || fallback;
 }
 
-/** The thread on one Project / Area / Room / Joinery Item (Plan V1 §29).
+/** The thread on one Project / Area / Room / Joinery Item / Module / shop-drawing
+ *  revision (Plan V1 §29).
  *
- *  `canComment` mirrors `tracking:comment`; the API enforces it either way.
+ *  `canComment` mirrors the `comment` grant on the object's own module —
+ *  `tracking`, except `list` for a module and `shop_dwgs` for a revision; the
+ *  API enforces it either way.
  *  Editing is author-only; deleting is the author or a manager / admin. */
 export function CommentThread({
   objectType,
