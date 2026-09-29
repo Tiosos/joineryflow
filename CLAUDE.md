@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 18 Playwright specs / 57 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 19 Playwright specs / 60 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -622,7 +622,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   purchase_officer/viewer `{read}`. The full `/cut-floor` page + CutPlan +
   Board tab arrive in #7c — #7b only consumes the row from the CV import
   routes here.
-- 4 routes:
+- 5 routes:
   - `POST /items/{iid}/cv-imports/preview` — multipart `file` OR form
     field `body`. Parses, resolves, persists `cv_import_run` with
     `status='preview'` and the full snapshot in `error_log`.
@@ -630,13 +630,38 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
     optional `?mode=replace`. Single transaction inserts modules + parts +
     catalog rows + mappings + audit/edit log; flips run to `committed`.
   - `GET /items/{iid}/cv-imports` — history (newest first).
+  - `GET /items/{iid}/cv-imports/replace-impact` (`cut_floor:write`, the
+    commit's own gate; *added later, see below*) — `{modules, live_comments}`.
   - `GET /cv-imports/{run_id}` — single run + cached preview snapshot.
 - 3-phase wizard mounted in the Drafter Editor Cutlist tab via
   `?tab=cutlist&import=cv`. Phase A (paste/upload), Phase B (resolve
   unknown codes inline — `Use existing` is disabled in v1; `Create new`
   ships for the 5 simple catalog tables; `Skip` always available),
   Phase C (confirm + optional **Replace existing modules** checkbox when
-  the item already has modules).
+  the item already has modules — and, when those modules carry comments, an
+  amber warning naming how many will be deleted with them).
+- **Replace warns about the comments it deletes** (*added later; the user chose
+  a **wizard warning only**, asked before building*). A comment cascades with the
+  module it is on (migration `0043`), so `?mode=replace` deleted every module
+  thread of the item without saying so. Now: Phase C fetches
+  `GET /items/{iid}/cv-imports/replace-impact` **fresh when the step opens** (not
+  from the preview, whose snapshot can be minutes old) and shows
+  "**N comments** on these modules will be permanently deleted…" when N > 0; if
+  the check itself fails it says so rather than stay silent. **The count is live
+  comments, replies included** (`deleted_at IS NULL`, user's choice) — the
+  cascade also removes soft-deleted rows, which are already gone from every
+  screen, so the true row count can be higher. **The API is unchanged in what it
+  allows**: `replace` is still an explicit opt-in and is *not* refused or gated
+  on an acknowledgement (the user declined that). What changed is that the loss is
+  now visible afterwards: `CvCommitOut.replaced_comment_count`, the
+  `cv.import.replace_wipe` audit payload (`deleted_comment_count`) and the
+  `cv.import.commit` payload (`replaced_comment_count`) carry the number, counted
+  **before** the DELETE. The wizard's done message repeats it. Tests:
+  five new in `test_cv_routes.py` (live-only count scoped to this item; zero
+  case; 403 for a viewer / 404 for another workspace's item; the response and both
+  audit rows; a first import reports 0) — **all five fail against the unfixed
+  source**; `tests/e2e/cv_replace_comments.spec.ts` (3), re-runnable and run three
+  times back to back beside `cv_import.spec.ts` (which shares `JO-TP01`).
 - File caps enforced server-side: 1 MB hard cap (`MAX_CSV_BYTES`),
   10 000 logical rows (`MAX_LOGICAL_ROWS`). 415 with
   `code='FILE_TOO_LARGE'` or `code='TOO_MANY_ROWS'` if exceeded.
@@ -3696,7 +3721,17 @@ since been built.**
     `?module=<id>` — a click sets state and the URL together, synchronously
     (`history.replaceState`), and a URL change that is not from a click (a
     notification followed while already on the page) is synced back into state,
-    the same reasoning the Areas & Rooms card documents.
+    the same reasoning the Areas & Rooms card documents. **Fixed later: `+ Add
+    module` was broken by this.** `ModuleTree` adds a module, calls
+    `router.refresh()` and selects it in the same tick; `selectModule`'s
+    `history.replaceState` then raced that refresh and the refreshed module list
+    never arrived — the tab kept saying "Add a module to start the cutlist" (the
+    API had returned 201; a manual reload showed the module). It shipped in the
+    module-threads change unnoticed because nothing exercised adding a module.
+    `selectModule` now leaves the URL alone for an id not yet in the item's list.
+    Pinned by `cv_replace_comments.spec.ts`'s "adding a module shows it, selected,
+    with its comment thread" — **confirmed to fail without the guard** (1 module
+    where 2 are expected) and to pass with it.
     `EditorTabs` gained a `canCommentOnModule` prop (`list:comment`) beside
     `canComment` (`tracking:comment`, the item thread's).
   - **Revision** — `DrawingDrawer` gets a **collapsible** "Comments on vN" panel
@@ -3748,8 +3783,12 @@ since been built.**
     the user's choice of Module as Component with the cascade the migration
     documents — SET NULL would violate the exactly-one CHECK — but nothing warns
     about it: `cv.import.replace_wipe`'s audit payload lists the deleted module
-    ids and not how many comments went with them. Not fixed; a warning in the
-    replace confirmation or a count in that audit row is the smallest fix.
+    ids and not how many comments went with them. **CV re-import is now covered — see
+    *Replace warns about the comments it deletes* in the CV Import section**: the
+    wizard warns, and the count is on the commit response and both audit rows.
+    **Still open:** deleting a single module through `DELETE
+    /modules/{mid}` (`parts/queries.py`) deletes its thread with no warning — the
+    item editor has no delete-module button today, so only an API caller can.
   - **No comment counts for modules or revisions.** The Areas & Rooms card has
     badges (`GET /projects/{pid}/comment-counts`); the module list and the
     revision history strip do not, so a thread is found by opening it (or by a

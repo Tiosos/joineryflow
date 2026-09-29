@@ -3,6 +3,7 @@ import type {
   CvCommitOut,
   CvImportRunOut,
   CvPreviewOut,
+  CvReplaceImpact,
 } from "./cv-types";
 
 export async function previewCvImport(
@@ -57,6 +58,17 @@ export async function commitCvImport(
     err.detail = detail;
     throw err;
   }
+  return res.json();
+}
+
+export async function getReplaceImpact(
+  itemId: number,
+): Promise<CvReplaceImpact> {
+  const res = await fetch(`/api/items/${itemId}/cv-imports/replace-impact`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`getReplaceImpact: ${res.status}`);
   return res.json();
 }
 

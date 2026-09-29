@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { commitCvImport, previewCvImport } from "@/lib/cv-fetch";
+import { useEffect, useState } from "react";
+import { commitCvImport, getReplaceImpact, previewCvImport } from "@/lib/cv-fetch";
 import type {
   CvCommitResolution,
   CvPreviewOut,
+  CvReplaceImpact,
 } from "@/lib/cv-types";
 import { UnknownCodeRow } from "./UnknownCodeRow";
 
@@ -32,6 +33,22 @@ export function CvImportDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [doneSummary, setDoneSummary] = useState<string | null>(null);
+  // What Replace would delete beyond the modules themselves (their comments).
+  // Read when the confirm step opens, not from the preview: the preview can be
+  // minutes old. "error" means the check failed — say so rather than stay silent.
+  const [impact, setImpact] = useState<CvReplaceImpact | "error" | null>(null);
+
+  useEffect(() => {
+    if (phase !== "commit" || !itemHasModules) return;
+    let live = true;
+    setImpact(null);
+    getReplaceImpact(itemId)
+      .then((i) => live && setImpact(i))
+      .catch(() => live && setImpact("error"));
+    return () => {
+      live = false;
+    };
+  }, [phase, itemHasModules, itemId]);
 
   async function onPreview() {
     setErr(null);
@@ -88,7 +105,10 @@ export function CvImportDialog({
       );
       setDoneSummary(
         `${out.modules_created} module${out.modules_created === 1 ? "" : "s"}, ` +
-        `${out.parts_created} part${out.parts_created === 1 ? "" : "s"} imported.`,
+        `${out.parts_created} part${out.parts_created === 1 ? "" : "s"} imported.` +
+        (out.replaced_comment_count > 0
+          ? ` ${out.replaced_comment_count} comment${out.replaced_comment_count === 1 ? "" : "s"} on the replaced modules ${out.replaced_comment_count === 1 ? "was" : "were"} deleted.`
+          : ""),
       );
       setPhase("done");
       setTimeout(() => onClose(), 1500);
@@ -241,6 +261,29 @@ export function CvImportDialog({
                   <em>delete them</em> before importing the new parts. Without it, the import will fail.
                 </span>
               </label>
+            )}
+
+            {itemHasModules && impact === "error" && (
+              <p
+                data-testid="cv-replace-comment-check-failed"
+                className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+              >
+                Couldn&apos;t check whether these modules have comments. Replacing
+                deletes any comments on them along with the modules.
+              </p>
+            )}
+            {itemHasModules && impact !== null && impact !== "error" && impact.live_comments > 0 && (
+              <p
+                data-testid="cv-replace-comment-warning"
+                className="rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+              >
+                <strong>
+                  {impact.live_comments} comment{impact.live_comments === 1 ? "" : "s"}
+                </strong>{" "}
+                on {impact.modules === 1 ? "this module" : "these modules"} will be
+                permanently deleted with {impact.modules === 1 ? "it" : "them"} if you replace.
+                Comments are not carried over to the re-imported modules.
+              </p>
             )}
 
             <div className="flex justify-end gap-2">

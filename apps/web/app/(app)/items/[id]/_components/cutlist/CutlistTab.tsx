@@ -51,6 +51,12 @@ export function CutlistTab({
   // module's comment box on screen, typed into and then thrown away.
   function selectModule(id: number) {
     setActiveModuleId(id);
+    // A module missing from the item's list was only just created: ModuleTree
+    // adds one, calls `router.refresh()` and selects it in the same tick. A
+    // `replaceState` there raced that refresh and the refreshed list never
+    // arrived, leaving the empty state on screen. The URL only matters for
+    // links, and this module has none yet.
+    if (!item.modules.some((m) => m.id === id)) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set("module", String(id));
     window.history.replaceState(null, "", `${pathname}?${next}`);
