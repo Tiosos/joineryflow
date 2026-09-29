@@ -36,6 +36,12 @@ const STATUSES = [
 
 const PRIORITIES = ["High", "Medium", "Low", "Next", "Hold", "Quote"] as const;
 
+// Mirrors `FROZEN_STATUSES` in apps/api/app/orders/queries.py, which is the
+// source of truth and enforces it (409 ORDER_LOCKED). Here it only decides
+// which controls to render: a Cancelled or Delivered order is read-only
+// except for its status, the deliberate way to reopen it.
+const FROZEN_STATUSES: readonly string[] = ["Cancelled", "Delivered"];
+
 function statusClasses(status: string): string {
   switch (status) {
     case "Approved":
@@ -65,7 +71,20 @@ function qty(v: string | null): string | null {
   return Number.isNaN(n) ? v : String(n);
 }
 
+type ErrorDetail = { code?: string; status?: string };
+
+function orderLocked(body: unknown): ErrorDetail | null {
+  const d = (body as { detail?: ErrorDetail } | null)?.detail;
+  return d?.code === "ORDER_LOCKED" ? d : null;
+}
+
+function lockedMessage(d: ErrorDetail): string {
+  return `Order is ${d.status ?? "locked"} — change its status to edit`;
+}
+
 function fieldErrorMessage(res: Response, body: unknown, field: string): string {
+  const locked = orderLocked(body);
+  if (locked) return lockedMessage(locked);
   const code = (body as { detail?: { code?: string; conflicts?: Record<string, { current_value?: unknown }> } } | null)
     ?.detail?.code;
   if (code === "FIELD_CONFLICT") {
@@ -322,10 +341,16 @@ function OrderDetailPanel({
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         setErrors(e => ({ ...e, [field]: fieldErrorMessage(res, body, field) }));
+        if (orderLocked(body)) { void refetch(); onChanged(); }
         return false;
       }
       const updated = (await res.json()) as OrderDetailType;
       setOrder(updated);
+      // A status change can flip the order between frozen and editable, so
+      // any per-field message left from before it (notably "Order is
+      // Cancelled — change its status to edit") is about a state that no
+      // longer holds and would reappear under the now-editable field.
+      if (field === "status") setErrors({});
       onChanged();
       return true;
     } catch {
@@ -343,7 +368,13 @@ function OrderDetailPanel({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setErrors(e => ({ ...e, [`line-${lineId}`]: `Save failed (${res.status})` }));
+        const body = await res.json().catch(() => null);
+        const locked = orderLocked(body);
+        setErrors(e => ({
+          ...e,
+          [`line-${lineId}`]: locked ? lockedMessage(locked) : `Save failed (${res.status})`,
+        }));
+        if (locked) { void refetch(); onChanged(); }
         return false;
       }
       const updated = (await res.json()) as OrderDetailType;
@@ -368,7 +399,13 @@ function OrderDetailPanel({
       const res = await fetch(`/api/orders/${poId}/lines/${lineId}`, { method: "DELETE" });
       if (res.status === 404) return; // already removed elsewhere — goal met
       if (!res.ok) {
-        setErrors(e => ({ ...e, [`line-${lineId}`]: `Remove failed (${res.status})` }));
+        const body = await res.json().catch(() => null);
+        const locked = orderLocked(body);
+        setErrors(e => ({
+          ...e,
+          [`line-${lineId}`]: locked ? lockedMessage(locked) : `Remove failed (${res.status})`,
+        }));
+        if (locked) { void refetch(); onChanged(); }
         return;
       }
       const updated = (await res.json()) as OrderDetailType;
@@ -388,7 +425,13 @@ function OrderDetailPanel({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setErrors(e => ({ ...e, "new-line": `Add failed (${res.status})` }));
+        const body = await res.json().catch(() => null);
+        const locked = orderLocked(body);
+        setErrors(e => ({
+          ...e,
+          "new-line": locked ? lockedMessage(locked) : `Add failed (${res.status})`,
+        }));
+        if (locked) { void refetch(); onChanged(); }
         return false;
       }
       const updated = (await res.json()) as OrderDetailType;
@@ -416,6 +459,11 @@ function OrderDetailPanel({
     );
   }
 
+  const frozen = FROZEN_STATUSES.includes(order.status);
+  // Status stays editable on a frozen order (canEdit); everything else follows
+  // canEditFields.
+  const canEditFields = canEdit && !frozen;
+
   return (
     <div
       data-testid="order-detail"
@@ -437,7 +485,7 @@ function OrderDetailPanel({
             {order.status}
           </span>
         )}
-        {canEdit ? (
+        {canEditFields ? (
           <select
             value={order.priority}
             onChange={e => void patchField("priority", e.target.value)}
@@ -452,20 +500,29 @@ function OrderDetailPanel({
       </div>
       {errors.status && <ErrorLine msg={errors.status} />}
       {errors.priority && <ErrorLine msg={errors.priority} />}
+      {canEdit && frozen && (
+        <p
+          data-testid="order-frozen-banner"
+          className="mb-3 rounded border border-h-line bg-h-bg px-2 py-1.5 text-h-muted"
+        >
+          This order is {order.status} and read-only. Change its status above to
+          edit it again.
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
         <Field label="Supplier" value={order.vendor_name} />
         <EditableField
           label="Supplier ref"
           value={order.supplier_ref_no}
-          canEdit={canEdit}
+          canEdit={canEditFields}
           onSave={v => patchField("supplier_ref_no", v || null)}
           error={errors.supplier_ref_no}
         />
         <EditableField
           label="Order no."
           value={order.order_number}
-          canEdit={canEdit}
+          canEdit={canEditFields}
           onSave={v => patchField("order_number", v || null)}
           error={errors.order_number}
         />
@@ -485,21 +542,21 @@ function OrderDetailPanel({
         <EditableDateField
           label="Required by"
           value={order.required_date}
-          canEdit={canEdit}
+          canEdit={canEditFields}
           onSave={v => patchField("required_date", v || null)}
           error={errors.required_date}
         />
         <EditableDateField
           label="Ordered"
           value={order.date_ordered}
-          canEdit={canEdit}
+          canEdit={canEditFields}
           onSave={v => patchField("date_ordered", v || null)}
           error={errors.date_ordered}
         />
         <EditableDateField
           label="ETA"
           value={order.due_date}
-          canEdit={canEdit}
+          canEdit={canEditFields}
           onSave={v => patchField("due_date", v || null)}
           error={errors.due_date}
         />
@@ -511,7 +568,7 @@ function OrderDetailPanel({
 
       <div className="mt-3">
         <p className="mb-1 text-[10px] uppercase tracking-wide text-h-muted">Notes</p>
-        {canEdit ? (
+        {canEditFields ? (
           <BlurTextArea
             defaultValue={order.notes ?? ""}
             onSave={v => patchField("notes", v || null)}
@@ -524,7 +581,7 @@ function OrderDetailPanel({
 
       <div className="mt-2">
         <p className="mb-1 text-[10px] uppercase tracking-wide text-h-muted">Internal comments</p>
-        {canEdit ? (
+        {canEditFields ? (
           <BlurTextArea
             defaultValue={order.internal_comments ?? ""}
             onSave={v => patchField("internal_comments", v || null)}
@@ -549,7 +606,7 @@ function OrderDetailPanel({
 
       <LinesSection
         lines={order.lines}
-        canEdit={canEdit}
+        canEdit={canEditFields}
         currency={order.currency}
         errors={errors}
         onPatchLine={patchLine}

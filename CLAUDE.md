@@ -2632,12 +2632,11 @@ see *PM Workbench* above.
   `unit_cost` (singular fields with no coherent value across multiple
   lines) are left untouched, and a header-only order that never gets a
   line (the original per-item Create Order flow) is unaffected, since
-  nothing there calls these three functions. **Known gap, not fixed**:
-  neither this nor the pre-existing header PATCH blocks editing a line (or
-  any header field) on a `Cancelled`/`Delivered` order — there is no
-  order-status guard anywhere in this module, on lines or on the header,
-  so this isn't a new inconsistency this sub-project introduced, but it
-  remains open.
+  nothing there calls these three functions. **Known gap — CLOSED, see
+  *Purchase order status guard* below**: when this shipped, neither the
+  line routes nor the pre-existing header PATCH blocked editing a
+  `Cancelled`/`Delivered` order — there was no order-status guard anywhere
+  in this module.
 - **Tests:** 16 new cases in `test_order_routes.py` — line PATCH updates
   editable fields and recomputes `line_total`, 404 for an unknown line
   (both with a real patch body and with an empty/non-patchable one — see
@@ -2811,7 +2810,8 @@ see *PM Workbench* above.
   codebase. The order-status guard and the `EditableField`/
   `EditableDateField`/`BlurTextArea` duplication were both re-raised too;
   both already had their own notes above (*Known gap* and *Known
-  duplication, not fixed*) and stand unchanged.
+  duplication, not fixed*) and stood unchanged then — the guard has since
+  shipped, see *Purchase order status guard*; the duplication remains.
 - **Known duplication, not fixed.** `EditableField` / `EditableDateField` /
   `BlurTextArea` re-implement the same per-field PATCH +
   `expected_versions` + resync-and-dirty-check shape `ItemMetadataPanel.tsx`
@@ -2826,6 +2826,121 @@ see *PM Workbench* above.
   tab (`procurement_batches` — untouched, still #4's surface); reordering
   lines (`line_number` is immutable, matching `add_line`'s own
   auto-increment-only stance).
+
+## Purchase order status guard — shipped
+
+> Chosen by the user as "Option B" from the suggestion list that followed
+> Global Search RBAC sync — **note the labels differ between lists**: this is
+> Option B of *that* list, not Option B (Comments) of *Deferred options*
+> below, and the user was asked which was meant before work started. Closes
+> the gap the Orderbook editing section recorded as "Known gap, not fixed".
+> No migration, no spec or plan doc; this section is its written record.
+
+- **Rule.** An order whose `status` is `Cancelled` or `Delivered`
+  (`orders.queries.FROZEN_STATUSES`) is read-only in the orders module:
+  - **Lines** — `POST` / `PATCH` / `DELETE /orders/{po_id}/lines…` answer
+    `409 {code: "ORDER_LOCKED", status}`. Enforced in the one place all three
+    already pass through, `_lock_order_for_update()`, which now reads the
+    status under the same `FOR UPDATE` lock — so a status change racing an
+    edit cannot slip past the check. It raises `OrderLocked`; the routes turn
+    that into the 409. A frozen order also answers 409 before any
+    line-existence 404 (the order's state is answered first); an unknown
+    *order* is still 404.
+  - **Header** — `PATCH /orders/{po_id}` may change **`status` and nothing
+    else**. Any other field answers `409 {code: "ORDER_LOCKED", status,
+    blocked_fields: [...]}`. A mixed `{status, notes}` PATCH is **refused
+    whole, not trimmed**: a 200 that silently dropped half the request would
+    lie, and the caller can simply send two calls. `total_amount` on an order
+    that has lines is still dropped silently first (its own rule — the
+    rollup is the only writer), so a `total_amount`-only PATCH stays a no-op
+    rather than a 409.
+- **Settled decisions (user, asked before building; each was under-specified
+  by every document):**
+  1. **Which statuses freeze: Cancelled and Delivered.** Cancelled is dead;
+     Delivered has been reconciled against goods received and invoices.
+     `Rejected` stays editable — it can be fixed and resubmitted — as do
+     `Draft` / `Pending` / `Approved` / `Hold` / `Quote` / `Next`.
+  2. **`status` stays writable on a frozen order** — the deliberate,
+     versioned, audited way back in. A mistaken cancel or delivery is
+     reopened by PATCHing `status` (to anything, including another frozen
+     status), after which the order is editable again. The alternative, a
+     fully frozen order, would make that mistake fixable only in the
+     database.
+- **What it deliberately does not touch.**
+  - **`DELETE /orders/{po_id}`** (soft-cancel) is unchanged: it still
+    accepts a `Delivered` order and answers `ALREADY_CANCELLED` on a second
+    call. Cancelling is a status change, which the rule permits.
+  - **`sync_orders_for_item`** still rewrites CUTLIST NO. on a frozen order
+    (Q430/Q431): that is the system keeping a reference true, not a person
+    editing the order. Pinned by
+    `test_cutlist_number_sync_still_reaches_a_frozen_order`.
+  - **The legacy `/procurement/*` namespace** writes `Delivered` /
+    `Cancelled` itself (`procurement/queries.py`) and carries no guard; this
+    is scoped to `orders/`, the surface the Orderbook page uses.
+  - **`generate_orders()`** is unaffected — it only adds lines to orders it
+    has just created as `Draft`.
+- **Web.** `OrdersClient.tsx` mirrors the set as `FROZEN_STATUSES`
+  (**the backend is the source of truth and enforces it**; the constant only
+  decides what to render). On a frozen order, for a caller who can write, the
+  status select is kept and every other control — priority, the five header
+  fields, notes, internal comments, and the whole lines table with Remove and
+  Add-line — is rendered read-only, with a banner naming the status and how to
+  reopen. A read-only role sees no banner (there is nothing for them to
+  reopen). `ORDER_LOCKED` from a stale panel (the order was cancelled
+  elsewhere while this one sat open) shows "Order is Cancelled — change its
+  status to edit" beside the field, **refetches the order and refreshes the
+  list**, so the panel lands in the frozen state instead of staying editable
+  and failing again. The status-set duplicated in TypeScript is a small
+  drift risk (a third frozen status added server-side would still be
+  enforced, just not hidden); exposing a server-computed `locked` flag on
+  `OrderOut` would remove it, but touches the list payload too — not done.
+- **Fixed in review (same day).** `cancel_order` (`DELETE /orders/{po_id}`)
+  is the *other* way into a frozen state, and it read the order with a plain
+  `SELECT` and never bumped `field_versions["status"]` — so a panel that
+  loaded the order before it was cancelled could PATCH `status` back with a
+  still-valid `expected_versions` and silently undo the cancel, contradicting
+  the "deliberate, versioned" reopen this section describes; two concurrent
+  cancels could also both pass the `ALREADY_CANCELLED` check. It now takes the
+  same `FOR UPDATE` lock and bumps the status version (pinned by
+  `test_cancel_bumps_the_status_version_so_a_stale_reopen_is_a_conflict`).
+  Separately, a lock message from a stale edit ("Order is Cancelled — change
+  its status to edit") stayed in the panel's error state and reappeared under
+  the same field once the order was reopened; a successful `status` change now
+  clears every per-field and per-line message. `add_line` gained a docstring
+  stating that it raises `OrderLocked`, since the freeze made a hidden
+  precondition of it (`estimating.generate_orders` is safe only because it adds
+  to orders it has just created as Draft).
+- **Known gaps, found in review and deliberately not fixed.** (1) `status` is
+  an unvalidated string on `PatchOrderIn`: the DB `CHECK` allows exactly the
+  nine known values, so `{"status": "Foo"}` is a raw 500 on **any** order —
+  pre-existing, and the freeze only makes `status` the one field a frozen order
+  still accepts — while `{"status": null}` passes the `CHECK` (NULL does) and
+  leaves an order with no status, which is not a frozen one. A `Literal` /
+  validator on that field would close both, but is a change to the header
+  schema unrelated to freezing. (2) The `FROZEN_STATUSES` set exists in Python
+  and TypeScript (drift risk, noted above), and the four handlers in
+  `OrdersClient.tsx` each repeat a three-line "if locked, refetch and refresh
+  the list" block; a shared helper would remove the latter but is a refactor of
+  handlers this change only touched at the edges.
+- **Tests:** 18 new cases in `test_order_routes.py` — all three line
+  operations refused on each frozen status with nothing applied; non-status
+  header fields refused with `blocked_fields`; a mixed PATCH refused whole;
+  status as the way back in (and the order editable again afterwards); a
+  move between frozen statuses; five non-frozen statuses stay editable; an
+  unknown order is still 404 (and an unknown line on a frozen order is 409);
+  the cutlist sync reaching a frozen order; a `total_amount`-only PATCH on a
+  frozen order staying a no-op; cancelling a Delivered order; and the
+  versioned-cancel regression above. The five refusal tests were confirmed
+  to **fail against the pre-guard code**.
+  Verified live in a browser against a migrated database: freeze via the
+  status select, banner and editors gone, still frozen after reload, reopen,
+  the stale-panel case (order cancelled out-of-band → refused, panel
+  refreshed, nothing persisted), and a viewer sees no banner.
+- **Out of scope (deferred):** guarding `Rejected`; a server-computed
+  `locked` flag; the same guard on the legacy `/procurement/*` routes;
+  restricting who may reopen a frozen order (today anyone with
+  `orderbook:write`, like every other status change) — a
+  manager-only reopen would be a rule to decide, not assume.
 
 ## Deferred options (recorded, not built)
 

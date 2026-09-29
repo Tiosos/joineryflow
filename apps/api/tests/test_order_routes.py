@@ -684,3 +684,165 @@ def _bootstrap_other_workspace_client() -> TestClient:
     r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
     assert r.status_code == 200, r.text
     return c
+
+
+# ── Frozen orders: Cancelled / Delivered are read-only except `status` ───────
+
+
+def _freeze(ctx: dict, po_id: int, status: str) -> None:
+    """Move an order to a frozen status by the deliberate route: Cancelled via
+    the soft-cancel DELETE, anything else by the status-only header PATCH."""
+    c = ctx["client"]
+    if status == "Cancelled":
+        assert c.delete(f"/orders/{po_id}").status_code == 204
+    else:
+        r = c.patch(f"/orders/{po_id}", json={"status": status})
+        assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("status", ["Cancelled", "Delivered"])
+def test_line_mutations_are_refused_on_a_frozen_order(ctx, status):
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], status)
+    c = ctx["client"]
+    lines = f"/orders/{ids['po_id']}/lines"
+
+    for r in (
+        c.post(lines, json={"item_description": "x", "quantity": "1", "unit_price": "1"}),
+        c.patch(f"{lines}/{ids['line_id']}", json={"quantity": "9"}),
+        c.delete(f"{lines}/{ids['line_id']}"),
+    ):
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == {"code": "ORDER_LOCKED", "status": status}
+
+    # nothing was applied
+    order = c.get(f"/orders/{ids['po_id']}").json()
+    assert len(order["lines"]) == 1
+    assert float(order["lines"][0]["quantity"]) == 3.0
+    assert float(order["total_amount"]) == 135.0
+
+
+@pytest.mark.parametrize("status", ["Cancelled", "Delivered"])
+def test_header_fields_other_than_status_are_refused_on_a_frozen_order(ctx, status):
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], status)
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}", json={"notes": "late edit", "priority": "High"})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {
+        "code": "ORDER_LOCKED", "status": status, "blocked_fields": ["notes", "priority"],
+    }
+    assert c.get(f"/orders/{ids['po_id']}").json()["notes"] is None
+
+
+def test_mixed_status_and_field_patch_is_refused_whole_on_a_frozen_order(ctx):
+    """Refused, not trimmed: a 200 that quietly dropped `notes` would lie."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": "Draft", "notes": "x"})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["blocked_fields"] == ["notes"]
+    assert c.get(f"/orders/{ids['po_id']}").json()["status"] == "Cancelled"
+
+
+def test_status_is_the_way_back_in_from_a_frozen_order(ctx):
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": "Draft"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Draft"
+    # editable again
+    r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "4"})
+    assert r.status_code == 200, r.text
+    assert float(r.json()["total_amount"]) == 180.0
+
+
+def test_frozen_orders_may_move_between_frozen_statuses(ctx):
+    """Status-only PATCH is allowed whatever the target, including another
+    frozen status (a Delivered order later found to be cancelled)."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Delivered")
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"status": "Cancelled"})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("status", ["Draft", "Pending", "Approved", "Rejected", "Hold"])
+def test_other_statuses_stay_editable(ctx, status):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    assert c.patch(f"/orders/{ids['po_id']}", json={"status": status}).status_code == 200
+    r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "5"})
+    assert r.status_code == 200, r.text
+    assert c.patch(f"/orders/{ids['po_id']}", json={"notes": "ok"}).status_code == 200
+
+
+def test_unknown_order_is_still_404_not_locked(ctx):
+    r = ctx["client"].patch("/orders/999999/lines/1", json={"quantity": "1"})
+    assert r.status_code == 404
+
+
+def test_cutlist_number_sync_still_reaches_a_frozen_order(ctx):
+    """The freeze stops people editing an order, not the system keeping its
+    CUTLIST NO. true (Q430) — a cancelled order's reference should still follow
+    its parent so the audit trail stays coherent."""
+    po_id = ctx["client"].post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "early order", "category": "Metal",
+        "item_id": ctx["related"],
+    }).json()["po_id"]
+    _freeze(ctx, po_id, "Cancelled")
+    cl = _mint_cutlist(ctx["client"], ctx["pid"])
+    _link(ctx["parent"], cl["cutlist_id"], ctx["wid"])
+    assert _order_cutlist_no(po_id) == str(cl["cutlist_no"])
+
+
+def test_cancel_bumps_the_status_version_so_a_stale_reopen_is_a_conflict(ctx):
+    """DELETE-cancel is one of the two ways into a frozen state, so it must be
+    as versioned as a header PATCH of `status`: a panel that loaded the order
+    before it was cancelled must not be able to silently undo the cancel."""
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()
+    stale = before["field_versions"].get("status", 0)
+    assert c.delete(f"/orders/{ids['po_id']}").status_code == 204
+    assert c.get(f"/orders/{ids['po_id']}").json()["field_versions"]["status"] == stale + 1
+
+    r = c.patch(f"/orders/{ids['po_id']}", json={
+        "status": "Approved", "expected_versions": {"status": stale},
+    })
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "FIELD_CONFLICT"
+    assert c.get(f"/orders/{ids['po_id']}").json()["status"] == "Cancelled"
+
+
+def test_total_amount_only_patch_on_a_frozen_order_is_a_no_op_not_a_409(ctx):
+    """`total_amount` on an order with lines is dropped before the frozen
+    check (the rollup is its only writer), so this stays the same silent
+    no-op it is on an editable order rather than turning into a 409."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Delivered")
+    c = ctx["client"]
+    r = c.patch(f"/orders/{ids['po_id']}", json={"total_amount": "999.00"})
+    assert r.status_code == 200, r.text
+    assert float(r.json()["total_amount"]) == 135.0
+
+
+def test_frozen_order_answers_409_before_an_unknown_line_404(ctx):
+    """The order's state is answered first; an unknown *line* on a frozen
+    order is 409, while an unknown *order* stays 404."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    c = ctx["client"]
+    assert c.patch(f"/orders/{ids['po_id']}/lines/999999", json={"quantity": "1"}).status_code == 409
+    assert c.delete(f"/orders/{ids['po_id']}/lines/999999").status_code == 409
+
+
+def test_a_delivered_order_can_still_be_cancelled(ctx):
+    """Cancelling is a status change, which the freeze permits."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Delivered")
+    c = ctx["client"]
+    assert c.delete(f"/orders/{ids['po_id']}").status_code == 204
+    assert c.get(f"/orders/{ids['po_id']}").json()["status"] == "Cancelled"
+    assert c.delete(f"/orders/{ids['po_id']}").status_code == 409  # ALREADY_CANCELLED
