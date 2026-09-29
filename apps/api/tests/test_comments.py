@@ -12,7 +12,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
@@ -443,3 +443,130 @@ def test_project_comment_writes_audit_but_no_item_edit_log(ws):
     _post(d, ws, "p", "project")
     assert _sql("SELECT 1 FROM audit_log WHERE event = 'comment.create'")
     assert not _sql("SELECT 1 FROM item_edit_log")
+
+
+# ------------------------------------------- access is re-checked, not assumed ---
+
+def _restrict(ws, role, grants):
+    """Make `role`'s user governed by the DB alone, holding only `grants`
+    (list of (module, action)). Returns the group id so a test can change it."""
+    s = SessionLocal()
+    try:
+        gid = s.execute(text("""INSERT INTO permission_group(workspace_id, name, is_system)
+                                VALUES (:w, :n, false) RETURNING group_id"""),
+                        {"w": ws["wid"], "n": f"only-{role}-{uuid.uuid4().hex[:4]}"}).scalar()
+        for module, action in grants:
+            s.execute(text("INSERT INTO group_module_grant(group_id, module, action)"
+                           " VALUES (:g, :m, :a)"), {"g": gid, "m": module, "a": action})
+        s.execute(text("INSERT INTO user_group_membership(user_id, group_id, project_id)"
+                       " VALUES (:u, :g, NULL)"), {"u": ws["uid"][role], "g": gid})
+        s.commit()
+    finally:
+        s.close()
+    return gid
+
+
+def _set_grants(gid, grants):
+    s = SessionLocal()
+    try:
+        s.execute(text("DELETE FROM group_module_grant WHERE group_id = :g"), {"g": gid})
+        for module, action in grants:
+            s.execute(text("INSERT INTO group_module_grant(group_id, module, action)"
+                           " VALUES (:g, :m, :a)"), {"g": gid, "m": module, "a": action})
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_item_thread_needs_list_read_as_well_as_tracking(ws):
+    """The notification for an item opens the item editor (`GET /items/{id}` is
+    gated on `list`), so an item thread needs both; a project thread only
+    tracking. A tracking-only user is neither shown, allowed to post to, nor
+    mentionable on an item."""
+    _restrict(ws, "editor", [("tracking", "read"), ("tracking", "comment")])
+    editor, drafter = _client(ws, "editor"), _client(ws, "drafter")
+    assert editor.get("/comments", params=_target(ws, "item")).status_code == 403
+    assert _post(editor, ws, "x", "item").status_code == 403
+    assert editor.get("/comments", params=_target(ws, "project")).status_code == 200
+    assert _post(editor, ws, "fine", "project").status_code == 201
+    r = _post(drafter, ws, "hi", "item", mentioned_user_ids=[ws["uid"]["editor"]])
+    assert r.status_code == 422 and r.json()["detail"]["user_ids"] == [ws["uid"]["editor"]]
+    assert _post(drafter, ws, "hi", "project", mentioned_user_ids=[ws["uid"]["editor"]]).status_code == 201
+
+
+def test_an_unchanged_mention_never_blocks_an_edit(ws):
+    """The UI resends every `@Name` still in the text. One whose owner has since
+    lost access must not make an unrelated typo fix a 422 — only *newly added*
+    mentions are validated."""
+    d = _client(ws, "drafter")
+    cid = _post(d, ws, "@Manager see this", mentioned_user_ids=[ws["uid"]["manager"]]).json()["comment_id"]
+    _restrict(ws, "manager", [])                                   # manager loses tracking:read
+    r = d.patch(f"/comments/{cid}", json={"body": "@Manager see this, please",
+                                          "mentioned_user_ids": [ws["uid"]["manager"]]})
+    assert r.status_code == 200, r.text
+    _restrict(ws, "editor", [])
+    r = d.patch(f"/comments/{cid}", json={"body": "again",
+                                          "mentioned_user_ids": [ws["uid"]["manager"], ws["uid"]["editor"]]})
+    assert r.status_code == 422 and r.json()["detail"]["user_ids"] == [ws["uid"]["editor"]]
+
+
+def test_a_reply_is_not_sent_to_a_parent_author_who_lost_access(ws):
+    m, d = _client(ws, "manager"), _client(ws, "drafter")
+    top = _post(m, ws, "top").json()["comment_id"]
+    _restrict(ws, "manager", [])
+    r = d.post("/comments", json={"parent_id": top, "body": "reply"})
+    assert r.status_code == 201                                     # the reply itself is fine
+    assert _sql("SELECT 1 FROM notification WHERE recipient_id = :u", u=ws["uid"]["manager"]) == []
+
+
+def test_the_inbox_hides_what_the_recipient_can_no_longer_read(ws):
+    d = _client(ws, "drafter")
+    _post(d, ws, "on item", "item", mentioned_user_ids=[ws["uid"]["manager"]])
+    _post(d, ws, "on project", "project", mentioned_user_ids=[ws["uid"]["manager"]])
+    gid = _restrict(ws, "manager", [("tracking", "read"), ("list", "read")])
+    assert _inbox(ws, "manager")["unread_count"] == 2
+    _set_grants(gid, [("tracking", "read")])                         # loses list:read
+    inbox = _inbox(ws, "manager")
+    assert inbox["unread_count"] == 1
+    assert [n["object_type"] for n in inbox["notifications"]] == ["project"]
+    _set_grants(gid, [])                                             # loses tracking:read too
+    assert _inbox(ws, "manager") == {"notifications": [], "unread_count": 0}
+    _set_grants(gid, [("tracking", "read"), ("list", "read")])       # hidden, not deleted
+    assert _inbox(ws, "manager")["unread_count"] == 2
+
+
+def test_marking_read_is_audited_once_per_real_change(ws):
+    d, m = _client(ws, "drafter"), _client(ws, "manager")
+    for i in range(3):
+        _post(d, ws, f"c{i}", mentioned_user_ids=[ws["uid"]["manager"]])
+    first = _inbox(ws, "manager")["notifications"][0]["notification_id"]
+    assert m.post(f"/notifications/{first}/read").status_code == 204
+    assert m.post(f"/notifications/{first}/read").status_code == 204   # already read: no new row
+    assert m.post("/notifications/read-all").json() == {"marked": 2}
+    assert m.post("/notifications/read-all").json() == {"marked": 0}   # nothing changed: no row
+    events = [r[0] for r in _sql(
+        "SELECT event FROM audit_log WHERE event LIKE 'notification.%' ORDER BY id")]
+    assert events == ["notification.read", "notification.read_all"]
+    assert _sql("SELECT payload->>'marked' FROM audit_log WHERE event = 'notification.read_all'") == [("2",)]
+
+
+def test_creating_a_comment_locks_its_object_against_a_racing_delete(ws):
+    """Without the lock, a delete landing between the existence check and the
+    INSERT turned the FK violation into a raw 500. The check now takes a
+    FOR KEY SHARE lock, so a concurrent DELETE waits for the comment's txn."""
+    from app.comments import queries as cq
+    holder, deleter = SessionLocal(), SessionLocal()
+    try:
+        assert cq._object_in_workspace(holder, object_type="item", object_id=ws["iid"],
+                                       workspace_id=ws["wid"], lock=True)
+        deleter.execute(text("SET LOCAL lock_timeout = '300ms'"))
+        with pytest.raises(OperationalError):
+            deleter.execute(text("DELETE FROM items WHERE item_id = :i"), {"i": ws["iid"]})
+    finally:
+        deleter.rollback(); deleter.close()
+        holder.rollback(); holder.close()
+
+
+def test_a_comment_can_mention_at_most_twenty_people(ws):
+    d = _client(ws, "drafter")
+    assert _post(d, ws, "x", mentioned_user_ids=list(range(1, 22))).status_code == 422

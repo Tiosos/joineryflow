@@ -32,7 +32,8 @@ export function MentionTextarea({
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
 
   const query = useMemo(() => {
-    const m = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, caret));
+    // Up to 40 chars after the @, spaces allowed, so a full name can be typed.
+    const m = /(?:^|\s)@([^@\n]{0,40})$/.exec(value.slice(0, caret));
     return m ? m[1] : null;
   }, [value, caret]);
 
@@ -45,7 +46,7 @@ export function MentionTextarea({
   }, [query, members, dismissedAt, caret]);
 
   function choose(m: Mentionable) {
-    const before = value.slice(0, caret).replace(/@([^\s@]*)$/, `@${m.full_name} `);
+    const before = value.slice(0, caret).replace(/@([^@\n]{0,40})$/, `@${m.full_name} `);
     onChange(before + value.slice(caret));
     requestAnimationFrame(() => {
       ref.current?.focus();

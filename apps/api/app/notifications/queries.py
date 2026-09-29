@@ -3,7 +3,8 @@
 A notification is addressed to one user, so every query is keyed on
 `recipient_id` (and `workspace_id`): you can only ever see or mark your own.
 Notifications whose comment was deleted are hidden and not counted — an unread
-badge that points at nothing would be a lie.
+badge that points at nothing would be a lie. The route additionally hides what
+the recipient can no longer read (see `notifications/routes.py`).
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ def _url(object_type: str, object_id: int) -> str | None:
 
 def list_notifications(
     db: Session, *, user_id: int, workspace_id: int, unread_only: bool,
-    limit: int, offset: int,
+    limit: int, offset: int, include_items: bool = True,
 ) -> dict:
     rows = db.execute(
         text(
@@ -49,6 +50,7 @@ def list_notifications(
               LEFT JOIN items i    ON i.item_id    = c.item_id
              WHERE n.recipient_id = :u AND n.workspace_id = :w
                {"AND n.read_at IS NULL" if unread_only else ""}
+               {"" if include_items else "AND c.item_id IS NULL"}
              ORDER BY n.created_at DESC, n.notification_id DESC
              LIMIT :lim OFFSET :off
             """
@@ -59,30 +61,44 @@ def list_notifications(
         "notifications": [
             {**dict(r), "url": _url(r["object_type"], r["object_id"])} for r in rows
         ],
-        "unread_count": unread_count(db, user_id=user_id, workspace_id=workspace_id),
+        "unread_count": unread_count(
+            db, user_id=user_id, workspace_id=workspace_id, include_items=include_items
+        ),
     }
 
 
-def unread_count(db: Session, *, user_id: int, workspace_id: int) -> int:
+def unread_count(
+    db: Session, *, user_id: int, workspace_id: int, include_items: bool = True
+) -> int:
     return db.execute(
-        text(f"SELECT count(*) {_VISIBLE} AND n.read_at IS NULL"),
+        text(f"SELECT count(*) {_VISIBLE} AND n.read_at IS NULL"
+             + ("" if include_items else " AND c.item_id IS NULL")),
         {"u": user_id, "w": workspace_id},
     ).scalar_one()
 
 
-def mark_read(db: Session, *, notification_id: int, user_id: int, workspace_id: int) -> bool:
-    """False if it is not this user's. Marking an already-read one is a no-op."""
+def mark_read(db: Session, *, notification_id: int, user_id: int, workspace_id: int) -> str:
+    """"OK" when it just became read, "ALREADY_READ" when it already was,
+    "NOT_FOUND" when it is not this user's."""
     row = db.execute(
         text(
             """
-            UPDATE notification SET read_at = COALESCE(read_at, now())
+            UPDATE notification SET read_at = now()
              WHERE notification_id = :n AND recipient_id = :u AND workspace_id = :w
+               AND read_at IS NULL
             RETURNING 1
             """
         ),
         {"n": notification_id, "u": user_id, "w": workspace_id},
     ).first()
-    return row is not None
+    if row:
+        return "OK"
+    mine = db.execute(
+        text("SELECT 1 FROM notification WHERE notification_id = :n"
+             " AND recipient_id = :u AND workspace_id = :w"),
+        {"n": notification_id, "u": user_id, "w": workspace_id},
+    ).first()
+    return "ALREADY_READ" if mine else "NOT_FOUND"
 
 
 def mark_all_read(db: Session, *, user_id: int, workspace_id: int) -> int:

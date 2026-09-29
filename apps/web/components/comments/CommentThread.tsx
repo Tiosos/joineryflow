@@ -4,12 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { commentsApi } from "@/lib/comments-fetch";
 import type { CommentObjectType, CommentOut, Mentionable } from "@/lib/comments-types";
+import { formatLocalTs } from "./format";
 import { MentionTextarea } from "./MentionTextarea";
 import { mentionedIds, splitByMentions } from "./mentions";
-
-function formatTs(ts: string): string {
-  return ts.replace("T", " ").slice(0, 16);
-}
 
 function errorMessage(e: unknown, fallback: string): string {
   const code = e instanceof Error ? e.message : "";
@@ -217,7 +214,7 @@ function CommentItem({
       <p className="text-xs text-h-muted">
         <span className="font-medium text-h-ink">{comment.author_name ?? "Former user"}</span>
         {" · "}
-        {formatTs(comment.created_at)}
+        {formatLocalTs(comment.created_at)}
         {comment.edited_at && " · edited"}
       </p>
 

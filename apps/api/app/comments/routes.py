@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
+from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from . import queries as q
@@ -21,6 +22,14 @@ from .schemas import (
 )
 
 router = APIRouter(tags=["comments"])
+
+
+def _require_read_access(db: Session, user: AuthUser, object_type: str) -> None:
+    """`tracking` is enforced by the route dependency; an item's thread also
+    needs the modules in `READ_MODULES` (its link opens the item editor)."""
+    for module in q.READ_MODULES[object_type]:
+        if not has_permission_db(db, user, module, "read"):
+            raise HTTPException(403, "forbidden")
 
 
 def _fail(code: str, payload: object = None) -> HTTPException:
@@ -40,6 +49,7 @@ def list_comments_route(
     user: AuthUser = Depends(require_permission(q.MODULE, "read")),
     db: Session = Depends(get_db),
 ):
+    _require_read_access(db, user, object_type)
     rows = q.list_comments(
         db, object_type=object_type, object_id=object_id,
         workspace_id=user.workspace_id,
@@ -55,6 +65,8 @@ def create_comment_route(
     user: AuthUser = Depends(require_permission(q.MODULE, "comment")),
     db: Session = Depends(get_db),
 ):
+    if body.object_type is not None:  # a reply's object comes from its parent
+        _require_read_access(db, user, body.object_type)
     code, out = q.create_comment(
         db, actor=user, object_type=body.object_type, object_id=body.object_id,
         parent_id=body.parent_id, body=body.body,

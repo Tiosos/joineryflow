@@ -27,6 +27,15 @@ _OBJECT_COL = {
 # Room and Item are Tracking's own hierarchy (areas/rooms already gate on it).
 MODULE = "tracking"
 
+# An item's thread also needs `list:read`, because its notification links to the
+# item editor and `GET /items/{id}` is gated on `list` — the Dynamic RBAC engine
+# lets an admin grant one without the other, and a link the recipient cannot open
+# is the failure `BAD_MENTION` exists to prevent. Every default role holds both.
+READ_MODULES = {
+    "project": (MODULE,), "area": (MODULE,), "room": (MODULE,),
+    "item": (MODULE, "list"),
+}
+
 _EXCERPT = 200
 
 _COMMENT_COLS = """
@@ -39,8 +48,12 @@ _COMMENT_JOIN = "LEFT JOIN app_user ua ON ua.id = c.author_id"
 
 
 def _object_in_workspace(
-    db: Session, *, object_type: str, object_id: int, workspace_id: int
+    db: Session, *, object_type: str, object_id: int, workspace_id: int,
+    lock: bool = False,
 ) -> bool:
+    """Does the object exist in this workspace? With `lock`, also takes a
+    `FOR KEY SHARE` lock on its row so a concurrent hard delete waits for this
+    transaction instead of turning the comment INSERT into a raw FK violation."""
     sql = {
         "project": "SELECT 1 FROM projects p WHERE p.project_id = :id AND p.workspace_id = :w",
         "area": """SELECT 1 FROM area a JOIN projects p ON p.project_id = a.project_id
@@ -54,6 +67,8 @@ def _object_in_workspace(
                      WHERE i.item_id = :id AND p.workspace_id = :w
                        AND {joinery_items_only("i")}""",
     }[object_type]
+    if lock:
+        sql += " FOR KEY SHARE OF " + {"project": "p", "area": "a", "room": "r", "item": "i"}[object_type]
     return db.execute(text(sql), {"id": object_id, "w": workspace_id}).first() is not None
 
 
@@ -163,13 +178,14 @@ def list_comments(
     ]
 
 
-def _bad_mentions(db: Session, *, workspace_id: int, user_ids: list[int]) -> list[int]:
-    """Ids that cannot be mentioned: not an active user of this workspace, or a
-    user who cannot read Tracking (a notification linking them to a record they
-    cannot open would be worse than refusing the mention). Checked against the
-    Dynamic RBAC engine, workspace-wide."""
+def _readers(
+    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str
+) -> set[int]:
+    """Of `user_ids`, those who are active in this workspace and can currently
+    read what this object's thread links to (`READ_MODULES`). Checked against
+    the Dynamic RBAC engine, workspace-wide."""
     if not user_ids:
-        return []
+        return set()
     rows = db.execute(
         text(
             """
@@ -180,16 +196,28 @@ def _bad_mentions(db: Session, *, workspace_id: int, user_ids: list[int]) -> lis
         ),
         {"w": workspace_id, "ids": user_ids},
     ).mappings().all()
-    ok = {
+    return {
         r["id"]
         for r in rows
-        if has_permission_db(
-            db,
-            AuthUser(id=r["id"], workspace_id=r["workspace_id"], email=r["email"],
-                     full_name=r["full_name"], auth_role=r["auth_role"]),
-            MODULE, "read",
+        if all(
+            has_permission_db(
+                db,
+                AuthUser(id=r["id"], workspace_id=r["workspace_id"], email=r["email"],
+                         full_name=r["full_name"], auth_role=r["auth_role"]),
+                module, "read",
+            )
+            for module in READ_MODULES[object_type]
         )
     }
+
+
+def _bad_mentions(
+    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str
+) -> list[int]:
+    """Ids that cannot be mentioned: not an active user of this workspace, or a
+    user who cannot read this thread's object (a notification linking them to a
+    record they cannot open is worse than refusing the mention)."""
+    ok = _readers(db, workspace_id=workspace_id, user_ids=user_ids, object_type=object_type)
     return sorted(set(user_ids) - ok)
 
 
@@ -232,6 +260,7 @@ def create_comment(
     Codes: NOT_FOUND, PARENT_DELETED, REPLY_TO_REPLY, BAD_MENTION (payload =
     the offending user ids)."""
     ws = actor.workspace_id
+    body = body.strip()
     parent = None
     if parent_id is not None:
         # Locked so a delete racing this reply serialises against it.
@@ -244,12 +273,12 @@ def create_comment(
             return "REPLY_TO_REPLY", None
         object_type, object_id = parent["object_type"], parent["object_id"]
     elif not _object_in_workspace(
-        db, object_type=object_type, object_id=object_id, workspace_id=ws
+        db, object_type=object_type, object_id=object_id, workspace_id=ws, lock=True
     ):
         return "NOT_FOUND", None
 
     ids = sorted(set(mentioned_user_ids))
-    bad = _bad_mentions(db, workspace_id=ws, user_ids=ids)
+    bad = _bad_mentions(db, workspace_id=ws, user_ids=ids, object_type=object_type)
     if bad:
         return "BAD_MENTION", bad
 
@@ -261,7 +290,7 @@ def create_comment(
             VALUES (:w, :oid, :p, :a, :b) RETURNING comment_id
             """
         ),
-        {"w": ws, "oid": object_id, "p": parent_id, "a": actor.id, "b": body.strip()},
+        {"w": ws, "oid": object_id, "p": parent_id, "a": actor.id, "b": body},
     ).scalar_one()
     for uid in ids:
         db.execute(
@@ -271,7 +300,12 @@ def create_comment(
 
     recipients = {uid: "mention" for uid in ids}
     if parent and parent["author_id"] and parent["author_id"] not in recipients:
-        recipients[parent["author_id"]] = "reply"
+        # A reply is never refused over its recipient, but it is only *sent* to a
+        # parent author who can still open the thread.
+        if parent["author_id"] in _readers(
+            db, workspace_id=ws, user_ids=[parent["author_id"]], object_type=object_type
+        ):
+            recipients[parent["author_id"]] = "reply"
     _notify(db, workspace_id=ws, actor_id=actor.id, comment_id=cid, recipients=recipients)
 
     write_audit(
@@ -281,7 +315,7 @@ def create_comment(
     )
     _log_item(db, {"item_id": object_id if object_type == "item" else None},
               actor_id=actor.id, field="_comment_create", old=None,
-              new=f"comment {cid}: {body.strip()[:_EXCERPT]}")
+              new=f"comment {cid}: {body[:_EXCERPT]}")
     return "OK", _load_one(db, comment_id=cid, workspace_id=ws)
 
 
@@ -302,19 +336,25 @@ def edit_comment(
     if row["author_id"] != actor.id:
         return "NOT_AUTHOR", None
 
-    new_ids: list[int] | None = None
-    if mentioned_user_ids is not None:
-        new_ids = sorted(set(mentioned_user_ids))
-        bad = _bad_mentions(db, workspace_id=ws, user_ids=new_ids)
-        if bad:
-            return "BAD_MENTION", bad
-
     old_ids = {
         r for r in db.execute(
             text("SELECT user_id FROM comment_mention WHERE comment_id = :c"),
             {"c": comment_id},
         ).scalars()
     }
+    new_ids: list[int] | None = None
+    if mentioned_user_ids is not None:
+        new_ids = sorted(set(mentioned_user_ids))
+        # Only *newly added* mentions are checked: one already on the comment
+        # must not block an unrelated edit just because that person has since
+        # lost access (the UI resends every `@Name` still in the text).
+        bad = _bad_mentions(
+            db, workspace_id=ws, object_type=row["object_type"],
+            user_ids=[u for u in new_ids if u not in old_ids],
+        )
+        if bad:
+            return "BAD_MENTION", bad
+
     body = body.strip()
     if body == row["body"] and (new_ids is None or set(new_ids) == old_ids):
         return "OK", _load_one(db, comment_id=comment_id, workspace_id=ws)  # no-op

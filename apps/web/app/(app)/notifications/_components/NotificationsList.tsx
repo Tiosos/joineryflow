@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { notificationText } from "@/components/chrome/NotificationBell";
+import { formatLocalTs } from "@/components/comments/format";
 import { notificationsApi } from "@/lib/comments-fetch";
 import type { NotificationOut } from "@/lib/comments-types";
 
@@ -90,7 +91,7 @@ export function NotificationsList() {
               <span className={n.read_at ? "" : "font-medium"}>{notificationText(n)}</span>
               {n.object_label && <span className="text-xs text-h-muted"> · {n.object_label}</span>}
               <span className="mt-0.5 block text-xs text-h-muted">
-                {n.created_at.replace("T", " ").slice(0, 16)}
+                {formatLocalTs(n.created_at)}
                 {!n.url && " · no page for this yet"}
               </span>
               <span className="mt-1 block text-sm">{n.excerpt}</span>

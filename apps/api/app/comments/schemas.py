@@ -18,7 +18,7 @@ class CreateCommentIn(BaseModel):
     object_id: int | None = None
     parent_id: int | None = None
     body: Body
-    mentioned_user_ids: list[int] = Field(default_factory=list, max_length=50)
+    mentioned_user_ids: list[int] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def _one_target(self):
@@ -34,7 +34,7 @@ class CreateCommentIn(BaseModel):
 class EditCommentIn(BaseModel):
     body: Body
     # None keeps the current mentions; a list (even empty) replaces them.
-    mentioned_user_ids: list[int] | None = Field(default=None, max_length=50)
+    mentioned_user_ids: list[int] | None = Field(default=None, max_length=20)
 
 
 class MentionOut(BaseModel):
