@@ -1393,7 +1393,9 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   `reindex.py`, `routes.py`.
 - **`GET /search?q=&types=&project_id=&include_archived=&limit=&offset=`** —
   `current_user` only; **no RBAC matrix change**. A type is visible when the
-  role can `read` its module (`routes.TYPE_MODULE`); unreadable types are
+  caller's *effective* `read` grant covers its module (`routes.TYPE_MODULE`;
+  the Dynamic RBAC engine since *Global Search RBAC sync* below — it was the
+  static role matrix when this shipped); unreadable types are
   dropped silently, never 403'd. `503 SEARCH_UNAVAILABLE` on outage, with no
   Postgres fallback. **`GET /search/health`** is gated
   `("it_management","read")` — which the matrix gives **manager** as well as
@@ -1838,9 +1840,11 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   - **Q473** (build §29 comments so the `comment` action stops being a dead
     grant) is **not built** — a new entity, 8 object types and @mentions is
     a separate feature, not part of the permission engine itself.
-  - **`apps/api/app/search/routes.py`'s `visible_types()`** still filters on
-    `has_permission(auth_role, ...)` (the static matrix), not this engine —
-    flagged, not silently resolved. A user whose grants an admin customised
+  - **CLOSED — see *Global Search RBAC sync* below.** (Originally: `apps/api/app/search/routes.py`'s
+    type-visibility check — the function is `readable_types`, not the
+    `visible_types()` this bullet first named — filtered on
+    `has_permission(auth_role, ...)`, the static matrix, not this engine.
+    Kept for history.) A user whose grants an admin customised
     via the new engine (e.g. revoked `list:read` from their group, or gave
     them a project-scoped-only grant) will not see that reflected in which
     search result *types* are visible to them. Search's own workspace/project
@@ -2846,14 +2850,72 @@ silently. None of the three is started.
   lower schema risk than B, but needs a design decision on what it
   aggregates across (open defects by project? by supplier? by stage?)
   that Plan V1 doesn't spell out.
-- **Option D — Sync Global Search's RBAC check to the Dynamic RBAC
-  engine.** Flagged as a known gap in *Dynamic RBAC engine* above:
-  `apps/api/app/search/routes.py`'s `visible_types()` still filters on the
-  static `MATRIX` via `has_permission()`, not `effective_actions()` — so a
-  workspace admin who customises a group's grants through the Permission
-  Groups admin UI (built earlier this session) won't see that reflected in
-  which search result *types* are visible to a member of that group. The
-  smallest of the three: one function call to swap, but needs a `project_id`
-  decision (search has no single project in scope, so it would always pass
-  `project_id=None`, i.e. workspace-wide grants only — worth stating
-  explicitly rather than assuming).
+- ~~**Option D — Sync Global Search's RBAC check to the Dynamic RBAC
+  engine.**~~ **Built — see *Global Search RBAC sync* below.** B and C
+  remain unstarted.
+
+## Global Search RBAC sync — shipped
+
+> Chosen by the user from the four options proposed after the Orderbook
+> editing UI (the recommended one: smallest, clearest "done"). Closes the
+> gap *Dynamic RBAC engine* recorded as "flagged, not silently resolved".
+> No migration, no spec or plan doc; this section is its written record.
+
+- **What changed.** `apps/api/app/search/routes.py::readable_types(db, user)`
+  (was `readable_types(auth_role)`) now asks the Dynamic RBAC engine
+  (`rbac_engine.has_permission_db`) instead of the static `MATRIX`, so a
+  group's grants — customised through the Permission Groups admin UI —
+  decide which result **types** a member sees, in both directions: a
+  revoked `orderbook:read` hides order/supplier results, and a custom group
+  granting only `orderbook:read` hides item results even though the role's
+  `MATRIX` row would show them. `GET /search` gained a `db` dependency to
+  supply the session. Nothing else moved; the Meilisearch filter still
+  always carries `workspace_id`, and unreadable types are still dropped
+  silently, never 403'd.
+- **Settled decision — workspace-wide grants only (`project_id=None`).**
+  The option's own note flagged this as needing to be stated, not assumed.
+  Search has no single project in scope (the `project_id` query param
+  narrows *results*, it is not a permission scope), so a project-scoped
+  membership is deliberately not consulted. **Consequence, recorded
+  rather than hidden:** a user whose *only* memberships are project-scoped
+  gets no result types at all — the engine treats "has any membership"
+  as fully DB-governed and never falls back to `MATRIX`, and a
+  project-scoped grant is invisible at workspace scope. Pinned by
+  `test_project_scoped_only_membership_sees_no_types`. In practice this
+  needs an admin to deliberately strip a user's workspace-wide group;
+  Q466's model is project memberships *added to* a role group. If that
+  becomes a real need, passing the request's `project_id` into the check
+  when supplied is safe (the index filter already restricts to that
+  project) — but an unfiltered search would still show nothing, so it is
+  a design question, not a one-line fix.
+- **Cost.** `readable_types` resolves each *distinct module* once (11 types
+  map onto 7 modules) rather than once per type — it runs on every
+  keystroke of the TopBar box, and each engine call is a query (two when
+  the grant set is empty). A single all-grants query would be cheaper
+  still; not done, since it would re-implement the engine's
+  membership-fallback rule beside the engine.
+- **Test infrastructure trap, recorded because it recurs.**
+  `rbac_engine.py` does `from .permissions import MATRIX`, binding its own
+  name. A test that swaps the fallback matrix must patch
+  **`rbac_engine.MATRIX`**, not `permissions.MATRIX` — patching the latter
+  replaces an attribute the engine never reads, and the test passes or
+  fails for the wrong reason. `test_unreadable_type_is_dropped_silently`
+  was patched this way; `_login()`'s raw-SQL users hold zero memberships,
+  so they still exercise the fallback.
+- **Tests:** three new in `test_search_routes.py` — revoking a system
+  group's grant hides the type, a custom group governs in both directions
+  (and `types=` cannot reach past it), and the project-scoped-only ceiling.
+  Full suite green (985 passed, 10 skipped, the same pre-existing local
+  `MEILI_URL` failure) before the last two tests were added; the search
+  route module alone re-run green after (21 passed).
+- **Known gap found, not fixed: `/auth/me` is still the static matrix.**
+  `auth/routes.py` serves `permissions_for(user.auth_role)`, which feeds
+  the web `TabStrip` gating and every `can(me, …)` check. So for a user
+  whose grants were customised, **search now follows the DB while the tab
+  strip and write affordances still follow `MATRIX`**: a revoked
+  `orderbook:read` drops order results from search but still shows the
+  Orderbook tab. The API's 403 stays the real enforcement point either way
+  (the *Web shell* section already says so). Fixing it means computing the
+  permissions map through `effective_actions` for all 12 modules on every
+  `/auth/me` — a behaviour change to an endpoint every page load hits, so
+  it is its own decision, not folded into this one.
