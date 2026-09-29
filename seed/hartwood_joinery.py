@@ -3019,7 +3019,7 @@ def main() -> None:
             _qc_items = [r[0] for r in db.execute(text("""
                 SELECT item_id FROM items
                  WHERE project_id = :p AND row_type = 'joinery_item'
-                 ORDER BY num LIMIT 2
+                 ORDER BY num LIMIT 3
             """), {"p": _alf})]
             if _qc_items:
                 _qc_item = _qc_items[0]
@@ -3066,6 +3066,29 @@ def main() -> None:
                     "seeded qc: 1 open + 1 resolved defect, 3-item checklist "
                     "(2 checked), 1 open internal rework on ALF-001's first item"
                 )
+
+            # The QC Dashboard counts only cutlists that have started but not
+            # finished, so give it both sides of that line: a defect on the
+            # third item (its cutlist has a DOWN completion — in scope, and a
+            # second stage for the by-stage chart) and one on the second (its
+            # cutlist is only *assigned*, nothing begun — out of scope, so the
+            # "not counted" note has something to say). This leans on the items
+            # being picked in the same order as the shop-floor seed's (num and
+            # item_id ascend together here): if that ever changes the two swap
+            # sides, and tests/e2e/qc_dashboard.spec.ts fails loudly.
+            if len(_qc_items) >= 3:
+                for _i in _qc_items[1:3]:
+                    db.execute(text("DELETE FROM qc_defect WHERE item_id = :i"), {"i": _i})
+                _qc.create_defect(
+                    db, item_id=_qc_items[2], workspace_id=wid, actor_id=_foreman,
+                    stage_key="CNC", description="Saw burn along the drawer front.",
+                )
+                _qc.create_defect(
+                    db, item_id=_qc_items[1], workspace_id=wid, actor_id=_foreman,
+                    stage_key=None, description="Client has not confirmed the handle finish.",
+                )
+                db.commit()
+                print("seeded qc dashboard: 1 defect in scope (CNC), 1 out of scope")
 
             _packer = db.execute(text("SELECT id FROM app_user WHERE workspace_id = :w"
                                       " AND email = 'sam.lee@hartwood.test'"),

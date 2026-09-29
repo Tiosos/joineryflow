@@ -20,6 +20,7 @@ export type Module =
   | "cut_floor"
   | "shop_floor"
   | "estimating"
+  | "qc"
   | "it_management";
 
 export type Action = "read" | "write" | "approve" | "comment";

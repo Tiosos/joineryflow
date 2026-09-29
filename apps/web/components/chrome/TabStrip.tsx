@@ -31,6 +31,7 @@ const SECONDARY_TABS: Tab[] = [
   { href: "/catalog",    label: "Catalog",    module: "catalog" },
   { href: "/shop-floor", label: "Shop Floor", module: "shop_floor" },
   { href: "/cut-floor",  label: "Cut Floor",  module: "cut_floor" },
+  { href: "/qc",         label: "QC",         module: "qc" },
   { href: "/estimating", label: "Estimating", module: "estimating" },
   // /customers is the estimating module's customer registry — same gate.
   { href: "/customers",  label: "Customers",  module: "estimating" },

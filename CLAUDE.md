@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0042`. Head is `0042_comments_notifications` (Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below). `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 16 Playwright specs / 49 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 17 Playwright specs / 53 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -225,7 +225,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 - Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
 - `apps/web/proxy.ts` (Next 16 renamed the `middleware` convention to `proxy`; runs in the Node.js runtime) enforces login redirect on all non-public paths.
-- `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · Estimating · Customers`); `SideBar.tsx` is the project list only.
+- `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`); `SideBar.tsx` is the project list only.
 - **The tab strip is gated on the user's effective grants**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves — the Dynamic RBAC engine's workspace-wide grants for that user (see *`/auth/me` follows the permission groups*), not the bare role row. Today every default group holds `read` on every tab's module, so all tabs still render for everyone — the gate hides a tab once an admin removes that module's read grant from a user's groups. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
 - Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
 
@@ -267,7 +267,7 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Hi-fi reference designs in `legacy/` use a richer palette (`surfaceAlt`, `ink2..4`, `accentSoft`, `good`, `warn`, `bad`, `info`) — port into `globals.css` only when an actual feature needs them.
 - Typography: Inter (default sans) for UI, JetBrains Mono for part #, PO #, ETAs, money. The `.h-mono` utility (with `tnum`) is wired in `globals.css`.
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
-- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q474 confirmed this rule stands**: Plan V1's `Cutlist` module **is** the existing `List` tab — which the RBAC module name already reflects, since `("list","read")` gates `cutlist.pdf`. No seventh primary tab.)
+- IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q474 confirmed this rule stands**: Plan V1's `Cutlist` module **is** the existing `List` tab — which the RBAC module name already reflects, since `("list","read")` gates `cutlist.pdf`. No seventh primary tab.)
 
 ## Reference docs (read before large changes)
 
@@ -2236,9 +2236,9 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
   noted in *Tender Lifecycle + Financials* above) run against a real
   migrated Postgres 16 instance with zero regressions outside the files
   named here.
-- **Out of scope (deferred):** the standalone cross-project **QC
-  Dashboard** Plan V1 §4.2 names (this ships the per-item surfaces that
-  would back it, not the dashboard itself); QC checklist templates or
+- **Out of scope (deferred):** ~~the standalone cross-project **QC
+  Dashboard** Plan V1 §4.2 names~~ **built, see *QC Dashboard* below**
+  (this section shipped the per-item surfaces that back it); QC checklist templates or
   per-project configuration (today's checklist is ad-hoc per item, added
   free-text, matching Simplicity First over building a template system
   nothing asked for); linking a `rework` row to the `qc_defect` that caused
@@ -3189,8 +3189,8 @@ see *PM Workbench* above.
 Three alternatives were proposed alongside Purchase Order editing (above)
 when this session was asked to suggest the next sub-project; the user chose
 PO editing and asked that the other three be recorded rather than dropped
-silently. **B (Comments) and D (Search RBAC sync) have since been built; C
-(QC Dashboard) is not started.**
+silently. **B (Comments), C (QC Dashboard) and D (Search RBAC sync) have all
+since been built.**
 
 - ~~**Option B — Comments (Plan V1 §29, Q473).**~~ **Built — see *Comments,
   mentions and notifications* above.** Kept for history: a generic comment/mention
@@ -3201,7 +3201,8 @@ silently. **B (Comments) and D (Search RBAC sync) have since been built; C
   fields, not this. Sized larger than PO editing: a new entity, @mentions,
   and a decision on which 8 object types get a comment thread first.
   Already named once as deferred, in *Dynamic RBAC engine* above (Q473).
-- **Option C — QC Dashboard (Plan V1 §4.2).** The standalone cross-project
+- ~~**Option C — QC Dashboard (Plan V1 §4.2).**~~ **Built — see *QC
+  Dashboard* below.** Kept for history: the standalone cross-project
   dashboard the *QC / Rework / Packing* section above explicitly named as
   out of scope when that sub-project shipped the per-item QC surfaces
   (defects/checklist/rework tabs, PACKING stage) that would back it. This
@@ -3326,11 +3327,141 @@ silently. **B (Comments) and D (Search RBAC sync) have since been built; C
   seeded viewer's Orderbook tab and `me.orderbook` (`["read"]`) both went away
   after the grant was deleted from the viewer group, on reload.
 - **Known gaps, recorded.**
-  - The web `Module` type in `lib/permissions.ts` still lacks `"qc"` (added to
-    the API in `0039`); `/auth/me` serves it, but `can(me, "qc", …)` would not
-    type-check. Nothing calls it yet.
+  - ~~The web `Module` type in `lib/permissions.ts` lacked `"qc"`.~~ **Closed by
+    the QC Dashboard**, whose tab is the first thing to call `can(me, "qc", …)`.
   - A permissions change takes effect on the user's **next page load** — there
     is no push channel, and `(app)/layout.tsx` fetches `me` per navigation.
   - Q472's per-object rules (`require_drafter()` etc.) are still hand-written
     in route handlers, so a group grant cannot express them and `can(me, …)`
     is a coarse gate for those surfaces, as it already was.
+
+## QC Dashboard (Plan V1 §4.2, Q515) — shipped
+
+> Chosen by the user as the next sub-project after `/auth/me` ("Next task is QC
+> Dashboard (§4.2). Ask me any questions"). §4.2 names a "QC Dashboard" and says
+> nothing else, so the user was asked before any code was written; the answers
+> below are **settled decisions**, not assumptions. No migration, no spec or plan
+> doc; this section is its written record. It is the option *Deferred options*
+> called C, and it closes the gap *QC / Rework / Packing* named as out of scope.
+
+- **Settled decisions (user).**
+  1. **Scope: only items whose cutlist has started but not finished.** The user's
+     wording was "current cutlists have not been assigned to finished but have
+     already started to make", which was ambiguous, so it was asked again and
+     confirmed. A cutlist has no finished flag, so both words are **derived from
+     Shop Floor** (Q412: the workflow belongs to the cutlist):
+     *started* = an assignment on the cutlist with `started_at` set and not
+     cancelled, **or** any `stage_completion_log` row not undone;
+     *finished* = a `PACKING` completion not undone (PACKING is the last Shop
+     Floor stage; DEL / INST are not assignable, Q561). A merely `assigned` task
+     is **not** started; a cancelled start is not started; an undone completion
+     is not a completion; an undone PACKING puts a cutlist back in scope.
+     **An item with no cutlist is out of scope** (nothing to have started).
+  2. **Open records only**, for both defects and rework. Resolved defects and
+     closed rework are history and stay on the item's own QC tab.
+  3. **Contents:** open defects by project and by stage, open rework by project
+     and kind (with cost), and a drill-down list of the items carrying open
+     records. Checklist completion and a per-record worklist were offered and
+     **not** chosen.
+  4. **`/qc` on the secondary tab strip, gated on `qc:read`.** No new permission:
+     IT already controls it through the permission groups, and the tab hides
+     when `qc:read` is removed (the `/auth/me` work). Q466 deliberately did not
+     build tab-level scoping, so this is the same module gate every other tab has.
+  5. **Read-only**, every row linking to `/items/{id}?tab=qc` where raising,
+     resolving and closing already live with their own `qc:write` / `qc:approve`
+     rules. Nothing on the dashboard mutates data, so it writes no audit row.
+  6. **Fixed numbers, filterable by project and date range** — no configurable
+     widgets, matching Q527 (fixed KPI catalogue, no formula engine).
+- **Records outside the scope are counted, never dropped.** That is a choice made
+  while building, not one the user asked for: with a started-but-not-finished
+  scope, a defect raised on a cutlist nobody has begun would otherwise vanish
+  from QC entirely. `scope.open_defects_out_of_scope` /
+  `open_rework_out_of_scope` say how many were left out, and the page shows an
+  amber note when either is non-zero. Related parts are neither in scope nor
+  counted as outside it (they are not Joinery Items; a defect on one cannot be
+  raised through the API anyway).
+- **Backend — `apps/api/app/qc/dashboard.py`** (+ schemas, one route in
+  `qc/routes.py`). `GET /qc/dashboard?project_id=&date_from=&date_to=`, gated
+  `("qc", "read")`. One `scope` CTE feeds every number so they cannot disagree
+  about which items count. `404` for a project outside the workspace, `422` when
+  `date_from` is after `date_to`. The date range filters when a record was
+  **raised** (`created_at`, inclusive of both ends) — for an open record that is
+  the only date it has; there is no "resolved in range" because resolved records
+  are not shown. Stage order comes from the `stages` lookup's `sort_order`, with
+  untagged defects last. **Stage labels are lookup data and differ between
+  databases** (`Marked Down` in one, `Down` in another), so tests assert
+  `stage_key`, never a label.
+- **Rework cost can under-count, and says so.** `rework.cost` is optional, so
+  `rework_cost_total` sums only what was recorded and `rework_cost_missing`
+  counts the open rework with no cost. The page shows `—` (not `$0.00`, which
+  reads as a real total) when *nothing* has been priced, and "Excludes N open
+  rework with no cost recorded" otherwise. Money arrives as a JSON string, as
+  everywhere else.
+- **Web.** `/qc` (`app/(app)/qc/page.tsx` + `QcDashboardClient.tsx`), a `QC` entry
+  on the secondary strip after Cut Floor (production tabs together, Estimating and
+  Customers still a pair). Filters live in state **and** the URL
+  (`?project=&from=&to=`, via `history.replaceState`, the pattern the Areas &
+  Rooms card uses) so a filtered view is linkable and survives a reload; only
+  the newest request may write, so a slow response for an earlier filter cannot
+  overwrite the one on screen. `lib/permissions.ts`'s `Module` type gained
+  `"qc"` (it lagged `0039`).
+- **Seed.** `make seed` adds to what §M already left on ALF-001: an open `CNC`
+  defect on the third item (its cutlist has a `DOWN` completion — in scope, and a
+  second stage for the chart) and an open, untagged defect on the second item
+  (its cutlist is only *assigned* — out of scope, so the amber note has
+  something to say). Through `app.qc.queries`, so the rows carry real audit /
+  edit-log entries. Idempotent (both items' defects are dropped first). The
+  dashboard then opens with 2 open defects, 1 open rework with no cost, and
+  1 defect not counted.
+- **RBAC — no matrix change.** `qc:read`, already granted to every role.
+- **Tests.** `test_qc_dashboard.py` (15): scope at **every** boundary (started,
+  completed, unpacked are in; no cutlist, not started, merely assigned,
+  cancelled start, undone completion, finished are out) and an undone PACKING
+  bringing a cutlist back; out-of-scope counted for both kinds of record; open
+  only; by project and stage with untagged last and the oldest age; rework by
+  kind with cost and unpriced count; drill-down oldest first and omitting clean
+  items; the empty dashboard; related parts not counted; project filter scoping
+  even the out-of-scope counts; the date range (inclusive, and applied to the
+  out-of-scope counts too); the 404 / 422 edges; `qc:read` required (a group
+  stripped of `qc` gets 403) and sufficient (a viewer sees it); workspace
+  isolation; read-only writes no audit row. **The scope test was confirmed to
+  fail against a loosened "started"** (any assignment counts: 5 items in scope
+  instead of 3). `tests/e2e/qc_dashboard.spec.ts` (4) was run against a live
+  migrated, seeded stack: the numbers and the amber note, a row drilling to the
+  item's QC tab, filters narrowing / persisting across a reload / clearing, and a
+  viewer seeing the same numbers with no buttons on the page. The spec is
+  read-only, so unlike estimating / comments it is safe to re-run without
+  re-seeding. `smoke.spec.ts` and `item_project_detail.spec.ts` (which touch the
+  tab strip) still pass.
+- **Known gaps, recorded.**
+  - **Checklist completion, a per-record worklist and resolved / closed history
+    are not on the dashboard** (not chosen). The drill-down goes to the item.
+  - **No supplier breakdown.** Defects and rework are not linked to a supplier;
+    adding that is a schema change, not a query.
+  - `rework.responsibility` is free text, so there is no "by person / team"
+    view either.
+  - The scope is derived, so a cutlist whose stages were never assigned through
+    Shop Floor (work recorded some other way) reads as *not started* and its
+    defects show only in the amber count.
+  - The date range uses the database session's time zone for its day
+    boundaries, and "oldest" ages are computed in the browser.
+  - The dashboard does not poll: the numbers refresh on a filter change or a
+    reload, not on a timer (the bell and the Shop Floor board do poll).
+  - **Two grants, one click.** The dashboard needs `qc:read`; the drill-down
+    opens `/items/{id}`, which needs `list:read`. Every default group holds
+    both, but an admin who grants one without the other gives a user a link that
+    403s — the same pairing gap Comments documents for item threads. The Project
+    filter's list comes from `GET /projects` (`tracking:read`), so it too comes
+    back empty for a group that holds `qc:read` alone.
+  - **Full rework mostly falls outside the scope.** Q518 puts Full Rework *after
+    Installation*, and Installation is after PACKING — the point at which a
+    cutlist leaves the dashboard's scope. So open `full` rework (and defects
+    found on site) are counted only in the amber "not counted" note, and the
+    Full column and cost tile are structurally sparse. This is the direct
+    consequence of the user's confirmed "started but not finished" rule, not a
+    bug, and the rule was **not** changed; whether post-PACKING open records
+    should also be counted is the open question it leaves.
+- **Out of scope (deferred):** the other §4.2 department dashboards (Estimating,
+  Project Management, Procurement, Material, Production, Installation,
+  Management); §4.3's management KPI dashboards; user-arranged widgets;
+  export / scheduled reports (§31).
