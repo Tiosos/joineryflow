@@ -120,6 +120,9 @@ def create_order_route(
     if code == "ITEM_NOT_FOUND":
         raise HTTPException(404, {"code": "ITEM_NOT_FOUND",
                                   "item_id": payload.item_id})
+    if code == "UNKNOWN_CATEGORY":
+        raise HTTPException(422, {"code": "UNKNOWN_CATEGORY",
+                                  "category": payload.category})
     db.commit()
     return order
 
@@ -139,6 +142,10 @@ def patch_order_route(
         raise HTTPException(404, "order not found")
     if code == "ORDER_LOCKED":
         raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
+    if code == "VENDOR_NOT_FOUND":
+        raise HTTPException(404, {"code": "VENDOR_NOT_FOUND", **order})
+    if code == "UNKNOWN_CATEGORY":
+        raise HTTPException(422, {"code": "UNKNOWN_CATEGORY", **order})
     if code == "FIELD_CONFLICT":
         # `current_value` can be a Decimal (quantity/unit_cost/total_amount)
         # or a date (required_date/date_ordered/due_date) — HTTPException's

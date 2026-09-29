@@ -7,8 +7,22 @@ accepting one from a caller would let it drift.
 """
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+
+# The values `purchase_orders_status_check` / `purchase_orders_priority_check`
+# allow (migration 0002). Hand-kept copies: `test_the_accepted_statuses_are_
+# exactly_the_databases` / `..._priorities_...` fail if a migration changes one
+# and not the other. Without them an unknown value reached the SQL and came back
+# as a raw 500. (`category` is *not* here: it is a lookup table IT can extend
+# without a migration, Q557, so it is checked against the table instead.)
+OrderStatus = Literal[
+    "Draft", "Pending", "Approved", "Rejected", "Delivered",
+    "Cancelled", "Hold", "Quote", "Next",
+]
+OrderPriority = Literal["High", "Medium", "Low", "Next", "Hold", "Quote"]
 
 
 class OrderLineOut(BaseModel):
@@ -94,7 +108,7 @@ class CreateOrderIn(BaseModel):
 
     order_number: str | None = Field(default=None, max_length=50)
     supplier_ref_no: str | None = Field(default=None, max_length=100)
-    priority: str = "Medium"
+    priority: OrderPriority = "Medium"
     product_code: str | None = Field(default=None, max_length=100)
     product_description: str | None = None
 
@@ -110,11 +124,23 @@ class CreateOrderIn(BaseModel):
 
 
 class PatchOrderIn(BaseModel):
+    """`vendor_id`, `description`, `category`, `status` and `priority` are typed
+    nullable only so the field can be *omitted* (like `PatchOrderLineIn`'s
+    `NOT NULL` columns); an explicit `null` is refused, as a clean 422, by the
+    validator below. Three of them are `NOT NULL` columns, where a null was a raw
+    500. `status` and `priority` are the dangerous pair: their columns are
+    nullable and NULL satisfies the CHECK, so an explicit `null` was *written* —
+    and because the route commits before FastAPI validates the response, the NULL
+    persisted and then every read of the order, including the workspace-wide
+    `GET /orders` behind the Orderbook page, 500'd on `OrderOut.status: str` /
+    `priority: str`. `status` / `priority` values are checked as `Literal`s
+    against the DB CHECKs; `category` and `vendor_id` reference rows, so
+    `patch_order` checks them against the database."""
     vendor_id: int | None = None
     description: str | None = None
     category: str | None = None
-    status: str | None = None
-    priority: str | None = None
+    status: OrderStatus | None = None
+    priority: OrderPriority | None = None
     order_number: str | None = None
     supplier_ref_no: str | None = None
     location: str | None = None
@@ -135,6 +161,16 @@ class PatchOrderIn(BaseModel):
     # FIELD_CONFLICT rather than a silent overwrite; omitting it (or a field)
     # keeps last-write-wins for that field.
     expected_versions: dict[str, int] | None = None
+
+    # Runs only for a field the caller supplied (defaults are not validated),
+    # so it rejects an explicit `null` and leaves an omitted field alone —
+    # and, unlike a model-level validator, the 422 names the field.
+    @field_validator("vendor_id", "description", "category", "status", "priority")
+    @classmethod
+    def _no_null(cls, v, info: ValidationInfo):
+        if v is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return v
 
 
 class CreateOrderLineIn(BaseModel):

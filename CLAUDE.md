@@ -2913,14 +2913,11 @@ see *PM Workbench* above.
   stating that it raises `OrderLocked`, since the freeze made a hidden
   precondition of it (`estimating.generate_orders` is safe only because it adds
   to orders it has just created as Draft).
-- **Known gaps, found in review and deliberately not fixed.** (1) `status` is
-  an unvalidated string on `PatchOrderIn`: the DB `CHECK` allows exactly the
-  nine known values, so `{"status": "Foo"}` is a raw 500 on **any** order —
-  pre-existing, and the freeze only makes `status` the one field a frozen order
-  still accepts — while `{"status": null}` passes the `CHECK` (NULL does) and
-  leaves an order with no status, which is not a frozen one. A `Literal` /
-  validator on that field would close both, but is a change to the header
-  schema unrelated to freezing. (2) The `FROZEN_STATUSES` set exists in Python
+- **Known gaps, found in review and deliberately not fixed.** (1) ~~`status` is
+  an unvalidated string on `PatchOrderIn`~~ **Closed — see *Order field
+  validation* below** (and note the `null` half was worse than described here:
+  it persisted and broke every read; `priority` had the same bug, and a
+  cross-workspace `vendor_id` hole turned up beside it). (2) The `FROZEN_STATUSES` set exists in Python
   and TypeScript (drift risk, noted above), and the four handlers in
   `OrdersClient.tsx` each repeat a three-line "if locked, refetch and refresh
   the list" block; a shared helper would remove the latter but is a refactor of
@@ -3465,3 +3462,137 @@ since been built.**
   Project Management, Procurement, Material, Production, Installation,
   Management); §4.3's management KPI dashboards; user-arranged widgets;
   export / scheduled reports (§31).
+
+## Order field validation (`PatchOrderIn` / `CreateOrderIn`) — shipped
+
+> Chosen by the user as "PatchOrderIn.status validation" — the first of the two
+> *Known gaps* left under *Purchase order status guard*. It grew twice while being
+> built, each time because checking the neighbouring fields turned up the same
+> bug or a worse one, and **each time the user was asked before it grew**: first
+> `priority` and `category` (settled: "Yes: priority and category too"), then a
+> cross-workspace `vendor_id` hole (settled: "Fix it in this PR"). No migration,
+> no spec or plan doc; this section is its written record.
+
+- **What was wrong, each measured before fixing.** `PatchOrderIn` took bare
+  `str` / `int` for fields the database constrains, and `patch_order` sent them
+  straight into the UPDATE:
+  - **`status` / `priority` — an unknown value** (`"Foo"`, but also `"draft"`,
+    `" Draft"`, `""`: the CHECKs are exact and case-sensitive) was a raw
+    `CheckViolation` 500 (the route has no `IntegrityError` handling).
+  - **`status` / `priority` — an explicit `null` poisoned the whole Orderbook.**
+    This file had recorded it as "leaves an order with no status"; it was much
+    worse. Both columns are nullable and NULL satisfies the CHECK, so it was
+    **written**; the route calls `db.commit()` *before* FastAPI validates the
+    response, so the NULL **persisted**, and then `OrderOut.status: str` /
+    `priority: str` 500'd on **every read of that order — including the
+    workspace-wide `GET /orders` behind the Orderbook page**. One `null` from
+    anyone with `orderbook:write` took the Orderbook list down for the whole
+    workspace until the row was repaired in the database. Reproduced on the
+    unfixed code for both fields (`PATCH → 500`, DB value `NULL`, `GET
+    /orders/{id} → 500`, `GET /orders → 500`).
+  - **`category`, `vendor_id`, `description`** are `NOT NULL`, so an explicit
+    `null` was a raw 500 (nothing persisted). An unknown `category` was a raw FK
+    500 (the column references the `order_category` lookup).
+  - **`vendor_id` — a cross-workspace hole.** `create_order` checks the vendor is
+    in the caller's workspace; `patch_order` never did. `PATCH /orders/{id}` with
+    **another workspace's `vendor_id` returned 200, saved it, and the response
+    carried that workspace's supplier name** (verified live). An order with no
+    project reaches its workspace *through its vendor* (Q554/Q555), so this could
+    also have moved such an order into the other workspace. An unknown
+    `vendor_id` was a 500.
+- **The fix — `apps/api/app/orders/{schemas,queries,routes}.py`.**
+  - **`OrderStatus` and `OrderPriority`** are `Literal`s of the values in
+    `purchase_orders_status_check` / `_priority_check` (migration `0002`).
+    `PatchOrderIn.status` / `.priority` use them; **`CreateOrderIn.priority`
+    does too** (its unknown value was the same 500, at the INSERT).
+  - **One `field_validator`** on `PatchOrderIn` refuses an explicit `null` for the
+    five fields `vendor_id`, `description`, `category`, `status`, `priority`. A
+    `field_validator` rather than `PatchOrderLineIn`'s `model_validator` on
+    purpose: it runs only for a field the caller **supplied** (an omitted field is
+    untouched) **and** the 422 names the field (`loc` ends in `status`, not just
+    `body`). Explicit null is *rejected*, not read as "no change" — the choice
+    `PatchOrderLineIn` already made, so it was not asked. `description` is in the
+    set because it is the identical `NOT NULL` failure beside its siblings.
+  - **`category` is checked against the lookup, not a `Literal`** — `order_category`
+    is data IT can extend without a migration (Q557). `_category_exists()` runs in
+    `patch_order` **and `create_order`**; unknown → `422 {code: "UNKNOWN_CATEGORY",
+    category}`. **An archived category is still accepted**: the FK always did, this
+    turns a 500 into a refusal and adds no archiving rule (pinned, and recorded as
+    a gap, not endorsed).
+  - **`vendor_id` is checked in `patch_order`** with the same
+    `_vendor_in_workspace()` `create_order` now shares (one query, previously
+    inline): unknown *or another workspace's* → `404 {code: "VENDOR_NOT_FOUND",
+    vendor_id}`, the create route's own precedent and shape. Nothing is written,
+    versioned or audited, and the foreign name never appears in the response.
+  - **Order of checks in `patch_order`:** `NOT_FOUND` → `ORDER_LOCKED` (a frozen
+    order answers its state first, whatever the values) → the two reference checks
+    → `FIELD_CONFLICT` → write. A `{status: bad, notes: …}` PATCH is refused
+    whole: nothing half-applied.
+  - `OrderOut` is **unchanged** (`status: str`, `priority: str`): narrowing a
+    *response* type would turn any legacy row holding an unexpected value into a
+    500 on read, the exact failure this removes on the write side.
+- **The `Literal`s are hand-kept copies of the DB CHECKs**, like `FROZEN_STATUSES`
+  and the web's `STATUSES`. Unlike those they are **pinned**:
+  `test_the_accepted_statuses_are_exactly_the_databases` /
+  `..._priorities_...` read the CHECK from `pg_constraint` and fail if a migration
+  changes one side (the first also asserts `FROZEN_STATUSES` is a subset). **A
+  migration that adds a status must update `OrderStatus`, `FROZEN_STATUSES` if it
+  should freeze, and `OrdersClient.tsx`'s `STATUSES`** — the first is enforced by a
+  test, the web copy is not.
+- **Web.** `lib/orders-types.ts`'s `PatchOrderIn`: `vendor_id`, `description`,
+  `category`, `status`, `priority` lost their `| null`, so the *type* documents
+  what the API refuses. It is documentation only: `patchField` in
+  `OrdersClient.tsx` takes `value: unknown`, so the compiler cannot catch a null
+  sent through it. No UI change: the selects can only send valid values, and any
+  other failure already reads "Save failed (422)".
+- **Tests** (`test_order_routes.py`, 46 new). DB-parity for status and priority;
+  all nine statuses and all six priorities accepted; seven bad statuses and six
+  bad priorities each a 422 that names the field and writes **nothing** (values,
+  `field_versions`, `updated_at` and the `order.update` audit count unchanged);
+  null `status` / `priority` a 422 that leaves the order **and `GET /orders`**
+  readable (the poisoned-row regression); null for `vendor_id` / `description` /
+  `category` a 422; unknown category a 422 with its code and nothing written, a
+  known one accepted, an archived one still accepted; **another workspace's vendor
+  refused 404 with the foreign name absent from the body and the order unchanged
+  and still listed**, an unknown vendor a 404, a same-workspace vendor still fine;
+  a frozen order answering `ORDER_LOCKED` before any reference check; a mixed
+  `{status, notes}` PATCH refused whole; an omitted field untouched; create
+  refusing an unknown priority / category cleanly and creating nothing. Run
+  against the **unfixed source first (stashed): 27 of them fail**, and the 22 that
+  pass there are the controls (valid values accepted, omitted fields untouched).
+  Verified live over real HTTP against a migrated, seeded stack: every bad case
+  above refused with nothing written and `GET /orders` still 200; valid changes
+  still 200. (A first live attempt at the vendor case appeared to return 422 — that
+  was malformed JSON from a shell variable capturing two lines, not the API; redone
+  it showed the hole, which is why the check is worth trusting only when read
+  twice.)
+- **Known gaps, recorded — same shape, deliberately not fixed here.**
+  - **The route commits before the response is validated.** That is *why* a
+    response-model failure could poison a row, and it holds for every route in the
+    app, not just this one. The five fields above can no longer trigger it here;
+    closing the *class* means validating before `commit()`, a cross-cutting change.
+    Other nullable columns that a response model types as non-null are worth
+    auditing for the same poison.
+  - **`create_order` does not validate `project_id`** (found in review, then
+    measured): `POST /orders` with another workspace's `project_id` is a raw 500.
+    **Nothing persists and nothing leaks** — the failure is before the commit, no
+    row appears in either workspace's list, no name is returned — so it is another
+    unvalidated-input 500, not an isolation break (review suspected the latter;
+    the measurement says otherwise). Not fixed: outside what the user approved,
+    and `PatchOrderIn` does not accept `project_id` at all.
+  - **`PATCH` answers a bad `vendor_id` with `404`** (mirroring `create_order`'s
+    `VENDOR_NOT_FOUND`, and what the user was told when asked), while the same
+    handler answers an unknown `category` with `422`. A client keying on the bare
+    status code cannot tell "vendor missing" from "order missing" — `OrdersClient`'s
+    `fieldErrorMessage` maps every 404 to "Order not found". Harmless today because
+    the UI has no vendor control, but a wart: on PATCH the path resource *does*
+    exist, so `422` would be the tidier code. Left matching `create`.
+  - **Reference checks re-validate an unchanged value**, so re-sending an order's
+    *current* `vendor_id` / `category` is checked again. Only matters for data
+    written through the old hole; the UI sends neither.
+  - `CreateOrderIn.vendor_id` / `description` are required by the schema, so they
+    have no null hole; `CreateOrderIn.status` does not exist (orders are created
+    `Draft`).
+  - The **legacy `/procurement/*`** namespace has its own order writes and was not
+    touched.
+  - An **archived category** can still be assigned (above).

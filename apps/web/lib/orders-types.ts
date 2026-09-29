@@ -61,11 +61,13 @@ export interface OrderListOut {
 }
 
 export interface PatchOrderIn {
-  vendor_id?: number | null;
-  description?: string | null;
-  category?: string | null;
-  status?: string | null;
-  priority?: string | null;
+  // Omit a field to leave it alone. These five are refused if sent as an explicit
+  // null (a 422) — the API has no "clear" for them — so they are not `| null`.
+  vendor_id?: number;
+  description?: string;
+  category?: string;
+  status?: string;
+  priority?: string;
   order_number?: string | null;
   supplier_ref_no?: string | null;
   location?: string | null;

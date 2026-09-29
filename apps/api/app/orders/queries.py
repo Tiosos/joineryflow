@@ -248,6 +248,23 @@ def _prefill_from_item(db: Session, *, item_id: int, workspace_id: int) -> dict 
     return dict(row) if row else None
 
 
+def _vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
+        {"v": vendor_id, "w": workspace_id},
+    ).first() is not None
+
+
+def _category_exists(db: Session, category_key: str) -> bool:
+    """Any row of the `order_category` lookup (0031), archived or not: the FK the
+    column carries accepts an archived key, and this only turns what would be a
+    raw FK-violation 500 into a clean refusal, it does not add a new rule."""
+    return db.execute(
+        text("SELECT 1 FROM order_category WHERE category_key = :c"),
+        {"c": category_key},
+    ).first() is not None
+
+
 def create_order(
     db: Session,
     *,
@@ -255,13 +272,12 @@ def create_order(
     payload: CreateOrderIn,
     actor_id: int,
 ) -> tuple[str, dict | None]:
-    """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None)."""
-    vendor = db.execute(
-        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
-        {"v": payload.vendor_id, "w": workspace_id},
-    ).first()
-    if vendor is None:
+    """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None) |
+    ('UNKNOWN_CATEGORY', None)."""
+    if not _vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
         return "VENDOR_NOT_FOUND", None
+    if not _category_exists(db, payload.category):
+        return "UNKNOWN_CATEGORY", None
 
     project_id = payload.project_id
     project_name = payload.project_name
@@ -357,7 +373,10 @@ def patch_order(
 ) -> tuple[str, dict | None]:
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
-    'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`)."""
+    'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
+    'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
+    the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
+    {category})."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND", None
@@ -404,6 +423,15 @@ def patch_order(
         blocked = sorted(set(fields) - {"status"})
         if blocked:
             return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
+    # References are checked before anything is written or versioned. `vendor_id`
+    # went straight into the UPDATE unchecked: another workspace's vendor was
+    # accepted, and the response then carried that workspace's supplier name.
+    if "vendor_id" in fields and not _vendor_in_workspace(
+        db, vendor_id=fields["vendor_id"], workspace_id=workspace_id
+    ):
+        return "VENDOR_NOT_FOUND", {"vendor_id": fields["vendor_id"]}
+    if "category" in fields and not _category_exists(db, fields["category"]):
+        return "UNKNOWN_CATEGORY", {"category": fields["category"]}
     if not fields:
         return "OK", current
 

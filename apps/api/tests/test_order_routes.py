@@ -846,3 +846,321 @@ def test_a_delivered_order_can_still_be_cancelled(ctx):
     assert c.delete(f"/orders/{ids['po_id']}").status_code == 204
     assert c.get(f"/orders/{ids['po_id']}").json()["status"] == "Cancelled"
     assert c.delete(f"/orders/{ids['po_id']}").status_code == 409  # ALREADY_CANCELLED
+
+
+# ============================================================================
+# PatchOrderIn.status validation
+#
+# `status` used to be a bare `str | None`. The DB CHECK allows exactly nine
+# values, so an unknown one reached the UPDATE and came back as a raw 500 (the
+# route has no IntegrityError handling), and an explicit `null` slipped past the
+# CHECK — NULL satisfies it — leaving an order with no status at all.
+# ============================================================================
+
+def _db_check_values(column: str) -> set[str]:
+    """The values the database itself accepts for `purchase_orders.<column>`,
+    read from its CHECK."""
+    import re
+
+    s = SessionLocal()
+    try:
+        defs = s.execute(text(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+            " WHERE conrelid = 'purchase_orders'::regclass AND contype = 'c'"
+        )).scalars().all()
+    finally:
+        s.close()
+    (check,) = [d for d in defs if d.startswith(f"CHECK (({column} ")]
+    return set(re.findall(r"'([^']+)'::text", check))
+
+
+def _db_statuses() -> set[str]:
+    return _db_check_values("status")
+
+
+def _update_audit_rows(po_id: int) -> int:
+    s = SessionLocal()
+    try:
+        return s.execute(
+            text("SELECT count(*) FROM audit_log WHERE event = 'order.update' AND target = :t"),
+            {"t": str(po_id)},
+        ).scalar()
+    finally:
+        s.close()
+
+
+def test_the_accepted_statuses_are_exactly_the_databases():
+    """`OrderStatus` is a hand-kept copy of the CHECK; this is what fails when
+    a migration changes one and not the other."""
+    from typing import get_args
+
+    from app.orders.queries import FROZEN_STATUSES
+    from app.orders.schemas import OrderStatus
+
+    assert set(get_args(OrderStatus)) == _db_statuses()
+    assert FROZEN_STATUSES <= set(get_args(OrderStatus))
+
+
+def test_the_accepted_priorities_are_exactly_the_databases():
+    from typing import get_args
+
+    from app.orders.schemas import OrderPriority
+
+    assert set(get_args(OrderPriority)) == _db_check_values("priority")
+
+
+@pytest.mark.parametrize("status", [
+    "Draft", "Pending", "Approved", "Rejected", "Delivered", "Cancelled", "Hold", "Quote", "Next",
+])
+def test_patch_accepts_every_status_the_database_allows(ctx, status):
+    ids = _make_order_with_line(ctx)
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"status": status})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == status
+
+
+@pytest.mark.parametrize("bad", ["Foo", "draft", "DRAFT", " Draft", "Draft ", "", "Shipped"])
+def test_patch_unknown_status_is_a_clean_422_and_writes_nothing(ctx, bad):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()
+    audits = _update_audit_rows(ids["po_id"])
+
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": bad})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "status"
+
+    after = c.get(f"/orders/{ids['po_id']}").json()
+    assert after["status"] == before["status"]
+    assert after["field_versions"] == before["field_versions"]
+    assert after["updated_at"] == before["updated_at"]
+    assert _update_audit_rows(ids["po_id"]) == audits
+
+
+def test_patch_null_status_is_a_clean_422_not_an_order_with_no_status(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": None})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "status"
+    after = c.get(f"/orders/{ids['po_id']}").json()
+    assert after["status"] == before["status"] is not None
+
+
+def test_a_bad_status_refuses_the_whole_patch_not_just_the_status(ctx):
+    """A `{status: bad, notes}` PATCH is refused whole: nothing half-applied."""
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    for body in ({"status": "Foo", "notes": "should not land"},
+                 {"status": None, "notes": "should not land"}):
+        assert c.patch(f"/orders/{ids['po_id']}", json=body).status_code == 422
+    assert c.get(f"/orders/{ids['po_id']}").json()["notes"] != "should not land"
+
+
+def test_omitting_status_is_still_fine_and_leaves_it_alone(ctx):
+    """The validator must reject an explicit null, not an absent field."""
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = c.get(f"/orders/{ids['po_id']}").json()["status"]
+    r = c.patch(f"/orders/{ids['po_id']}", json={"notes": "just a note"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == before and r.json()["notes"] == "just a note"
+
+
+def test_a_bad_status_on_a_frozen_order_is_422_not_the_reopen_path(ctx):
+    """A frozen order accepts a status-only PATCH as the way back in; an
+    invalid status must not be mistaken for that (nor 500)."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    c = ctx["client"]
+    assert c.patch(f"/orders/{ids['po_id']}", json={"status": "Foo"}).status_code == 422
+    assert c.patch(f"/orders/{ids['po_id']}", json={"status": None}).status_code == 422
+    assert c.get(f"/orders/{ids['po_id']}").json()["status"] == "Cancelled"
+
+
+# ============================================================================
+# The same validation for the other PatchOrderIn fields, and CreateOrderIn.
+#
+# `priority` had the identical poisoned-row bug (nullable column, NULL passes the
+# CHECK, `OrderOut.priority: str` then 500s every read incl. GET /orders).
+# `category` / `vendor_id` / `description` are NOT NULL, so a null was a raw 500.
+# `category` names a lookup row and `vendor_id` a workspace-scoped row: an unknown
+# category was a raw FK 500, and — worse — `patch_order` never checked that the
+# vendor was the caller's, so another workspace's vendor was accepted and its
+# name came back in the response.
+# ============================================================================
+
+def _orders_list_ok(c) -> bool:
+    return c.get("/orders").status_code == 200
+
+
+def _snapshot(c, po_id: int) -> dict:
+    d = c.get(f"/orders/{po_id}").json()
+    return {k: d[k] for k in ("status", "priority", "category", "description",
+                              "vendor_id", "notes", "field_versions", "updated_at")}
+
+
+@pytest.mark.parametrize("priority", ["High", "Medium", "Low", "Next", "Hold", "Quote"])
+def test_patch_accepts_every_priority_the_database_allows(ctx, priority):
+    ids = _make_order_with_line(ctx)
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"priority": priority})
+    assert r.status_code == 200, r.text
+    assert r.json()["priority"] == priority
+
+
+@pytest.mark.parametrize("bad", ["Urgent", "high", "HIGH", " High", "", "Critical"])
+def test_patch_unknown_priority_is_a_clean_422_and_writes_nothing(ctx, bad):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before, audits = _snapshot(c, ids["po_id"]), _update_audit_rows(ids["po_id"])
+    r = c.patch(f"/orders/{ids['po_id']}", json={"priority": bad})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "priority"
+    assert _snapshot(c, ids["po_id"]) == before
+    assert _update_audit_rows(ids["po_id"]) == audits
+
+
+@pytest.mark.parametrize("field", ["status", "priority"])
+def test_a_null_status_or_priority_can_no_longer_break_the_orderbook(ctx, field):
+    """The poisoned-row regression: this used to persist a NULL and turn
+    `GET /orders/{id}` *and* `GET /orders` into 500s for the whole workspace."""
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = _snapshot(c, ids["po_id"])
+    r = c.patch(f"/orders/{ids['po_id']}", json={field: None})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == field
+    assert _snapshot(c, ids["po_id"]) == before
+    assert before[field] is not None
+    assert _orders_list_ok(c)
+
+
+@pytest.mark.parametrize("field", ["vendor_id", "description", "category"])
+def test_a_null_for_a_not_null_column_is_a_422_not_a_500(ctx, field):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before = _snapshot(c, ids["po_id"])
+    r = c.patch(f"/orders/{ids['po_id']}", json={field: None})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == field
+    assert _snapshot(c, ids["po_id"]) == before
+
+
+def test_patch_category_must_be_in_the_lookup(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before, audits = _snapshot(c, ids["po_id"]), _update_audit_rows(ids["po_id"])
+    r = c.patch(f"/orders/{ids['po_id']}", json={"category": "NoSuchCategory"})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == {"code": "UNKNOWN_CATEGORY", "category": "NoSuchCategory"}
+    assert _snapshot(c, ids["po_id"]) == before
+    assert _update_audit_rows(ids["po_id"]) == audits
+
+    ok = c.patch(f"/orders/{ids['po_id']}", json={"category": "Hardware"})
+    assert ok.status_code == 200 and ok.json()["category"] == "Hardware"
+
+
+def test_an_archived_category_is_still_accepted_as_before(ctx):
+    """The FK has always accepted an archived key; this fix turns a raw 500 into a
+    refusal, it does not add a rule about archiving. Recorded, not endorsed."""
+    ids = _make_order_with_line(ctx)
+    s = SessionLocal()
+    try:
+        s.execute(text("UPDATE order_category SET archived_at = now() WHERE category_key = 'Metal'"))
+        s.commit()
+    finally:
+        s.close()
+    try:
+        r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"category": "Metal"})
+        assert r.status_code == 200, r.text
+    finally:
+        s = SessionLocal()
+        try:
+            s.execute(text("UPDATE order_category SET archived_at = NULL WHERE category_key = 'Metal'"))
+            s.commit()
+        finally:
+            s.close()
+
+
+def _foreign_vendor() -> int:
+    """A vendor belonging to some *other* workspace."""
+    s = SessionLocal()
+    try:
+        wid = s.execute(
+            text("INSERT INTO workspace(slug, name) VALUES (:s, 'Foreign') RETURNING id"),
+            {"s": f"foreign-{uuid.uuid4().hex[:8]}"},
+        ).scalar()
+        vid = s.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES ('SECRET-FOREIGN-SUPPLIER', 'Board', :w) RETURNING vendor_id"),
+            {"w": wid},
+        ).scalar()
+        s.commit()
+        return vid
+    finally:
+        s.close()
+
+
+def test_patch_cannot_move_an_order_to_another_workspaces_vendor(ctx):
+    """Was: 200, saved, and the response carried the foreign supplier's name."""
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    before, audits = _snapshot(c, ids["po_id"]), _update_audit_rows(ids["po_id"])
+    foreign = _foreign_vendor()
+    r = c.patch(f"/orders/{ids['po_id']}", json={"vendor_id": foreign})
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"] == {"code": "VENDOR_NOT_FOUND", "vendor_id": foreign}
+    assert "SECRET-FOREIGN-SUPPLIER" not in r.text
+    assert _snapshot(c, ids["po_id"]) == before            # nothing written or versioned
+    assert _update_audit_rows(ids["po_id"]) == audits
+    # and the order still reaches its own workspace through the list
+    assert any(o["po_id"] == ids["po_id"] for o in c.get("/orders").json()["orders"])
+
+
+def test_patch_unknown_vendor_is_a_404_not_a_500(ctx):
+    ids = _make_order_with_line(ctx)
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"vendor_id": 987654321})
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "VENDOR_NOT_FOUND"
+
+
+def test_patch_to_another_vendor_in_the_same_workspace_still_works(ctx):
+    ids = _make_order_with_line(ctx)
+    s = SessionLocal()
+    try:
+        wid = s.execute(text("SELECT workspace_id FROM vendors WHERE vendor_id = :v"),
+                        {"v": ctx["vendor"]}).scalar()
+        other = s.execute(
+            text("INSERT INTO vendors(name, category, workspace_id)"
+                 " VALUES ('Second Supplier', 'Board', :w) RETURNING vendor_id"),
+            {"w": wid},
+        ).scalar()
+        s.commit()
+    finally:
+        s.close()
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"vendor_id": other})
+    assert r.status_code == 200, r.text
+    assert r.json()["vendor_id"] == other and r.json()["vendor_name"] == "Second Supplier"
+
+
+def test_a_frozen_order_answers_locked_before_any_reference_check(ctx):
+    """State first: a frozen order refuses non-status fields with the 409, whatever
+    they hold — an unknown vendor must not turn that into a 404."""
+    ids = _make_order_with_line(ctx)
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"vendor_id": 987654321})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDER_LOCKED"
+
+
+def test_create_refuses_unknown_priority_and_category_cleanly(ctx):
+    c = ctx["client"]
+    base = {"vendor_id": ctx["vendor"], "description": "x"}
+    r = c.post("/orders", json={**base, "category": "Other", "priority": "Urgent"})
+    assert r.status_code == 422 and r.json()["detail"][0]["loc"][-1] == "priority"
+    r = c.post("/orders", json={**base, "category": "NoSuchCategory"})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == {"code": "UNKNOWN_CATEGORY", "category": "NoSuchCategory"}
+    # nothing was created by either, and the valid form still works
+    assert c.post("/orders", json={**base, "category": "Other", "priority": "High"}).status_code == 201
+    assert len(c.get("/orders").json()["orders"]) == 1
