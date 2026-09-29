@@ -112,10 +112,10 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0041`. Head is `0041_estimate_orders_generated` (PO Generation from a Won Quote, Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0042`. Head is `0042_comments_notifications` (Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below). `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 15 Playwright specs / 43 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12). **The suite is not idempotent**: `estimating.spec.ts` and `procurement.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode). Re-seed between runs.
+- `tests/e2e/` — 16 Playwright specs / 47 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -130,7 +130,9 @@ questions answered through Q431 (supplied 2026-09-17). It is mostly a
 Q466–473)**, **§I (Tender Lifecycle + Financials, §5–§6/§11/§16)**,
 **§M (QC / Rework / Packing, §26–§28)** and **§L (Locking, Concurrency,
 §11–§12, Q508/Q511/Q512)** are built, each with its own section below.
-Everything else in Plan V1 remains unimplemented.
+Everything else in Plan V1 remains unimplemented, apart from **§29 Comments** (a
+partial build: 4 of its 8 object types, replies and @mentions, plus a minimal
+in-app inbox — see *Comments, mentions and notifications*).
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
@@ -177,7 +179,7 @@ file. **All seven are now decided** (re-scored 2026-09-18):
 | 1. **Cutlist owns the workflow** (Q410–Q413) | **Built** (`0027`, `0030`). `item_stages` stays per-item as a **projection**, written by fan-out on completion (Q439). Shop Floor re-keyed to `(cutlist_id, stage_key)`; the `(item_id, 'INST')` half of Q445 turned out to be unreachable — Shop Floor has never been able to hold DEL or INST (**Q561**). |
 | 2. **Related-part rows** (Q416–Q424) | **Built** (`0028`). Rows in `items` with a `row_type` + parent FK (Q447). The measured cost was **50 SQL call sites across 13 modules**; only **35** actually take the filter — `apps/api/app/row_types.py` holds the one definition and B1's note classifies the rest. |
 | 3. **Project files in SharePoint** (Q398–Q400) | **Bounded.** Additive only — `file_blob` survives and keeps serving shop drawings, attachments and sample photos (Q479). Nothing in #5a/#5b/#5c is rewritten. Blocked on three customer inputs. |
-| 4. **RBAC as data** (Plan V1 §3) | **Built** (`0037`). DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles became 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. See *Dynamic RBAC engine* below — Q472's rule-engine migration and Q473's comments feature are **not** part of this build. |
+| 4. **RBAC as data** (Plan V1 §3) | **Built** (`0037`). DB-backed with groups, but **project scope only — not item, not tab** (Q466). The 4 actions stay (Q469); today's 7 roles became 7 seed groups with identical grants (Q468), so day one is behaviour-preserving. See *Dynamic RBAC engine* below — Q472's rule-engine migration and Q473's comments feature were not part of this build (**Q473 has since been built — see *Comments, mentions and notifications***). |
 | 5. ~~Navigation / Cutlist module~~ | **Closed (Q474).** Cutlist **is** the `List` tab — which the RBAC module name already reflects. The primary six do not grow. |
 | 6. **Area / Room as entities** | **Built** (`0026`). Real project-scoped tables with Room **nested under** Area (Q552) and a composite FK `items (area_id, room_id) → room`. It was *not* the pure rename Q455 anticipated: `items.stage` / `rm_no` / `rm_desc` are **kept and still written** alongside the new FKs (Q435), so the terminology pin below still stands. |
 | 7. **10 vs 14 lifecycle stages** | **Deferred (Q459).** Today's 10 stand; `PAINTED` before `MADE` with `paint_after_assembly` (Q461); one global `stages` lookup (Q462). Packing is the first extra stage to arrive (Q519). |
@@ -192,7 +194,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0040
+make migrate      # apply Alembic 0001 -> 0042
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -1838,7 +1840,8 @@ behaviour-preserving (Q468, Q435) and touching none of the ~181 existing
     actions, so most-permissive-wins never applies to them, and nothing here
     tries to express them as grants.
   - **Q473** (build §29 comments so the `comment` action stops being a dead
-    grant) is **not built** — a new entity, 8 object types and @mentions is
+    grant) was **not built here — since built, see *Comments, mentions and
+    notifications***. Originally: **not built** — a new entity, 8 object types and @mentions is
     a separate feature, not part of the permission engine itself.
   - **CLOSED — see *Global Search RBAC sync* below.** (Originally: `apps/api/app/search/routes.py`'s
     type-visibility check — the function is `readable_types`, not the
@@ -2942,14 +2945,163 @@ see *PM Workbench* above.
   `orderbook:write`, like every other status change) — a
   manager-only reopen would be a rule to decide, not assume.
 
+## Comments, mentions and notifications (Plan V1 §29, Q473 / Q521 / Q523) — shipped
+
+> Chosen by the user as the next sub-project after the Purchase order status
+> guard ("Go with Comments (§29)"). §29 was under-specified in three ways, so
+> the user was asked before any code was written — the three answers below are
+> **settled decisions**, not assumptions. No spec or plan doc; this section is
+> its written record. Q473 (build §29, so `comment` stops being a dead grant),
+> Q521 (notifications: in-app only) and Q523 (mentions ship with comments)
+> were already confirmed.
+
+- **Settled scope (user).**
+  1. **Four object types, not eight.** §29 names Project, Area, Room, Joinery
+     Item, Component, Task, Change and Revision. **Task and Change are not
+     entities in this tree** (Q524 decided a `task` table, nobody built it;
+     §11's change engine is unbuilt), and **Component / Revision are
+     ambiguous** (module or part? shop-drawing or estimate revision?). v1
+     covers **Project, Area, Room and Joinery Item** — the four that exist.
+     The other four get a thread when their entity does; adding one is a new
+     nullable FK column + an `object_type` branch, not a redesign.
+  2. **Comments, one-level replies and @mentions.** Attachments / photos,
+     decision marking, "internal notes" and company / team / department
+     discussion areas are **not built** (§29 lists them; a channel entity +
+     membership is a materially bigger build).
+  3. **A minimal in-app inbox** behind the mentions — not §30's
+     Event → Recipient → Channel rules engine: no preferences, grouping,
+     acknowledgement, escalation, email or push.
+- **Migration `0042`.**
+  - `comment` — the object is **four nullable real FKs** (`project_id`,
+    `area_id`, `room_id`, `item_id`) with `CHECK num_nonnulls(...) = 1`, not a
+    polymorphic `(object_type, object_id)` pair: deleting an item / area /
+    room / project takes its thread with it (`ON DELETE CASCADE`) instead of
+    leaving dangling comments, and `object_type` is a **generated column**, so
+    there is no second source of truth. `workspace_id` is a direct column
+    (the Q555 pattern — a comment spans four parents with no single join
+    path), set from the resolved object.
+  - **Replies are one level deep, enforced by the database**, the way `0028`
+    enforces Q449: `parent_is_reply` is always false when a parent is set, so
+    the composite FK `(parent_comment_id, parent_is_reply) → comment
+    (comment_id, is_reply)` can only be satisfied by a top-level comment.
+    Which object a reply belongs to is **inherited from its parent by the
+    application** — a reply request names only `parent_id`, never an object,
+    so the two cannot disagree (the DB cannot express that check across four
+    nullable columns; `MATCH SIMPLE` skips a FK with any NULL column).
+  - `comment_mention (comment_id, user_id)` and `notification` (recipient,
+    actor, `kind IN ('mention','reply')`, `read_at`) with
+    `UNIQUE (recipient_id, comment_id, kind)` — re-mentioning someone on edit
+    cannot ping them twice. **Not searchable** (no `0033` trigger).
+- **Backend — `apps/api/app/comments/` and `apps/api/app/notifications/`**,
+  mounted at top-level paths.
+  - `GET /comments?object_type=&object_id=` (`tracking:read`),
+    `POST /comments` (`tracking:comment`), `PATCH /comments/{cid}`,
+    `DELETE /comments/{cid}`. **This is the first place the `comment` action
+    is enforced** — all four object types are governed by the `tracking`
+    module (areas / rooms already gate on it). A viewer (read only) can read
+    a thread and cannot post; editor, drafter, purchase officer, estimator,
+    manager and admin can.
+  - **Edit is author-only — even a manager cannot edit someone else's words**
+    (`403 NOT_AUTHOR`). **Delete is the author, or a manager / admin**
+    (`403 FORBIDDEN`), and is a **soft delete** (`409 ALREADY_DELETED` on a
+    second). A deleted comment survives only as a blanked placeholder while a
+    surviving reply hangs off it; a deleted reply, or a deleted top-level
+    with no replies, disappears from the API. Replying to a deleted comment
+    is `409 PARENT_DELETED`; a reply to a reply is `409 REPLY_TO_REPLY`.
+    These per-object rules live in the query layer, not the matrix (Q472 is
+    still not built).
+  - **Joinery Items only** — a related part has no thread (404), the
+    `item_documents` / `qc` precedent and §29's own wording.
+  - **Mentions are ids, not parsed text.** The client sends
+    `mentioned_user_ids`; the body's `@Name` is presentation. Each id must be
+    an **active user of this workspace who can read `tracking`** (checked
+    against the Dynamic RBAC engine, workspace-wide) or the whole request is
+    refused `422 BAD_MENTION` listing the ids and **nothing is written** — a
+    notification linking someone to a record they cannot open is worse than
+    refusing. A mention notifies the mentioned user (never yourself); a reply
+    notifies the parent's author, **unless they were also mentioned** (the
+    mention wins, one row). Editing replaces the mention set: a *newly added*
+    mention is notified, a *removed* one keeps the notice already sent (they
+    were told), and an unchanged edit is a no-op (no `edited_at`, no audit).
+  - Notifications (`current_user` only, no RBAC row — like `/search`, it shows
+    a person only what is addressed to them): `GET /notifications?unread_only=
+    &limit=&offset=` (newest first, with `unread_count`),
+    `POST /notifications/{nid}/read` (404 if it is not yours),
+    `POST /notifications/read-all`. **Notifications whose comment was
+    deleted are hidden and not counted** — a badge pointing at nothing would
+    be a lie. Marking read is personal state (like project favourites) and
+    writes no audit row.
+  - Every comment mutation writes `audit_log` (`comment.{create,edit,delete}`)
+    and — on an item — `item_edit_log` in the same transaction, per the PM
+    Workbench invariant (`_comment_create`, `comment.{id}`, `_comment_delete`).
+    Bodies are stripped before the length check (1–5000): a whitespace-only
+    body is a clean `422`, not a raw `ck_comment_body_len` violation (found by
+    the test suite — the first pass validated length before stripping).
+- **Web.**
+  - `components/comments/CommentThread.tsx` (+ `MentionTextarea`,
+    `mentions.ts`) — one component for any object type: post, one-level
+    reply, edit own, delete (own, or manager / admin), with an `@` picker fed
+    from `/workspace/team` (arrow keys / Enter / Escape). Which members get
+    notified is derived from the **final text** (`mentionedIds`), so deleting
+    an inserted `@Name` un-mentions it; only names the API confirmed are
+    highlighted in a stored body. `canComment` mirrors `tracking:comment`;
+    the API enforces it regardless.
+  - **Surfaces: the item editor's new Comments tab
+    (`/items/[id]?tab=comments`) and a Comments card on `/projects/[id]`.**
+    **Area and Room threads exist in the API but have no UI surface — neither
+    has a page of its own** — so a notification for one shows "no page for
+    this yet" and links nowhere. A surface for them (e.g. on the Tracking
+    area grouping) is the natural next step.
+  - `NotificationBell` in the `TopBar` (unread badge, six most recent,
+    mark-all-read; **polls once a minute and on window focus — there is no
+    push channel, by Q521**) and a `/notifications` page (not a tab).
+- **Seed.** `make seed` on ALF-001: three comments on the first joinery item
+  (a drafter mentions the foreman, the foreman replies, a manager comments)
+  and one project comment mentioning the drafter — through the same query
+  functions the API uses — so Juno Okafor's bell starts at 1 and Noa
+  Lindqvist's at 2. Idempotent (the demo item's and project's threads are
+  dropped first; notifications cascade).
+- **RBAC — no matrix change.** `tracking:{read,comment}`, already granted.
+- **Tests.** `test_comments.py` (35 cases): each object type round-trips;
+  the `comment` action is enforced; body trim / bounds; related part 404;
+  workspace isolation on every verb; replies inherit the object, refuse
+  reply-to-reply, and the DB itself rejects reply-to-reply, two objects and
+  none; deleting the object takes its thread; mention / reply notification
+  rules (self-silent, mention beats reply, unique on edit, only new mentions
+  notified); bad mentions (foreign, inactive, unknown, and a user whose only
+  group grants nothing on `tracking`) refused whole with nothing written;
+  author-only edit, author-or-manager delete, deleted-thread shapes, hidden
+  notifications; inbox read-state and ownership; audit + `item_edit_log`.
+  `tests/e2e/comments.spec.ts` (4 tests) was run against a live migrated,
+  seeded stack: a mention reaches the bell and opens the item's Comments tab
+  with the mention highlighted and the reply nested; the `@` picker, edit,
+  and a manager's delete; a viewer sees the thread with no form; the project
+  page's thread. The migration downgrades and re-upgrades cleanly.
+- **Known gaps, recorded rather than silently left.**
+  - **Area / Room have no UI** (above), and Task / Change / Component /
+    Revision have no thread at all (above).
+  - A mention of a user who is later deactivated is left in the stored body;
+    editing the comment drops that mention (the roster no longer lists them).
+  - The bell's poll is a plain interval: a comment made in another window
+    shows up within a minute, not instantly.
+  - Who may be mentioned is decided from workspace-wide grants only — a user
+    whose only `tracking` access is a project-scoped membership cannot be
+    mentioned, the same ceiling Global Search documents.
+- **Out of scope (deferred):** the four other §29 object types; attachments /
+  photos, decisions, internal notes and discussion areas; §30's rules engine,
+  preferences, email / push, grouping and escalation; a UI for Area / Room
+  threads; search over comments.
+
 ## Deferred options (recorded, not built)
 
 Three alternatives were proposed alongside Purchase Order editing (above)
 when this session was asked to suggest the next sub-project; the user chose
 PO editing and asked that the other three be recorded rather than dropped
-silently. None of the three is started.
+silently. **B (Comments) and D (Search RBAC sync) have since been built; C
+(QC Dashboard) is not started.**
 
-- **Option B — Comments (Plan V1 §29, Q473).** A generic comment/mention
+- ~~**Option B — Comments (Plan V1 §29, Q473).**~~ **Built — see *Comments,
+  mentions and notifications* above.** Kept for history: a generic comment/mention
   system over 8 object types, the feature that would finally give the
   `comment` RBAC action (present on every module in the matrix since
   Foundation) something real to gate — today it is a dead grant everywhere

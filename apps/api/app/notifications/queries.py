@@ -1,0 +1,97 @@
+"""SQL helpers for the in-app notification inbox.
+
+A notification is addressed to one user, so every query is keyed on
+`recipient_id` (and `workspace_id`): you can only ever see or mark your own.
+Notifications whose comment was deleted are hidden and not counted — an unread
+badge that points at nothing would be a lie.
+"""
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+_VISIBLE = """
+    FROM notification n
+    JOIN comment c ON c.comment_id = n.comment_id AND c.deleted_at IS NULL
+    WHERE n.recipient_id = :u AND n.workspace_id = :w
+"""
+
+
+def _url(object_type: str, object_id: int) -> str | None:
+    if object_type == "item":
+        return f"/items/{object_id}?tab=comments"
+    if object_type == "project":
+        return f"/projects/{object_id}"
+    return None
+
+
+def list_notifications(
+    db: Session, *, user_id: int, workspace_id: int, unread_only: bool,
+    limit: int, offset: int,
+) -> dict:
+    rows = db.execute(
+        text(
+            f"""
+            SELECT n.notification_id, n.kind, n.created_at, n.read_at, n.actor_id,
+                   ua.full_name AS actor_name, c.comment_id,
+                   left(c.body, 140) AS excerpt, c.object_type,
+                   COALESCE(c.project_id, c.area_id, c.room_id, c.item_id) AS object_id,
+                   CASE c.object_type
+                        WHEN 'project' THEN p.project_code
+                        WHEN 'area'    THEN a.name
+                        WHEN 'room'    THEN r.rm_no
+                        ELSE '#' || i.num::text || COALESCE(' ' || i.description, '')
+                   END AS object_label
+              FROM notification n
+              JOIN comment c ON c.comment_id = n.comment_id AND c.deleted_at IS NULL
+              LEFT JOIN app_user ua ON ua.id = n.actor_id
+              LEFT JOIN projects p ON p.project_id = c.project_id
+              LEFT JOIN area a     ON a.area_id    = c.area_id
+              LEFT JOIN room r     ON r.room_id    = c.room_id
+              LEFT JOIN items i    ON i.item_id    = c.item_id
+             WHERE n.recipient_id = :u AND n.workspace_id = :w
+               {"AND n.read_at IS NULL" if unread_only else ""}
+             ORDER BY n.created_at DESC, n.notification_id DESC
+             LIMIT :lim OFFSET :off
+            """
+        ),
+        {"u": user_id, "w": workspace_id, "lim": limit, "off": offset},
+    ).mappings().all()
+    return {
+        "notifications": [
+            {**dict(r), "url": _url(r["object_type"], r["object_id"])} for r in rows
+        ],
+        "unread_count": unread_count(db, user_id=user_id, workspace_id=workspace_id),
+    }
+
+
+def unread_count(db: Session, *, user_id: int, workspace_id: int) -> int:
+    return db.execute(
+        text(f"SELECT count(*) {_VISIBLE} AND n.read_at IS NULL"),
+        {"u": user_id, "w": workspace_id},
+    ).scalar_one()
+
+
+def mark_read(db: Session, *, notification_id: int, user_id: int, workspace_id: int) -> bool:
+    """False if it is not this user's. Marking an already-read one is a no-op."""
+    row = db.execute(
+        text(
+            """
+            UPDATE notification SET read_at = COALESCE(read_at, now())
+             WHERE notification_id = :n AND recipient_id = :u AND workspace_id = :w
+            RETURNING 1
+            """
+        ),
+        {"n": notification_id, "u": user_id, "w": workspace_id},
+    ).first()
+    return row is not None
+
+
+def mark_all_read(db: Session, *, user_id: int, workspace_id: int) -> int:
+    return db.execute(
+        text(
+            """
+            UPDATE notification SET read_at = now()
+             WHERE recipient_id = :u AND workspace_id = :w AND read_at IS NULL
+            """
+        ),
+        {"u": user_id, "w": workspace_id},
+    ).rowcount

@@ -3095,6 +3095,77 @@ def main() -> None:
                     db.commit()
                     print("seeded packing: 1 assigned PACKING task on ALF-001")
 
+        # ------------------------------------------------------------------
+        # Comments + mentions + notifications (Plan V1 §29, migration 0042).
+        # Built through the same query functions the API uses, so the rows
+        # carry real audit / edit-log entries and the notification inbox
+        # fills in exactly as it would live: on ALF-001's first joinery item
+        # a drafter mentions the foreman, the foreman replies, and a manager
+        # adds a comment; the project gets one comment mentioning the
+        # drafter. So the foreman's bell shows a mention and the drafter's a
+        # reply + mention out of the box. Idempotent: the demo project's and
+        # item's threads are dropped first (notifications cascade).
+        # ------------------------------------------------------------------
+        from app.auth.sessions import AuthUser as _AuthUser
+        from app.comments import queries as _cm
+
+        def _actor_by(where: str, **params):
+            row = db.execute(
+                text("SELECT id, workspace_id, email, full_name, auth_role FROM app_user"
+                     f" WHERE workspace_id = :w AND {where} ORDER BY id LIMIT 1"),
+                {"w": wid, **params},
+            ).mappings().first()
+            return _AuthUser(**row) if row else None
+
+        _cm_project = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'ALF-001'"
+                                      " AND workspace_id = :w"), {"w": wid}).scalar()
+        _cm_item = db.execute(text("""
+            SELECT item_id FROM items
+             WHERE project_id = :p AND row_type = 'joinery_item'
+             ORDER BY num LIMIT 1
+        """), {"p": _cm_project}).scalar() if _cm_project else None
+        _cm_drafter = _actor_by("auth_role = 'drafter'")
+        _cm_foreman = _actor_by("email = 'juno.okafor@hartwood.test'")
+        _cm_manager = _actor_by("auth_role = 'manager'")
+        if _cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager:
+            db.execute(text("DELETE FROM comment WHERE workspace_id = :w"
+                            " AND (project_id = :p OR item_id = :i)"),
+                       {"w": wid, "p": _cm_project, "i": _cm_item})
+
+            _code, _first = _cm.create_comment(
+                db, actor=_cm_drafter, object_type="item", object_id=_cm_item, parent_id=None,
+                body=f"Finish is confirmed as satin 2-pack. @{_cm_foreman.full_name} can you "
+                     "check the door drop against the site measure before this goes to the line?",
+                mentioned_user_ids=[_cm_foreman.id],
+            )
+            assert _code == "OK", _code
+            _code, _ = _cm.create_comment(
+                db, actor=_cm_foreman, object_type=None, object_id=None,
+                parent_id=_first["comment_id"],
+                body="Checked against the site measure: the left door sits 2mm proud. "
+                     "I'll adjust the hinges Thursday.",
+                mentioned_user_ids=[],
+            )
+            assert _code == "OK", _code
+            _code, _ = _cm.create_comment(
+                db, actor=_cm_manager, object_type="item", object_id=_cm_item, parent_id=None,
+                body="Client signed off the sample — proceed.", mentioned_user_ids=[],
+            )
+            assert _code == "OK", _code
+            _code, _ = _cm.create_comment(
+                db, actor=_cm_manager, object_type="project", object_id=_cm_project,
+                parent_id=None,
+                body=f"Site access is via the Block B loading dock only — book 24h ahead. "
+                     f"@{_cm_drafter.full_name} please note it on the install pack.",
+                mentioned_user_ids=[_cm_drafter.id],
+            )
+            assert _code == "OK", _code
+            db.commit()
+            print(
+                "seeded comments: 3 on ALF-001's first item (1 reply, 1 mention) and "
+                "1 on the project (1 mention)"
+            )
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

@@ -11,11 +11,15 @@ import { MaterialTakeTab } from "./MaterialTakeTab";
 import { ActionsTab } from "./ActionsTab";
 import { QueryTab } from "./QueryTab";
 import { QcTab } from "./QcTab";
+import { CommentThread } from "@/components/comments/CommentThread";
 
 interface EditorTabsProps {
   item: ItemOut;
   active: string;
   currentUserRole: string | null;
+  currentUserId: number | null;
+  /** `tracking:comment` — comments on an item are gated by Tracking's grant. */
+  canComment: boolean;
 }
 
 const TABS = [
@@ -26,6 +30,7 @@ const TABS = [
   "attachments",
   "actions",
   "query",
+  "comments",
   "qc",
   "log",
 ] as const;
@@ -39,11 +44,18 @@ const TAB_LABELS: Record<Tab, string> = {
   attachments: "Attachments",
   actions: "Actions",
   query: "Query",
+  comments: "Comments",
   qc: "QC",
   log: "Log",
 };
 
-export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
+export function EditorTabs({
+  item,
+  active,
+  currentUserRole,
+  currentUserId,
+  canComment,
+}: EditorTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -89,6 +101,15 @@ export function EditorTabs({ item, active, currentUserRole }: EditorTabsProps) {
         )}
         {current === "query" && (
           <QueryTab itemId={item.id} currentUserRole={currentUserRole} />
+        )}
+        {current === "comments" && (
+          <CommentThread
+            objectType="item"
+            objectId={item.id}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+            canComment={canComment}
+          />
         )}
         {current === "qc" && (
           <QcTab itemId={item.id} currentUserRole={currentUserRole} />

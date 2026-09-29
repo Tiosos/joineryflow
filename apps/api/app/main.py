@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from .auth.routes import router as auth_router
 from .catalog.routes import router as catalog_router
+from .comments.routes import router as comments_router
 from .cut_floor.routes import router as cut_floor_router
 from .areas.routes import router as areas_router
 from .cutlists.routes import router as cutlists_router
@@ -19,6 +20,7 @@ from .item_queries.routes import router as item_queries_router
 from .items.routes import router as items_router
 from .material_summaries.routes import router as material_summaries_router
 from .material_takes.routes import router as material_takes_router
+from .notifications.routes import router as notifications_router
 from .orders.routes import router as orders_router
 from .printing.routes import router as printing_router
 from .procurement.routes import router as proc_router
@@ -86,6 +88,8 @@ app.include_router(permission_groups_router)
 app.include_router(home_router)
 app.include_router(estimating_router)
 app.include_router(qc_router)
+app.include_router(comments_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health")
