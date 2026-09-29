@@ -37,13 +37,13 @@ export type Me = {
     | "estimator"
     | "purchase_officer"
     | "viewer";
-  /** `{module: [actions]}` for this user's role, served by `/auth/me`. */
+  /** `{module: [actions]}` from this user's permission groups (workspace-wide grants), served by `/auth/me`. */
   permissions: Partial<Record<Module, Action[]>>;
 };
 
 /**
- * Gate a surface on the RBAC matrix rather than a hardcoded role list, so the
- * web tier can never drift from `apps/api/app/auth/permissions.py`.
+ * Gate a surface on the user's effective grants rather than a hardcoded role
+ * list, so the web tier follows the same permission groups the API enforces.
  *
  * Fails closed: a null user, or a `me` from a cached response predating the
  * `permissions` field, denies.

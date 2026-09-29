@@ -6,8 +6,8 @@ from ..config import settings
 from ..db import get_db
 from .audit import write_audit
 from .passwords import verify_password
-from .permissions import permissions_for
 from .rbac import current_user
+from .rbac_engine import effective_permissions
 from .schemas import LoginIn, MeOut
 from .sessions import AuthUser, create_session, revoke_session
 
@@ -74,8 +74,8 @@ def logout(
 
 
 @router.get("/me", response_model=MeOut)
-def me(user: AuthUser = Depends(current_user)):
+def me(user: AuthUser = Depends(current_user), db: Session = Depends(get_db)):
     return MeOut(
         **user.__dict__,
-        permissions=permissions_for(user.auth_role),
+        permissions=effective_permissions(db, user),
     )

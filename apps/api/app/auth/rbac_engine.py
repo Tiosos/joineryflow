@@ -18,7 +18,7 @@ empty result for such a user is a real "no", not a signal to fall back.
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .permissions import MATRIX, _ALL_MODULES  # noqa: F401 (re-exported for callers/tests)
+from .permissions import MATRIX, _ALL_MODULES, permissions_for  # noqa: F401 (re-exported for callers/tests)
 from .sessions import AuthUser
 
 
@@ -62,6 +62,39 @@ def effective_actions(
     if _has_any_membership(db, user.id):
         return set()
     return set(MATRIX.get(user.auth_role, {}).get(module, set()))
+
+
+def effective_permissions(db: Session, user: AuthUser) -> dict[str, list[str]]:
+    """`effective_actions(db, user, m)` for every module, as `{module: sorted
+    actions}` — the shape `/auth/me` serves. Workspace-wide grants only: the
+    map carries no project, so a project-scoped membership is not represented
+    here (the API still honours it wherever a route passes `project_param`).
+
+    One grants query instead of twelve `effective_actions` calls, because
+    `/auth/me` runs on every page load. The fallback rule is the same as
+    `effective_actions`'s and `test_effective_permissions_agrees_with_effective_actions`
+    pins the two together: a module with grants uses them; otherwise a user
+    holding any membership gets nothing for it, and a user holding none gets
+    the `MATRIX` row.
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT g.module, g.action
+            FROM user_group_membership m
+            JOIN group_module_grant g ON g.group_id = m.group_id
+            WHERE m.user_id = :uid AND m.project_id IS NULL
+            """
+        ),
+        {"uid": user.id},
+    ).all()
+    granted: dict[str, set[str]] = {}
+    for module, action in rows:
+        granted.setdefault(module, set()).add(action)
+    if any(m not in granted for m in _ALL_MODULES) and not _has_any_membership(db, user.id):
+        fallback = permissions_for(user.auth_role)
+        return {m: sorted(granted[m]) if m in granted else fallback[m] for m in _ALL_MODULES}
+    return {m: sorted(granted.get(m, ())) for m in _ALL_MODULES}
 
 
 def has_permission_db(

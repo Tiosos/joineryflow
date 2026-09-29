@@ -226,7 +226,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 - Browser -> Next.js Route Handler (`apps/web/app/api/[...proxy]/route.ts`) -> FastAPI. Browser **never** calls FastAPI directly.
 - `apps/web/proxy.ts` (Next 16 renamed the `middleware` convention to `proxy`; runs in the Node.js runtime) enforces login redirect on all non-public paths.
 - `apps/web/app/(app)/layout.tsx` does a server-side `fetchMe()` and renders `HAppChrome` (TopBar + tab strip + SideBar). `TabStrip.tsx` carries the 6 primary tabs plus a secondary row (`Catalog · Shop Floor · Cut Floor · Estimating · Customers`); `SideBar.tsx` is the project list only.
-- **The tab strip is gated on the RBAC matrix**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves. Today every role holds `read` on every tab's module, so all tabs still render for everyone — the gate only starts hiding tabs once some module's read grant is removed for a role. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
+- **The tab strip is gated on the user's effective grants**, not the real enforcement point. `TabStrip.tsx` filters each tab on `can(me, module, "read")` using the `permissions` map `/auth/me` serves — the Dynamic RBAC engine's workspace-wide grants for that user (see *`/auth/me` follows the permission groups*), not the bare role row. Today every default group holds `read` on every tab's module, so all tabs still render for everyone — the gate hides a tab once an admin removes that module's read grant from a user's groups. The API's 403 remains the actual access control; an unauthorised click still surfaces it. (If `me.permissions` is absent entirely — e.g. web deployed ahead of the API — the strip falls back to showing all tabs rather than blanking the nav.)
 - Design tokens: `apps/web/app/globals.css` declares CSS custom properties + Tailwind v4 `@theme inline` block exposing `bg-h-bg`, `text-h-ink`, `text-h-muted`, `border-h-line`, `bg-h-accent`, `bg-h-surface`. **No `tailwind.config.ts`** — Tailwind v4 uses CSS-first config.
 
 ## Architecture (big picture)
@@ -3267,14 +3267,70 @@ silently. **B (Comments) and D (Search RBAC sync) have since been built; C
   Full suite green (985 passed, 10 skipped, the same pre-existing local
   `MEILI_URL` failure) before the last two tests were added; the search
   route module alone re-run green after (21 passed).
-- **Known gap found, not fixed: `/auth/me` is still the static matrix.**
-  `auth/routes.py` serves `permissions_for(user.auth_role)`, which feeds
-  the web `TabStrip` gating and every `can(me, …)` check. So for a user
-  whose grants were customised, **search now follows the DB while the tab
-  strip and write affordances still follow `MATRIX`**: a revoked
-  `orderbook:read` drops order results from search but still shows the
-  Orderbook tab. The API's 403 stays the real enforcement point either way
-  (the *Web shell* section already says so). Fixing it means computing the
-  permissions map through `effective_actions` for all 12 modules on every
-  `/auth/me` — a behaviour change to an endpoint every page load hits, so
-  it is its own decision, not folded into this one.
+- **Was a known gap here: `/auth/me` served the static matrix.** **Closed — see
+  *`/auth/me` follows the permission groups* below.**
+
+## `/auth/me` follows the permission groups — shipped
+
+> Chosen by the user ("Go with /auth/me permissions") from the gaps left open
+> after the Areas & Rooms card — the one *Global Search RBAC sync* recorded as
+> "its own decision". No migration, no spec or plan doc; this section is its
+> written record.
+
+- **What changed.** `GET /auth/me` served `permissions_for(user.auth_role)` —
+  the static `MATRIX` row — while every `require_permission` check and (since
+  the Search sync) Global Search already asked the Dynamic RBAC engine. So a
+  user whose grants an admin customised through the Permission Groups panel saw
+  the tab strip and every `can(me, …)` write affordance follow the *role*, not
+  the *groups*: a revoked `orderbook:read` dropped the Orderbook results from
+  search and still showed the Orderbook tab. `/auth/me` now serves
+  `rbac_engine.effective_permissions(db, user)`, so the web tier follows the
+  same grants the API enforces, in both directions.
+- **`effective_permissions` is one grants query, not twelve.** `/auth/me` runs on
+  every page load; calling `effective_actions` per module would cost 12–24
+  queries. It reads the user's workspace-wide grants once and applies the
+  engine's own fallback rule: a module with grants uses them; otherwise a user
+  holding **any** membership gets `[]` (a real "no"), and a user holding **none**
+  gets the `MATRIX` row (`permissions_for`). It deliberately re-states that
+  rule beside the engine's rather than sharing it, so
+  `test_effective_permissions_agrees_with_effective_actions` pins the two
+  together across every branch — do not loosen it. Same response shape as
+  before: every module present, actions sorted, `[]` meaning no access.
+- **Settled decision — workspace-wide grants only.** The map carries no
+  project, so a project-scoped membership is not represented in it (the same
+  ceiling Global Search and the comment routes document, and what the ~181
+  call sites without a `project_param` check anyway). Consequence: a user whose
+  *only* memberships are project-scoped gets an all-empty map, and the tab
+  strip hides everything for them, even though a route that passes
+  `project_param` would let them in on that project. Pinned by
+  `test_effective_permissions_project_scoped_only_membership_is_empty`. Serving
+  per-project grants would mean a second payload keyed by project, which is a
+  design change, not part of this.
+- **`MATRIX` is still the fallback and `permissions_for` still exists** — the
+  route no longer calls it directly, `effective_permissions` does, for a user
+  with zero memberships (every test file's raw-SQL user). Nothing else changed:
+  `require_permission`, the 181 call sites and the web `can()` are untouched.
+- **Web.** No behavioural change to `TabStrip` / `can()`; only the comments in
+  `lib/permissions.ts` that said "for this user's role". The tab-strip gate is
+  now live in the sense the *Web shell* section anticipated: removing a module's
+  `read` grant from a group hides that tab for its members.
+- **Tests.** In `test_rbac_engine.py`: parity with `effective_actions` across
+  zero memberships, a narrow group, a project-scoped membership, and
+  most-permissive-wins; the project-scoped-only ceiling; parity with the seeded
+  system group for every role in `MATRIX`; and an HTTP test that a grant
+  revoked from a group disappears from `/auth/me` (confirmed to **fail against
+  the old route**: `['read'] == []`). The existing
+  `test_me_includes_permissions_matching_the_matrix` still passes unchanged —
+  a zero-membership user falls back to the matrix, which is the point of the
+  fallback. Verified live in a browser against a migrated, seeded stack: a
+  seeded viewer's Orderbook tab and `me.orderbook` (`["read"]`) both went away
+  after the grant was deleted from the viewer group, on reload.
+- **Known gaps, recorded.**
+  - The web `Module` type in `lib/permissions.ts` still lacks `"qc"` (added to
+    the API in `0039`); `/auth/me` serves it, but `can(me, "qc", …)` would not
+    type-check. Nothing calls it yet.
+  - A permissions change takes effect on the user's **next page load** — there
+    is no push channel, and `(app)/layout.tsx` fetches `me` per navigation.
+  - Q472's per-object rules (`require_drafter()` etc.) are still hand-written
+    in route handlers, so a group grant cannot express them and `can(me, …)`
+    is a coarse gate for those surfaces, as it already was.

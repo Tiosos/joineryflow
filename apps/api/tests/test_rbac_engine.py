@@ -17,6 +17,7 @@ from app.auth.permissions import MATRIX, _ALL_MODULES
 from app.auth.rbac import require_permission
 from app.auth.rbac_engine import (
     effective_actions,
+    effective_permissions,
     seed_system_groups,
     swap_default_group_membership,
 )
@@ -374,3 +375,143 @@ def test_project_param_omitted_falls_back_to_workspace_wide_only():
 
     c = TestClient(a)
     assert c.get("/it", cookies={"jf_session": tok}).status_code == 200
+
+
+# --- effective_permissions: the map /auth/me serves ------------------------
+
+def _group(db, wid: int, name: str, grants: list[tuple[str, str]]) -> int:
+    gid = db.execute(
+        text(
+            "INSERT INTO permission_group(workspace_id, name, is_system) "
+            "VALUES (:w, :n, false) RETURNING group_id"
+        ),
+        {"w": wid, "n": name},
+    ).scalar()
+    for module, action in grants:
+        db.execute(
+            text("INSERT INTO group_module_grant(group_id, module, action) VALUES (:g,:m,:a)"),
+            {"g": gid, "m": module, "a": action},
+        )
+    return gid
+
+
+def _join(db, uid: int, gid: int, project_id: int | None = None) -> None:
+    db.execute(
+        text("INSERT INTO user_group_membership(user_id, group_id, project_id) VALUES (:u,:g,:p)"),
+        {"u": uid, "g": gid, "p": project_id},
+    )
+
+
+def _assert_parity(db, user: AuthUser) -> dict[str, list[str]]:
+    """The one-query map must equal twelve `effective_actions` calls."""
+    perms = effective_permissions(db, user)
+    assert set(perms) == set(_ALL_MODULES)
+    for module in _ALL_MODULES:
+        assert perms[module] == sorted(effective_actions(db, user, module)), module
+    return perms
+
+
+def test_effective_permissions_agrees_with_effective_actions():
+    """Pins the two resolvers together across every fallback branch, so the
+    single-query shortcut can never drift from the engine's own rule."""
+    db = SessionLocal()
+    try:
+        # 1. zero memberships -> the MATRIX row
+        wid, uid = _workspace_and_user(db, role="editor")
+        user = _auth_user(uid, wid, "editor")
+        perms = _assert_parity(db, user)
+        assert perms["tracking"] == sorted(MATRIX["editor"]["tracking"])
+
+        # 2. a membership whose group grants only some modules: the granted
+        #    ones use the grants, every other module is a real "no" (not a
+        #    fallback to the editor's MATRIX row)
+        gid = _group(db, wid, "narrow", [("orderbook", "read")])
+        _join(db, uid, gid)
+        db.commit()
+        perms = _assert_parity(db, user)
+        assert perms["orderbook"] == ["read"]
+        assert perms["tracking"] == []
+
+        # 3. a project-scoped membership adds nothing to the workspace-wide map
+        pid = _project(db, wid, "P-1")
+        wide = _group(db, wid, "wide", [("cut_floor", "write")])
+        _join(db, uid, wide, pid)
+        db.commit()
+        perms = _assert_parity(db, user)
+        assert perms["cut_floor"] == []
+
+        # 4. most-permissive-wins across two workspace-wide groups
+        more = _group(db, wid, "more", [("orderbook", "write"), ("tracking", "read")])
+        _join(db, uid, more)
+        db.commit()
+        perms = _assert_parity(db, user)
+        assert perms["orderbook"] == ["read", "write"]
+        assert perms["tracking"] == ["read"]
+    finally:
+        db.close()
+
+
+def test_effective_permissions_project_scoped_only_membership_is_empty():
+    """The ceiling Global Search already documents: a user whose only
+    membership is project-scoped is DB-governed, and the workspace-wide map
+    has nothing to show for them."""
+    db = SessionLocal()
+    try:
+        wid, uid = _workspace_and_user(db, role="admin")
+        pid = _project(db, wid, "P-1")
+        gid = _group(db, wid, "only-here", [("tracking", "write")])
+        _join(db, uid, gid, pid)
+        db.commit()
+        perms = effective_permissions(db, _auth_user(uid, wid, "admin"))
+        assert all(v == [] for v in perms.values())
+    finally:
+        db.close()
+
+
+def test_effective_permissions_matches_seeded_system_group_for_every_role():
+    db = SessionLocal()
+    try:
+        for role in MATRIX:
+            wid, uid = _workspace_and_user(db, role=role)
+            seed_system_groups(db, workspace_id=wid)
+            gid = db.execute(
+                text("SELECT group_id FROM permission_group WHERE workspace_id=:w AND name=:n"),
+                {"w": wid, "n": role},
+            ).scalar()
+            _join(db, uid, gid)
+            db.commit()
+            perms = _assert_parity(db, _auth_user(uid, wid, role))
+            assert perms == {m: sorted(MATRIX[role].get(m, set())) for m in _ALL_MODULES}, role
+    finally:
+        db.close()
+
+
+def test_auth_me_follows_customised_group_grants():
+    """`/auth/me` feeds the tab strip and every `can()` gate: a grant an admin
+    revokes must disappear from it, not linger from the static matrix."""
+    db = SessionLocal()
+    try:
+        wid, uid = _workspace_and_user(db, role="viewer")
+        seed_system_groups(db, workspace_id=wid)
+        gid = db.execute(
+            text("SELECT group_id FROM permission_group WHERE workspace_id=:w AND name='viewer'"),
+            {"w": wid},
+        ).scalar()
+        _join(db, uid, gid)
+        tok = create_session(db, uid)
+        db.commit()
+        c = TestClient(app)
+        before = c.get("/auth/me", cookies={"jf_session": tok}).json()["permissions"]
+        assert before["orderbook"] == ["read"]
+
+        db.execute(
+            text("DELETE FROM group_module_grant WHERE group_id=:g AND module='orderbook'"),
+            {"g": gid},
+        )
+        db.commit()
+        after = c.get("/auth/me", cookies={"jf_session": tok}).json()["permissions"]
+        assert after["orderbook"] == []
+        assert after["tracking"] == ["read"]
+        assert set(after) == set(_ALL_MODULES)
+    finally:
+        db.close()
