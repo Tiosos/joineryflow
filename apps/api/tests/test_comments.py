@@ -569,4 +569,6 @@ def test_creating_a_comment_locks_its_object_against_a_racing_delete(ws):
 
 def test_a_comment_can_mention_at_most_twenty_people(ws):
     d = _client(ws, "drafter")
-    assert _post(d, ws, "x", mentioned_user_ids=list(range(1, 22))).status_code == 422
+    r = _post(d, ws, "x", mentioned_user_ids=list(range(1, 22)))
+    # rejected by the schema (a validation-error list), not by BAD_MENTION (a dict)
+    assert r.status_code == 422 and isinstance(r.json()["detail"], list)
