@@ -35,7 +35,6 @@ export function NotificationsList() {
   async function open(n: NotificationOut) {
     if (!n.read_at) await notificationsApi.markRead(n.notification_id).catch(() => {});
     if (n.url) router.push(n.url);
-    else await load();
   }
 
   return (
@@ -82,7 +81,6 @@ export function NotificationsList() {
             <button
               type="button"
               onClick={() => void open(n)}
-              disabled={!n.url && !!n.read_at}
               className={[
                 "block w-full rounded border border-h-line bg-h-surface px-3 py-2 text-left text-sm hover:bg-h-bg",
                 n.read_at ? "text-h-muted" : "text-h-ink",

@@ -1,11 +1,11 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CommentThread } from "@/components/comments/CommentThread";
 import { commentsApi } from "@/lib/comments-fetch";
-import type { CommentCounts } from "@/lib/comments-types";
+import type { CommentCounts, Mentionable } from "@/lib/comments-types";
 import type { AreaRow } from "../../../items/[id]/_components/AreaRoomPicker";
 
 type Selection = { type: "area" | "room"; id: number };
@@ -41,11 +41,12 @@ function CountBadge({ n }: { n: number }) {
  *
  *  The selection lives in the URL (`?area=` / `?room=`) so it can be linked to,
  *  and a notification for an Area or Room comment links straight to it — also
- *  when followed while already on this page. A click updates local state
- *  **first**, then the URL: the URL only lands after a server round trip, and
- *  until it does the previous thread's input would still be on screen, typed
- *  into and then thrown away when the thread switched. A URL change that did
- *  not come from a click is synced back into state. */
+ *  when followed while already on this page. A click sets local state and the
+ *  URL together, synchronously (`history.replaceState`, which Next integrates
+ *  with `useSearchParams`): a server round trip (`router.replace`) would leave
+ *  the previous thread's input on screen until it landed, typed into and then
+ *  thrown away, and two quick clicks would race their landings. A URL change
+ *  that did not come from a click is synced back into state. */
 export function ProjectAreasCommentsCard({
   projectId,
   currentUserId,
@@ -57,7 +58,6 @@ export function ProjectAreasCommentsCard({
   currentUserRole: string | null;
   canComment: boolean;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const urlSelection = selectionFrom(searchParams);
@@ -68,7 +68,9 @@ export function ProjectAreasCommentsCard({
   const [selected, setSelected] = useState<Selection | null>(urlSelection);
   const [areas, setAreas] = useState<AreaRow[] | null>(null);
   const [counts, setCounts] = useState<CommentCounts>({ areas: {}, rooms: {} });
+  const [roster, setRoster] = useState<Mentionable[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const refetchedFor = useRef<Set<string>>(new Set());
 
   // Two quick posts fire two refreshes; only the latest request may write, so a
   // slow earlier one cannot put an older, lower count back.
@@ -83,16 +85,26 @@ export function ProjectAreasCommentsCard({
     }
   }, [projectId]);
 
-  useEffect(() => {
-    fetch(`/api/projects/${projectId}/areas`, { cache: "no-store" })
+  const loadAreas = useCallback(() => {
+    return fetch(`/api/projects/${projectId}/areas`, { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) throw new Error(`Failed to load areas (${r.status})`);
         setAreas((await r.json()).areas ?? []);
         setError(null);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load areas"));
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadAreas();
     void loadCounts();
-  }, [projectId, loadCounts]);
+  }, [loadAreas, loadCounts]);
+
+  // Fetched once for the card, not once per thread (each row click remounts the
+  // thread). Until it arrives the thread fetches its own, so nothing waits on it.
+  useEffect(() => {
+    commentsApi.mentionable().then(setRoster).catch(() => setRoster([]));
+  }, []);
 
   // The URL changed (a notification link, back/forward, a shared URL): follow it.
   // After our own click this just re-sets what is already selected.
@@ -116,14 +128,15 @@ export function ProjectAreasCommentsCard({
 
   function select(s: Selection) {
     setSelected(s);
-    // Only flag it as ours when the URL is really about to change; otherwise the
-    // flag would linger and swallow the next genuine deep link's scroll.
+    // Only flag it as ours when the URL really changes (it does, synchronously,
+    // just below); otherwise the flag would linger and swallow the next genuine
+    // deep link's scroll.
     ownClick.current = urlKey !== `${s.type}-${s.id}`;
     const next = new URLSearchParams(searchParams.toString());
     next.delete("area");
     next.delete("room");
     next.set(s.type, String(s.id));
-    router.replace(`${pathname}?${next}`, { scroll: false });
+    window.history.replaceState(null, "", `${pathname}?${next}`);
   }
 
   const area =
@@ -133,7 +146,17 @@ export function ProjectAreasCommentsCard({
       ? areas?.find((a) => a.rooms.some((r) => r.room_id === selected.id))
       : undefined;
   const room = roomParent?.rooms.find((r) => r.room_id === selected?.id);
+  const selectedKey = selected ? `${selected.type}-${selected.id}` : "";
   const stale = !!areas && !!selected && !area && !room;
+
+  // A link can name an area or room created after this page loaded (a colleague
+  // added it and mentioned us). Look once before calling it deleted.
+  useEffect(() => {
+    if (!stale || !selectedKey || refetchedFor.current.has(selectedKey)) return;
+    refetchedFor.current.add(selectedKey);
+    void loadAreas();
+    void loadCounts();
+  }, [stale, selectedKey, loadAreas, loadCounts]);
 
   return (
     <section
@@ -230,6 +253,7 @@ export function ProjectAreasCommentsCard({
                   currentUserRole={currentUserRole}
                   canComment={canComment}
                   onMutated={loadCounts}
+                  roster={roster}
                 />
               </div>
             )}

@@ -28,6 +28,7 @@ export function CommentThread({
   currentUserRole,
   canComment,
   onMutated,
+  roster,
 }: {
   objectType: CommentObjectType;
   objectId: number;
@@ -37,9 +38,16 @@ export function CommentThread({
   /** Called after a post, reply, edit or delete has succeeded and the thread
    *  has reloaded — lets a parent refresh anything derived from it (counts). */
   onMutated?: () => void;
+  /** The workspace roster, when the parent already has it. The Areas & Rooms
+   *  card remounts a thread on every row click; passing it in saves a
+   *  `/workspace/team` request per click. Deliberately not cached across
+   *  mounts in a module: that would outlive a logout and show the previous
+   *  user's team to the next one. */
+  roster?: Mentionable[];
 }) {
   const [comments, setComments] = useState<CommentOut[] | null>(null);
-  const [members, setMembers] = useState<Mentionable[]>([]);
+  const [fetchedMembers, setMembers] = useState<Mentionable[]>([]);
+  const members = roster ?? fetchedMembers;
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,9 +67,10 @@ export function CommentThread({
   }, [load]);
 
   useEffect(() => {
+    if (roster) return;
     // Without the roster the picker just stays off; commenting still works.
     commentsApi.mentionable().then(setMembers).catch(() => setMembers([]));
-  }, []);
+  }, [roster]);
 
   const mentionable = members.filter((m) => m.id !== currentUserId);
 

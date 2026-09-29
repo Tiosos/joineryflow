@@ -3081,10 +3081,11 @@ see *PM Workbench* above.
     selected one's `CommentThread` beside the list. The selection lives in the
     URL (`?area=<id>` / `?room=<id>`) so it can be linked to, and that is
     exactly what a notification for an Area or Room comment deep-links to
-    (`/projects/{pid}?area=…`). **Local state is updated first, then the URL**
-    (`router.replace(…, {scroll: false})`), and a URL change that did not come
-    from a click — a notification followed *while already on this page*, or
-    back/forward — is synced back into state. **A deep link scrolls the card
+    (`/projects/{pid}?area=…`). **A click sets local state and the URL
+    together, synchronously** (`history.replaceState`, which Next 16 integrates
+    with `useSearchParams` — per the bundled docs), and a URL change that did
+    not come from a click — a notification followed *while already on this
+    page*, or back/forward — is synced back into state. **A deep link scrolls the card
     into view** (it is the last card on the page, 1447px down against a 720px
     viewport); a click on a row does not. A link to an area or room that has
     since been deleted says so instead of showing nothing. Posting, replying,
@@ -3093,16 +3094,22 @@ see *PM Workbench* above.
     count). A project with no areas says areas are created from an item's Area
     picker. A room's notification label names its area (`R01 Kitchen (Level 1)`),
     because "R01" alone is ambiguous across areas.
-  - **Found in review, worth remembering: do not make the URL the *only* source
-    of truth for a selection that has a live input beside it.** The first cut
-    derived the selection purely from `useSearchParams()`. `router.replace`
-    lands only after a server round trip, and until then the *previous* thread's
-    input is still on screen — a test typed into it, and the text was thrown
-    away when the thread remounted (Playwright reported "element was detached
-    from the DOM"). The same first cut had used raw `history.replaceState`,
-    which left a same-page notification link unable to switch the thread at
-    all; both are why it is now optimistic state + `router.replace` + a
-    URL→state sync.
+  - **Found in review, worth remembering: a selection with a live input beside
+    it must change synchronously.** Two earlier cuts were wrong in opposite
+    ways. Deriving the selection purely from `useSearchParams()` with
+    `router.replace` meant the URL — and so the thread — changed only after a
+    server round trip; until then the *previous* thread's input was still on
+    screen, a test typed into it, and the text was thrown away when the thread
+    remounted (Playwright: "element was detached from the DOM"), and two quick
+    clicks raced their landings. Holding the selection in state alone left a
+    same-page notification link unable to switch the thread. It is now local
+    state **plus** a synchronous `replaceState`, with a URL→state sync for
+    changes that are not ours. The area/room roster is fetched once by the card
+    and passed to each thread (`roster` prop) rather than once per remount, and
+    is deliberately **not** cached in a module: that would outlive a logout and
+    show the previous user's team to the next one. A link naming an area or room
+    created since the page loaded triggers one refetch of the list before the
+    card calls it deleted.
   - `NotificationBell` in the `TopBar` (unread badge, six most recent,
     mark-all-read; **polls once a minute and on window focus — there is no
     push channel, by Q521**) and a `/notifications` page (not a tab).
@@ -3152,6 +3159,15 @@ see *PM Workbench* above.
   - The Areas & Rooms card lives only on `/projects/[id]`: an item's editor
     does not link to its own area's or room's thread. It is one click away, not
     inline.
+  - `GET /projects/{pid}/comment-counts` and every `/comments` route check
+    **workspace-wide** `tracking` grants, while `GET /projects/{pid}/areas`
+    honours a project-scoped membership (`project_param`). A user whose only
+    `tracking:read` is project-scoped therefore sees the area list but gets 403
+    for counts and threads (the badges silently vanish; the thread shows the
+    error). The same ceiling mentions and Global Search already document;
+    passing `project_param` on the comment routes needs the object's project
+    resolved before the permission check, so it is a design change, not a
+    one-liner.
   - A mention of a user who is later deactivated is left in the stored body;
     editing the comment drops that mention (the roster no longer lists them).
   - `_readers` asks the RBAC engine once per mentioned user (one or two
