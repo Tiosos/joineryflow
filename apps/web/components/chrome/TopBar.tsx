@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Me } from "@/lib/session";
 import { LogoutButton } from "./LogoutButton";
+import { NotificationBell } from "./NotificationBell";
 import { SearchBox } from "./SearchBox";
 
 interface TopBarProps {
@@ -22,6 +23,7 @@ export function TopBar({ user, editorMode }: TopBarProps) {
       </div>
       <SearchBox />
       <div className="flex items-center gap-4 text-sm">
+        <NotificationBell />
         <span className="text-h-muted">
           {user.full_name} · <span className="text-h-ink">{user.auth_role}</span>
         </span>

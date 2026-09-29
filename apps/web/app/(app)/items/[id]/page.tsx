@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
-import { fetchMe, getSessionCookie } from "@/lib/session";
+import { can, fetchMe, getSessionCookie } from "@/lib/session";
 import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 import { ItemHeader } from "./_components/ItemHeader";
 import { ItemMetadataPanel } from "./_components/ItemMetadataPanel";
@@ -58,7 +58,13 @@ export default async function ItemEditorPage({
       />
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <ItemMetadataPanel item={item} />
-        <EditorTabs item={item} active={tab} currentUserRole={me?.auth_role ?? null} />
+        <EditorTabs
+          item={item}
+          active={tab}
+          currentUserRole={me?.auth_role ?? null}
+          currentUserId={me?.id ?? null}
+          canComment={can(me, "tracking", "comment")}
+        />
       </div>
       <EditorFooter
         item={item}
