@@ -3128,9 +3128,15 @@ def main() -> None:
         _cm_foreman = _actor_by("email = 'juno.okafor@hartwood.test'")
         _cm_manager = _actor_by("auth_role = 'manager'")
         if _cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager:
-            db.execute(text("DELETE FROM comment WHERE workspace_id = :w"
-                            " AND (project_id = :p OR item_id = :i)"),
-                       {"w": wid, "p": _cm_project, "i": _cm_item})
+            db.execute(text("""
+                DELETE FROM comment WHERE workspace_id = :w AND (
+                    project_id = :p OR item_id = :i
+                    OR area_id IN (SELECT area_id FROM area WHERE project_id = :p)
+                    OR room_id IN (SELECT r.room_id FROM room r
+                                     JOIN area a ON a.area_id = r.area_id
+                                    WHERE a.project_id = :p)
+                )
+            """), {"w": wid, "p": _cm_project, "i": _cm_item})
 
             _code, _first = _cm.create_comment(
                 db, actor=_cm_drafter, object_type="item", object_id=_cm_item, parent_id=None,
@@ -3160,10 +3166,35 @@ def main() -> None:
                 mentioned_user_ids=[_cm_drafter.id],
             )
             assert _code == "OK", _code
+            # One comment each on that item's own area and room, so the project
+            # page's Areas & Rooms card opens with counts. No mentions, so the
+            # seeded bell counts (Juno 1, Noa 2) are unchanged.
+            _cm_area, _cm_room = db.execute(
+                text("SELECT area_id, room_id FROM items WHERE item_id = :i"),
+                {"i": _cm_item},
+            ).one()
+            if _cm_area:
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_drafter, object_type="area", object_id=_cm_area,
+                    parent_id=None,
+                    body="Fit-out is still in progress here - keep the corridor clear on "
+                         "delivery days.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
+            if _cm_room:
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_manager, object_type="room", object_id=_cm_room,
+                    parent_id=None,
+                    body="Client has asked to see the finish sample in this room before "
+                         "install.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
             db.commit()
             print(
-                "seeded comments: 3 on ALF-001's first item (1 reply, 1 mention) and "
-                "1 on the project (1 mention)"
+                "seeded comments: 3 on ALF-001's first item (1 reply, 1 mention), "
+                "1 on the project (1 mention), 1 on its area and 1 on its room"
             )
 
         print(

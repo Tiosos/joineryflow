@@ -10,6 +10,7 @@ import { ProjectLiftAccessPanel } from "./_components/ProjectLiftAccessPanel";
 import { ProjectLabourHoursCard } from "./_components/ProjectLabourHoursCard";
 import { ProjectFinancialsCard } from "./_components/ProjectFinancialsCard";
 import { ProjectCommentsCard } from "./_components/ProjectCommentsCard";
+import { ProjectAreasCommentsCard } from "./_components/ProjectAreasCommentsCard";
 
 async function fetchProject(id: number, cookieHeader: string): Promise<ProjectOut | null> {
   const apiUrl = process.env.API_URL ?? "http://api:8000";
@@ -103,6 +104,13 @@ export default async function ProjectDetailPage({
       <ProjectLabourHoursCard hours={project.labour_hours} />
 
       <ProjectCommentsCard
+        projectId={project.id}
+        currentUserId={me?.id ?? null}
+        currentUserRole={me?.auth_role ?? null}
+        canComment={can(me, "tracking", "comment")}
+      />
+
+      <ProjectAreasCommentsCard
         projectId={project.id}
         currentUserId={me?.id ?? null}
         currentUserRole={me?.auth_role ?? null}

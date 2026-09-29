@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0042`. Head is `0042_comments_notifications` (Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below). `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 16 Playwright specs / 47 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 16 Playwright specs / 49 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -2996,7 +2996,9 @@ see *PM Workbench* above.
   mounted at top-level paths.
   - `GET /comments?object_type=&object_id=` (`tracking:read`),
     `POST /comments` (`tracking:comment`), `PATCH /comments/{cid}`,
-    `DELETE /comments/{cid}`. **This is the first place the `comment` action
+    `DELETE /comments/{cid}`, and `GET /projects/{pid}/comment-counts`
+    (`tracking:read`; live comments per area and per room of one project —
+    deleted ones are not counted, an area or room with none is simply absent). **This is the first place the `comment` action
     is enforced** — all four object types are governed by the `tracking`
     module (areas / rooms already gate on it). A viewer (read only) can read
     a thread and cannot post; editor, drafter, purchase officer, estimator,
@@ -3070,12 +3072,44 @@ see *PM Workbench* above.
     render in the viewer's own zone (`formatLocalTs`), not as sliced server
     time. `canComment` mirrors `tracking:comment`;
     the API enforces it regardless.
-  - **Surfaces: the item editor's new Comments tab
-    (`/items/[id]?tab=comments`) and a Comments card on `/projects/[id]`.**
-    **Area and Room threads exist in the API but have no UI surface — neither
-    has a page of its own** — so a notification for one shows "no page for
-    this yet" and links nowhere. A surface for them (e.g. on the Tracking
-    area grouping) is the natural next step.
+  - **Surfaces: the item editor's Comments tab
+    (`/items/[id]?tab=comments`), a Comments card and an **Areas & Rooms card**
+    on `/projects/[id]`.** Area and Room have no page of their own, so their
+    threads live on the Areas & Rooms card
+    (`ProjectAreasCommentsCard.tsx`, placed there by the user): the project's
+    areas with their nested rooms, each with a comment-count badge, and the
+    selected one's `CommentThread` beside the list. The selection lives in the
+    URL (`?area=<id>` / `?room=<id>`) so it can be linked to, and that is
+    exactly what a notification for an Area or Room comment deep-links to
+    (`/projects/{pid}?area=…`). **A click sets local state and the URL
+    together, synchronously** (`history.replaceState`, which Next 16 integrates
+    with `useSearchParams` — per the bundled docs), and a URL change that did
+    not come from a click — a notification followed *while already on this
+    page*, or back/forward — is synced back into state. **A deep link scrolls the card
+    into view** (it is the last card on the page, 1447px down against a 720px
+    viewport); a click on a row does not. A link to an area or room that has
+    since been deleted says so instead of showing nothing. Posting, replying,
+    editing or deleting refreshes the badges (`CommentThread`'s `onMutated`;
+    only the newest refresh may write, so two quick posts cannot leave a stale
+    count). A project with no areas says areas are created from an item's Area
+    picker. A room's notification label names its area (`R01 Kitchen (Level 1)`),
+    because "R01" alone is ambiguous across areas.
+  - **Found in review, worth remembering: a selection with a live input beside
+    it must change synchronously.** Two earlier cuts were wrong in opposite
+    ways. Deriving the selection purely from `useSearchParams()` with
+    `router.replace` meant the URL — and so the thread — changed only after a
+    server round trip; until then the *previous* thread's input was still on
+    screen, a test typed into it, and the text was thrown away when the thread
+    remounted (Playwright: "element was detached from the DOM"), and two quick
+    clicks raced their landings. Holding the selection in state alone left a
+    same-page notification link unable to switch the thread. It is now local
+    state **plus** a synchronous `replaceState`, with a URL→state sync for
+    changes that are not ours. The area/room roster is fetched once by the card
+    and passed to each thread (`roster` prop) rather than once per remount, and
+    is deliberately **not** cached in a module: that would outlive a logout and
+    show the previous user's team to the next one. A link naming an area or room
+    created since the page loaded triggers one refetch of the list before the
+    card calls it deleted.
   - `NotificationBell` in the `TopBar` (unread badge, six most recent,
     mark-all-read; **polls once a minute and on window focus — there is no
     push channel, by Q521**) and a `/notifications` page (not a tab).
@@ -3083,10 +3117,12 @@ see *PM Workbench* above.
   (a drafter mentions the foreman, the foreman replies, a manager comments)
   and one project comment mentioning the drafter — through the same query
   functions the API uses — so Juno Okafor's bell starts at 1 and Noa
-  Lindqvist's at 2. Idempotent (the demo item's and project's threads are
-  dropped first; notifications cascade).
+  Lindqvist's at 2. It also leaves one comment on that item's own area and one
+  on its room (**no mentions**, so those bell counts are unchanged) so the
+  Areas & Rooms card opens with badges. Idempotent (the demo item's, project's,
+  areas' and rooms' threads are dropped first; notifications cascade).
 - **RBAC — no matrix change.** `tracking:{read,comment}`, already granted.
-- **Tests.** `test_comments.py` (42 cases): each object type round-trips;
+- **Tests.** `test_comments.py` (46 cases): each object type round-trips;
   the `comment` action is enforced; body trim / bounds; related part 404;
   workspace isolation on every verb; replies inherit the object, refuse
   reply-to-reply, and the DB itself rejects reply-to-reply, two objects and
@@ -3101,15 +3137,37 @@ see *PM Workbench* above.
   author who lost access, the inbox hides what is no longer readable, mark-read
   audited once, the FOR KEY SHARE lock, the 20-mention cap) — six were
   confirmed to **fail against the pre-fix code**; the cap test was tightened
-  after it turned out to pass there for the wrong reason.
-  `tests/e2e/comments.spec.ts` (4 tests) was run against a live migrated,
+  after it turned out to pass there for the wrong reason. Four more cover the
+  Areas & Rooms work: counts are per area and per room (replies count; item
+  and project threads do not), deleted comments are not counted, counts are
+  scoped to one project, and the endpoint needs `tracking:read` and a project
+  in this workspace; and the notification-link test now pins
+  `/projects/{pid}?area=…` / `?room=…` (it used to assert an area had *no*
+  link).
+  `tests/e2e/comments.spec.ts` (6 tests) was run against a live migrated,
   seeded stack: a mention reaches the bell and opens the item's Comments tab
   with the mention highlighted and the reply nested; the `@` picker, edit,
-  and a manager's delete; a viewer sees the thread with no form; the project
-  page's thread. The migration downgrades and re-upgrades cleanly.
+  and a manager's delete; a viewer sees the thread with no form; the Areas &
+  Rooms card (badges, an area's and a room's thread, the room's badge
+  following a post); a mention on an area's thread deep-linking the
+  notification to that thread; the project page's thread. The migration
+  downgrades and re-upgrades cleanly.
 - **Known gaps, recorded rather than silently left.**
-  - **Area / Room have no UI** (above), and Task / Change / Component /
-    Revision have no thread at all (above).
+  - Task / Change / Component / Revision have no thread at all (above).
+    (Area / Room had no UI when Comments first shipped; the Areas & Rooms card
+    closed that.)
+  - The Areas & Rooms card lives only on `/projects/[id]`: an item's editor
+    does not link to its own area's or room's thread. It is one click away, not
+    inline.
+  - `GET /projects/{pid}/comment-counts` and every `/comments` route check
+    **workspace-wide** `tracking` grants, while `GET /projects/{pid}/areas`
+    honours a project-scoped membership (`project_param`). A user whose only
+    `tracking:read` is project-scoped therefore sees the area list but gets 403
+    for counts and threads (the badges silently vanish; the thread shows the
+    error). The same ceiling mentions and Global Search already document;
+    passing `project_param` on the comment routes needs the object's project
+    resolved before the permission check, so it is a design change, not a
+    one-liner.
   - A mention of a user who is later deactivated is left in the stored body;
     editing the comment drops that mention (the roster no longer lists them).
   - `_readers` asks the RBAC engine once per mentioned user (one or two
@@ -3123,8 +3181,8 @@ see *PM Workbench* above.
     mentioned, the same ceiling Global Search documents.
 - **Out of scope (deferred):** the four other §29 object types; attachments /
   photos, decisions, internal notes and discussion areas; §30's rules engine,
-  preferences, email / push, grouping and escalation; a UI for Area / Room
-  threads; search over comments.
+  preferences, email / push, grouping and escalation; search over comments;
+  a comment count on the Tracking grid.
 
 ## Deferred options (recorded, not built)
 

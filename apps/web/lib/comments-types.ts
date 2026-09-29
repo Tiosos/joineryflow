@@ -50,6 +50,12 @@ export interface NotificationList {
   unread_count: number;
 }
 
+/** Live comment counts per area / room of one project (absent = none). */
+export interface CommentCounts {
+  areas: Record<number, number>;
+  rooms: Record<number, number>;
+}
+
 /** The slice of `/workspace/team` the mention picker needs. */
 export interface Mentionable {
   id: number;

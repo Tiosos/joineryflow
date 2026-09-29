@@ -211,6 +211,39 @@ def _readers(
     }
 
 
+def counts_for_project(
+    db: Session, *, project_id: int, workspace_id: int
+) -> dict | None:
+    """Live comment counts per area and per room of one project, for the
+    Areas & Rooms card. Deleted comments are not counted (a deleted top-level
+    comment is only a placeholder). None if the project is not in this
+    workspace."""
+    if not _object_in_workspace(
+        db, object_type="project", object_id=project_id, workspace_id=workspace_id
+    ):
+        return None
+    rows = db.execute(
+        text(
+            """
+            SELECT c.area_id, c.room_id, count(*) AS n
+              FROM comment c
+              LEFT JOIN area a  ON a.area_id = c.area_id
+              LEFT JOIN room r  ON r.room_id = c.room_id
+              LEFT JOIN area ra ON ra.area_id = r.area_id
+             WHERE c.workspace_id = :w AND c.deleted_at IS NULL
+               AND (c.area_id IS NOT NULL OR c.room_id IS NOT NULL)
+               AND COALESCE(a.project_id, ra.project_id) = :p
+             GROUP BY c.area_id, c.room_id
+            """
+        ),
+        {"w": workspace_id, "p": project_id},
+    ).mappings().all()
+    return {
+        "areas": {r["area_id"]: r["n"] for r in rows if r["area_id"] is not None},
+        "rooms": {r["room_id"]: r["n"] for r in rows if r["room_id"] is not None},
+    }
+
+
 def _bad_mentions(
     db: Session, *, workspace_id: int, user_ids: list[int], object_type: str
 ) -> list[int]:

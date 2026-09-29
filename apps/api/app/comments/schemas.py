@@ -59,3 +59,10 @@ class CommentOut(BaseModel):
 
 class CommentThreadOut(BaseModel):
     comments: list[CommentOut]
+
+
+class CommentCountsOut(BaseModel):
+    """Live (non-deleted) comment counts for one project's areas and rooms,
+    keyed by id. An area or room with no comments is simply absent."""
+    areas: dict[int, int]
+    rooms: dict[int, int]

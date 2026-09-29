@@ -16,11 +16,15 @@ _VISIBLE = """
 """
 
 
-def _url(object_type: str, object_id: int) -> str | None:
+def _url(object_type: str, object_id: int, project_id: int | None) -> str | None:
     if object_type == "item":
         return f"/items/{object_id}?tab=comments"
     if object_type == "project":
         return f"/projects/{object_id}"
+    # Area and Room threads live on the project page's Areas & Rooms card, which
+    # opens the thread named in the query string.
+    if object_type in ("area", "room") and project_id is not None:
+        return f"/projects/{project_id}?{object_type}={object_id}"
     return None
 
 
@@ -35,10 +39,15 @@ def list_notifications(
                    ua.full_name AS actor_name, c.comment_id,
                    left(c.body, 140) AS excerpt, c.object_type,
                    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id) AS object_id,
+                   COALESCE(c.project_id, a.project_id, ra.project_id, i.project_id)
+                       AS project_id,
                    CASE c.object_type
                         WHEN 'project' THEN p.project_code
                         WHEN 'area'    THEN a.name
-                        WHEN 'room'    THEN r.rm_no
+                        -- the area is named too: "R01" alone is ambiguous when
+                        -- several areas each have an R01
+                        WHEN 'room'    THEN r.rm_no || COALESCE(' ' || r.rm_desc, '')
+                                            || ' (' || ra.name || ')'
                         ELSE '#' || i.num::text || COALESCE(' ' || i.description, '')
                    END AS object_label
               FROM notification n
@@ -47,6 +56,7 @@ def list_notifications(
               LEFT JOIN projects p ON p.project_id = c.project_id
               LEFT JOIN area a     ON a.area_id    = c.area_id
               LEFT JOIN room r     ON r.room_id    = c.room_id
+              LEFT JOIN area ra    ON ra.area_id   = r.area_id
               LEFT JOIN items i    ON i.item_id    = c.item_id
              WHERE n.recipient_id = :u AND n.workspace_id = :w
                {"AND n.read_at IS NULL" if unread_only else ""}
@@ -57,10 +67,13 @@ def list_notifications(
         ),
         {"u": user_id, "w": workspace_id, "lim": limit, "off": offset},
     ).mappings().all()
+    notifications = []
+    for r in rows:
+        row = dict(r)
+        project_id = row.pop("project_id")  # only needed to build the link
+        notifications.append({**row, "url": _url(row["object_type"], row["object_id"], project_id)})
     return {
-        "notifications": [
-            {**dict(r), "url": _url(r["object_type"], r["object_id"])} for r in rows
-        ],
+        "notifications": notifications,
         "unread_count": unread_count(
             db, user_id=user_id, workspace_id=workspace_id, include_items=include_items
         ),
