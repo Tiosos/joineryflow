@@ -1,3 +1,5 @@
+import { fetchMe } from "@/lib/session";
+
 import { OrderbookTabs } from "./_components/OrderbookTabs";
 
 /**
@@ -21,10 +23,11 @@ export default async function Page({
   }>;
 }) {
   const sp = await searchParams;
+  const me = await fetchMe();
   return (
     <div className="grid gap-4">
       <header><h1 className="text-2xl font-semibold text-h-ink">Orderbook</h1></header>
-      <OrderbookTabs initial={sp} />
+      <OrderbookTabs initial={sp} me={me} />
     </div>
   );
 }

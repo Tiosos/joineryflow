@@ -83,3 +83,43 @@ export interface PatchOrderIn {
   attributes?: Record<string, unknown> | null;
   expected_versions?: Record<string, number>;
 }
+
+/** Mirrors `orders/schemas.py::OrderLineOut`. */
+export interface OrderLine {
+  line_id: number;
+  line_number: number;
+  item_description: string;
+  sku: string | null;
+  quantity: string;
+  unit: string | null;
+  unit_price: string;
+  line_total: string | null;
+  material_table: string | null;
+  material_id: number | null;
+  attributes: Record<string, unknown>;
+}
+
+/** `GET /orders/{po_id}` — `OrderRow` plus the line items. */
+export interface OrderDetail extends OrderRow {
+  lines: OrderLine[];
+}
+
+/** Mirrors `orders/schemas.py::CreateOrderLineIn`. */
+export interface CreateOrderLineIn {
+  item_description: string;
+  quantity: string;
+  unit_price: string;
+  sku?: string | null;
+  unit?: string | null;
+}
+
+/** Mirrors `orders/schemas.py::PatchOrderLineIn`. No `expected_versions` —
+ * field-level optimistic concurrency (§L) is scoped to the order header,
+ * not individual lines. */
+export interface PatchOrderLineIn {
+  item_description?: string | null;
+  sku?: string | null;
+  quantity?: string | null;
+  unit?: string | null;
+  unit_price?: string | null;
+}

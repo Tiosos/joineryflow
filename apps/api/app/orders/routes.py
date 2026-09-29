@@ -8,6 +8,7 @@ These live at top-level paths (`/orders`, `/projects/{pid}/orders`,
 `/procurement/*` namespace**, which still serves its own 32 endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
@@ -21,6 +22,7 @@ from .schemas import (
     OrderDetailOut,
     OrderListOut,
     PatchOrderIn,
+    PatchOrderLineIn,
 )
 
 router = APIRouter(tags=["orders"])
@@ -132,8 +134,13 @@ def patch_order_route(
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
     if code == "FIELD_CONFLICT":
+        # `current_value` can be a Decimal (quantity/unit_cost/total_amount)
+        # or a date (required_date/date_ordered/due_date) — HTTPException's
+        # detail bypasses the response_model's Pydantic JSON encoding and
+        # goes straight through Starlette's plain `json.dumps`, which 500s
+        # on either type. jsonable_encoder is FastAPI's own fix for this.
         raise HTTPException(
-            409, {"code": "FIELD_CONFLICT", "conflicts": order}
+            409, jsonable_encoder({"code": "FIELD_CONFLICT", "conflicts": order})
         )
     db.commit()
     return order
@@ -170,5 +177,40 @@ def add_line_route(
     )
     if order is None:
         raise HTTPException(404, "order not found")
+    db.commit()
+    return order
+
+
+@router.patch("/orders/{po_id}/lines/{line_id}", response_model=OrderDetailOut)
+def patch_line_route(
+    po_id: int,
+    line_id: int,
+    payload: PatchOrderLineIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    order = q.patch_line(
+        db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
+        payload=payload, actor_id=user.id,
+    )
+    if order is None:
+        raise HTTPException(404, "order or line not found")
+    db.commit()
+    return order
+
+
+@router.delete("/orders/{po_id}/lines/{line_id}", response_model=OrderDetailOut)
+def remove_line_route(
+    po_id: int,
+    line_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    order = q.remove_line(
+        db, po_id=po_id, line_id=line_id, workspace_id=user.workspace_id,
+        actor_id=user.id,
+    )
+    if order is None:
+        raise HTTPException(404, "order or line not found")
     db.commit()
     return order

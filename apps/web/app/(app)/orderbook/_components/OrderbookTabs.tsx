@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import type { Me } from "@/lib/session";
 import { OrdersClient } from "./OrdersClient";
 import { QueueClient } from "./QueueClient";
 
@@ -14,9 +15,10 @@ interface Props {
     project_id?: string;
     order?: string;
   };
+  me: Me | null;
 }
 
-export function OrderbookTabs({ initial }: Props) {
+export function OrderbookTabs({ initial, me }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   // Arriving with ?order= means "find me this order", so land on Orders even
@@ -54,7 +56,7 @@ export function OrderbookTabs({ initial }: Props) {
           </button>
         ))}
       </nav>
-      {tab === "orders" ? <OrdersClient /> : <QueueClient initial={initial} />}
+      {tab === "orders" ? <OrdersClient me={me} /> : <QueueClient initial={initial} />}
     </div>
   );
 }
