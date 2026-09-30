@@ -188,7 +188,19 @@ def mark_delivered(
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
     po = q.mark_delivered(db, po_id, arrived_date)
-    if po:
+    if po is None:
+        # Only an Approved order can be delivered; before this check the expenditure
+        # and changelog were written for any status (and again on a second call).
+        raise HTTPException(
+            409,
+            {"code": "BAD_STATUS", "message": "Only an Approved order can be marked Delivered"},
+        )
+    entry = "Marked Delivered — arrived on site"
+    if po["cost_center_id"] is None:
+        # `0031` made cost_center_id nullable (Q563): an order with no cost centre belongs
+        # to no cost-centre budget, so there is nothing to post an expenditure against.
+        entry += " (no cost centre — no expenditure posted)"
+    else:
         q.commit_budget(
             db,
             po_id,
@@ -196,7 +208,7 @@ def mark_delivered(
             float(po["grand_total"] or 0),
             "Expenditure",
         )
-    q.append_changelog(db, po_id, "Marked Delivered — arrived on site")
+    q.append_changelog(db, po_id, entry)
     db.commit()
     return {"status": "Delivered"}
 
@@ -402,19 +414,17 @@ def decide_approval(
         raise HTTPException(400, "This approval has already been acted on")
 
     new_status = "Approved" if action.decision == "approve" else "Rejected"
-    po = q.get_po_budget_fields(db, wf["po_id"]) if new_status == "Approved" else None
-    # `0031` made cost_center_id nullable (Q563), but approving commits budget
-    # against a cost centre, so refuse before anything is written.
-    if po and po["cost_center_id"] is None:
-        raise HTTPException(
-            409,
-            {"code": "NO_COST_CENTRE", "message": "Assign a cost centre to this order before approving it"},
-        )
     q.update_workflow_decision(db, workflow_id, new_status, action.comments)
     q.update_po_status(db, wf["po_id"], new_status)
 
+    entry = f"{new_status} by approver #{action.approver_id}"
     if new_status == "Approved":
-        if po:
+        po = q.get_po_budget_fields(db, wf["po_id"])
+        if po and po["cost_center_id"] is None:
+            # `0031` made cost_center_id nullable (Q563): an order with no cost centre
+            # belongs to no cost-centre budget, so there is nothing to commit against.
+            entry += " (no cost centre — no commitment posted)"
+        elif po:
             q.commit_budget(
                 db,
                 wf["po_id"],
@@ -423,12 +433,7 @@ def decide_approval(
                 "Commitment",
             )
 
-    q.append_changelog(
-        db,
-        wf["po_id"],
-        f"{new_status} by approver #{action.approver_id}",
-        action.approver_id,
-    )
+    q.append_changelog(db, wf["po_id"], entry, action.approver_id)
     db.commit()
     return {"workflow_id": workflow_id, "decision": new_status}
 

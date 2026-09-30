@@ -4650,35 +4650,29 @@ since been built.**
   FastAPI validates the response.
 
 
-## Approving an order with no cost centre (legacy `/procurement/*`, no migration) — shipped
+## Approving an order with no cost centre (legacy `/procurement/*`, no migration) — shipped, then superseded
 
 > Chosen by the user ("go for your pick 4xx refusal"), from the two options the
 > *POST-body null audit* offered: refuse with a clear 4xx, or skip the budget
-> commitment. No migration, no spec or plan doc; this section is its written record.
+> commitment. **Superseded — see *Orders with no cost centre: approve and deliver*
+> below**: the `409 NO_COST_CENTRE` this section shipped (#55) was replaced by
+> "approve proceeds, no commitment". Kept for what it found and why it was replaced.
 
-- **Rule.** `POST /procurement/approvals/{workflow_id}/decide` with `decision: "approve"` on
-  an order whose `cost_center_id` is NULL answers **`409 {code: "NO_COST_CENTRE", message}`**
-  *before anything is written*: the workflow stays `Pending`, the order keeps its status and
-  no `budget_transactions` row appears. Approving commits budget against a cost centre, so an
-  order with none cannot be approved; the fix is to assign one. **Reject is unaffected** — it
-  commits no budget, so a cost-centre-less order can still be rejected. The status code is 409
-  because the request is fine and the *order's state* is what blocks it.
-- **Why the alternative lost.** Skipping the commitment would have approved an order while
-  silently leaving the budget understated — the kind of quiet gap a refusal makes visible.
-- **Code.** `procurement/routes.py::decide_approval` reads `get_po_budget_fields` *before*
-  `update_workflow_decision` / `update_po_status` (it used to read it after, inside
-  `if new_status == "Approved"`), so the refusal precedes every write.
-- **Tests** (`test_procurement_routes.py`, 3 new): approving with no cost centre is a 409 with
-  the code and leaves the order, workflow and budget rows unchanged — **fails against the
-  unfixed source** (an unhandled `TypeError`); rejecting with none still works and approving
-  with one still commits budget — both controls that pass either way.
-- **Found while testing — the same `0031` change had another legacy consequence; since fixed, see
-  *Legacy order views with no cost centre* below.** `v_po_summary` inner-joined `cost_centers`, so
-  a cost-centre-less order was absent from it: `GET /procurement/orders/{id}` answered 404 and the
-  legacy list omitted the order, even though the row existed.
-- **Not changed:** the seed's one purchase order still has no cost centre, so approving it
-  through the legacy route now answers the 409 instead of a 500. The Orderbook UI has no
-  legacy-approval control.
+- **What it did.** `POST /procurement/approvals/{workflow_id}/decide` with `approve` on an
+  order whose `cost_center_id` is NULL answered `409 {code: "NO_COST_CENTRE"}` before writing
+  anything (it had been a raw 500: `int(None)` after the decision was recorded). Reject was
+  never affected. Tests pinned the refusal; the reject and with-cost-centre tests were controls.
+- **Why it was replaced.** The refusal's message told people to "assign a cost centre", and the
+  reason for picking it over skipping the commitment was that skipping would leave the budget
+  understated. **Both rested on a premise that turned out false: no route can assign a cost
+  centre to an existing order** — the legacy `PATCH /procurement/orders/{id}` (`POUpdate`) has no
+  `cost_center_id`, and the v1 `orders/` module has none at all — and an order with no cost centre
+  (nullable by design since `0031`, Q563) belongs to no cost-centre budget, so there is nothing for
+  a skipped commitment to understate. The refusal made such an order impossible to approve through
+  this route with no way out. Found while looking at the sibling `deliver` route; the user was
+  shown the evidence and chose to revisit.
+- **Found while testing — since fixed, see *Legacy order views with no cost centre* below.**
+  `v_po_summary` inner-joined `cost_centers`, so a cost-centre-less order was a 404 here.
 
 ## Legacy order views with no cost centre (migration `0045`) — shipped
 
@@ -4693,7 +4687,7 @@ since been built.**
   `procurement/queries.py` goes through the view, so an order with no cost centre was
   invisible to the legacy namespace: `GET /procurement/orders/{id}` answered **404**, and the
   list, the filters and both approval queues (pending and history) omitted it, although the
-  row existed and the order could still be approved (now refused with `409 NO_COST_CENTRE`).
+  row existed and the order could still be approved (now with no commitment posted — see *Orders with no cost centre: approve and deliver*).
   The seed's one purchase order is such an order.
 - **The fix — `0045_po_summary_left_join_cost_centre`.** `cost_centers` becomes a `LEFT JOIN`;
   `cost_center_id`, `cost_center` and `cost_center_code` read **NULL** for such an order.
@@ -4711,12 +4705,64 @@ since been built.**
   it; another workspace's cost-centre-less order stays a 404 and out of the list (both
   controls that pass either way). The earlier helper that read the workflow id from the table
   to dodge this 404 now goes through the same path as a real caller.
-- **Found while building, not fixed — asked, not decided.** `PATCH /procurement/orders/{po_id}/deliver`
-  has the same `int(po["cost_center_id"])` the approve route had: marking a cost-centre-less
-  order Delivered answers **500** (`TypeError`), writing nothing. The two routes differ in
-  what a refusal costs: approving is a decision the system can ask to be retried with a cost
-  centre, but *delivered* records a physical fact (the goods arrived). The options are a 409
-  like the approval's, or recording the delivery and **skipping the budget expenditure** — the
-  latter leaves the budget understated with no error. Left for the user.
+- **Found while building — since fixed, see *Orders with no cost centre: approve and deliver*
+  below.** `PATCH /procurement/orders/{po_id}/deliver` had the same `int(po["cost_center_id"])`
+  the approve route had (a 500 with nothing written), and more besides.
 - **Known gaps, recorded.** The legacy `/procurement/*` namespace is still not used by the
   v1 surface, so nothing on the web changed.
+
+## Orders with no cost centre: approve and deliver (legacy `/procurement/*`, no migration) — shipped
+
+> Chosen by the user ("go to fix the second bug of the same family. ask me any question").
+> Three things were open, so the user was asked before any code was written; the answers
+> below are **settled decisions**, not assumptions. No migration, no spec or plan doc; this
+> section is its written record. It **supersedes** the `409 NO_COST_CENTRE` on approve
+> (*Approving an order with no cost centre*, #55).
+
+- **The rule (user).** *An order with no cost centre belongs to no cost-centre budget, so it
+  neither commits nor spends one.* `0031` made `purchase_orders.cost_center_id` nullable
+  (Q563) and **no route can assign one afterwards** (legacy `POUpdate` and the v1 `orders/`
+  module both lack the field), so "no cost centre" is a permanent property of such an order,
+  not a gap to be filled:
+  - **Approve** (`POST /approvals/{id}/decide`) **succeeds**, posts **no** `Commitment` row, and
+    the changelog line reads "… (no cost centre — no commitment posted)". Reject is unchanged.
+  - **Deliver** (`PATCH /orders/{id}/deliver`) **succeeds**, posts **no** `Expenditure` row, and
+    the changelog line reads "… (no cost centre — no expenditure posted)".
+  - With a cost centre both behave exactly as before.
+  *Why this over a 409 (the user's call, against the recommendation this file previously
+  carried):* a refusal would have made such an order impossible to approve or deliver through
+  these routes with no way to make it possible, and delivery records a physical fact (the goods
+  arrived) that a missing budget entry should not block.
+- **`deliver` also needs Approved (user: verify, fix if real — it was).** `mark_delivered`'s
+  UPDATE was guarded by `status = 'Approved'`, but the `Expenditure` insert and the "Marked
+  Delivered" changelog ran regardless, so delivering a **Draft** order answered `200
+  {"status": "Delivered"}`, left the order **Draft**, and posted an `Expenditure` (reproduced
+  before the fix: `HTTP 200 | PO STATUS Draft | BUDGET ROWS [('Expenditure', …)]`). The same hole
+  made a **second** `deliver` on a Delivered order post a **second** Expenditure. Now
+  `queries.mark_delivered` returns `None` when its UPDATE matched no row and the route answers
+  **`409 {code: "BAD_STATUS", message}`** with nothing written — the codes-and-409 shape the rest
+  of the app uses, rather than this module's older bare-string 400s.
+- **Code.** `procurement/routes.py::decide_approval` records the decision first and then posts the
+  commitment only when a cost centre exists (the refusal and its early read are gone);
+  `mark_delivered` (route) branches on the `None` and on the cost centre; `queries.mark_delivered`
+  reads `rowcount`.
+- **Tests** (`test_procurement_routes.py`): approving with no cost centre is `200`, ends
+  `Approved` / `Approved` with **0** budget rows and the changelog note — *replaces* the
+  refusal test; delivering an Approved order posts one `Expenditure` (control, beside its
+  `Commitment`); delivering with no cost centre delivers with **0** rows and the note; delivering
+  a **Draft** order is a `409 BAD_STATUS` that leaves the order row (status **and** changelog) and
+  the budget untouched; delivering **twice** leaves exactly one `Expenditure`; another workspace's
+  order is a 404 and stays Approved. **Four fail against the previous routes** (approve-no-cost-
+  centre, deliver-no-cost-centre, deliver-Draft, deliver-twice); the rest, and the reject and
+  with-cost-centre approve tests, are controls. The Draft reproduction and an approve/deliver
+  probe were throwaway and are not in the repo.
+- **Known gaps, recorded.**
+  - **An order with no cost centre is invisible to cost-centre budget reporting by design**
+    (`v_budget_utilisation` reads `cost_centers`); there is no "unallocated spend" view, and
+    nothing flags that such an order has no budget line. Whether there should be one is a product
+    call, not a bug.
+  - **No route assigns a cost centre to an existing order** (above). Not built; it is what would
+    make "attach it later, then commit" possible.
+  - The legacy `/procurement/*` namespace still does not use the order-status guard
+    (*Purchase order status guard*) — `deliver` now checks Approved, but `PATCH /orders/{id}`
+    can still write a status and its fields on a Cancelled / Delivered order.

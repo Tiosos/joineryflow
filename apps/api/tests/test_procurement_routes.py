@@ -287,20 +287,56 @@ def _po_and_workflow_state(po_id: int, workflow_id: int) -> tuple:
         s.close()
 
 
-def test_approving_an_order_with_no_cost_centre_is_refused_and_writes_nothing():
-    ctx = _login()
-    po_id, wf = _submitted_order(ctx, cost_centre=False)
-    before = _po_and_workflow_state(po_id, wf)
-
-    r = ctx["client"].post(
+def _decide(ctx: dict, wf: int, decision: str):
+    return ctx["client"].post(
         f"/procurement/approvals/{wf}/decide",
-        json={"approver_id": ctx["uid"], "decision": "approve"},
+        json={"approver_id": ctx["uid"], "decision": decision},
     )
 
-    assert r.status_code == 409, r.text
-    assert r.json()["detail"]["code"] == "NO_COST_CENTRE"
-    assert _po_and_workflow_state(po_id, wf) == before
-    assert before[1] == "Pending" and before[2] == 0
+
+def _order_row(po_id: int) -> dict:
+    s = SessionLocal()
+    try:
+        row = s.execute(
+            text("SELECT status, changelog, grand_total FROM purchase_orders WHERE po_id = :p"), {"p": po_id}
+        ).mappings().one()
+        return dict(row)
+    finally:
+        s.close()
+
+
+def _budget_rows(po_id: int) -> list[tuple]:
+    s = SessionLocal()
+    try:
+        return [
+            tuple(r)
+            for r in s.execute(
+                text("SELECT transaction_type, amount FROM budget_transactions WHERE po_id = :p ORDER BY 1"),
+                {"p": po_id},
+            )
+        ]
+    finally:
+        s.close()
+
+
+def _approved_order(ctx: dict, *, cost_centre: bool = True) -> int:
+    po_id, wf = _submitted_order(ctx, cost_centre=cost_centre)
+    assert _decide(ctx, wf, "approve").status_code == 200
+    return po_id
+
+
+def test_approving_an_order_with_no_cost_centre_succeeds_without_a_commitment():
+    # 0031 made cost_center_id nullable (Q563) and no route can assign one afterwards, so an
+    # order with none belongs to no cost-centre budget: approval goes through, nothing is
+    # committed. (This used to be a 500, then — briefly — a 409; see CLAUDE.md.)
+    ctx = _login()
+    po_id, wf = _submitted_order(ctx, cost_centre=False)
+
+    r = _decide(ctx, wf, "approve")
+
+    assert r.status_code == 200, r.text
+    assert _po_and_workflow_state(po_id, wf) == ("Approved", "Approved", 0)
+    assert "no cost centre — no commitment posted" in _order_row(po_id)["changelog"]
 
 
 def test_rejecting_an_order_with_no_cost_centre_still_works():
@@ -328,6 +364,66 @@ def test_approving_an_order_with_a_cost_centre_commits_budget():
     assert r.status_code == 200, r.text
     status, wf_status, budget_rows = _po_and_workflow_state(po_id, wf)
     assert (status, wf_status, budget_rows) == ("Approved", "Approved", 1)
+
+
+def test_delivering_an_approved_order_posts_the_expenditure():
+    ctx = _login()
+    po_id = _approved_order(ctx)
+
+    r = ctx["client"].patch(f"/procurement/orders/{po_id}/deliver")
+
+    assert r.status_code == 200, r.text
+    row = _order_row(po_id)
+    assert row["status"] == "Delivered"
+    assert _budget_rows(po_id) == [("Commitment", row["grand_total"]), ("Expenditure", row["grand_total"])]
+
+
+def test_delivering_an_order_with_no_cost_centre_delivers_without_an_expenditure():
+    ctx = _login()
+    po_id = _approved_order(ctx, cost_centre=False)
+
+    r = ctx["client"].patch(f"/procurement/orders/{po_id}/deliver")
+
+    assert r.status_code == 200, r.text
+    row = _order_row(po_id)
+    assert row["status"] == "Delivered"
+    assert _budget_rows(po_id) == []
+    assert "no cost centre — no expenditure posted" in row["changelog"]
+
+
+def test_delivering_a_draft_order_is_refused_and_writes_nothing():
+    # The UPDATE was guarded by status = 'Approved' but the expenditure and the changelog
+    # were not, so a Draft order answered 200 "Delivered", stayed Draft and got an Expenditure.
+    ctx = _login()
+    po = _create_order(ctx)
+    before = _order_row(po["po_id"])
+
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}/deliver")
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "BAD_STATUS"
+    assert _order_row(po["po_id"]) == before
+    assert _budget_rows(po["po_id"]) == []
+
+
+def test_delivering_twice_posts_one_expenditure():
+    ctx = _login()
+    po_id = _approved_order(ctx)
+    assert ctx["client"].patch(f"/procurement/orders/{po_id}/deliver").status_code == 200
+
+    again = ctx["client"].patch(f"/procurement/orders/{po_id}/deliver")
+
+    assert again.status_code == 409, again.text
+    assert [t for t, _ in _budget_rows(po_id)].count("Expenditure") == 1
+
+
+def test_delivering_another_workspaces_order_is_404():
+    mine = _login()
+    other = _login()
+    other_po = _approved_order(other)
+
+    assert mine["client"].patch(f"/procurement/orders/{other_po}/deliver").status_code == 404
+    assert _order_row(other_po)["status"] == "Approved"
 
 
 def test_order_with_no_cost_centre_is_visible_to_the_legacy_reads():
