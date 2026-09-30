@@ -98,7 +98,13 @@ export function EditorTabs({
             canComment={canCommentOnModule}
           />
         )}
-        {current === "hardware" && <HardwareTab item={item} />}
+        {current === "hardware" && (
+          <HardwareTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
+        )}
         {current === "board" && <BoardTab itemId={item.id} />}
         {current === "take" && (
           <MaterialTakeTab itemId={item.id} currentUserRole={currentUserRole} />

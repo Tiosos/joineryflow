@@ -23,7 +23,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
+from ..items.queries import assert_item_content_unlocked
 from .schemas import AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn
 from ..row_types import joinery_items_only
 
@@ -475,12 +477,17 @@ def create_hardware_line(
     item_id: int,
     workspace_id: int,
     payload: CreateHardwareLineIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> int | None:
-    """Returns new line_id, or None if item or catalog_id not visible / catalog not same project."""
+    """Returns new line_id, or None if item or catalog_id not visible / catalog not same project.
+    Raises `ItemContentLocked` when a lock on the item refuses it."""
     project_id = _item_project_in_workspace(db, item_id=item_id, workspace_id=workspace_id)
     if project_id is None:
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     # Validate catalog_id belongs to the SAME project as the item
     cat = db.execute(
@@ -537,18 +544,23 @@ def patch_hardware_line(
     line_id: int,
     workspace_id: int,
     payload: PatchHardwareLineIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict | None:
     """Apply partial update to a hardware line.
 
     Returns HardwareLineOut-shaped dict or None if not found.
     Writes one item_edit_log row per changed field.
+    Raises `ItemContentLocked` when a lock on the item refuses it.
     """
     info = _line_item_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
     if info is None:
         return None
 
     item_id = info["item_id"]
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
     changes: list[tuple[str, str | None, str | None]] = []
     updates: dict = {}
 
@@ -590,9 +602,10 @@ def delete_hardware_line(
     *,
     line_id: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> str:
-    """Returns 'OK' or 'NOT_FOUND'.
+    """Returns 'OK' or 'NOT_FOUND'; raises `ItemContentLocked` when a lock on the
+    item refuses it.
 
     Writes audit + edit_log BEFORE delete. batch_allocations rows are
     handled by ON DELETE CASCADE on the FK.
@@ -602,6 +615,10 @@ def delete_hardware_line(
         return "NOT_FOUND"
 
     item_id = info["item_id"]
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     write_audit(
         db,

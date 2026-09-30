@@ -8,14 +8,17 @@ import type {
   AvailabilityOut,
   AvailabilityStatus,
 } from "@/lib/pm-types";
+import { lockFromError } from "../cutlist/moduleLock";
 
 interface CartProps {
   item: ItemOut;
   availability: AvailabilityOut | null;
   onRefresh: () => void;
+  /** Why the item's hardware cannot be changed right now (a lock), or null. */
+  lockReason: string | null;
 }
 
-export function Cart({ item, availability, onRefresh }: CartProps) {
+export function Cart({ item, availability, onRefresh, lockReason }: CartProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [lines, setLines] = useState<HardwareLineOut[]>(item.hardware_lines);
@@ -48,9 +51,9 @@ export function Cart({ item, availability, onRefresh }: CartProps) {
       setError(null);
       router.refresh();
       onRefresh();
-    } catch {
+    } catch (e) {
       setLines(snapshot);
-      setError("Failed to delete line");
+      setError(lockFromError(e) ?? "Failed to delete line");
     }
   }
 
@@ -78,6 +81,8 @@ export function Cart({ item, availability, onRefresh }: CartProps) {
               availStatus={getAvailStatus(line.id)}
               onDelete={deleteLine}
               onError={setError}
+              locked={lockReason !== null}
+              lockReason={lockReason}
               onRefresh={() => {
                 router.refresh();
                 onRefresh();
@@ -96,6 +101,8 @@ interface CartLineProps {
   onDelete: (id: number) => Promise<void>;
   onError: (msg: string) => void;
   onRefresh: () => void;
+  locked: boolean;
+  lockReason: string | null;
 }
 
 const AVAIL_COLOR: Record<AvailabilityStatus, string> = {
@@ -116,6 +123,8 @@ function CartLine({
   onDelete,
   onError,
   onRefresh,
+  locked,
+  lockReason,
 }: CartLineProps) {
   const [qty, setQty] = useState(line.qty);
   const [note, setNote] = useState(line.note ?? "");
@@ -135,8 +144,8 @@ function CartLine({
       try {
         await PM.patchHardwareLine(line.id, { qty: next });
         onRefresh();
-      } catch {
-        onError("Failed to update quantity");
+      } catch (e) {
+        onError(lockFromError(e) ?? "Failed to update quantity");
         setQty(qty);
       }
     }, 300);
@@ -147,8 +156,8 @@ function CartLine({
     try {
       await PM.patchHardwareLine(line.id, { note: trimmed || null });
       onRefresh();
-    } catch {
-      onError("Failed to save note");
+    } catch (e) {
+      onError(lockFromError(e) ?? "Failed to save note");
       setNote(line.note ?? "");
     }
   }
@@ -168,7 +177,9 @@ function CartLine({
         <button
           type="button"
           onClick={() => adjustQty(-1)}
-          className="flex h-6 w-6 items-center justify-center rounded border border-h-line text-sm text-h-muted hover:text-h-ink"
+          disabled={locked}
+          title={lockReason ?? undefined}
+          className="flex h-6 w-6 items-center justify-center rounded border border-h-line text-sm text-h-muted hover:text-h-ink disabled:cursor-not-allowed disabled:opacity-50"
         >
           −
         </button>
@@ -178,7 +189,9 @@ function CartLine({
         <button
           type="button"
           onClick={() => adjustQty(1)}
-          className="flex h-6 w-6 items-center justify-center rounded border border-h-line text-sm text-h-muted hover:text-h-ink"
+          disabled={locked}
+          title={lockReason ?? undefined}
+          className="flex h-6 w-6 items-center justify-center rounded border border-h-line text-sm text-h-muted hover:text-h-ink disabled:cursor-not-allowed disabled:opacity-50"
         >
           +
         </button>
@@ -192,7 +205,8 @@ function CartLine({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           onBlur={patchNote}
-          className="w-28 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-xs text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent"
+          disabled={locked}
+          className="w-28 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-xs text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent disabled:cursor-not-allowed disabled:opacity-60"
         />
         <span className={`text-xs ${AVAIL_COLOR[availStatus]}`}>
           {AVAIL_LABEL[availStatus]}
@@ -204,7 +218,9 @@ function CartLine({
         type="button"
         onClick={() => onDelete(line.id)}
         aria-label="Remove hardware line"
-        className="px-1 text-h-muted transition-colors hover:text-h-bad"
+        disabled={locked}
+        title={lockReason ?? undefined}
+        className="px-1 text-h-muted transition-colors hover:text-h-bad disabled:cursor-not-allowed disabled:opacity-50"
       >
         –
       </button>

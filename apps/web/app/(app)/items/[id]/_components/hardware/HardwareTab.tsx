@@ -5,12 +5,19 @@ import { PM } from "@/lib/pm-fetch";
 import { Pantry } from "./Pantry";
 import { Cart } from "./Cart";
 import { AddFromGlobalModal } from "./AddFromGlobalModal";
+import { moduleLockReason } from "../cutlist/moduleLock";
 
 interface HardwareTabProps {
   item: ItemOut;
+  currentUserId: number | null;
+  currentUserRole: string | null;
 }
 
-export function HardwareTab({ item }: HardwareTabProps) {
+export function HardwareTab({ item, currentUserId, currentUserRole }: HardwareTabProps) {
+  // Hardware lines are written under `require_drafter()` — mirror it, the API decides.
+  const canWrite =
+    currentUserRole === "drafter" || currentUserRole === "manager" || currentUserRole === "admin";
+  const lockReason = moduleLockReason(item, currentUserId, currentUserRole);
   const [catalog, setCatalog] = useState<HardwareCatalogOut | null>(null);
   const [availability, setAvailability] = useState<AvailabilityOut | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -52,17 +59,28 @@ export function HardwareTab({ item }: HardwareTabProps) {
   }
 
   return (
+    <>
+      {canWrite && lockReason && (
+        <p
+          data-testid="hardware-locked"
+          className="mb-3 rounded-md border border-h-line bg-h-surface px-3 py-2 text-xs text-h-muted"
+        >
+          {lockReason}
+        </p>
+      )}
     <div className="flex gap-4">
       <Pantry
         item={item}
         catalog={catalog}
         onOpenModal={() => setAddModalOpen(true)}
         onRefresh={refreshAll}
+        lockReason={lockReason}
       />
       <Cart
         item={item}
         availability={availability}
         onRefresh={refreshAll}
+        lockReason={lockReason}
       />
       {addModalOpen && (
         <AddFromGlobalModal
@@ -75,5 +93,6 @@ export function HardwareTab({ item }: HardwareTabProps) {
         />
       )}
     </div>
+    </>
   );
 }
