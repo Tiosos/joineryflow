@@ -56,13 +56,16 @@ def post_module(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ModuleOut:
-    mid = create_module(
-        db,
-        item_id=id,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        mid = create_module(
+            db,
+            item_id=id,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if mid is None:
         raise HTTPException(status_code=404, detail="item not found")
     db.commit()
@@ -83,13 +86,16 @@ def patch_module_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ModuleOut:
-    result = patch_module(
-        db,
-        module_id=mid,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        result = patch_module(
+            db,
+            module_id=mid,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if result is None:
         raise HTTPException(status_code=404, detail="module not found")
     db.commit()
@@ -153,13 +159,16 @@ def post_part(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> PartOut:
-    pid = create_part(
-        db,
-        module_id=mid,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        pid = create_part(
+            db,
+            module_id=mid,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if pid is None:
         raise HTTPException(status_code=404, detail="module not found")
     db.commit()
@@ -180,13 +189,16 @@ def patch_part_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> PartOut:
-    result = patch_part(
-        db,
-        part_id=pid,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        result = patch_part(
+            db,
+            part_id=pid,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if result is None:
         raise HTTPException(status_code=404, detail="part not found")
     db.commit()
@@ -203,12 +215,15 @@ def delete_part_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    result = delete_part(
-        db,
-        part_id=pid,
-        workspace_id=user.workspace_id,
-        actor_id=user.id,
-    )
+    try:
+        result = delete_part(
+            db,
+            part_id=pid,
+            workspace_id=user.workspace_id,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="part not found")
     db.commit()

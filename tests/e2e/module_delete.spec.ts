@@ -119,13 +119,13 @@ test("a Hard Lock disables Delete module for everyone, with the reason; unlockin
     expect((await page.request.post(`/api/items/${id}/hard-lock`)).ok()).toBe(true);
     await page.reload();
     await expect(del).toBeDisabled({ timeout: 30_000 }); // even a manager: Hard Lock has no way round
-    await expect(page.getByTestId("delete-module-locked")).toContainText("hard-locked");
+    await expect(page.getByTestId("cutlist-locked")).toContainText("hard-locked");
   } finally {
     await page.request.delete(`/api/items/${id}/hard-lock`);
   }
   await page.reload();
   await expect(del).toBeEnabled({ timeout: 30_000 });
-  await expect(page.getByTestId("delete-module-locked")).toHaveCount(0);
+  await expect(page.getByTestId("cutlist-locked")).toHaveCount(0);
 });
 
 test("another user's Controlled Lock disables Delete module, except for the owner and managers", async ({ page }) => {
@@ -138,7 +138,7 @@ test("another user's Controlled Lock disables Delete module, except for the owne
   expect(item.item_locked).toBe(true);
   expect(seededOwner).not.toBe(me.id);
   const del = page.getByTestId("delete-module");
-  const locked = page.getByTestId("delete-module-locked");
+  const locked = page.getByTestId("cutlist-locked");
 
   try {
     // A manager passes another user's Controlled Lock…

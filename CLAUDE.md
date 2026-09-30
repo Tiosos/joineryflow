@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 20 Playwright specs / 67 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 21 Playwright specs / 71 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -340,8 +340,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   rows are history only. Scope is `PATCH /items/{id}` alone —
   `/status` and `/lifecycle/{stage_key}` never consulted the lock and still do
   not, and **there is no project-level lock** (Q566: `projects` has no lock
-  column). **One exception since *Lock checks on module delete*:**
-  `DELETE /modules/{mid}` now answers to the item's locks too.
+  column). **Exceptions since *Lock checks on module delete* and *Lock checks on
+  the other module and part writes*:** every module and part write, and the CV
+  import commit, now answer to the item's locks too (Hard, Approval, Controlled).
+  Hardware lines still do not.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -3924,7 +3926,8 @@ since been built.**
   the rule from data the page already holds (`hard_locked_at`, `status`,
   `item_locked`, `cutlist_owner_id`); when it returns a reason, the **Delete
   module** button is `disabled` with the reason as its `title` **and** as a line
-  under the header row (`data-testid="delete-module-locked"` — a tooltip alone is
+  in a notice at the top of the tab (`data-testid="cutlist-locked"` since the
+  follow-up below moved it there from under the header row — a tooltip alone is
   invisible on a disabled button). `lockMessage(code, detail)` holds the wording
   for a code, shared with the dialog: a `409` on the delete (a stale page that
   still offered the button) shows that message in the dialog and leaves it open,
@@ -3947,11 +3950,9 @@ since been built.**
   unfixed web code.** Also checked over real HTTP through the proxy: a Hard-Locked
   item's delete answers `409 HARD_LOCKED` and the module is still there.
 - **Known gaps, recorded.**
-  - **Every other write under a locked item is still open**: adding or editing a
-    module, every part write, hardware lines, and CV import — including
-    `?mode=replace`, which deletes the modules (and their comments) of a Hard- or
-    Approval-Locked item. This is the user's chosen scope, not an oversight; the
-    obvious follow-up is the same check on those routes.
+  - ~~Every other write under a locked item is still open.~~ **Closed for module
+    and part writes and CV import — see *Lock checks on the other module and part
+    writes* below.** Hardware lines are still open.
   - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
     lock (unchanged §L scope).
   - A Controlled Lock is not held as a request for a delete: the person is told to
@@ -3959,6 +3960,85 @@ since been built.**
   - The role check for the Controlled-Lock exemption is a hand-written
     `auth_role in (manager, admin)`, like `decide_lock_request`'s — Q472 is still
     not built.
-- **Out of scope (deferred):** the same check on the other module / part / hardware
-  / CV-import writes; a lock-request flow for a delete; naming the lock owner in
-  the disabled-button text.
+- **Out of scope (deferred):** the same check on hardware lines; a lock-request
+  flow for a delete; naming the lock owner in the disabled-button text.
+
+## Lock checks on the other module and part writes (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is lock checks on the other module and part
+> writes"). It extends *Lock checks on module delete* above. The request left the
+> reach open, so the user was asked before any code was written; the two answers
+> below are **settled decisions**, not assumptions. The rule itself is the one the
+> delete already settled (Hard + Approval + Controlled, refused because none of these
+> can be held as a `PatchItemIn` request) and was carried over, not re-asked. No
+> migration, no spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **Reach: the five module / part routes, plus CV import commit.** The routes
+     are `POST /items/{id}/modules`, `PATCH /modules/{mid}`, `POST /modules/{mid}/parts`,
+     `PATCH /parts/{pid}` and `DELETE /parts/{pid}` (with `DELETE /modules/{mid}`
+     already covered). CV import was added because it writes modules and parts and
+     its `replace` mode **deletes modules — which sidestepped the delete lock**.
+     **Hardware lines were offered and not chosen**, so they still never consult a
+     lock.
+  2. **UI: one notice + controls disabled**, not per-control tooltips or 409
+     messages alone.
+- **Backend.** `parts.queries.{create_module, patch_module, create_part, patch_part,
+  delete_part}` now take the acting `AuthUser` (`actor=`, was `actor_id=`) and call
+  `items.queries.assert_item_content_unlocked` right after resolving the item — before
+  anything is written, audited or logged; each route turns `ItemContentLocked` into
+  the same `409 {detail: {code, …}}` the delete uses. An unknown id is still 404 (the
+  lookup runs first). **A refused write changes and logs nothing** (pinned by
+  comparing module / part rows, `item_edit_log` and `audit_log` counts before and
+  after). **CV commit** checks in the route after the run is validated
+  (404 / `RUN_NOT_PENDING` first) and before anything else, so a refused commit
+  **leaves the run `preview`** and the same run commits once the lock is gone.
+  Preview, `replace-impact` and the delete-impact lookup are read-only or write only
+  the run row and are not gated. One consequence worth knowing: **part edits on an
+  APPROVED item are refused** until its status moves off Approved (the Approval Lock
+  read as Q508 says — "information locks when approved").
+- **Web.** `moduleLockReason` now decides for the whole Cutlist tab, and
+  `lockFromError(e)` reads a `409` lock refusal from either error shape in use
+  (`ApiError.body` in pm-fetch, the CV helper's `detail`). `CutlistTab` shows one
+  notice at the top (`data-testid="cutlist-locked"`, drafter / manager / admin only —
+  the roles that can write) and disables **+ Add module**, **+ Add row**, every part
+  cell (including the Paint select), **part delete**, **Import from CV** and
+  **Delete module**. A `409` from a stale page shows the server's reason and **reverts**
+  the edit: a refused cell edit restores its value, a refused add adds no row, a
+  refused delete brings the row back. `PaintSelect` gained a `key` on its value so
+  the rollback actually resets it (it kept its local state before). The wizard shows
+  the reason when its commit is refused.
+- **Tests.** `test_parts_routes.py` (+22): all five routes × Hard and Approval Lock
+  (refused for the owner and an admin alike, nothing changed or logged, then the
+  same request succeeds once cleared); all five × Controlled Lock (a non-owner
+  refused naming the owner; the owner and a manager pass); a sticky owner with no
+  active lock and an unlocked item do not block; unknown ids stay 404.
+  `test_cv_routes.py` (+8): first import and `replace` × all three locks — 409, no
+  module or part written, run still `preview`, then the same run commits once
+  unlocked — plus the owner and a manager passing a Controlled Lock. **21 of the new
+  cases fail against the unfixed source** (the rest are the controls: owner / manager
+  passes, unlocked, sticky owner, 404s). `tests/e2e/cutlist_locks.spec.ts` (4): a Hard
+  Lock disables every control for a manager, with the reason, and unlocking restores
+  them; seeded `JO-K-103` (Controlled-Locked, drafter-owned) is open to a manager,
+  and after ownership moves to the manager the drafter is disabled, then restored;
+  a stale page reverts a refused edit / add / delete with the owner named; the CV
+  wizard shows a refused commit's reason. **All four fail against the unfixed web
+  code.** Each e2e test puts the item back exactly as seeded.
+- **Known gaps, recorded.**
+  - **Hardware lines still ignore every lock** (not chosen). They are the same
+    cutlist screen's neighbour, so an item's hardware can change while its parts
+    cannot.
+  - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
+    lock (unchanged §L scope).
+  - **`CvImportDialog`'s `ITEM_NOT_EMPTY` branch looks dead** (found while adding the
+    lock branch, deliberately not fixed): it reads `e.detail.code`, but
+    `cv-fetch.ts` puts the whole parsed body (`{detail: {code}}`) in `e.detail`, so
+    the friendly "Tick Replace existing modules" message never shows and the person
+    sees `commitCvImport: 409`. The lock branch reads the right shape.
+  - **The notice is hidden from read-only roles**, while their controls are disabled
+    too — a viewer on a locked item sees disabled controls and the lock banner above
+    the page, not the cutlist notice.
+  - The same hand-written `auth_role in (manager, admin)` Controlled-Lock exemption,
+    and no "request a change" flow for a refused write — Q472 is still not built.
+- **Out of scope (deferred):** locks on hardware lines; a request flow for a refused
+  module / part write; guarding the CV `preview` (it writes only a run row).

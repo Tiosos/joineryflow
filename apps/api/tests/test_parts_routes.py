@@ -598,3 +598,142 @@ def test_a_sticky_owner_without_an_active_lock_does_not_block_delete():
     # cutlist_owner_id survives an Unlock (sticky claim); only item_locked matters
     _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
     assert c.delete(f"/modules/{mid}").status_code == 204
+
+
+# ── Lock checks on the other module and part writes ────────────────────────────
+
+
+def _write_routes(iid: int, mid: int, part_id: int) -> dict:
+    """The five module/part writes besides DELETE /modules/{mid}: name -> (method,
+    path, json, status expected when nothing forbids it)."""
+    return {
+        "create_module": ("post", f"/items/{iid}/modules", {"module_no": "M9", "name": "New"}, 201),
+        "patch_module": ("patch", f"/modules/{mid}", {"name": "Renamed"}, 200),
+        "create_part": ("post", f"/modules/{mid}/parts", {"part_name": "Extra", "qty": 1}, 201),
+        "patch_part": ("patch", f"/parts/{part_id}", {"qty": 9}, 200),
+        "delete_part": ("delete", f"/parts/{part_id}", None, 204),
+    }
+
+
+_ROUTE_NAMES = ["create_module", "patch_module", "create_part", "patch_part", "delete_part"]
+
+
+def _send(client, route: tuple):
+    method, path, body, _ok = route
+    return getattr(client, method)(path, **({"json": body} if body is not None else {}))
+
+
+def _state(iid: int, wid: int) -> tuple:
+    """Everything a refused write must leave alone."""
+    db = SessionLocal()
+    try:
+        return (
+            db.execute(text("SELECT count(*), max(name) FROM modules WHERE item_id = :i"), {"i": iid}).one(),
+            db.execute(
+                text("SELECT count(*), sum(qty) FROM parts WHERE module_id IN"
+                     " (SELECT module_id FROM modules WHERE item_id = :i)"), {"i": iid}
+            ).one(),
+            db.execute(text("SELECT count(*) FROM item_edit_log WHERE item_id = :i"), {"i": iid}).scalar(),
+            db.execute(
+                text("SELECT count(*) FROM audit_log WHERE workspace_id = :w"
+                     " AND (event LIKE 'module.%' OR event LIKE 'part.%')"), {"w": wid}
+            ).scalar(),
+        )
+    finally:
+        db.close()
+
+
+def _fixture_with_part():
+    c, wid, uid, iid, mid = _module_with_threads()
+    db = SessionLocal()
+    try:
+        part_id = db.execute(
+            text("SELECT min(part_id) FROM parts WHERE module_id = :m"), {"m": mid}
+        ).scalar()
+    finally:
+        db.close()
+    return c, wid, uid, iid, mid, part_id
+
+
+def _approve_status_exists() -> None:
+    db = SessionLocal()
+    try:
+        db.execute(text("INSERT INTO status_options(status_key, sort_order) VALUES ('APPROVED', 5)"
+                        " ON CONFLICT DO NOTHING"))
+        db.commit()
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("name", _ROUTE_NAMES)
+@pytest.mark.parametrize("lock", ["hard", "approval"])
+def test_locked_item_refuses_every_module_and_part_write(name, lock):
+    c, wid, uid, iid, mid, part_id = _fixture_with_part()
+    route = _write_routes(iid, mid, part_id)[name]
+    if lock == "hard":
+        _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+        expected = {"code": "HARD_LOCKED", "locked_by": uid}
+    else:
+        _approve_status_exists()
+        _set_item(iid, "status = 'APPROVED'")
+        expected = {"code": "APPROVAL_LOCKED"}
+    admin, _ = _login_same_workspace(wid, "admin")
+
+    before = _state(iid, wid)
+    for client in (c, admin):                       # a Hard / Approval Lock has no way round
+        r = _send(client, route)
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == expected
+    assert _state(iid, wid) == before, "a refused write must change and log nothing"
+
+    # once the lock is cleared the same request goes through
+    _set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL, status = 'CLEAR'")
+    assert _send(c, route).status_code == route[3]
+
+
+@pytest.mark.parametrize("name", _ROUTE_NAMES)
+def test_controlled_lock_refuses_a_non_owner_on_every_module_and_part_write(name):
+    c, wid, uid, iid, mid, part_id = _fixture_with_part()
+    routes = _write_routes(iid, mid, part_id)
+    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
+    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+
+    before = _state(iid, wid)
+    r = _send(c, routes[name])
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {
+        "code": "ITEM_LOCKED", "owner_id": owner_id, "owner_name": "Olive Owner",
+    }
+    assert _state(iid, wid) == before
+
+    # the owner passes — and so does a manager
+    assert _send(owner_client, routes[name]).status_code == routes[name][3]
+
+
+@pytest.mark.parametrize("name", _ROUTE_NAMES)
+def test_a_manager_passes_a_controlled_lock_on_every_module_and_part_write(name):
+    c, wid, uid, iid, mid, part_id = _fixture_with_part()
+    routes = _write_routes(iid, mid, part_id)
+    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    manager, _ = _login_same_workspace(wid, "manager")
+    assert _send(manager, routes[name]).status_code == routes[name][3]
+
+
+def test_an_unlocked_item_and_a_sticky_owner_do_not_block_module_and_part_writes():
+    c, wid, uid, iid, mid, part_id = _fixture_with_part()
+    _other, owner_id = _login_same_workspace(wid, "drafter")
+    # cutlist_owner_id survives an Unlock; only an active item_locked counts
+    _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
+    for name, route in _write_routes(iid, mid, part_id).items():
+        assert _send(c, route).status_code == route[3], name
+
+
+def test_unknown_ids_are_still_404_not_lock_answers():
+    c, wid, uid, iid, mid, part_id = _fixture_with_part()
+    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    assert c.post("/items/99999999/modules", json={"module_no": "X"}).status_code == 404
+    assert c.patch("/modules/99999999", json={"name": "x"}).status_code == 404
+    assert c.post("/modules/99999999/parts", json={"qty": 1}).status_code == 404
+    assert c.patch("/parts/99999999", json={"qty": 1}).status_code == 404
+    assert c.delete("/parts/99999999").status_code == 404

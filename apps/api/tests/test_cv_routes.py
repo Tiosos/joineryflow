@@ -461,3 +461,118 @@ def test_get_history_orders_by_started_at_desc():
     assert len(rows) >= 2
     assert rows[0]["cv_import_run_id"] == r2.json()["run_id"]
     assert rows[1]["cv_import_run_id"] == r1.json()["run_id"]
+
+
+# --- Locks on the item refuse a commit ---------------------------------------
+
+
+def _lock_item(iid: int, uid: int, kind: str, owner_id: int | None = None) -> None:
+    s = SessionLocal()
+    try:
+        if kind == "hard":
+            s.execute(text("UPDATE items SET hard_locked_at = now(), hard_locked_by = :u"
+                           " WHERE item_id = :i"), {"u": uid, "i": iid})
+        elif kind == "approval":
+            s.execute(text("INSERT INTO status_options(status_key, sort_order)"
+                           " VALUES ('APPROVED', 5) ON CONFLICT DO NOTHING"))
+            s.execute(text("UPDATE items SET status = 'APPROVED' WHERE item_id = :i"), {"i": iid})
+        else:
+            s.execute(text("UPDATE items SET item_locked = true, cutlist_owner_id = :o"
+                           " WHERE item_id = :i"), {"o": owner_id, "i": iid})
+        s.commit()
+    finally:
+        s.close()
+
+
+def _unlock_item(iid: int) -> None:
+    s = SessionLocal()
+    try:
+        s.execute(text("UPDATE items SET hard_locked_at = NULL, hard_locked_by = NULL,"
+                       " status = 'CLEAR', item_locked = false WHERE item_id = :i"), {"i": iid})
+        s.commit()
+    finally:
+        s.close()
+
+
+def _other_user(wid: int, role: str) -> int:
+    s = SessionLocal()
+    try:
+        uid = s.execute(text("""
+            INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+            VALUES (:w, :e, 'Olive Owner', :p, :r) RETURNING id
+        """), {"w": wid, "e": f"o-{uuid.uuid4().hex[:8]}@example.com",
+               "p": hash_password("pw"), "r": role}).scalar()
+        s.commit()
+        return uid
+    finally:
+        s.close()
+
+
+def _cv_state(iid: int, run_id: int) -> tuple:
+    s = SessionLocal()
+    try:
+        return (
+            s.execute(text("SELECT count(*) FROM modules WHERE item_id = :i"), {"i": iid}).scalar(),
+            s.execute(text("SELECT count(*) FROM parts WHERE module_id IN"
+                           " (SELECT module_id FROM modules WHERE item_id = :i)"), {"i": iid}).scalar(),
+            s.execute(text("SELECT status FROM cv_import_run WHERE cv_import_run_id = :r"),
+                      {"r": run_id}).scalar(),
+        )
+    finally:
+        s.close()
+
+
+_EXPECTED_LOCK = {
+    "hard": lambda uid, owner: {"code": "HARD_LOCKED", "locked_by": uid},
+    "approval": lambda uid, owner: {"code": "APPROVAL_LOCKED"},
+    "controlled": lambda uid, owner: {"code": "ITEM_LOCKED", "owner_id": owner,
+                                      "owner_name": "Olive Owner"},
+}
+
+
+@pytest.mark.parametrize("kind", ["hard", "approval", "controlled"])
+@pytest.mark.parametrize("mode", ["first_import", "replace"])
+def test_locked_item_refuses_cv_commit_and_leaves_the_run_pending(kind, mode):
+    if mode == "replace":
+        c, wid, uid, pid, iid = _committed_item()     # already holds an imported module
+        url_suffix = "?mode=replace"
+        body = {"resolutions": [], "replace": True}
+    else:
+        c, wid, uid, pid, iid = _login("drafter")
+        _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+        url_suffix, body = "", {"resolutions": []}
+    owner = _other_user(wid, "drafter")
+    run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    before = _cv_state(iid, run)
+    _lock_item(iid, uid, kind, owner_id=owner)
+
+    r = c.post(f"/items/{iid}/cv-imports/{run}/commit{url_suffix}", json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == _EXPECTED_LOCK[kind](uid, owner)
+    assert _cv_state(iid, run) == before          # nothing written, run still 'preview'
+    assert before[2] == "preview"
+
+    # the same run commits once the lock is gone
+    _unlock_item(iid)
+    r = c.post(f"/items/{iid}/cv-imports/{run}/commit{url_suffix}", json=body)
+    assert r.status_code == 200, r.text
+    assert _cv_state(iid, run)[2] == "committed"
+
+
+def test_owner_and_manager_pass_a_controlled_lock_on_cv_commit():
+    c, wid, uid, pid, iid = _login("drafter")
+    _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+    # the lock is held by the caller themselves...
+    _lock_item(iid, uid, "controlled", owner_id=uid)
+    run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    assert c.post(f"/items/{iid}/cv-imports/{run}/commit",
+                  json={"resolutions": []}).status_code == 200
+
+
+def test_manager_passes_someone_elses_controlled_lock_on_cv_commit():
+    c, wid, uid, pid, iid = _login("manager")
+    _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+    _lock_item(iid, uid, "controlled", owner_id=_other_user(wid, "drafter"))
+    run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    assert c.post(f"/items/{iid}/cv-imports/{run}/commit",
+                  json={"resolutions": []}).status_code == 200
