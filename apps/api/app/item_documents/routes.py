@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked
 from . import queries as q
 from .schemas import BindDocumentIn, ItemDocumentOut, PatchDocumentIn
 
@@ -34,8 +35,10 @@ def bind_document_route(
         row = q.bind_document(
             db, item_id=iid, file_blob_id=body.file_blob_id, label=body.label,
             sort_order=body.sort_order, workspace_id=user.workspace_id,
-            actor_id=user.id,
+            actor=user,
         )
+    except ItemContentLocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except q.NotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except q.UnsupportedMime as exc:
@@ -56,7 +59,9 @@ def patch_document_route(
         raise HTTPException(status_code=422, detail="sort_order cannot be null")
     try:
         row = q.patch_document(db, document_id=did, changes=changes,
-                               workspace_id=user.workspace_id, actor_id=user.id)
+                               workspace_id=user.workspace_id, actor=user)
+    except ItemContentLocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except q.NotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     db.commit()
@@ -71,7 +76,9 @@ def unbind_document_route(
 ):
     try:
         q.unbind_document(db, document_id=did, workspace_id=user.workspace_id,
-                          actor_id=user.id)
+                          actor=user)
+    except ItemContentLocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except q.NotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     db.commit()

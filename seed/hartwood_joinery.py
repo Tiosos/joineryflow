@@ -2911,6 +2911,7 @@ def main() -> None:
         # access is upserted instead — it's one row per project already).
         # ------------------------------------------------------------------
         from app.item_documents import queries as _idocs
+        from app.auth.sessions import AuthUser as _SeedAuthUser
         from app.item_queries import queries as _iqueries
         from app.project_contacts import queries as _contacts
         from app.project_contacts.schemas import CreateContactIn as _CreateContactIn
@@ -3006,15 +3007,23 @@ def main() -> None:
                     db, workspace_id=wid, workspace_slug="hartwood-joinery",
                     app_user_id=_drafter, path=_bath_pdf,
                 )
+                # bind_document checks the item's locks as the acting user.
+                _doc_actor = _SeedAuthUser(
+                    **db.execute(
+                        text("SELECT id, workspace_id, email, full_name, auth_role"
+                             " FROM app_user WHERE id = :u"),
+                        {"u": _drafter},
+                    ).mappings().one()
+                )
                 _idocs.bind_document(
                     db, item_id=_item1, file_blob_id=_doc_blob_a,
                     label="Site photos", sort_order=0,
-                    workspace_id=wid, actor_id=_drafter,
+                    workspace_id=wid, actor=_doc_actor,
                 )
                 _idocs.bind_document(
                     db, item_id=_item1, file_blob_id=_doc_blob_b,
                     label="Client correspondence", sort_order=1,
-                    workspace_id=wid, actor_id=_drafter,
+                    workspace_id=wid, actor=_doc_actor,
                 )
 
             db.commit()

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import require_drafter, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked
 from . import queries as q
 from .schemas import AttachmentsBundleOut, BindAttachmentIn
 
@@ -40,8 +41,10 @@ def bind_attachment_route(
     try:
         result = q.bind_attachment(
             db, item_id=iid, kind=kind, file_blob_id=body.file_blob_id,
-            workspace_id=user.workspace_id, actor_id=user.id,
+            workspace_id=user.workspace_id, actor=user,
         )
+    except ItemContentLocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         msg = str(exc)
         if "attachments must be" in msg:
@@ -64,8 +67,12 @@ def clear_attachment_route(
     user: AuthUser = Depends(require_permission("list", "write")),
     db: Session = Depends(get_db),
 ):
-    if not q.clear_attachment(db, item_id=iid, kind=kind,
-                              workspace_id=user.workspace_id, actor_id=user.id):
+    try:
+        cleared = q.clear_attachment(db, item_id=iid, kind=kind,
+                                     workspace_id=user.workspace_id, actor=user)
+    except ItemContentLocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
+    if not cleared:
         raise HTTPException(status_code=404, detail="no attachment in this slot")
     db.commit()
     return Response(status_code=204)

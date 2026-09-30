@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 23 Playwright specs / 79 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 24 Playwright specs / 83 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -345,7 +345,9 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   Controlled). **Since *Lock checks on status and lifecycle*:** `/status`,
   `/items/bulk-status` and `/lifecycle/{stage_key}` answer to the **Hard and
   Controlled** locks — **not the Approval Lock**, which is cleared by a status
-  change and so cannot gate one.
+  change and so cannot gate one. **Since *Lock checks on attachments and the
+  document register*:** every attachment-slot write and every Document Register
+  write answers to all three (Hard, Approval, Controlled).
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -4105,10 +4107,11 @@ since been built.**
   - **Locks now cover the whole item editor's writes to an item's cutlist and hardware,
     but not everything on an item**: `PATCH /items/{id}/status` and `/lifecycle/
     {stage_key}` **now consult it too (Hard and Controlled — see *Lock checks on status
-    and lifecycle* below)**, but the other item-scoped writes — attachments, the document register, queries, QC records,
-    comments and material takes. None was asked for; whether any of them should follow
-    is a product question (a comment on an approved item, for instance, is probably
-    meant to stay possible).
+    and lifecycle* below)**, and **attachments and the document register now do too
+    (see *Lock checks on attachments and the document register* below)**, but the
+    other item-scoped writes — queries, QC records, comments and material takes — do
+    not. None was asked for; whether any of them should follow is a product question
+    (a comment on an approved item, for instance, is probably meant to stay possible).
   - No "request a change" flow for a refused write, and the same hand-written
     `auth_role in (manager, admin)` Controlled-Lock exemption — Q472 is still not built.
   - `moduleLock.ts` is named for modules but serves hardware too (above).
@@ -4300,9 +4303,84 @@ since been built.**
     module / part / hardware writes already have, now reaching the two things foremen actually do.
   - No "request a change" flow for a refused status or date; the Controlled-Lock exemption is
     still a hand-written `auth_role in (manager, admin)` check (Q472 not built).
-  - Still not lock-checked: attachments, the document register, item queries, QC records,
-    comments and material takes (none asked for; a comment on an approved item should probably
-    stay possible).
+  - Still not lock-checked: item queries, QC records, comments and material takes (none
+    asked for; a comment on an approved item should probably stay possible). Attachments
+    and the document register **are now — see *Lock checks on attachments and the document
+    register* below.**
   - `moduleLock.ts` is named for modules but now serves hardware, status and stage dates.
 - **Out of scope (deferred):** gating Shop Floor's fan-out; the Approval Lock on either route;
   a request flow for a refused write; the other item-scoped writes named above.
+
+## Lock checks on attachments and the document register (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is lock checks on attachments and the document
+> register") — the gap *Lock checks on hardware lines* and *Lock checks on status and
+> lifecycle* both recorded as "not asked for". The one open decision — whether the
+> Approval Lock applies — was asked before any code was written, and is a **settled
+> decision**, not an assumption. Everything else was settled by the earlier lock rounds
+> and carried over. No migration, no spec or plan doc; this section is its written record.
+
+- **Settled decision (user).** **Hard + Approval + Controlled, for both.** Unlike status and
+  lifecycle (where status *is* the unlock lever), attachments and the register are plain
+  information, so the same rule as the cutlist and hardware writes applies: an approved item's
+  whole information set locks together (Q508 — "information locks when approved"). To replace a
+  floor plan or add a register document on an approved item, move its status off Approved first.
+  The alternatives offered — attachments only, or neither — were declined.
+- **What is gated.** All five writes, each refused with `409 {detail: {code, …}}` (`HARD_LOCKED`,
+  `APPROVAL_LOCKED`, `ITEM_LOCKED` — the same codes and bodies as the other routes):
+  `POST` / `DELETE /items/{iid}/attachments/{kind}` and `POST /items/{iid}/documents`,
+  `PATCH` / `DELETE /documents/{did}`. **Relabelling and reordering a register document is a change
+  too** and is refused like the rest (an assumption made while building — the register has no web UI
+  to show the question, and a Hard Lock means "cannot change"). Reads (`GET` bundle, `GET` register,
+  the print routes) are never gated.
+- **Backend.** `item_attachments.queries.{bind_attachment, clear_attachment}` and
+  `item_documents.queries.{bind_document, patch_document, unbind_document}` take the acting
+  `AuthUser` (`actor=`, was `actor_id=`) and call `items.queries.assert_item_content_unlocked` right
+  after resolving the item — **before** the blob is validated, and before anything is written,
+  audited or logged; the routes turn `ItemContentLocked` into the 409. Unknown ids stay 404: the
+  lookup runs first, and `clear_attachment` on an unknown item finds nothing to lock and falls
+  through to its 404. So a locked item with a bad mime answers `409`, not `415`. **A refused write
+  changes and logs nothing** (pinned by comparing slot rows, register rows, `item_edit_log` and
+  `audit_log` counts before and after). `patch_document` / `unbind_document` resolve the document's
+  item from the document, so a lock on *that* item governs it.
+- **Not gated, deliberately: `POST /files`.** Uploading a blob belongs to the workspace, not to an
+  item, so no item's lock can govern it (the same reason the project hardware catalog stayed open). A
+  refused bind therefore leaves an unreferenced `file_blob` behind — exactly like every other
+  abandoned upload, and there is still no orphan GC. *An assumption made while building.*
+- **The register still has no web UI** (`ItemDetailModal` says "No documents attached for v1"), so
+  there is nothing to disable for it; its rule is covered by pytest alone. Only the Attachments tab
+  changed.
+- **Web.** `AttachmentsTab` takes `item` and `currentUserId` (threaded from `EditorTabs`) and shows one
+  notice (`data-testid="attachments-locked"`, drafter / manager / admin only — the roles the tab already
+  lets write); `AttachmentSlotCard` disables **Upload / Replace** and **Delete** with the reason as
+  `title`, and a refusal from a stale page shows the server's reason. `lib/attachments-fetch.ts`
+  errors now carry `status` and `body` (they used to throw a bare message, so a 409 read
+  "[object Object]" or "clear failed: 409" and `lockFromError` had nothing to read). `moduleLock.ts`'s
+  `"content"` wording now says "cutlist, hardware or attachments".
+- **Seed.** `seed/hartwood_joinery.py` builds an `AuthUser` for the drafter to call `bind_document`
+  (it now needs an actor); verified by running the whole seed against a fresh migrated database — the
+  "2 item documents" line still prints. Nothing new is seeded: as with the other locks, a seeded lock
+  would risk the fixed e2e suite.
+- **Tests.** `test_attachments_documents_locks.py` (30): all five writes × Hard and Approval Lock
+  (refused for a drafter and an admin alike, nothing changed or logged, then the same request succeeds
+  once cleared); all five × Controlled Lock (a non-owner refused naming the owner; the owner passes; a
+  manager passes); an editor refused on the three register writes (`list:write` alone gates them, so
+  editors may write it); an unlocked item and a sticky owner do not block; reads are never gated;
+  unknown ids stay 404 under a Hard Lock. **18 fail against the unfixed source**; the other 12 are
+  controls. `test_item_attachments_crud.py` was updated in place for `actor=`.
+  `tests/e2e/attachments_locks.spec.ts` (4) ran against a live migrated, seeded stack: a Hard Lock
+  disables every slot control for a manager, with the reason, and unlocking restores them; seeded
+  Controlled-Locked `JO-K-103` is open to a manager and, once ownership moves to the manager, disabled
+  for the drafter — then restored; an approved item disables them until status moves off Approved; a
+  stale page shows the owner's name for a refused delete and a refused upload. **All four fail against
+  the unfixed web code.** Each puts the item back exactly as seeded. (The stale-page test uploads a
+  small PDF through the real `/files` before the mocked bind is refused, leaving one deduplicated blob.)
+- **Known gaps, recorded.**
+  - Still not lock-checked: item queries, QC records, comments and material takes (none asked for).
+  - No "request a change" flow for a refused write; the Controlled-Lock exemption is still a
+    hand-written `auth_role in (manager, admin)` check (Q472 not built).
+  - A refused bind leaves an unreferenced blob (above); the Combined PDF and print routes read
+    whatever the slots hold and never consult a lock.
+  - `moduleLock.ts` is named for modules but now serves hardware, status, stage dates and attachments.
+- **Out of scope (deferred):** a web UI for the Document Register; gating `POST /files`; a request flow
+  for a refused write; the other item-scoped writes named above.

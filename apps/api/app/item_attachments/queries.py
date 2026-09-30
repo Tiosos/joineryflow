@@ -11,8 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
 from ..files.validators import CVJ_MIME, SKP_MIME
+from ..items.queries import assert_item_content_unlocked
 from ..row_types import joinery_items_only
 
 # The three attachment slots (CV drawing / floor plan / site measure) are
@@ -41,9 +43,13 @@ def bind_attachment(
     kind: AttachmentKind,
     file_blob_id: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict:
-    """UPSERT a slot. Validates the blob's type for the slot + workspace-match. Writes audit."""
+    """UPSERT a slot. Validates the blob's type for the slot + workspace-match. Writes audit.
+
+    Raises `ItemContentLocked` when a lock on the item refuses it (Hard,
+    Approval, or someone else's Controlled Lock) — before anything is written."""
+    actor_id = actor.id
     owns = db.execute(
         text(
             f"""
@@ -57,6 +63,9 @@ def bind_attachment(
     ).first()
     if not owns:
         raise ValueError("item not found in this workspace")
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+    )
 
     blob = db.execute(
         text("SELECT mime FROM file_blob WHERE file_blob_id = :b AND workspace_id = :w"),
@@ -110,9 +119,17 @@ def clear_attachment(
     item_id: int,
     kind: AttachmentKind,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> bool:
-    """Remove a slot. Returns True if removed, False if not present OR cross-workspace."""
+    """Remove a slot. Returns True if removed, False if not present OR cross-workspace.
+
+    Raises `ItemContentLocked` when a lock on the item refuses it — before the
+    slot is touched. An unknown / cross-workspace item passes the check (it finds
+    nothing to lock) and falls through to the 404."""
+    actor_id = actor.id
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+    )
     row = db.execute(
         text(
             f"""
