@@ -231,7 +231,7 @@ def _suppliers(db, ids):
 def _drawings(db, ids):
     for r in _rows(db, """
         SELECT d.drawing_id, d.title, d.room, d.project_id, d.archived_at,
-               d.created_at, p.workspace_id, p.project_code,
+               d.created_at, d.drawing_no, d.joinery_id, p.workspace_id, p.project_code,
                rv.rev_no, rv.status AS rev_status
           FROM shop_drawing d
           JOIN projects p ON p.project_id = d.project_id
@@ -240,7 +240,7 @@ def _drawings(db, ids):
         yield _doc(
             type_="drawing", entity_id=r["drawing_id"], workspace_id=r["workspace_id"],
             project_id=r["project_id"], project_code=r["project_code"],
-            codes=_codes(f"SD-{r['drawing_id']:04d}"),
+            codes=_codes(f"SD-{r['drawing_id']:04d}", r["drawing_no"], r["joinery_id"]),
             title=r["title"],
             subtitle=_join(r["project_code"], r["room"],
                            f"Rev {r['rev_no']}" if r["rev_no"] else None),

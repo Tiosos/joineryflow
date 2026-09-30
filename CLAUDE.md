@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 23 Playwright specs / 79 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
@@ -195,7 +195,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0043
+make migrate      # apply Alembic 0001 -> 0044
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -405,7 +405,9 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   workspace-isolated (404 on cross-workspace) and streams via
   `StreamingResponse` with `Content-Disposition: inline` (RFC 8187 dual
   filename for non-ASCII names).
-- Web routes:
+- Web routes (**superseded by *Shop Drawings register redesign* below** — the card
+  grid, drawer and subtabs described here were replaced by a register table, a
+  details panel and a full-screen viewer; the API and workflow notes stand):
   - `/shop-dwgs?project=…&subtab=current|in_review|archive&room=…&q=…` —
     list page with subtabs + filter strip + 3-col card grid.
   - `?drawing=N&rev=M` opens a right-side drawer with PDF/image viewer +
@@ -4112,6 +4114,121 @@ since been built.**
   - `moduleLock.ts` is named for modules but serves hardware too (above).
 - **Out of scope (deferred):** locks on the other item-scoped writes named above; a
   request flow for a refused write; locking the project catalog.
+
+## Shop Drawings register redesign (migration `0044`) — shipped
+
+> Chosen by the user: "use https://tgsdr.com/ as reference for the shop drawing",
+> then screenshots of the customer's own **Tg Register** (the site itself is
+> blocked by the environment's egress proxy, so the screenshots are the only
+> reference seen). The request was under-specified, so the user was asked before
+> any code was written; the answers below are **settled decisions**, not
+> assumptions. It supersedes the *web* half of *Shop Drawings + File-Upload
+> Subsystem (#5a)* (the card grid + drawer); that section's backend, workflow and
+> RBAC still stand. No spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **Layout + new fields, not a new workflow.** The four revision statuses
+     (`draft / pending / approved / rejected`), the not-uploader rule and the
+     in-flight index are untouched. Tg's own statuses are shown as **queues
+     derived from them** (below), never stored.
+  2. **Keep our light design tokens.** Nothing was added to `globals.css`; the
+     Tg screenshots are dark navy and that was declined. Existing tokens only
+     (`h-good/warn/bad/info/accent-soft`, with `/15` tints for chips).
+  3. **Four screens:** register table, full-screen viewer, details panel, left
+     queue rail.
+  4. **Replaces `/shop-dwgs` in place.** Old links still land somewhere sensible:
+     `?subtab=current|in_review|archive` map to the Completed / Internal Review /
+     Archive queues (`page.tsx::LEGACY_SUBTAB`).
+  5. **No link to Joinery Items.** `joinery_id` is free text; drawings are still
+     project-scoped and unlinked to items (the gap Q497 waits on).
+- **Migration `0044`** — additive columns on `shop_drawing`: `drawing_no`,
+  `type` (`IFA | IFC`, default `IFA`), `level`, `joinery_id`, `zone`, `room_no`,
+  `assigned_to` (FK `app_user`), `due_date`, `submitted_at`; `UNIQUE (project_id,
+  drawing_no)`. **`drawing_no` is nullable on purpose**: the seed and ~10 test
+  fixtures INSERT drawings with raw SQL, and the API allocates the number on
+  create. It reads `{project_code}-{seq:03d}` (`COLES-001`) from
+  `workspace_counter` name `sd:{project_id}` — the first real caller of
+  `counters.next_value` — never `MAX+1`. Existing rows are numbered per project in
+  `drawing_id` order and the counters advanced past them. **`type` allows only
+  IFA / IFC** (the two in the screenshots); a third value needs a migration.
+- **Queues are derived, not stored** (`shop_drawings/schemas.py::Queue`): the
+  drawing's **latest revision** decides — `being_drawn` (draft),
+  `internal_review` (pending), `update_required` (rejected), `completed`
+  (approved) — and `awaiting_submission` (approved, no `submitted_at`),
+  `submitted` (`submitted_at` set) and `archive` (`archived_at` set) are filters
+  over those. They overlap by design (a submitted drawing is also completed), so
+  the per-queue counts do **not** sum to the total. `GET
+  /projects/{pid}/shop-drawings` gained `queue=`, `assigned_to=` and `queues`
+  (project-wide counts, unaffected by the room / search filters);
+  `?subtab=` still works and `queue` overrides it. `q` now also matches
+  `drawing_no` and `joinery_id`. Each card carries its `queue` and a
+  `comment_count` (live comments on any of its revisions).
+- **New endpoint** `GET /shop-drawings/{did}/history` (`shop_dwgs:read`) — the
+  drawing's `shop_drawing.*` audit rows, newest first. The details panel's
+  **Status History** tab shows the create / revision / archive events and
+  **Audit Log** shows all of them, including field edits.
+- **Editing** stays the existing rule — creator or manager / admin
+  (`PATCH /shop-drawings/{id}`, 403 otherwise) — and now covers every register
+  field plus `submitted_at`. `assigned_to` is **validated against the caller's
+  workspace** (422; an unchecked FK would leak a foreign user's name through the
+  `full_name` join — the `cut_schedule.assigned_to` lesson), an explicit `null`
+  for `title` / `type` is a 422 (both NOT NULL), and audit payload dates are
+  ISO strings. The web hides the inputs for anyone else; the API decides.
+- **Web** — `shop-dwgs/_components/`: `RegisterTable` (sortable, blanks last
+  either way, client-side paging at 25, an "Overdue" tag when `due_date` is past
+  and the drawing is not completed / archived), `QueueRail` (progress donut, "My
+  drawings" = `assigned_to = me`, one entry per queue), `DetailsPanel` (docked to
+  the right of the table; commit-on-blur fields that resync and skip unchanged
+  values; Revisions / Notes / Attachments / Status History / Audit Log tabs; the
+  revision comment thread keeps `data-testid="revision-comments"` and its
+  collapsed-by-default toggle), `DrawingViewer` (full screen, `?viewer=1`; zoom /
+  Fit / download, a versions list, the revision's comment thread as
+  *Communication*, drawing info and the review actions). Removed as orphaned:
+  `DrawingCard`, `DrawingDrawer`, `SubtabStrip`, `BlueprintPlaceholder`,
+  `VersionChip`, `RevisionHistoryStrip`. **URL state**: `project`, `queue`,
+  `mine`, `room`, `q`, `drawing`, `rev`, `viewer`, `comments`. The notification
+  link (`…&drawing=&rev=&comments=1`) still opens the details panel with the
+  thread expanded.
+- **Deliberately not built, and why.** *An in-app page counter and page
+  thumbnail strip* in the viewer — they need a PDF renderer (pdf.js) the app does
+  not ship. The viewer embeds the browser's own PDF viewer (zoom via `#zoom=`),
+  so in Chrome its built-in toolbar already shows a page counter and thumbnails
+  (seen in the verification screenshot); other browsers differ. Images use CSS
+  scaling and have no pages.
+  *Annotate* and *Coordinator references* (the screenshots' viewer) have nothing
+  behind them here. *Bulk row selection*. The **Attachments tab lists each
+  revision's file**: a drawing has no other attachments. *"Upload drawing" is now
+  hidden without `shop_dwgs:write`* (it was shown to everyone and 403'd).
+- **Seed.** ALF-001's six drawings get numbers `ALF-001-001…006` (counter reset
+  with the drawings on re-run), a type, level, Joinery ID, an assignee and
+  due / submitted dates **relative to today** so the overdue flag is right
+  whenever the seed runs: *Kitchen island* is an overdue draft; *Bathroom vanity*
+  is approved and submitted; *Hallway storage* is approved and awaiting
+  submission.
+- **Search** — a drawing's `drawing_no` and `joinery_id` are now search codes
+  (`app/search/documents.py`).
+- **Tests.** `test_shop_drawings_register.py` (9): sequential numbering,
+  round-trip, bad `type` 422, foreign `assigned_to` 422 on create *and* patch
+  (nothing written), patch + audit + null-title 422, every queue's membership and
+  the counts, search / assigned filters, comment count, history 404. The existing
+  47 shop-drawing / search-document tests pass unchanged.
+  `tests/e2e/shop_drawings.spec.ts` (+3): the register columns, queue filter
+  (URL + reload), overdue flag and sort; details panel → viewer → zoom → back; a
+  viewer sees the details read-only. Both existing specs were kept and only the
+  drawer's `#SD-` click became a register-row click
+  (`comments_module_revision.spec.ts`). The new e2e tests are read-only against
+  the seed, so they re-run without re-seeding.
+- **Known gaps, recorded.**
+  - The queue counts are computed per project; there is no cross-project
+    "My Drawings" number (the count next to the rail's toggle is on/off, not a
+    total).
+  - Sorting and paging are client-side over the whole project's list, which is
+    fine for hundreds of drawings and is the thing to revisit at thousands.
+  - Rev shows the revision **number** (`v3`), not Tg's letters (`A`, `B`).
+  - `type`, `level`, `zone` and `room_no` are not searchable filters yet, only
+    `q` over title / number / Joinery ID.
+- **Out of scope (deferred):** linking a drawing to a Joinery Item; Tg's own
+  status names as stored states; a dark theme; pdf.js page navigation.
 
 ## Lock checks on status and lifecycle (Plan V1 §12 follow-up, no migration) — shipped
 

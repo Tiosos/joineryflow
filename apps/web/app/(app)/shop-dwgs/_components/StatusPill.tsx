@@ -2,9 +2,9 @@ import type { RevisionStatus } from "@/lib/shop-drawings-types";
 
 const PALETTE: Record<RevisionStatus, string> = {
   draft:    "bg-h-line/40 text-h-muted",
-  pending:  "bg-amber-100 text-amber-900",
-  approved: "bg-emerald-100 text-emerald-900",
-  rejected: "bg-rose-100 text-rose-900",
+  pending:  "bg-h-warn/15 text-h-warn",
+  approved: "bg-h-good/15 text-h-good",
+  rejected: "bg-h-bad/15 text-h-bad",
 };
 
 const LABEL: Record<RevisionStatus, string> = {

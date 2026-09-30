@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchMe } from "@/lib/session";
 import type { ProjectListOut } from "@/lib/pm-types";
-import type { Subtab } from "@/lib/shop-drawings-types";
+import { QUEUE_LABELS, type Queue } from "@/lib/shop-drawings-types";
 import { SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session-cookie";
 import ShopDwgsClient from "./_components/ShopDwgsClient";
 
@@ -22,13 +22,31 @@ async function fetchProjects(): Promise<ProjectListOut> {
 
 interface PageProps {
   searchParams: Promise<{
+    queue?: string;
     subtab?: string;
+    mine?: string;
     project?: string;
     room?: string;
     q?: string;
     drawing?: string;
     rev?: string;
+    viewer?: string;
   }>;
+}
+
+// Links written before the register redesign used `?subtab=`. They still land
+// somewhere sensible: Current was "has an approved revision", In review was
+// draft + pending — Completed and Internal Review are the nearest queues.
+const LEGACY_SUBTAB: Record<string, Queue> = {
+  current: "completed",
+  in_review: "internal_review",
+  archive: "archive",
+};
+
+function pickQueue(sp: Awaited<PageProps["searchParams"]>): Queue {
+  if (sp.queue && sp.queue in QUEUE_LABELS && sp.queue !== "all") return sp.queue as Queue;
+  if (!sp.queue && sp.subtab && LEGACY_SUBTAB[sp.subtab]) return LEGACY_SUBTAB[sp.subtab]!;
+  return "all";
 }
 
 export default async function Page({ searchParams }: PageProps) {
@@ -40,10 +58,6 @@ export default async function Page({ searchParams }: PageProps) {
 
   const { projects } = await fetchProjects();
 
-  const subtab: Subtab =
-    sp.subtab === "in_review" || sp.subtab === "archive"
-      ? sp.subtab
-      : "current";
   const projectId = sp.project ? Number(sp.project) : (projects[0]?.id ?? null);
 
   return (
@@ -55,11 +69,13 @@ export default async function Page({ searchParams }: PageProps) {
         name: p.name,
       }))}
       initialProjectId={projectId}
-      initialSubtab={subtab}
+      initialQueue={pickQueue(sp)}
+      initialMine={sp.mine === "1"}
       initialRoom={sp.room ?? null}
       initialQ={sp.q ?? null}
       initialDrawingId={sp.drawing ? Number(sp.drawing) : null}
       initialRevId={sp.rev ? Number(sp.rev) : null}
+      initialViewer={sp.viewer === "1"}
     />
   );
 }

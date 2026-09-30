@@ -762,6 +762,11 @@ def main() -> None:
             text("DELETE FROM shop_drawing WHERE project_id = :p"),
             {"p": _alf_pid},
         )
+        # Register numbers restart with the drawings they numbered.
+        s.execute(
+            text("DELETE FROM workspace_counter WHERE workspace_id = :w AND name = :n"),
+            {"w": workspace_id, "n": f"sd:{_alf_pid}"},
+        )
 
         _blob_kitchen = put_seed_file(
             s,
@@ -778,15 +783,32 @@ def main() -> None:
             path=_bath_pdf,
         )
 
-        def _make_drawing(*, title, room, archived=False, archived_by=None):
+        from app.counters import next_value as _next_counter
+
+        def _make_drawing(*, title, room, archived=False, archived_by=None,
+                          type="IFA", level=None, joinery_id=None, zone=None,
+                          assignee=None, due_in_days=None, submitted_days_ago=None):
+            # Register fields (migration 0044). The number comes from the same
+            # counter the API uses; due / submitted dates are relative to today
+            # so the overdue flag reads correctly whenever the seed is run.
+            no = f"ALF-001-{_next_counter(s, workspace_id=workspace_id, name=f'sd:{_alf_pid}'):03d}"
             did = s.execute(
                 text(
                     """
-                    INSERT INTO shop_drawing(project_id, title, room, created_by)
-                    VALUES (:p, :t, :r, :u) RETURNING drawing_id
+                    INSERT INTO shop_drawing(project_id, title, room, created_by, drawing_no,
+                                             type, level, joinery_id, zone, assigned_to,
+                                             due_date, submitted_at)
+                    VALUES (:p, :t, :r, :u, :no, :type, :lv, :jid, :zone, :asg,
+                            CASE WHEN CAST(:due AS int) IS NULL THEN NULL
+                                 ELSE CURRENT_DATE + CAST(:due AS int) END,
+                            CASE WHEN CAST(:sub AS int) IS NULL THEN NULL
+                                 ELSE CURRENT_DATE - CAST(:sub AS int) END)
+                    RETURNING drawing_id
                     """
                 ),
-                {"p": _alf_pid, "t": title, "r": room, "u": _drafter_id},
+                {"p": _alf_pid, "t": title, "r": room, "u": _drafter_id, "no": no,
+                 "type": type, "lv": level, "jid": joinery_id, "zone": zone,
+                 "asg": assignee, "due": due_in_days, "sub": submitted_days_ago},
             ).scalar()
             if archived:
                 s.execute(
@@ -823,7 +845,9 @@ def main() -> None:
             return rid
 
         # D1: Kitchen base run — rev1 approved, rev2 approved (current), rev3 pending
-        d1 = _make_drawing(title="Kitchen base run", room="Kitchen")
+        d1 = _make_drawing(title="Kitchen base run", room="Kitchen", type="IFC",
+                           level="Level 01", joinery_id="J01-001", zone="A",
+                           assignee=_drafter_id, due_in_days=14)
         _add_rev(d1, rev_no=1, blob_id=_blob_kitchen, status="approved",
                  uploaded_by=_drafter_id, reviewed_by=_manager_id)
         r1_2 = _add_rev(d1, rev_no=2, blob_id=_blob_kitchen, status="approved",
@@ -836,7 +860,9 @@ def main() -> None:
                  uploaded_by=_drafter_id)
 
         # D2: Bathroom vanity — rev1 rejected (note), rev2 approved (current)
-        d2 = _make_drawing(title="Bathroom vanity", room="Bathroom")
+        d2 = _make_drawing(title="Bathroom vanity", room="Bathroom",
+                           level="Level 02", joinery_id="J02-004", assignee=_drafter_id,
+                           due_in_days=-5, submitted_days_ago=3)
         _add_rev(d2, rev_no=1, blob_id=_blob_bath, status="rejected",
                  uploaded_by=_drafter_id, reviewed_by=_manager_id,
                  note="Need finished dimensions")
@@ -848,12 +874,14 @@ def main() -> None:
         )
 
         # D3: Kitchen island — single draft revision
-        d3 = _make_drawing(title="Kitchen island", room="Kitchen")
+        d3 = _make_drawing(title="Kitchen island", room="Kitchen", level="Level 01",
+                           joinery_id="J01-002", assignee=_drafter_id, due_in_days=-2)
         _add_rev(d3, rev_no=1, blob_id=_blob_kitchen, status="draft",
                  uploaded_by=_drafter_id)
 
         # D4: Walk-in robe — single pending revision
-        d4 = _make_drawing(title="Walk-in robe", room="Bedroom")
+        d4 = _make_drawing(title="Walk-in robe", room="Bedroom", level="Level 03",
+                           joinery_id="J03-007", assignee=_drafter_id, due_in_days=7)
         _add_rev(d4, rev_no=1, blob_id=_blob_bath, status="pending",
                  uploaded_by=_drafter_id)
 
@@ -868,7 +896,8 @@ def main() -> None:
         )
 
         # D6: Hallway storage — single approved revision
-        d6 = _make_drawing(title="Hallway storage", room="Hallway")
+        d6 = _make_drawing(title="Hallway storage", room="Hallway", type="IFC",
+                           level="Level 01", joinery_id="J01-009", due_in_days=30)
         r6_1 = _add_rev(d6, rev_no=1, blob_id=_blob_bath, status="approved",
                         uploaded_by=_drafter_id, reviewed_by=_manager_id)
         s.execute(
