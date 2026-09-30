@@ -6,6 +6,7 @@ import type { ItemOut } from "@/lib/pm-types";
 import { ModuleTree } from "./ModuleTree";
 import { PartsGrid } from "./PartsGrid";
 import { CvImportDialog } from "./CvImportDialog";
+import { DeleteModuleDialog } from "./DeleteModuleDialog";
 
 interface CutlistTabProps {
   item: ItemOut;
@@ -64,6 +65,22 @@ export function CutlistTab({
 
   const activeModule = item.modules.find((m) => m.id === activeModuleId) ?? null;
 
+  // `DELETE /modules/{id}` is gated `require_drafter()` — mirror it, the API decides.
+  const canDeleteModule =
+    currentUserRole === "drafter" || currentUserRole === "manager" || currentUserRole === "admin";
+  const [deleting, setDeleting] = useState(false);
+
+  // The module is gone: refresh the list and select a neighbour. The URL is left
+  // alone on purpose — a `replaceState` right after `router.refresh()` is the
+  // race that once dropped the refreshed list (see `selectModule`); a stale
+  // `?module=` is ignored because `moduleFrom` only accepts ids still in the item.
+  function onModuleDeleted() {
+    const gone = activeModule?.id;
+    setDeleting(false);
+    setActiveModuleId(item.modules.find((m) => m.id !== gone)?.id ?? null);
+    router.refresh();
+  }
+
   function openImport() {
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("tab", "cutlist");
@@ -112,6 +129,21 @@ export function CutlistTab({
           />
           {activeModule ? (
             <div className="flex min-w-0 flex-1 flex-col gap-6">
+              {canDeleteModule && (
+                <div className="-mb-3 flex items-center justify-between gap-3">
+                  <h3 className="truncate text-sm font-semibold text-h-ink">
+                    {activeModule.name ?? "Untitled module"}
+                  </h3>
+                  <button
+                    type="button"
+                    data-testid="delete-module"
+                    onClick={() => setDeleting(true)}
+                    className="rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm text-h-bad hover:bg-h-surface"
+                  >
+                    Delete module
+                  </button>
+                </div>
+              )}
               <PartsGrid key={activeModule.id} module={activeModule} />
               <section
                 data-testid="module-comments"
@@ -134,6 +166,15 @@ export function CutlistTab({
             <div className="flex-1 text-sm text-h-muted">Select a module.</div>
           )}
         </div>
+      )}
+
+      {deleting && activeModule && (
+        <DeleteModuleDialog
+          moduleId={activeModule.id}
+          moduleName={activeModule.name}
+          onClose={() => setDeleting(false)}
+          onDeleted={onModuleDeleted}
+        />
       )}
 
       {importOpen && (

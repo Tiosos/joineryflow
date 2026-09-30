@@ -7,7 +7,7 @@ import type {
   CreateModuleIn, PatchModuleIn,
   CreatePartIn, PatchPartIn,
   AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn,
-  HardwareLineOut, ModuleOut, PartOut,
+  HardwareLineOut, ModuleOut, PartOut, ModuleDeleteImpact,
 } from "./pm-types";
 
 
@@ -117,6 +117,8 @@ export const PM = {
     call<ModuleOut>(`/api/items/${id}/modules`, { ...jsonInit("POST", body), cache: "no-store" }),
   patchModule: (mid: number, body: PatchModuleIn) =>
     call<ModuleOut>(`/api/modules/${mid}`, { ...jsonInit("PATCH", body), cache: "no-store" }),
+  moduleDeleteImpact: (mid: number) =>
+    call<ModuleDeleteImpact>(`/api/modules/${mid}/delete-impact`, { cache: "no-store" }),
   deleteModule: (mid: number) =>
     call<void>(`/api/modules/${mid}`, { method: "DELETE", cache: "no-store" }),
   createPart: (mid: number, body: CreatePartIn) =>
