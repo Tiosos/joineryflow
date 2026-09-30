@@ -114,7 +114,9 @@ export function CvImportDialog({
       setPhase("done");
       setTimeout(() => onClose(), 1500);
     } catch (e: unknown) {
-      const detail = (e as { detail?: { code?: string } })?.detail;
+      // cv-fetch keeps the whole parsed body on `e.detail`, and FastAPI wraps an
+      // HTTPException's payload as `{ detail: { code } }`, so the code sits one level down.
+      const detail = (e as { detail?: { detail?: { code?: string } } })?.detail?.detail;
       const status = (e as { status?: number })?.status;
       const locked = lockFromError(e);
       if (locked) {
