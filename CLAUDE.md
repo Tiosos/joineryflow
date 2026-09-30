@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 25 Playwright specs / 89 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 26 Playwright specs / 93 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -4476,10 +4476,50 @@ since been built.**
   ECONNRESET` on the Hard Lock test's `POST /api/items/{id}/hard-lock` through `next dev`'s proxy; the same
   call passes on retry. `attachments_locks.spec.ts` makes the same call and is exposed to it too.
 - **Known gaps, recorded.**
-  - `ItemDetailModal` (Tracking) still shows the "No documents attached for v1." placeholder.
+  - ~~`ItemDetailModal` (Tracking) still shows the "No documents attached for v1." placeholder.~~ **Closed —
+    see *Tracking modal shows the register and the SketchUp / CabVision slots* below.**
   - Labels only — a register document has no other metadata, and a rename cannot be undone except by typing
     the old one back.
   - A refused bind leaves an unreferenced `file_blob` (as for attachments; `POST /files` is not gated).
   - The reorder controls are per-row buttons, not drag-and-drop.
-- **Out of scope (deferred):** register UI outside the item editor (the Tracking modal); drag-and-drop;
+- **Out of scope (deferred):** ~~register UI outside the item editor (the Tracking modal)~~ (**built, see below**); drag-and-drop;
   bulk upload; document categories or types.
+
+## Tracking modal shows the register and the SketchUp / CabVision slots (no migration, no API change) — shipped
+
+> Chosen by the user ("Go with option 1", from the list of candidates after the Document Register UI).
+> Two things were open, so the user was asked before any code was written; both answers are **settled
+> decisions**. Web only.
+
+- **Settled decisions (user).**
+  1. **Read-only.** The modal lists the register's documents with an **Open** link each and a
+     "Manage on Attachments tab →" link to `/items/{id}?tab=attachments`, where editing (and its lock and
+     writer-role rules) already lives. No inputs and no buttons in the modal's register.
+  2. **Fill in the SketchUp / CabVision rows too** — the user chose this over leaving them as recorded-stale.
+     They had been hard-coded to a dash since `0036` made both slots real.
+- **Web — `tracking/_components/ItemDetailModal.tsx` (only file changed).** `ItemFiles` fetches
+  `getAttachments` and `listDocuments` (the existing helpers) when the modal's item changes. Both reads are
+  `list:read`, the gate `GET /items/{id}` already needs, so no role sees a new error. **Only the newest request may
+  write** (Previous / Next changes the item mid-flight). **A failed read says so** ("Couldn't load the document
+  register." / "Couldn't load" in the slot row) rather than reading as "nothing attached"; an empty register says
+  "No documents in the register."; a slot shows its filename and **Open**, or a dash.
+- **A related part never reaches this code.** Tracking gives one no ▶ button and `GET /items/{id}` answers 404 for it
+  (Q559), so the modal errors before rendering; an earlier draft had a related-part branch and it was removed as
+  unreachable rather than left untested.
+- **Tests.** `tests/e2e/tracking_modal_files.spec.ts` (4), run three times back to back against a live migrated,
+  seeded stack: the modal lists the seeded item's documents read-only with Open links and the Manage link (and the
+  old placeholder is gone); **Next shows the next item's own documents** (no stale rows from the previous item); a
+  bound `.skp` shows its filename and Open link while the CabVision row stays a dash (the test unbinds it in a
+  `finally`, and clears the slot first so a run killed before its cleanup cannot fail the next); a failed load
+  says so and does not claim the register is empty. **All four fail against the unfixed modal.**
+  `item_project_detail`, `attachments_locks`, `document_register` and `pm_workbench` still pass.
+- **Found while testing.** A negative run with `--timeout 12000` timed out mid-test 3 and left a bound SketchUp slot in
+  the live database: a Playwright timeout closes the request context, so the `finally` that unbinds cannot run.
+  Cleaned by hand. If you run the spec with a short `--timeout`, check `item_attachment` for a stray `sketchup` row.
+- **Known gaps, recorded.**
+  - **The modal's other disabled fields are still hard-coded dashes**: Floor Plan, RLS, Joiery Details and
+    Cutlist Printed, although `ItemOut` has carried all four since `0036` (the item editor's `ItemMetadataPanel`
+    edits them). Not asked for, so not touched; the same one-line pass as the two slots would fix them.
+  - The modal's `Actions` and `Query` tabs are still "Coming soon." stubs (both are real on the item editor).
+  - The register list is not paged or scrollable beyond `max-h-48`, and shows label only (as on the editor).
+- **Out of scope (deferred):** editing from the modal; the four fields above; the two stub tabs.
