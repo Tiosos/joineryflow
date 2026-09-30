@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import current_user, require_drafter
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked
 from ..items.schemas import ModuleOut, PartOut
 from .queries import (
     create_module,
@@ -123,12 +124,15 @@ def delete_module_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    result = delete_module(
-        db,
-        module_id=mid,
-        workspace_id=user.workspace_id,
-        actor_id=user.id,
-    )
+    try:
+        result = delete_module(
+            db,
+            module_id=mid,
+            workspace_id=user.workspace_id,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="module not found")
     db.commit()

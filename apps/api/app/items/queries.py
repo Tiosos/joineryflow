@@ -1644,6 +1644,58 @@ def patch_lifecycle(
     return "OK"
 
 
+class ItemContentLocked(Exception):
+    """An item's own lock refuses a change to what hangs off it (a module).
+
+    `detail` is the 409 body: `{code: HARD_LOCKED | APPROVAL_LOCKED | ITEM_LOCKED, ...}`.
+    """
+
+    def __init__(self, detail: dict) -> None:
+        super().__init__(detail["code"])
+        self.detail = detail
+
+
+def assert_item_content_unlocked(
+    db: Session, *, item_id: int, workspace_id: int, actor: AuthUser
+) -> None:
+    """Refuse a change to an item's modules while a lock on the item forbids it.
+
+    `patch_item` is the only place the locks are enforced for the item's own
+    fields; this is the same three rules for a change that is not a PATCH body,
+    so it cannot be held as a Controlled-Lock request and is refused instead:
+
+    - Hard Lock (Q508): everyone, including the owner.
+    - Approval Lock (Q508): `status = 'APPROVED'`.
+    - Controlled Lock (Q509): `item_locked` with someone else as owner. The owner
+      and managers/admins pass — the people who can decide a lock request.
+
+    Locks the item row `FOR UPDATE`, so a lock set concurrently is either seen
+    here or waits for the caller's transaction. Raises `ItemContentLocked`.
+    """
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
+    if current is None:
+        return
+    if current["hard_locked_at"] is not None:
+        raise ItemContentLocked(
+            {"code": "HARD_LOCKED", "locked_by": current["hard_locked_by"]}
+        )
+    if current["status"] == "APPROVED":
+        raise ItemContentLocked({"code": "APPROVAL_LOCKED"})
+    owner_id = current["cutlist_owner_id"]
+    if (
+        current["item_locked"]
+        and owner_id is not None
+        and owner_id != actor.id
+        and actor.auth_role not in ("manager", "admin")
+    ):
+        owner_name = db.execute(
+            text("SELECT full_name FROM app_user WHERE id = :u"), {"u": owner_id}
+        ).scalar()
+        raise ItemContentLocked(
+            {"code": "ITEM_LOCKED", "owner_id": owner_id, "owner_name": owner_name}
+        )
+
+
 def claim_or_release_lock(
     db: Session,
     *,

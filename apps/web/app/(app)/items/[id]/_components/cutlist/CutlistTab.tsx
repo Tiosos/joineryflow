@@ -7,6 +7,7 @@ import { ModuleTree } from "./ModuleTree";
 import { PartsGrid } from "./PartsGrid";
 import { CvImportDialog } from "./CvImportDialog";
 import { DeleteModuleDialog } from "./DeleteModuleDialog";
+import { moduleLockReason } from "./moduleLock";
 
 interface CutlistTabProps {
   item: ItemOut;
@@ -68,6 +69,7 @@ export function CutlistTab({
   // `DELETE /modules/{id}` is gated `require_drafter()` — mirror it, the API decides.
   const canDeleteModule =
     currentUserRole === "drafter" || currentUserRole === "manager" || currentUserRole === "admin";
+  const lockReason = moduleLockReason(item, currentUserId, currentUserRole);
   const [deleting, setDeleting] = useState(false);
 
   // The module is gone: refresh the list and select a neighbour. The URL is left
@@ -130,18 +132,27 @@ export function CutlistTab({
           {activeModule ? (
             <div className="flex min-w-0 flex-1 flex-col gap-6">
               {canDeleteModule && (
-                <div className="-mb-3 flex items-center justify-between gap-3">
-                  <h3 className="truncate text-sm font-semibold text-h-ink">
-                    {activeModule.name ?? "Untitled module"}
-                  </h3>
-                  <button
-                    type="button"
-                    data-testid="delete-module"
-                    onClick={() => setDeleting(true)}
-                    className="rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm text-h-bad hover:bg-h-surface"
-                  >
-                    Delete module
-                  </button>
+                <div className="-mb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="truncate text-sm font-semibold text-h-ink">
+                      {activeModule.name ?? "Untitled module"}
+                    </h3>
+                    <button
+                      type="button"
+                      data-testid="delete-module"
+                      disabled={lockReason !== null}
+                      title={lockReason ?? undefined}
+                      onClick={() => setDeleting(true)}
+                      className="shrink-0 rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm text-h-bad hover:bg-h-surface disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Delete module
+                    </button>
+                  </div>
+                  {lockReason && (
+                    <p data-testid="delete-module-locked" className="mt-1 text-xs text-h-muted">
+                      {lockReason}
+                    </p>
+                  )}
                 </div>
               )}
               <PartsGrid key={activeModule.id} module={activeModule} />

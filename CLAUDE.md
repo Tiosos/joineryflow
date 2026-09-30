@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 20 Playwright specs / 64 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 20 Playwright specs / 67 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -340,7 +340,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   rows are history only. Scope is `PATCH /items/{id}` alone —
   `/status` and `/lifecycle/{stage_key}` never consulted the lock and still do
   not, and **there is no project-level lock** (Q566: `projects` has no lock
-  column).
+  column). **One exception since *Lock checks on module delete*:**
+  `DELETE /modules/{mid}` now answers to the item's locks too.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -3864,19 +3865,100 @@ since been built.**
   viewer 403, another workspace and an unknown id 404); and the delete writes the
   counts to the audit row, still answers 204 and cascades — **all four fail
   against the unfixed source** (the six existing parts tests pass as controls).
-  `tests/e2e/module_delete.spec.ts` (4), run twice back to back against a live
+  `tests/e2e/module_delete.spec.ts` (4; 7 since the lock checks), run twice back to back against a live
   migrated, seeded stack: the full add → comment → warning → Cancel → Delete cycle
   on `JO-TP01` on a module the spec creates (so nothing seeded is deleted); the
   parts count on a seeded module (Cancel only); the lookup-failed message via a
   route intercept; and editor / viewer are not offered the button.
 - **Known gaps, recorded.**
-  - **A module can still be deleted on an item that is Hard-Locked, Approval-Locked
-    or Controlled-Locked.** `delete_module` never consulted any lock — §L's scope
-    is `PATCH /items/{id}` alone (see *Locking + Concurrency*) — and this change
-    did not widen it. Now that there is a button, the gap is reachable from the UI.
+  - ~~A module can still be deleted on an item that is Hard-Locked,
+    Approval-Locked or Controlled-Locked.~~ **Closed — see *Lock checks on module
+    delete* below.**
   - The count is live comments only (above); an API caller who skips the
     lookup gets no warning at all — by the user's choice.
   - No undo: deletion is permanent, as it always was.
 - **Out of scope (deferred):** enforcing an acknowledgement in the API; returning
   the counts in the DELETE response; a warning before deleting a **part** (a
   single row, nothing cascades from it).
+
+## Lock checks on module delete (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is lock checks on module delete"). It closes the
+> gap *Delete module asks first* recorded, and it is the **first place §L's locks
+> reach beyond `PATCH /items/{id}`**. The request left three things open, so the
+> user was asked before any code was written; the three answers below are
+> **settled decisions**, not assumptions. No migration, no spec or plan doc; this
+> section is its written record.
+
+- **Settled decisions (user).**
+  1. **Scope: module delete only.** `POST /items/{id}/modules`, `PATCH /modules/{mid}`,
+     every part write, hardware lines and CV import (including its `replace` mode,
+     which deletes every module of the item) **still never consult a lock** — the
+     recommended option, kept narrow on purpose. See *Known gaps*.
+  2. **Hard + Approval + Controlled.** A delete cannot be held as a Controlled-Lock
+     request (`item_lock_request` stores a `PatchItemIn` body, which can only carry
+     field edits), so it is **refused** instead. Otherwise a lock could be bypassed
+     by deleting where it forbids editing.
+  3. **UI: disable with the reason, plus a 409 fallback.**
+- **The rule — `items.queries.assert_item_content_unlocked`.** Called by
+  `parts.queries.delete_module` right after the workspace lookup and *before*
+  anything is counted, audited or deleted; raises `ItemContentLocked`, which
+  `delete_module_route` turns into `409 {detail: {code, …}}`:
+  - **`HARD_LOCKED`** (`locked_by`) — everyone, including the owner and admins.
+  - **`APPROVAL_LOCKED`** — `items.status = 'APPROVED'`.
+  - **`ITEM_LOCKED`** (`owner_id`, `owner_name`) — `item_locked` with someone else
+    as `cutlist_owner_id`. **The owner and managers/admins pass**, matching who can
+    decide a lock request. `cutlist_owner_id` is *sticky* (survives Unlock), so it
+    is `item_locked` that matters: an owner with no active lock never blocks.
+  - `HARD_LOCKED` / `APPROVAL_LOCKED` use the same codes and bodies as
+    `PATCH /items/{id}`; `ITEM_LOCKED` is new (the PATCH path answers a Controlled
+    Lock with `LOCK_REQUEST_CREATED` instead). The lookup takes the item row
+    `FOR UPDATE`, so a lock set concurrently is seen or waits for the delete's
+    transaction. A refused delete writes **nothing**: no audit row, no edit log.
+  - `delete_module` now takes the acting `AuthUser` (`actor=`) instead of
+    `actor_id=`, because the Controlled-Lock exemption needs the role. Its only
+    caller is the route.
+  - `GET /modules/{mid}/delete-impact` is **not** gated by any lock (read-only; the
+    dialog can still be opened by someone who will then be refused).
+- **Web — `cutlist/moduleLock.ts`.** `moduleLockReason(item, userId, role)` mirrors
+  the rule from data the page already holds (`hard_locked_at`, `status`,
+  `item_locked`, `cutlist_owner_id`); when it returns a reason, the **Delete
+  module** button is `disabled` with the reason as its `title` **and** as a line
+  under the header row (`data-testid="delete-module-locked"` — a tooltip alone is
+  invisible on a disabled button). `lockMessage(code, detail)` holds the wording
+  for a code, shared with the dialog: a `409` on the delete (a stale page that
+  still offered the button) shows that message in the dialog and leaves it open,
+  nothing deleted. The client check only decides what to show — the API refuses
+  regardless. **The client message for `ITEM_LOCKED` cannot name the owner**
+  (`ItemOut` carries `cutlist_owner_id` but no name); the server's 409 does.
+- **Tests.** Four new in `test_parts_routes.py`: a Hard Lock refuses everyone (an
+  admin included), leaves module / parts / comments untouched and writes no audit
+  row, then passes once cleared; an Approval Lock likewise until status moves off
+  `APPROVED`; a Controlled Lock refuses a non-owner (naming the owner), leaves the
+  impact lookup open, and lets a manager and the owner through; a sticky owner
+  with no active lock does not block. **The first three fail against the unfixed
+  source** (the sticky-owner one passes there — it is the control). Three new in
+  `tests/e2e/module_delete.spec.ts`, each restoring the item exactly as seeded:
+  a Hard Lock disables the button for a manager, with the reason, and unlocking
+  re-enables it; seeded `JO-K-103` (Controlled-Locked, drafter-owned) is open to a
+  manager, and after ownership is transferred to the manager the drafter is
+  disabled — then transferred back and enabled again; and a mocked `409
+  ITEM_LOCKED` shows the owner's name in the dialog. **All three fail against the
+  unfixed web code.** Also checked over real HTTP through the proxy: a Hard-Locked
+  item's delete answers `409 HARD_LOCKED` and the module is still there.
+- **Known gaps, recorded.**
+  - **Every other write under a locked item is still open**: adding or editing a
+    module, every part write, hardware lines, and CV import — including
+    `?mode=replace`, which deletes the modules (and their comments) of a Hard- or
+    Approval-Locked item. This is the user's chosen scope, not an oversight; the
+    obvious follow-up is the same check on those routes.
+  - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
+    lock (unchanged §L scope).
+  - A Controlled Lock is not held as a request for a delete: the person is told to
+    ask the owner or a manager. There is no "request a delete" flow.
+  - The role check for the Controlled-Lock exemption is a hand-written
+    `auth_role in (manager, admin)`, like `decide_lock_request`'s — Q472 is still
+    not built.
+- **Out of scope (deferred):** the same check on the other module / part / hardware
+  / CV-import writes; a lock-request flow for a delete; naming the lock owner in
+  the disabled-button text.
