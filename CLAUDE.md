@@ -4581,8 +4581,8 @@ since been built.**
   - **The guard is opt-in.** A *new* PATCH schema must call `no_null` for its NOT NULL fields; nothing
     fails if it forgets, because a generic test would have to know each field's column and nullability.
     The next audit is the same two steps above.
-  - **Not audited:** explicit nulls on **POST** bodies (45 routes / 138 null-accepting fields; a create
-    with a null for a required field is a raw 500, not a poison); `PATCH /me/status` and
+  - **POST bodies: audited afterwards, found clean — see *POST-body null audit* below.**
+  - **Not audited:** `PATCH /me/status` and
     `PATCH /items/{id}/lifecycle/{stage_key}` (no resolvable row in the probe); **unknown values** for
     constrained strings (`status`, `kind`, `paint_instruction`, ...) beyond what each schema already
     validates — the option the user did not choose.
@@ -4596,6 +4596,59 @@ since been built.**
     before FastAPI validates the response.
   - The 422 body is FastAPI's default (`detail: [{loc, msg}]`), so the web shows its generic
     "Save failed (422)" — no web change was needed or made.
-- **Out of scope (deferred):** POST bodies; unknown-value validation for constrained strings; validating
-  before `commit()`; a generic guard that infers NOT NULL from the schema.
+- **Out of scope (deferred):** ~~POST bodies~~ (**audited, see below**); unknown-value validation for
+  constrained strings; validating before `commit()`; a generic guard that infers NOT NULL from the schema.
+
+## POST-body null audit (no code change, no migration) — measured, found clean
+
+> Chosen by the user ("Go for POST-body null audit"), the follow-up the section above
+> recorded as "not audited". **The result is that there is nothing to fix**, so no scope
+> question was asked and no schema, test or migration changed; this section is the record
+> so the audit is not repeated. The probe scripts were throwaway and are **not in the repo**.
+
+- **Method — the PATCH audit's, adapted to creates.** The static scan lists every POST body
+  field that accepts an explicit `null`: **45 routes / 138 fields**. Each create route got a
+  hand-built **valid base body** (a control that must answer 2xx) and then the base with one
+  field set to `null`, on a scratch clone of the seeded database, with per-table row counts
+  taken around every call: *nothing gained* = refused or raw 500, *rows gained* = persisted
+  (and, if the answer was a 500, **poison**). 32 create routes were probed in one process. The
+  13 state-changing action routes (`approve`, `reject`, `complete`, `resolve`, `close`,
+  `expire`, `withdraw`, `convert`, `generate-orders`, `assign`, `reviews`, `decide`) can only
+  succeed once per database, so each ran in its **own fresh clone**, once with the field
+  omitted and once with `null`.
+- **Result: 0 poison, 0 raw 500.** Of the 138 (route, field) pairs: **121 accepted** (a nullable
+  column, or a value the query layer defaults — `estimate_no` becomes `EST-2026-…`, `type`
+  becomes `IFA`, `paint_instruction` becomes `NONE`), **2 refused 422** (`POST /comments`
+  `object_type` / `object_id`: the schema already requires both together) and **1 `409
+  MEMBERSHIP_EXISTS`** (`project_id: null` *means* workspace-wide, and that membership existed —
+  the control, not a defect). The 14 action pairs were all 200 with `null`, identical to the
+  omitted control. **Nothing answered 500.** Reason it differs from PATCH: a POST names the
+  columns it writes and the create schemas type the NOT NULL ones as required or give them a
+  non-null default, so a `null` is refused by pydantic or replaced before the INSERT.
+- **Read side, crawled.** 96 GET routes were crawled after all probes, three ways — the first
+  row of each resource, the *newest* row of each (the probe-created ones), and a targeted pass
+  pinned to ALF-001 with both the first item and the most null-heavy created item (null
+  description / qty / code / stage; parts with no name or length; modules with no name).
+  **No 5xx anywhere.** A first pass only read the oldest rows and so could not have seen a
+  probe row; the newest-row and pinned passes exist because of that.
+- **Found while probing, not caused by a null and not fixed (asked, not decided):**
+  `POST /procurement/approvals/{workflow_id}/decide` answers **500 for an approval on a
+  purchase order with no cost centre**, with the field omitted too. `0031` made
+  `purchase_orders.cost_center_id` nullable (Q563) but the legacy handler still runs
+  `int(po["cost_center_id"])` after `decide` → `commit_budget`, so it raises `TypeError`.
+  **Nothing is written** (verified: the PO and the workflow are unchanged — the approver just
+  cannot approve), and the seed's one PO has no cost centre, so it is reachable on the demo
+  data. It is the legacy `/procurement/*` namespace, which the Orderbook page does not use.
+  A fix is a decision (skip the budget commitment when there is no cost centre? refuse the
+  approval with a clear 4xx?), so it was left for the user.
+- **Legal-but-odd, left:** a create can now leave real NULLs in nullable columns that some
+  screens may render as blank — `items.description` / `qty` / `code`, `parts.part_name` /
+  `len_mm`, `modules.name` — because the columns and the read models allow it. Every crawled
+  read tolerated them; whether a create *should* require a description is a product call.
+- **Known gaps, recorded.** The probe used one hand-built body per route, so a route whose
+  behaviour depends on *other* body fields (a different `material_type`, a related-part `status`)
+  was tested down one path only; `POST /catalog/{slug}/bulk`, the CV-import commit and the
+  file / photo bind routes take non-null-typed bodies and were not probed; a crawl that
+  reads 96 GET routes is not every read; and — as before — every route still commits before
+  FastAPI validates the response.
 
