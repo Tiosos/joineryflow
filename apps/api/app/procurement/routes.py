@@ -402,11 +402,18 @@ def decide_approval(
         raise HTTPException(400, "This approval has already been acted on")
 
     new_status = "Approved" if action.decision == "approve" else "Rejected"
+    po = q.get_po_budget_fields(db, wf["po_id"]) if new_status == "Approved" else None
+    # `0031` made cost_center_id nullable (Q563), but approving commits budget
+    # against a cost centre, so refuse before anything is written.
+    if po and po["cost_center_id"] is None:
+        raise HTTPException(
+            409,
+            {"code": "NO_COST_CENTRE", "message": "Assign a cost centre to this order before approving it"},
+        )
     q.update_workflow_decision(db, workflow_id, new_status, action.comments)
     q.update_po_status(db, wf["po_id"], new_status)
 
     if new_status == "Approved":
-        po = q.get_po_budget_fields(db, wf["po_id"])
         if po:
             q.commit_budget(
                 db,
