@@ -230,6 +230,34 @@ def patch_module(
     return get_module(db, module_id=module_id, workspace_id=workspace_id)
 
 
+def _module_delete_counts(db: Session, *, module_id: int) -> dict:
+    """What deleting a module takes with it besides the module row: its parts, and
+    its *live* comments (replies included). A comment cascades with its module
+    (migration 0043); soft-deleted ones are already gone from every screen, so
+    they are not counted — the same rule the CV replace warning uses."""
+    row = db.execute(
+        text(
+            """
+            SELECT (SELECT count(*) FROM parts WHERE module_id = :mid) AS parts,
+                   (SELECT count(*) FROM comment
+                     WHERE module_id = :mid AND deleted_at IS NULL) AS live_comments
+            """
+        ),
+        {"mid": module_id},
+    ).mappings().one()
+    return {"parts": row["parts"], "live_comments": row["live_comments"]}
+
+
+def module_delete_impact(
+    db: Session, *, module_id: int, workspace_id: int
+) -> dict | None:
+    """Read-only preview of `delete_module`: `{parts, live_comments}`, or None if
+    the module is not a Joinery Item's in this workspace."""
+    if _item_id_for_module(db, module_id=module_id, workspace_id=workspace_id) is None:
+        return None
+    return _module_delete_counts(db, module_id=module_id)
+
+
 def delete_module(
     db: Session,
     *,
@@ -237,13 +265,16 @@ def delete_module(
     workspace_id: int,
     actor_id: int,
 ) -> str:
-    """Delete a module (and its parts via CASCADE). Returns 'OK' or 'NOT_FOUND'.
+    """Delete a module (and its parts and comments via CASCADE). Returns 'OK' or
+    'NOT_FOUND'.
 
-    Writes audit_log + item_edit_log BEFORE delete.
+    Writes audit_log + item_edit_log BEFORE delete. The audit payload records how
+    many parts and live comments went with it, counted before the DELETE.
     """
     item_id = _item_id_for_module(db, module_id=module_id, workspace_id=workspace_id)
     if item_id is None:
         return "NOT_FOUND"
+    counts = _module_delete_counts(db, module_id=module_id)
 
     module_no = db.execute(
         text("SELECT module_no FROM modules WHERE module_id = :mid"),
@@ -256,7 +287,9 @@ def delete_module(
         actor_id=actor_id,
         event="module.delete",
         target=str(module_id),
-        payload={"item_id": item_id, "module_no": module_no},
+        payload={"item_id": item_id, "module_no": module_no,
+                 "deleted_parts": counts["parts"],
+                 "deleted_comment_count": counts["live_comments"]},
     )
     write_edit_log(
         db,

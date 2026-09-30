@@ -367,3 +367,102 @@ def test_editor_403_on_part_patch():
 
     r = c_editor.patch(f"/parts/{part_id}", json={"qty": 99})
     assert r.status_code == 403, r.text
+
+
+# ── Delete-module warning (impact lookup + audit counts) ───────────────────────
+
+
+def _module_with_threads():
+    """A drafter, their workspace, and a module holding 2 parts and threads: two
+    live top-level comments, a live reply, and a soft-deleted one (3 are live).
+    A second module of the same item carries a comment that must not be counted."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=wid * 100 + 1)
+        mid = _seed_module(db, item_id=iid, module_no="M1", name="Carcass")
+        other = _seed_module(db, item_id=iid, module_no="M2", name="Doors")
+        _seed_part(db, module_id=mid, part_name="Side L")
+        _seed_part(db, module_id=mid, part_name="Side R")
+
+        def add(module_id, body, parent=None, deleted=False):
+            return db.execute(
+                text(
+                    """
+                    INSERT INTO comment(workspace_id, module_id, author_id, body,
+                                        parent_comment_id, deleted_at)
+                    VALUES (:w, :m, :u, :b, :p, CASE WHEN :d THEN now() END)
+                    RETURNING comment_id
+                    """
+                ),
+                {"w": wid, "m": module_id, "u": uid, "b": body, "p": parent, "d": deleted},
+            ).scalar()
+
+        first = add(mid, "first")
+        add(mid, "second")
+        add(mid, "a reply", parent=first)
+        add(mid, "soft deleted", deleted=True)
+        add(other, "on the other module")
+        db.commit()
+    finally:
+        db.close()
+    return c, wid, uid, iid, mid
+
+
+def test_delete_impact_counts_parts_and_live_comments_of_this_module_only():
+    c, _wid, _uid, _iid, mid = _module_with_threads()
+    r = c.get(f"/modules/{mid}/delete-impact")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"parts": 2, "live_comments": 3}
+
+
+def test_delete_impact_is_zero_for_an_empty_module():
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, wid=wid, uid=uid)
+        iid = _insert_item(db, project_id=pid, num=wid * 100 + 2)
+        mid = _seed_module(db, item_id=iid)
+    finally:
+        db.close()
+    assert c.get(f"/modules/{mid}/delete-impact").json() == {"parts": 0, "live_comments": 0}
+
+
+def test_delete_impact_has_the_deletes_gate_and_is_workspace_scoped():
+    c, _wid, _uid, _iid, mid = _module_with_threads()
+    # same gate as DELETE /modules/{mid}: drafter / manager / admin only
+    for role in ("editor", "viewer"):
+        other, *_ = _login(role=role)
+        assert other.get(f"/modules/{mid}/delete-impact").status_code == 403
+    # another workspace's drafter cannot see it, and an unknown id is 404 too
+    theirs, *_ = _login(role="drafter")
+    assert theirs.get(f"/modules/{mid}/delete-impact").status_code == 404
+    assert c.get("/modules/99999999/delete-impact").status_code == 404
+
+
+def test_delete_module_records_what_went_with_it_and_still_answers_204():
+    c, wid, _uid, _iid, mid = _module_with_threads()
+    r = c.delete(f"/modules/{mid}")
+    assert r.status_code == 204, r.text
+    db = SessionLocal()
+    try:
+        payload = db.execute(
+            text("SELECT payload FROM audit_log WHERE event = 'module.delete' AND target = :t"),
+            {"t": str(mid)},
+        ).scalar()
+        parts_left = db.execute(
+            text("SELECT count(*) FROM parts WHERE module_id = :m"), {"m": mid}
+        ).scalar()
+        comments_left = db.execute(
+            text("SELECT count(*) FROM comment WHERE module_id = :m"), {"m": mid}
+        ).scalar()
+        other_comments = db.execute(
+            text("SELECT count(*) FROM comment WHERE workspace_id = :w"), {"w": wid}
+        ).scalar()
+    finally:
+        db.close()
+    assert payload["deleted_parts"] == 2
+    assert payload["deleted_comment_count"] == 3        # live only: the soft-deleted one is not counted
+    assert parts_left == 0 and comments_left == 0        # the cascade took every row, soft-deleted too
+    assert other_comments == 1                           # the other module's thread survives

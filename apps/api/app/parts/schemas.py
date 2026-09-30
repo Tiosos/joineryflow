@@ -27,6 +27,13 @@ class PatchModuleIn(BaseModel):
     notes: str | None = None
 
 
+class ModuleDeleteImpactOut(BaseModel):
+    """What deleting a module would take with it (besides the module itself): its
+    parts, and its live comments — replies included, soft-deleted ones not."""
+    parts: int
+    live_comments: int
+
+
 _PaintInstruction = Literal["NONE", "DOUBLE_SIDE", "SINGLE_SIDE", "EDGE_ONLY"]
 
 

@@ -257,6 +257,13 @@ export interface ModuleOut {
   parts: PartOut[];
 }
 
+/** What deleting a module would take with it (besides the module): its parts and
+ *  its live comments, replies included. `GET /modules/{id}/delete-impact`. */
+export interface ModuleDeleteImpact {
+  parts: number;
+  live_comments: number;
+}
+
 export interface HardwareLineOut {
   id: number;
   catalog_id: number;

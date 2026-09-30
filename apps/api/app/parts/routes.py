@@ -1,8 +1,9 @@
 """FastAPI routes for modules + parts CRUD.
 
-6 endpoints:
+7 endpoints:
   POST   /items/{id}/modules          -> create module
   PATCH  /modules/{mid}               -> patch module
+  GET    /modules/{mid}/delete-impact -> what deleting it would take with it
   DELETE /modules/{mid}               -> delete module
   POST   /modules/{mid}/parts         -> create part
   PATCH  /parts/{pid}                 -> patch part
@@ -24,10 +25,17 @@ from .queries import (
     delete_part,
     get_module,
     get_part,
+    module_delete_impact,
     patch_module,
     patch_part,
 )
-from .schemas import CreateModuleIn, CreatePartIn, PatchModuleIn, PatchPartIn
+from .schemas import (
+    CreateModuleIn,
+    CreatePartIn,
+    ModuleDeleteImpactOut,
+    PatchModuleIn,
+    PatchPartIn,
+)
 
 router = APIRouter(prefix="", tags=["parts"])
 
@@ -85,6 +93,24 @@ def patch_module_route(
         raise HTTPException(status_code=404, detail="module not found")
     db.commit()
     return result
+
+
+@router.get(
+    "/modules/{mid}/delete-impact",
+    response_model=ModuleDeleteImpactOut,
+    dependencies=[Depends(require_drafter())],
+)
+def module_delete_impact_route(
+    mid: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Read-only preview for the delete confirmation. Same gate as the delete it
+    warns about; another workspace's module is a 404."""
+    impact = module_delete_impact(db, module_id=mid, workspace_id=user.workspace_id)
+    if impact is None:
+        raise HTTPException(status_code=404, detail="module not found")
+    return impact
 
 
 @router.delete(

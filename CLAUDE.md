@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 19 Playwright specs / 60 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 20 Playwright specs / 64 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -3786,9 +3786,8 @@ since been built.**
     ids and not how many comments went with them. **CV re-import is now covered — see
     *Replace warns about the comments it deletes* in the CV Import section**: the
     wizard warns, and the count is on the commit response and both audit rows.
-    **Still open:** deleting a single module through `DELETE
-    /modules/{mid}` (`parts/queries.py`) deletes its thread with no warning — the
-    item editor has no delete-module button today, so only an API caller can.
+    **Deleting a single module is now covered too — see *Delete module asks
+    first* below** (it also gained the UI control it never had).
   - **No comment counts for modules or revisions.** The Areas & Rooms card has
     badges (`GET /projects/{pid}/comment-counts`); the module list and the
     revision history strip do not, so a thread is found by opening it (or by a
@@ -3803,3 +3802,81 @@ since been built.**
   threads; counts / badges on the module list and revision strip; everything the
   *Comments* section already defers (attachments, decisions, internal notes,
   discussion areas, §30's rules engine).
+
+## Delete module asks first (Plan V1 §29 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is a warning before deleting a single module").
+> It closed the last gap *Replace warns about the comments it deletes* left open,
+> but the request assumed something that was not true: **there was no way to
+> delete a module from the UI.** `DELETE /modules/{mid}` existed, `PM.deleteModule`
+> was defined in `pm-fetch.ts`, and nothing called it (`ModuleTree` has no delete
+> control). A warning needs something to warn before, so the user was asked before
+> any code was written; the three answers below are **settled decisions**, not
+> assumptions. No migration, no spec or plan doc; this section is its record.
+
+- **Settled decisions (user).**
+  1. **Scope: add a Delete module control and a confirm dialog** — the first way
+     to delete a module from the UI, so this is a new capability, not only a
+     warning.
+  2. **Advisory only, not enforced by the API** — the same call as the CV
+     re-import warning. `DELETE /modules/{mid}` keeps deleting exactly as before;
+     the dialog is the safeguard.
+  3. **The dialog names parts and comments**, not comments alone.
+- **Backend — `apps/api/app/parts/`.**
+  - `GET /modules/{mid}/delete-impact` → `{parts, live_comments}`. Read-only, gated
+    `require_drafter()` — **the delete's own gate** (drafter / manager / admin) —
+    and workspace-scoped through `_item_id_for_module` (Joinery Items only; another
+    workspace's module and an unknown id are both 404). Declared beside the other
+    `/modules/{mid}` routes; no path collides (`PATCH /modules/{mid}` and
+    `POST /modules/{mid}/parts` differ by method / suffix).
+  - **What is counted.** `parts` = part **rows** (the number a person sees in the
+    grid), not the sum of their `qty`. `live_comments` = comments on the module
+    with `deleted_at IS NULL`, **replies included** — the same rule as the CV
+    replace warning. The cascade also removes soft-deleted rows, so the true row
+    count can be higher.
+  - **The count is recorded, not returned.** `delete_module` counts *before* the
+    DELETE and writes `deleted_parts` and `deleted_comment_count` into the
+    `module.delete` audit payload. The route still answers **`204` with no
+    body**: changing it to `200` would change what existing API callers see, and
+    the user chose "advisory, existing callers keep working". (The option offered
+    to the user said the count would also be "returned"; that half was
+    deliberately **not** done, for the reason above.)
+- **Web — `cutlist/DeleteModuleDialog.tsx` + `CutlistTab.tsx`.** A **Delete
+  module** button in a header row above the active module's parts grid
+  (`data-testid="delete-module"`), shown to drafter / manager / admin only — the
+  web mirrors `require_drafter`, the API decides. It opens a confirm dialog that
+  reads `delete-impact` **fresh when it opens**: "This permanently deletes the
+  module and its **3 parts** and **3 comments**. It can't be undone.", or "This
+  module is empty." when both are 0. If the lookup fails it says "Couldn't check
+  what this module contains…" instead of implying the module is empty. The
+  Delete button stays disabled until the numbers (or the failure) are on screen,
+  so the person always sees them first; Cancel and Escape close it. A `404` on
+  delete (already gone elsewhere) counts as success.
+  - **After a delete the tab refreshes and selects a neighbour in state — and
+    deliberately leaves the URL alone.** `router.refresh()` followed by
+    `history.replaceState` is the race that broke `+ Add module` (see *Comment
+    threads on Modules…*); a stale `?module=<deleted id>` is harmless because
+    `moduleFrom` only accepts ids still in the item. Deleting the last module
+    returns to the empty state.
+- **Tests.** Four new in `test_parts_routes.py`: the impact counts the module's
+  parts and live comments only (replies counted, a soft-deleted comment and a
+  sibling module's comment not); an empty module reads 0/0; the gate (editor and
+  viewer 403, another workspace and an unknown id 404); and the delete writes the
+  counts to the audit row, still answers 204 and cascades — **all four fail
+  against the unfixed source** (the six existing parts tests pass as controls).
+  `tests/e2e/module_delete.spec.ts` (4), run twice back to back against a live
+  migrated, seeded stack: the full add → comment → warning → Cancel → Delete cycle
+  on `JO-TP01` on a module the spec creates (so nothing seeded is deleted); the
+  parts count on a seeded module (Cancel only); the lookup-failed message via a
+  route intercept; and editor / viewer are not offered the button.
+- **Known gaps, recorded.**
+  - **A module can still be deleted on an item that is Hard-Locked, Approval-Locked
+    or Controlled-Locked.** `delete_module` never consulted any lock — §L's scope
+    is `PATCH /items/{id}` alone (see *Locking + Concurrency*) — and this change
+    did not widen it. Now that there is a button, the gap is reachable from the UI.
+  - The count is live comments only (above); an API caller who skips the
+    lookup gets no warning at all — by the user's choice.
+  - No undo: deletion is permanent, as it always was.
+- **Out of scope (deferred):** enforcing an acknowledgement in the API; returning
+  the counts in the DELETE response; a warning before deleting a **part** (a
+  single row, nothing cascades from it).
