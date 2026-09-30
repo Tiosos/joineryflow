@@ -366,7 +366,8 @@ def submit_for_approval(db: Session, po_id: int, approver_id: int) -> int:
 def mark_delivered(
     db: Session, po_id: int, arrived_date: Optional[date]
 ) -> Optional[dict]:
-    db.execute(
+    """Returns the order's budget fields, or None when it was not Approved (nothing changed)."""
+    result = db.execute(
         text(
             """
             UPDATE purchase_orders
@@ -378,6 +379,8 @@ def mark_delivered(
         ),
         {"id": po_id, "arr": arrived_date},
     )
+    if not result.rowcount:
+        return None
     row = db.execute(
         text(
             "SELECT cost_center_id, grand_total FROM purchase_orders"
