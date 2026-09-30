@@ -110,7 +110,11 @@ export function EditorTabs({
           <MaterialTakeTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
         {current === "attachments" && (
-          <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
+          <AttachmentsTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
         )}
         {current === "actions" && (
           <ActionsTab

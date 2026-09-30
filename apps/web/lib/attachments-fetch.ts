@@ -20,8 +20,12 @@ export async function bindAttachment(
     body: JSON.stringify({ file_blob_id: fileBlobId }),
   });
   if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail?.detail ?? `bind failed: ${r.status}`);
+    const body = await r.json().catch(() => ({}));
+    // status + body ride on the error so a 409 lock refusal can be worded (lockFromError)
+    throw Object.assign(
+      new Error(typeof body?.detail === "string" ? body.detail : `bind failed: ${r.status}`),
+      { status: r.status, body },
+    );
   }
 }
 
@@ -33,6 +37,7 @@ export async function clearAttachment(
     method: "DELETE",
   });
   if (!r.ok && r.status !== 404) {
-    throw new Error(`clear failed: ${r.status}`);
+    const body = await r.json().catch(() => ({}));
+    throw Object.assign(new Error(`clear failed: ${r.status}`), { status: r.status, body });
   }
 }

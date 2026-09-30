@@ -5,21 +5,28 @@ import { useCallback, useEffect, useState } from "react";
 import { getAttachments } from "@/lib/attachments-fetch";
 import type { AttachmentsBundle } from "@/lib/attachments-types";
 import { ATTACHMENT_KINDS, COMBINED_PDF_KINDS } from "@/lib/attachments-types";
+import type { ItemOut } from "@/lib/pm-types";
 import { attachmentsCountLabel } from "@/lib/print";
 
 import AttachmentSlotCard from "./AttachmentSlotCard";
+import { moduleLockReason } from "./cutlist/moduleLock";
 
 const WRITER_ROLES = new Set(["drafter", "manager", "admin"]);
 
 interface Props {
-  itemId: number;
+  item: ItemOut;
+  currentUserId: number | null;
   currentUserRole: string | null;
 }
 
-export default function AttachmentsTab({ itemId, currentUserRole }: Props) {
+export default function AttachmentsTab({ item, currentUserId, currentUserRole }: Props) {
+  const itemId = item.id;
   const [bundle, setBundle] = useState<AttachmentsBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const canWrite = currentUserRole != null && WRITER_ROLES.has(currentUserRole);
+  // Hard, Approval and someone else's Controlled Lock refuse a slot write; the API
+  // decides, this only says why the controls are off.
+  const lockReason = canWrite ? moduleLockReason(item, currentUserId, currentUserRole) : null;
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -42,6 +49,15 @@ export default function AttachmentsTab({ itemId, currentUserRole }: Props) {
         <p className="mt-1 text-sm text-h-muted">{attachmentsCountLabel(bundle)}</p>
       </header>
 
+      {lockReason && (
+        <p
+          data-testid="attachments-locked"
+          className="rounded-md border border-h-line bg-h-surface px-3 py-2 text-xs text-h-muted"
+        >
+          {lockReason}
+        </p>
+      )}
+
       {error && <p className="text-sm text-rose-700">{error}</p>}
 
       {!bundle && !error && <p className="text-sm text-h-muted">Loading…</p>}
@@ -57,6 +73,7 @@ export default function AttachmentsTab({ itemId, currentUserRole }: Props) {
                 itemId={itemId}
                 slot={slot}
                 canWrite={canWrite}
+                lockReason={lockReason}
                 onChanged={refresh}
                 usedByCombined={COMBINED_PDF_KINDS.includes(kind)}
               />

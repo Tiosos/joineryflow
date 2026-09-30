@@ -1,12 +1,12 @@
 import type { ItemOut } from "@/lib/pm-types";
 
 /** What a lock is being checked against. "content" is the item's cutlist (modules,
- *  parts) and hardware, which every lock covers. "status" is its status and stage
+ *  parts), hardware, attachment slots and document register, which every lock covers. "status" is its status and stage
  *  dates, which the Approval Lock does not cover: changing status is how an
  *  approved item is unlocked, and production dates follow approval. */
 export type LockScope = "content" | "status";
 
-/** Why this item's cutlist (modules, parts) and hardware — or, with scope "status",
+/** Why this item's cutlist (modules, parts), hardware and attachments — or, with scope "status",
  *  its status and stage dates — cannot be changed, in words — or null if no
  *  lock applies. Mirrors `assert_item_content_unlocked` in the API (Hard Lock,
  *  Approval Lock, Controlled Lock held by someone else, where the owner and
@@ -41,10 +41,10 @@ export function lockMessage(
   switch (code) {
     case "HARD_LOCKED":
       return `This item is hard-locked. A manager or admin must unlock it before its ${
-        scope === "status" ? "status or stage dates" : "cutlist or hardware"
+        scope === "status" ? "status or stage dates" : "cutlist, hardware or attachments"
       } can be changed.`;
     case "APPROVAL_LOCKED":
-      return "This item is approved, which locks it. Move its status off Approved before changing its cutlist or hardware.";
+      return "This item is approved, which locks it. Move its status off Approved before changing its cutlist, hardware or attachments.";
     case "ITEM_LOCKED":
       return `${detail?.owner_name ?? "Another user"} has locked this item. Ask them, or a manager, to make the change or unlock the item.`;
     default:

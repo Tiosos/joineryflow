@@ -10,6 +10,8 @@ import type { AttachmentKind, AttachmentSlot } from "@/lib/attachments-types";
 import { KIND_LABELS } from "@/lib/attachments-types";
 import { uploadFile } from "@/lib/file-upload";
 
+import { lockFromError } from "./cutlist/moduleLock";
+
 // sketchup holds a .skp, cabvision a .cvj; the other three slots take a PDF
 // (item_attachments/queries.py::KIND_MIME is the real, server-side gate —
 // this is just a file-picker hint).
@@ -25,6 +27,8 @@ interface Props {
   itemId: number;
   slot: AttachmentSlot;
   canWrite: boolean;
+  /** Why a lock on the item refuses writes (from `moduleLockReason`), or null. */
+  lockReason?: string | null;
   onChanged: () => Promise<void>;
   usedByCombined: boolean;
 }
@@ -46,6 +50,7 @@ export default function AttachmentSlotCard({
   itemId,
   slot,
   canWrite,
+  lockReason = null,
   onChanged,
   usedByCombined,
 }: Props) {
@@ -68,7 +73,7 @@ export default function AttachmentSlotCard({
       await bindAttachment(itemId, slot.kind, blob.file_blob_id);
       await onChanged();
     } catch (ex) {
-      setErr(String(ex));
+      setErr(lockFromError(ex) ?? String(ex));
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -83,7 +88,7 @@ export default function AttachmentSlotCard({
       await clearAttachment(itemId, slot.kind);
       await onChanged();
     } catch (ex) {
-      setErr(String(ex));
+      setErr(lockFromError(ex) ?? String(ex));
     } finally {
       setBusy(false);
     }
@@ -135,7 +140,8 @@ export default function AttachmentSlotCard({
           <>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !!lockReason}
+              title={lockReason ?? undefined}
               onClick={pickFile}
               className="rounded bg-h-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
             >
@@ -144,7 +150,8 @@ export default function AttachmentSlotCard({
             {populated && (
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !!lockReason}
+                title={lockReason ?? undefined}
                 onClick={onDelete}
                 className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-rose-700 hover:bg-h-line/40 disabled:opacity-50"
               >
