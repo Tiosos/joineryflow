@@ -255,6 +255,13 @@ def _vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> b
     ).first() is not None
 
 
+def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
+        {"p": project_id, "w": workspace_id},
+    ).first() is not None
+
+
 def _category_exists(db: Session, category_key: str) -> bool:
     """Any row of the `order_category` lookup (0031), archived or not: the FK the
     column carries accepts an archived key, and this only turns what would be a
@@ -273,11 +280,17 @@ def create_order(
     actor_id: int,
 ) -> tuple[str, dict | None]:
     """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None) |
-    ('UNKNOWN_CATEGORY', None)."""
+    ('UNKNOWN_CATEGORY', None) | ('PROJECT_NOT_FOUND', None)."""
     if not _vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
         return "VENDOR_NOT_FOUND", None
     if not _category_exists(db, payload.category):
         return "UNKNOWN_CATEGORY", None
+    # An explicit project must be this workspace's; the item-derived one already is
+    # (it is resolved through the item's own workspace join below).
+    if payload.project_id is not None and not _project_in_workspace(
+        db, project_id=payload.project_id, workspace_id=workspace_id
+    ):
+        return "PROJECT_NOT_FOUND", None
 
     project_id = payload.project_id
     project_name = payload.project_name

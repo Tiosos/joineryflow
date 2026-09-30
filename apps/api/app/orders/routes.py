@@ -120,6 +120,9 @@ def create_order_route(
     if code == "ITEM_NOT_FOUND":
         raise HTTPException(404, {"code": "ITEM_NOT_FOUND",
                                   "item_id": payload.item_id})
+    if code == "PROJECT_NOT_FOUND":
+        raise HTTPException(404, {"code": "PROJECT_NOT_FOUND",
+                                  "project_id": payload.project_id})
     if code == "UNKNOWN_CATEGORY":
         raise HTTPException(422, {"code": "UNKNOWN_CATEGORY",
                                   "category": payload.category})

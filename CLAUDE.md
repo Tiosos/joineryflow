@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 24 Playwright specs / 83 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 24 Playwright specs / 84 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -3615,13 +3615,12 @@ since been built.**
     closing the *class* means validating before `commit()`, a cross-cutting change.
     Other nullable columns that a response model types as non-null are worth
     auditing for the same poison.
-  - **`create_order` does not validate `project_id`** (found in review, then
-    measured): `POST /orders` with another workspace's `project_id` is a raw 500.
-    **Nothing persists and nothing leaks** — the failure is before the commit, no
-    row appears in either workspace's list, no name is returned — so it is another
-    unvalidated-input 500, not an isolation break (review suspected the latter;
-    the measurement says otherwise). Not fixed: outside what the user approved,
-    and `PatchOrderIn` does not accept `project_id` at all.
+  - ~~**`create_order` does not validate `project_id`**~~ **Closed — see *Small
+    fixes: order `project_id` and the CV `ITEM_NOT_EMPTY` message* below.**
+    (Found in review, then measured: `POST /orders` with another workspace's
+    `project_id` was a raw 500, and **nothing persisted and nothing leaked** — an
+    unvalidated-input 500, not an isolation break. `PatchOrderIn` does not accept
+    `project_id` at all, so only create was exposed.)
   - **`PATCH` answers a bad `vendor_id` with `404`** (mirroring `create_order`'s
     `VENDOR_NOT_FOUND`, and what the user was told when asked), while the same
     handler answers an unknown `category` with `422`. A client keying on the bare
@@ -4038,11 +4037,11 @@ since been built.**
   - ~~`PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
     lock.~~ **Closed for the Hard and Controlled locks — see *Lock checks on status
     and lifecycle* below.**
-  - **`CvImportDialog`'s `ITEM_NOT_EMPTY` branch looks dead** (found while adding the
-    lock branch, deliberately not fixed): it reads `e.detail.code`, but
-    `cv-fetch.ts` puts the whole parsed body (`{detail: {code}}`) in `e.detail`, so
-    the friendly "Tick Replace existing modules" message never shows and the person
-    sees `commitCvImport: 409`. The lock branch reads the right shape.
+  - ~~**`CvImportDialog`'s `ITEM_NOT_EMPTY` branch looks dead**~~ **Closed — see
+    *Small fixes: order `project_id` and the CV `ITEM_NOT_EMPTY` message* below.**
+    (It read `e.detail.code`, but `cv-fetch.ts` keeps the whole parsed body
+    `{detail: {code}}` in `e.detail`, so the friendly message never showed and the
+    person saw `commitCvImport: 409`.)
   - **The notice is hidden from read-only roles**, while their controls are disabled
     too — a viewer on a locked item sees disabled controls and the lock banner above
     the page, not the cutlist notice.
@@ -4384,3 +4383,43 @@ since been built.**
   - `moduleLock.ts` is named for modules but now serves hardware, status, stage dates and attachments.
 - **Out of scope (deferred):** a web UI for the Document Register; gating `POST /files`; a request flow
   for a refused write; the other item-scoped writes named above.
+
+## Small fixes: order `project_id` and the CV `ITEM_NOT_EMPTY` message (no migration) — shipped
+
+> Chosen by the user ("go with the next recommendation tasks" — the first item of the
+> recommendation, a small bug-fix change with two items). Both were **already recorded
+> here as known gaps** (*Order field validation* and *Lock checks on the other module and
+> part writes*) after being found and measured, and neither needed a decision: the fix in
+> each case was the behaviour the surrounding code already promised. No migration, no spec
+> or plan doc; this section is its written record.
+
+- **`POST /orders` validates an explicit `project_id`.** `orders.queries._project_in_workspace`
+  (the sibling of `_vendor_in_workspace`) is checked in `create_order` after the vendor and
+  category checks; an unknown **or another workspace's** project answers
+  `404 {code: "PROJECT_NOT_FOUND", project_id}` — the create route's own `VENDOR_NOT_FOUND` /
+  `ITEM_NOT_FOUND` precedent, so a client sees one shape for "the thing you named is not
+  yours". *That the code is a 404 rather than a 422 is the precedent, not a fresh decision.*
+  Nothing is created, and the foreign project's name never appears in the response. Not checked,
+  because already safe: an item-derived project (resolved through the item's own workspace join)
+  and no project at all (Q554's project-less order, which reaches its workspace through its
+  vendor). **The check order is now vendor → category → project → item.**
+- **The CV wizard's `ITEM_NOT_EMPTY` message now shows.** `CvImportDialog` read
+  `e.detail.code`; the body FastAPI sends is `{detail: {code}}` and `cv-fetch.ts` keeps all of it
+  on `e.detail`, so the code sits at `e.detail.detail.code` (the shape `lockFromError` already
+  reads). One line. It is reachable when the page went stale — someone else added modules after
+  the wizard opened, since the Replace checkbox is only offered when the item already has modules.
+- **Tests.** `test_order_routes.py` (+5): another workspace's project refused 404 with the foreign
+  name absent, nothing created and the list still empty; an unknown project refused; this
+  workspace's project still creates; no project and the item-derived project still create; an
+  unknown vendor still answers first. **The two refusal tests fail against the unfixed source**
+  (they surfaced the raw `IntegrityError`); the other three are controls. `cv_import.spec.ts` (+1)
+  mocks the API's exact 409 body and asserts the friendly message appears and `commitCvImport: 409`
+  does not — **it fails against the unfixed web code** and passes with the fix.
+- **Found while verifying, not fixed: `cv_import.spec.ts`'s existing test is racy in dev mode.**
+  It clicks the row's `/items/…` link the instant the row is visible; against a freshly started
+  `next dev` the page is not yet hydrated, the click does nothing, and the test times out on the
+  URL assertion (a diagnostic run with a 3 s pause before the click navigates fine). The new test
+  reads the `href` and `goto`s it, as the lock specs do; the old one was left alone (it fails
+  before reaching any code this change touches). e2e is not part of CI (which runs pytest + `tsc`).
+- **Known gaps, recorded.** `PATCH /orders/{id}` still answers a bad `vendor_id` with `404` while an
+  unknown `category` is a `422` (unchanged, noted under *Order field validation*).
