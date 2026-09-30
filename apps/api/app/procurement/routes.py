@@ -13,7 +13,7 @@ Workspace isolation: every order/attachment/approval route either passes
 queries.py.
 """
 import os
-import shutil
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..files.validators import MAX_BYTE_SIZE
 from . import queries as q
 from .schemas import (
     ApprovalDecision,
@@ -70,8 +71,8 @@ def list_orders(
     search: Optional[str] = None,
     required_from: Optional[date] = None,
     required_to: Optional[date] = None,
-    limit: int = Query(50, le=500),
-    offset: int = 0,
+    limit: int = Query(50, ge=0, le=500),
+    offset: int = Query(0, ge=0),
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
@@ -108,7 +109,7 @@ def get_order(
     return {
         "order": {**summary, **extra},
         "line_items": q.get_order_lines(db, po_id),
-        "attachments": q.get_order_attachments(db, po_id),
+        "attachments": q.get_order_attachments(db, po_id, workspace_id=user.workspace_id),
         "workflow": q.get_order_workflow(db, po_id),
     }
 
@@ -134,6 +135,10 @@ def create_order(
     po_id = q.insert_order(db, po_number, body)
     for line in payload.line_items:
         q.insert_line_item(db, po_id, line.model_dump())
+    # The MySQL triggers that summed the lines into `total_amount` were not ported (0002
+    # left it to the application and this route never did it), so every commitment and
+    # expenditure posted $0. The same rollup the v1 orders module uses.
+    q.recompute_total_amount(db, po_id=po_id)
     q.append_changelog(db, po_id, f"Created as Draft (PO {po_number})", payload.requester_id)
     db.commit()
     return {"po_id": po_id, "po_number": po_number, "status": "Draft"}
@@ -153,8 +158,35 @@ def update_order(
         raise HTTPException(400, "No fields to update")
     for k, v in list(fields.items()):
         fields[k] = _enum_value(v)
+
+    # The same rule as the v1 orders module: a Cancelled / Delivered order is read-only
+    # except for `status`, the deliberate way back in. On any other order `status` is not
+    # writable here — it moves through submit / decide / deliver / delete, which post the
+    # budget rows; a PATCH used to jump Draft → Approved (no workflow, no commitment),
+    # → Delivered (no expenditure) or Approved → Cancelled (commitment left behind).
+    current = q.get_order_status_for_update(db, po_id)
+    if current in q.FROZEN_STATUSES:
+        blocked = sorted(k for k in fields if k != "status")
+        if blocked:
+            raise HTTPException(
+                409,
+                {"code": "ORDER_LOCKED", "status": current, "blocked_fields": blocked},
+            )
+    elif "status" in fields:
+        raise HTTPException(
+            409,
+            {
+                "code": "STATUS_NOT_PATCHABLE",
+                "status": current,
+                "message": "Status changes through submit, approve / reject, deliver or cancel",
+            },
+        )
+
     q.update_order_fields(db, po_id, fields)
-    q.append_changelog(db, po_id, f"Updated fields: {', '.join(fields.keys())}")
+    entry = f"Updated fields: {', '.join(fields.keys())}"
+    if "status" in fields:
+        entry += f" (status {current} → {fields['status']})"
+    q.append_changelog(db, po_id, entry)
     db.commit()
     return {"updated": True, "fields": list(fields.keys())}
 
@@ -208,6 +240,9 @@ def mark_delivered(
             float(po["grand_total"] or 0),
             "Expenditure",
         )
+        # The expenditure replaces the commitment; without this release the view counted
+        # the same order twice.
+        q.release_commitment(db, po_id, int(po["cost_center_id"]))
     q.append_changelog(db, po_id, entry)
     db.commit()
     return {"status": "Delivered"}
@@ -221,7 +256,16 @@ def cancel_order(
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
-    q.cancel_order(db, po_id)
+    if not q.cancel_order(db, po_id):
+        # Only a Draft, Rejected or Hold order can be cancelled. This used to answer 200
+        # "Cancelled" and log it for any status, with the order unchanged.
+        raise HTTPException(
+            409,
+            {
+                "code": "BAD_STATUS",
+                "message": "Only a Draft, Rejected or Hold order can be cancelled",
+            },
+        )
     q.append_changelog(db, po_id, "Cancelled")
     db.commit()
     return {"status": "Cancelled"}
@@ -316,7 +360,15 @@ def list_attachments(
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
-    return q.list_attachments(db, po_id)
+    return q.list_attachments(db, po_id, workspace_id=user.workspace_id)
+
+
+def _assert_order_not_frozen(db: Session, po_id: int) -> None:
+    """Attachments are part of the order: a Cancelled / Delivered one is read-only (the
+    rule the v1 orders module applies to its lines), and this route took none of it."""
+    status = q.get_order_status_for_update(db, po_id)
+    if status in q.FROZEN_STATUSES:
+        raise HTTPException(409, {"code": "ORDER_LOCKED", "status": status})
 
 
 @router.post("/orders/{po_id}/attachments", status_code=201)
@@ -330,32 +382,51 @@ async def upload_attachment(
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
+    # `uploaded_by` is joined to `app_user.full_name` when the attachments are listed, so an
+    # unvalidated id leaked another workspace's user name; a nonexistent one was a raw 500
+    # after the file had already been written.
+    if uploaded_by is not None and not q.user_in_workspace(
+        db, user_id=uploaded_by, workspace_id=user.workspace_id
+    ):
+        raise HTTPException(422, "uploader not found in this workspace")
+    _assert_order_not_frozen(db, po_id)
+
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     target_dir = UPLOAD_DIR / str(po_id)
     target_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file.filename or "attachment").name
-    target = target_dir / safe_name
+    # A unique name on disk: two uploads called `quote.pdf` used to share one path, the
+    # second silently replacing the first's content, and deleting one removed both.
+    target = target_dir / f"{uuid.uuid4().hex}_{safe_name}"
 
-    with target.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
-    size = target.stat().st_size
-
-    attachment_id = q.insert_attachment(
-        db,
-        po_id=po_id,
-        attachment_type=attachment_type.value,
-        file_name=safe_name,
-        file_size_bytes=size,
-        file_path=str(target),
-        uploaded_by=uploaded_by,
-    )
-    q.append_changelog(
-        db,
-        po_id,
-        f"Attached {attachment_type.value}: {safe_name}",
-        uploaded_by,
-    )
-    db.commit()
+    try:
+        size = 0
+        with target.open("wb") as out:
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_BYTE_SIZE:
+                    raise HTTPException(413, f"file size exceeds {MAX_BYTE_SIZE} bytes")
+                out.write(chunk)
+        attachment_id = q.insert_attachment(
+            db,
+            po_id=po_id,
+            attachment_type=attachment_type.value,
+            file_name=safe_name,
+            file_size_bytes=size,
+            file_path=str(target),
+            uploaded_by=uploaded_by,
+        )
+        q.append_changelog(
+            db,
+            po_id,
+            f"Attached {attachment_type.value}: {safe_name}",
+            uploaded_by,
+        )
+        db.commit()
+    except Exception:
+        # Whatever failed (too large, a constraint), do not leave the file behind.
+        target.unlink(missing_ok=True)
+        raise
     return {
         "attachment_id": attachment_id,
         "po_id": po_id,
@@ -377,8 +448,15 @@ def delete_attachment(
     row = q.get_attachment(db, po_id, attachment_id)
     if not row:
         raise HTTPException(404, "Attachment not found")
+    _assert_order_not_frozen(db, po_id)
     try:
-        if row["file_path"] and Path(row["file_path"]).exists():
+        # Uploads made before each got its own file name can share one path with another
+        # row; the file stays while any other row still points at it.
+        if (
+            row["file_path"]
+            and Path(row["file_path"]).exists()
+            and not q.attachment_file_is_shared(db, row["file_path"], attachment_id)
+        ):
             Path(row["file_path"]).unlink()
     except OSError:
         pass
@@ -414,8 +492,18 @@ def decide_approval(
         raise HTTPException(400, "This approval has already been acted on")
 
     new_status = "Approved" if action.decision == "approve" else "Rejected"
+    # Only a Pending order can be decided. This used to move the order whatever its
+    # status, so approving a Cancelled or Delivered order made it Approved again (and
+    # posted a commitment for it). Checked first so a refusal writes nothing.
+    if not q.update_po_status(db, wf["po_id"], new_status, from_status="Pending"):
+        raise HTTPException(
+            409,
+            {
+                "code": "BAD_STATUS",
+                "message": "Only a Pending order can be approved or rejected",
+            },
+        )
     q.update_workflow_decision(db, workflow_id, new_status, action.comments)
-    q.update_po_status(db, wf["po_id"], new_status)
 
     entry = f"{new_status} by approver #{action.approver_id}"
     if new_status == "Approved":
@@ -441,7 +529,7 @@ def decide_approval(
 @router.get("/approvals/history")
 def approval_history(
     approver_id: Optional[int] = None,
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=0, le=200),
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):

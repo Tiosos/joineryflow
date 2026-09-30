@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0045`. Head is `0045_po_summary_left_join_cost_centre` (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0046`. Head is `0046_budget_release_and_po_totals` (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 26 Playwright specs / 95 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
@@ -195,7 +195,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0045
+make migrate      # apply Alembic 0001 -> 0046
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -4762,9 +4762,8 @@ since been built.**
     call, not a bug.
   - **No route assigns a cost centre to an existing order** (above). Not built; it is what would
     make "attach it later, then commit" possible.
-  - The legacy `/procurement/*` namespace still does not use the order-status guard
-    (*Purchase order status guard*) — `deliver` now checks Approved, but `PATCH /orders/{id}`
-    can still write a status and its fields on a Cancelled / Delivered order.
+  - ~~The legacy `/procurement/*` namespace still does not use the order-status guard.~~
+    **Closed — see *Legacy procurement audit* below.**
 
 ## Tracking modal shows the reference fields and JID (no migration, no API change) — shipped
 
@@ -4811,3 +4810,75 @@ since been built.**
   - The Estimator Notes box at the bottom of the left column renders as a narrow textarea under its label
     (an existing layout quirk in `Field`'s textarea branch, not touched).
 - **Out of scope (deferred):** editing from the modal; the two stub tabs.
+
+## Legacy procurement audit (`/procurement/*`, migration `0046`) — shipped
+
+> Chosen by the user ("go for the legacy procurement audit"), the follow-up the orders-with-no-cost-centre
+> work kept finding siblings for. Method: the null-write audit's — probe a scratch clone of the seeded
+> database, measure before and after, and only then fix. The scope and two policies were asked before any
+> code was written; the answers are **settled decisions**: fix **all four groups** below, PATCH `status`
+> **"keep it, like the v1 module"**, and a delivery **posts a negative `Release`**. The probe scripts were
+> throwaway and are not in the repo. The web app does not call this namespace (grep, and no e2e spec does),
+> so no web change was needed.
+
+- **Group 1 — clear defects.**
+  - **PO numbers.** `generate_po_number` used `MAX(...) + 1` while the v1 `orders/` module draws from
+    `po_number_seq` into the same table, so the two handed out the same number and the v1 create then failed
+    on the unique index. Legacy now uses `nextval('po_number_seq')` too (Q564). `0046` advances the sequence
+    past the highest `PO-YYYY-NNNN` already in use, because a database holding legacy-made numbers ahead of it
+    would keep colliding (found when the first suite run hit `PO-2026-0012`). Nothing is renumbered and the
+    sequence is never moved backwards.
+  - **Totals.** `POST /orders` and `duplicate` never set `purchase_orders.total_amount` (the MySQL triggers
+    were not ported), so every order with lines approved a **$0 Commitment**. Both now call the v1 module's
+    `_recompute_total_amount`. `0046` back-fills existing orders with lines and a $0 total; a figure anyone set
+    is never overwritten and `updated_at` is left alone. **Budget rows already posted at $0 are not rewritten**
+    (append-only ledger).
+  - **`cancel`** answered 200 "Cancelled" and logged it for any status with the order unchanged; it is now
+    `409 BAD_STATUS` unless the order is Draft, Rejected or Hold.
+  - **`decide`** moved the order whatever its status (approving a Cancelled or Delivered order made it Approved
+    and posted a commitment); it now needs the order to be Pending (`409 BAD_STATUS`), checked **before** the
+    workflow row is touched so a refusal writes nothing. The pending-approvals queue lists Pending orders only.
+  - **Paging** (`limit` / `offset` / history `limit`) rejects negatives with 422 (raw 500 before).
+  - **Duplicate `line_number`s** in a create body are a 422 (raw unique-violation 500 before).
+  - **`duplicate`** now keeps `project_id`, `item_id`, `attributes` and each line's `attributes` /
+    `material_table` / `material_id`, which it used to drop.
+- **Group 2 — PATCH bypass.** `PATCH /orders/{id}` could jump Draft → Approved (no workflow, no commitment),
+  → Delivered (no expenditure) or Approved → Cancelled (commitment left behind), and could overwrite the
+  `changelog`. Now, the v1 *Purchase order status guard*'s rule:
+  - a **Cancelled / Delivered** order is read-only except `status` (`409 ORDER_LOCKED` with `blocked_fields`;
+    a mixed PATCH is refused whole);
+  - on any other order `status` is **not writable** here (`409 STATUS_NOT_PATCHABLE`) — it moves through
+    submit / decide / deliver / cancel, which post the budget rows;
+  - `changelog` is read-only (422). A status change on a frozen order appends `(status X → Y)` to the log.
+- **Group 3 — budget double count (migration `0046`).** Approve posts a `Commitment` and deliver an
+  `Expenditure`, and nothing took the commitment back, so a delivered $110 order read as $220 in
+  `v_budget_utilisation`. `budget_transactions` already allowed a `Release` type nobody used. **Deliver now posts
+  a negative `Release`** for the outstanding commitment (`release_commitment`: the sum of the PO's Commitment
+  and Release rows, posted only when positive, so a second release is impossible and a partial one is exact),
+  and the view sums Commitment + Expenditure + Release. The downgrade restores the two-type view.
+- **Group 4 — attachments and hardening.**
+  - `uploaded_by` is validated against the caller's workspace (`422`); the listing's name join is
+    workspace-scoped for older rows, so a historic foreign id no longer leaks a name.
+  - Files get a unique on-disk name (`{uuid}_{name}`): two uploads called `quote.pdf` used to share a path, the
+    second replacing the first's bytes and deleting one removing both. Delete keeps a file another row still
+    points at (historic shared paths).
+  - Uploads are read in 1 MB chunks with the 25 MB `MAX_BYTE_SIZE` cap (`413`) and the file is removed if
+    anything fails after it was written. `file_path` is no longer in the listing.
+  - **Attachments on a Cancelled / Delivered order are read-only**, upload **and delete** (`409 ORDER_LOCKED`).
+    The user named uploads; blocking delete too was a call made while building.
+- **Tests** (`test_procurement_routes.py`, ~35 new; the file is 66). The new tests were run against the unfixed
+  source (queries / routes / schemas stashed): **36 fail, 30 pass** (the passes are controls). An existing RTO
+  filter test PATCHed `status` to stage its data; it now stages through SQL. Migration checked on a scratch
+  database: upgrade → downgrade → upgrade, the back-fill, and the sequence jump (12 → 500, never backwards).
+- **Known gaps, recorded.**
+  - **Reopening a frozen order through `PATCH status` can bypass the workflow and the budget** — that is the
+    user-chosen option: e.g. Delivered → Approved → deliver posts a second `Expenditure`, and no commitment is
+    posted on reopen.
+  - Workflow design left as found: any user with `orderbook:approve` can decide any workflow, the named approver
+    need not hold a role that can approve, self-approval is allowed, and a Rejected order cannot be resubmitted.
+  - Attachments still go to `./uploads` (CWD-relative), **not** the mounted `uploads` volume, and there is no
+    download route.
+  - The v1 `orders/` module can still set a Pending order's status directly, orphaning its workflow (the
+    pending-queue filter hides the effect).
+  - The legacy category enum has 6 of the 14 `order_category` keys.
+  - Historical Commitment / Expenditure rows posted at $0 remain.
