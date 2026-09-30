@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0045`. Head is `0045_po_summary_left_join_cost_centre` (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 26 Playwright specs / 93 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 26 Playwright specs / 95 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -4519,12 +4519,11 @@ since been built.**
   the live database: a Playwright timeout closes the request context, so the `finally` that unbinds cannot run.
   Cleaned by hand. If you run the spec with a short `--timeout`, check `item_attachment` for a stray `sketchup` row.
 - **Known gaps, recorded.**
-  - **The modal's other disabled fields are still hard-coded dashes**: Floor Plan, RLS, Joiery Details and
-    Cutlist Printed, although `ItemOut` has carried all four since `0036` (the item editor's `ItemMetadataPanel`
-    edits them). Not asked for, so not touched; the same one-line pass as the two slots would fix them.
+  - ~~**The modal's other disabled fields are still hard-coded dashes**: Floor Plan, RLS, Joiery Details and
+    Cutlist Printed~~ **Closed — see *Tracking modal shows the reference fields and JID* below.**
   - The modal's `Actions` and `Query` tabs are still "Coming soon." stubs (both are real on the item editor).
   - The register list is not paged or scrollable beyond `max-h-48`, and shows label only (as on the editor).
-- **Out of scope (deferred):** editing from the modal; the four fields above; the two stub tabs.
+- **Out of scope (deferred):** editing from the modal; ~~the four fields above~~ (**built, see below**); the two stub tabs.
 
 ## Null-write audit (`schema_guards.no_null`, no migration) — shipped
 
@@ -4766,3 +4765,49 @@ since been built.**
   - The legacy `/procurement/*` namespace still does not use the order-status guard
     (*Purchase order status guard*) — `deliver` now checks Approved, but `PATCH /orders/{id}`
     can still write a status and its fields on a Cancelled / Delivered order.
+
+## Tracking modal shows the reference fields and JID (no migration, no API change) — shipped
+
+> Chosen by the user ("fill in the Tracking modal's placeholder fields"), the gap *Tracking modal
+> shows the register and the SketchUp / CabVision slots* recorded as "not asked for". Three things were
+> open, so the user was asked before any code was written; the answers are **settled decisions**.
+> Web and seed only.
+
+- **Settled decisions (user).**
+  1. **Read-only.** Editing stays on the item editor's `ItemMetadataPanel`, which already owns the
+     Controlled / Hard / Approval locks, field-version conflicts and revert-on-refusal. Duplicating that
+     in a third place was the alternative offered and declined.
+  2. **The header's JID box is included** (asked because it was *not* in what the user named): it showed
+     only the word "JID" with no value although `jid_code` / `jid_color` are on `ItemOut`. It now shows the
+     colour swatch and code, the same pair the Tracking grid's `JidCell` renders. Empty when the item has
+     neither (`data-testid="modal-jid"`).
+  3. **The `Actions` and `Query` stub tabs are left as "Coming soon."** — both are real on the item editor
+     with their own lock and role rules; making them work here is a separate feature.
+- **Web — `tracking/_components/ItemDetailModal.tsx` (only component changed).** Floor Plan, RLS and
+  Joiery Details read `item.floor_plan` / `rls` / `joiery_details`; Cutlist Printed reads
+  `item.cutlist_printed`. An empty value shows a dash, a NULL `cutlist_printed` shows a dash, `false` an
+  open circle, `true` a tick. The `disabled` prop on `Field` and `CheckRow` had no other caller and was
+  removed.
+- **`items.cutlist_printed` defaults to TRUE** (legacy FileMaker port, `0001`), so every item reads as
+  printed unless someone unticks it. A test that only looked at a ticked item would prove nothing.
+- **Seed.** `seed/hartwood_joinery.py` sets `floor_plan` / `rls` / `joiery_details` and
+  `cutlist_printed = FALSE` on ALF-001's **first** item only (inside the Tracking 2.0 loop's existing
+  `UPDATE`, `COALESCE`d so a re-run is harmless), so the modal shows real values there, an open circle
+  for Cutlist Printed, and dashes / a tick on the rest. **Direct SQL, not a PATCH**: `PATCH /items/{id}`
+  claims the item's Controlled Lock, which a test could not put back.
+- **Tests.** `tests/e2e/tracking_modal_files.spec.ts` (4 → 6): the modal shows the item's values (compared
+  with `GET /api/items/{id}`, after asserting the seed made them non-empty so the test cannot pass on
+  dashes), the JID swatch and code, an open circle for Cutlist Printed, and no inputs; **Next** shows the
+  next item's own values (dashes and a tick), not the previous item's. Run three times back to back
+  against a live migrated, seeded stack; **both new tests fail against the unfixed modal** (the other four
+  pass there) and `item_project_detail`, `pm_workbench` and `smoke` still pass. No backend test was added:
+  no API changed.
+- **Found while testing.** The sandbox's Chromium (`chromium-1194`) does not match the Playwright this repo
+  pins (it wants `1217`), so `playwright test` cannot launch. A throwaway config that spreads
+  `playwright.config.ts` and adds `launchOptions.executablePath` pointing at `/opt/pw-browsers/chromium-1194/
+  chrome-linux/chrome` runs it without touching the repo; it was deleted afterwards.
+- **Known gaps, recorded.**
+  - The modal's `Actions` and `Query` tabs are still stubs (above).
+  - The Estimator Notes box at the bottom of the left column renders as a narrow textarea under its label
+    (an existing layout quirk in `Field`'s textarea branch, not touched).
+- **Out of scope (deferred):** editing from the modal; the two stub tabs.
