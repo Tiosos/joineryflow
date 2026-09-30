@@ -255,6 +255,83 @@ def test_decide_approval_cross_workspace_is_404():
     assert r.status_code == 404, r.text
 
 
+def _submitted_order(ctx: dict, *, cost_centre: bool = True) -> tuple[int, int]:
+    po = _create_order(ctx)
+    if not cost_centre:
+        # Orders can have none since 0031 (Q563); POST /procurement/orders still requires one.
+        s = SessionLocal()
+        try:
+            s.execute(text("UPDATE purchase_orders SET cost_center_id = NULL WHERE po_id = :p"), {"p": po["po_id"]})
+            s.commit()
+        finally:
+            s.close()
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
+    assert r.status_code == 200, r.text
+    # Read it from the table: v_po_summary inner-joins cost_centers, so GET /procurement/orders/{id}
+    # answers 404 for an order with no cost centre.
+    s = SessionLocal()
+    try:
+        wf = s.execute(text("SELECT workflow_id FROM approval_workflows WHERE po_id = :p"), {"p": po["po_id"]}).scalar()
+    finally:
+        s.close()
+    return po["po_id"], wf
+
+
+def _po_and_workflow_state(po_id: int, workflow_id: int) -> tuple:
+    s = SessionLocal()
+    try:
+        return (
+            s.execute(text("SELECT status FROM purchase_orders WHERE po_id = :p"), {"p": po_id}).scalar(),
+            s.execute(text("SELECT status FROM approval_workflows WHERE workflow_id = :w"), {"w": workflow_id}).scalar(),
+            s.execute(text("SELECT count(*) FROM budget_transactions WHERE po_id = :p"), {"p": po_id}).scalar(),
+        )
+    finally:
+        s.close()
+
+
+def test_approving_an_order_with_no_cost_centre_is_refused_and_writes_nothing():
+    ctx = _login()
+    po_id, wf = _submitted_order(ctx, cost_centre=False)
+    before = _po_and_workflow_state(po_id, wf)
+
+    r = ctx["client"].post(
+        f"/procurement/approvals/{wf}/decide",
+        json={"approver_id": ctx["uid"], "decision": "approve"},
+    )
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "NO_COST_CENTRE"
+    assert _po_and_workflow_state(po_id, wf) == before
+    assert before[1] == "Pending" and before[2] == 0
+
+
+def test_rejecting_an_order_with_no_cost_centre_still_works():
+    ctx = _login()
+    po_id, wf = _submitted_order(ctx, cost_centre=False)
+
+    r = ctx["client"].post(
+        f"/procurement/approvals/{wf}/decide",
+        json={"approver_id": ctx["uid"], "decision": "reject"},
+    )
+
+    assert r.status_code == 200, r.text
+    assert _po_and_workflow_state(po_id, wf)[:2] == ("Rejected", "Rejected")
+
+
+def test_approving_an_order_with_a_cost_centre_commits_budget():
+    ctx = _login()
+    po_id, wf = _submitted_order(ctx)
+
+    r = ctx["client"].post(
+        f"/procurement/approvals/{wf}/decide",
+        json={"approver_id": ctx["uid"], "decision": "approve"},
+    )
+
+    assert r.status_code == 200, r.text
+    status, wf_status, budget_rows = _po_and_workflow_state(po_id, wf)
+    assert (status, wf_status, budget_rows) == ("Approved", "Approved", 1)
+
+
 def test_budget_list_excludes_other_workspace():
     mine = _login()
     other = _login()

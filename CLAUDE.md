@@ -4631,16 +4631,13 @@ since been built.**
   description / qty / code / stage; parts with no name or length; modules with no name).
   **No 5xx anywhere.** A first pass only read the oldest rows and so could not have seen a
   probe row; the newest-row and pinned passes exist because of that.
-- **Found while probing, not caused by a null and not fixed (asked, not decided):**
-  `POST /procurement/approvals/{workflow_id}/decide` answers **500 for an approval on a
-  purchase order with no cost centre**, with the field omitted too. `0031` made
-  `purchase_orders.cost_center_id` nullable (Q563) but the legacy handler still runs
-  `int(po["cost_center_id"])` after `decide` → `commit_budget`, so it raises `TypeError`.
-  **Nothing is written** (verified: the PO and the workflow are unchanged — the approver just
-  cannot approve), and the seed's one PO has no cost centre, so it is reachable on the demo
-  data. It is the legacy `/procurement/*` namespace, which the Orderbook page does not use.
-  A fix is a decision (skip the budget commitment when there is no cost centre? refuse the
-  approval with a clear 4xx?), so it was left for the user.
+- **Found while probing, not caused by a null — since fixed, see *Approving an order with no
+  cost centre* below.** `POST /procurement/approvals/{workflow_id}/decide` answered **500 for an
+  approval on a purchase order with no cost centre**, with the field omitted too. `0031` made
+  `purchase_orders.cost_center_id` nullable (Q563) but the legacy handler still ran
+  `int(po["cost_center_id"])` after `decide` → `commit_budget`, so it raised `TypeError`.
+  Nothing was written, and the seed's one PO has no cost centre, so it was reachable on the
+  demo data.
 - **Legal-but-odd, left:** a create can now leave real NULLs in nullable columns that some
   screens may render as blank — `items.description` / `qty` / `code`, `parts.part_name` /
   `len_mm`, `modules.name` — because the columns and the read models allow it. Every crawled
@@ -4652,3 +4649,37 @@ since been built.**
   reads 96 GET routes is not every read; and — as before — every route still commits before
   FastAPI validates the response.
 
+
+## Approving an order with no cost centre (legacy `/procurement/*`, no migration) — shipped
+
+> Chosen by the user ("go for your pick 4xx refusal"), from the two options the
+> *POST-body null audit* offered: refuse with a clear 4xx, or skip the budget
+> commitment. No migration, no spec or plan doc; this section is its written record.
+
+- **Rule.** `POST /procurement/approvals/{workflow_id}/decide` with `decision: "approve"` on
+  an order whose `cost_center_id` is NULL answers **`409 {code: "NO_COST_CENTRE", message}`**
+  *before anything is written*: the workflow stays `Pending`, the order keeps its status and
+  no `budget_transactions` row appears. Approving commits budget against a cost centre, so an
+  order with none cannot be approved; the fix is to assign one. **Reject is unaffected** — it
+  commits no budget, so a cost-centre-less order can still be rejected. The status code is 409
+  because the request is fine and the *order's state* is what blocks it.
+- **Why the alternative lost.** Skipping the commitment would have approved an order while
+  silently leaving the budget understated — the kind of quiet gap a refusal makes visible.
+- **Code.** `procurement/routes.py::decide_approval` reads `get_po_budget_fields` *before*
+  `update_workflow_decision` / `update_po_status` (it used to read it after, inside
+  `if new_status == "Approved"`), so the refusal precedes every write.
+- **Tests** (`test_procurement_routes.py`, 3 new): approving with no cost centre is a 409 with
+  the code and leaves the order, workflow and budget rows unchanged — **fails against the
+  unfixed source** (an unhandled `TypeError`); rejecting with none still works and approving
+  with one still commits budget — both controls that pass either way.
+- **Found while testing, not fixed — the same `0031` change has another legacy consequence.**
+  `v_po_summary` (`0006`, redefined by `0009`) **inner-joins `cost_centers`**, so a
+  cost-centre-less order is absent from it: `GET /procurement/orders/{id}` answers **404** and
+  the legacy list omits the order, even though the row exists. The test reads the workflow id
+  from the table for that reason. The Orderbook page uses the v1 `/orders` layer, which does
+  not read that view, so nothing on the main surface is affected. Fixing it means a
+  `LEFT JOIN` in a new migration plus re-checking every column the view feeds; it was not asked
+  for, so it is recorded here.
+- **Not changed:** the seed's one purchase order still has no cost centre, so approving it
+  through the legacy route now answers the 409 instead of a 500. The Orderbook UI has no
+  legacy-approval control.
