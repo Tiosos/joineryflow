@@ -18,7 +18,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
+from ..items.queries import assert_item_content_unlocked
 from .schemas import CreateModuleIn, CreatePartIn, PatchModuleIn, PatchPartIn
 from ..row_types import joinery_items_only
 
@@ -263,10 +265,10 @@ def delete_module(
     *,
     module_id: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> str:
     """Delete a module (and its parts and comments via CASCADE). Returns 'OK' or
-    'NOT_FOUND'.
+    'NOT_FOUND'; raises `ItemContentLocked` when a lock on the item refuses it.
 
     Writes audit_log + item_edit_log BEFORE delete. The audit payload records how
     many parts and live comments went with it, counted before the DELETE.
@@ -274,6 +276,10 @@ def delete_module(
     item_id = _item_id_for_module(db, module_id=module_id, workspace_id=workspace_id)
     if item_id is None:
         return "NOT_FOUND"
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
     counts = _module_delete_counts(db, module_id=module_id)
 
     module_no = db.execute(

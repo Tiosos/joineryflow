@@ -466,3 +466,135 @@ def test_delete_module_records_what_went_with_it_and_still_answers_204():
     assert payload["deleted_comment_count"] == 3        # live only: the soft-deleted one is not counted
     assert parts_left == 0 and comments_left == 0        # the cascade took every row, soft-deleted too
     assert other_comments == 1                           # the other module's thread survives
+
+
+# ── Lock checks on module delete ───────────────────────────────────────────────
+
+
+def _login_same_workspace(wid: int, role: str, name: str = "U2") -> tuple:
+    """A second user in an existing workspace: (client, user_id)."""
+    suffix = uuid.uuid4().hex[:8]
+    email = f"u2-{suffix}@example.com"
+    db = SessionLocal()
+    try:
+        slug = db.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid}).scalar()
+        uid = db.execute(
+            text(
+                """
+                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+                VALUES (:w, :e, :n, :p, :r) RETURNING id
+                """
+            ),
+            {"w": wid, "e": email, "n": name, "p": hash_password("pw"), "r": role},
+        ).scalar()
+        db.commit()
+    finally:
+        db.close()
+    c = TestClient(app)
+    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
+    assert r.status_code == 200, r.text
+    return c, uid
+
+
+def _set_item(iid: int, sql: str, **params) -> None:
+    db = SessionLocal()
+    try:
+        db.execute(text(f"UPDATE items SET {sql} WHERE item_id = :i"), {"i": iid, **params})
+        db.commit()
+    finally:
+        db.close()
+
+
+def _module_survives(mid: int) -> bool:
+    db = SessionLocal()
+    try:
+        gone = db.execute(
+            text("SELECT count(*) FROM modules WHERE module_id = :m"), {"m": mid}
+        ).scalar() == 0
+        deleted_audit = db.execute(
+            text("SELECT count(*) FROM audit_log WHERE event = 'module.delete' AND target = :t"),
+            {"t": str(mid)},
+        ).scalar()
+        parts = db.execute(
+            text("SELECT count(*) FROM parts WHERE module_id = :m"), {"m": mid}
+        ).scalar()
+        comments = db.execute(
+            text("SELECT count(*) FROM comment WHERE module_id = :m"), {"m": mid}
+        ).scalar()
+    finally:
+        db.close()
+    if gone:
+        return False
+    assert deleted_audit == 0, "a refused delete must not be audited as done"
+    assert parts == 2 and comments == 4, "nothing may have been deleted"
+    return True
+
+
+def test_hard_locked_item_refuses_module_delete_for_everyone():
+    c, wid, uid, iid, mid = _module_with_threads()
+    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    admin, _ = _login_same_workspace(wid, "admin")
+    for client in (c, admin):                     # even a manager-level authority
+        r = client.delete(f"/modules/{mid}")
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == {"code": "HARD_LOCKED", "locked_by": uid}
+    assert _module_survives(mid)
+    # clearing the lock lets the same delete through
+    _set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL")
+    assert c.delete(f"/modules/{mid}").status_code == 204
+
+
+def test_approved_item_refuses_module_delete_until_status_moves_off_approved():
+    c, _wid, _uid, iid, mid = _module_with_threads()
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("INSERT INTO status_options(status_key, sort_order) VALUES ('APPROVED', 5)"
+                 " ON CONFLICT DO NOTHING")
+        )
+        db.commit()
+    finally:
+        db.close()
+    _set_item(iid, "status = 'APPROVED'")
+    r = c.delete(f"/modules/{mid}")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"code": "APPROVAL_LOCKED"}
+    assert _module_survives(mid)
+    _set_item(iid, "status = 'CLEAR'")
+    assert c.delete(f"/modules/{mid}").status_code == 204
+
+
+def test_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager():
+    c, wid, uid, iid, mid = _module_with_threads()          # `c` is a drafter, not the owner
+    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
+    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+
+    r = c.delete(f"/modules/{mid}")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {
+        "code": "ITEM_LOCKED", "owner_id": owner_id, "owner_name": "Olive Owner",
+    }
+    assert _module_survives(mid)
+
+    # the read-only impact lookup is not gated by any lock
+    assert c.get(f"/modules/{mid}/delete-impact").status_code == 200
+
+    # a manager can decide lock requests, so can delete
+    manager, _ = _login_same_workspace(wid, "manager")
+    assert manager.delete(f"/modules/{mid}").status_code == 204
+
+    # ...and so can the owner (on a second module of the same still-locked item)
+    db = SessionLocal()
+    try:
+        other = _seed_module(db, item_id=iid, module_no="M3", name="Drawers")
+    finally:
+        db.close()
+    assert owner_client.delete(f"/modules/{other}").status_code == 204
+
+
+def test_a_sticky_owner_without_an_active_lock_does_not_block_delete():
+    c, wid, _uid, iid, mid = _module_with_threads()
+    _other, owner_id = _login_same_workspace(wid, "drafter")
+    # cutlist_owner_id survives an Unlock (sticky claim); only item_locked matters
+    _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
+    assert c.delete(f"/modules/{mid}").status_code == 204

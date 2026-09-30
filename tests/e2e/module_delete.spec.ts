@@ -102,3 +102,85 @@ test("only drafter, manager and admin are offered Delete module", async ({ page 
     await expect(page.getByTestId("delete-module")).toHaveCount(0);
   }
 });
+
+// ── Lock checks (a lock on the item refuses the delete) ────────────────────────
+// Each test puts the item back exactly as seeded before it ends (workers: 1, so
+// nothing else runs meanwhile).
+
+const itemIdFromUrl = (page: Page) => Number(new URL(page.url()).pathname.split("/")[2]);
+
+test("a Hard Lock disables Delete module for everyone, with the reason; unlocking restores it", async ({ page }) => {
+  await login(page, "rin.park@hartwood.test"); // manager
+  await openCutlist(page, "JO-K-101");
+  const id = itemIdFromUrl(page);
+  const del = page.getByTestId("delete-module");
+  await expect(del).toBeEnabled({ timeout: 30_000 });
+  try {
+    expect((await page.request.post(`/api/items/${id}/hard-lock`)).ok()).toBe(true);
+    await page.reload();
+    await expect(del).toBeDisabled({ timeout: 30_000 }); // even a manager: Hard Lock has no way round
+    await expect(page.getByTestId("delete-module-locked")).toContainText("hard-locked");
+  } finally {
+    await page.request.delete(`/api/items/${id}/hard-lock`);
+  }
+  await page.reload();
+  await expect(del).toBeEnabled({ timeout: 30_000 });
+  await expect(page.getByTestId("delete-module-locked")).toHaveCount(0);
+});
+
+test("another user's Controlled Lock disables Delete module, except for the owner and managers", async ({ page }) => {
+  await login(page, "rin.park@hartwood.test"); // manager
+  await openCutlist(page, "JO-K-103"); // seeded Controlled-Locked, owned by the drafter
+  const id = itemIdFromUrl(page);
+  const me = await (await page.request.get("/api/auth/me")).json();
+  const item = await (await page.request.get(`/api/items/${id}`)).json();
+  const seededOwner: number = item.cutlist_owner_id;
+  expect(item.item_locked).toBe(true);
+  expect(seededOwner).not.toBe(me.id);
+  const del = page.getByTestId("delete-module");
+  const locked = page.getByTestId("delete-module-locked");
+
+  try {
+    // A manager passes another user's Controlled Lock…
+    await expect(del).toBeEnabled({ timeout: 30_000 });
+    // …and once the manager owns it, the seeded drafter is the one refused.
+    const t = await page.request.post(`/api/items/${id}/lock`, { data: { owner_id: me.id } });
+    expect(t.ok()).toBe(true);
+    await page.context().clearCookies();
+    await login(page, "noa.lindqvist@hartwood.test"); // drafter, no longer the owner
+    await page.goto(`/items/${id}?tab=cutlist`);
+    await expect(del).toBeDisabled({ timeout: 30_000 });
+    await expect(locked).toContainText("locked this item");
+  } finally {
+    await page.context().clearCookies();
+    await login(page, "rin.park@hartwood.test");
+    await page.request.post(`/api/items/${id}/lock`, { data: { owner_id: seededOwner } });
+  }
+  // Back with its owner, the drafter can delete again.
+  await page.context().clearCookies();
+  await login(page, "noa.lindqvist@hartwood.test");
+  await page.goto(`/items/${id}?tab=cutlist`);
+  await expect(del).toBeEnabled({ timeout: 30_000 });
+  await expect(locked).toHaveCount(0);
+});
+
+test("a stale page that offered Delete module shows the lock's reason when the server refuses", async ({ page }) => {
+  await login(page, "noa.lindqvist@hartwood.test"); // drafter
+  await openCutlist(page, "JO-K-101");
+  await page.route("**/api/modules/*", (route) =>
+    route.request().method() === "DELETE"
+      ? route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: { code: "ITEM_LOCKED", owner_id: 9, owner_name: "Olive Owner" } }),
+        })
+      : route.continue(),
+  );
+  await page.getByTestId("delete-module").click();
+  const dialog = page.getByTestId("delete-module-dialog");
+  await expect(dialog.getByTestId("delete-module-impact")).toBeVisible({ timeout: 15_000 });
+  await dialog.getByRole("button", { name: "Delete module" }).click();
+  await expect(dialog).toContainText("Olive Owner has locked this item");
+  await expect(dialog.getByRole("button", { name: "Delete module" })).toBeEnabled(); // still open, nothing deleted
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+});
