@@ -4189,13 +4189,25 @@ since been built.**
   `mine`, `room`, `q`, `drawing`, `rev`, `viewer`, `comments`. The notification
   link (`…&drawing=&rev=&comments=1`) still opens the details panel with the
   thread expanded.
-- **Deliberately not built, and why.** *An in-app page counter and page
-  thumbnail strip* in the viewer — they need a PDF renderer (pdf.js) the app does
-  not ship. The viewer embeds the browser's own PDF viewer (zoom via `#zoom=`),
-  so in Chrome its built-in toolbar already shows a page counter and thumbnails
-  (seen in the verification screenshot); other browsers differ. Images use CSS
-  scaling and have no pages.
-  *Annotate* and *Coordinator references* (the screenshots' viewer) have nothing
+- **Viewer page thumbnails** (`ThumbnailStrip.tsx`, added after the redesign
+  merged; the user asked for it once its gap had been named). **pdf.js renders the
+  thumbnails only** (`pdfjs-dist`, dynamic import, so it never runs in SSR); the
+  drawing itself is still the browser's own PDF viewer, which a thumbnail click
+  re-points at `#page=N` (the iframe remounts). Consequences: the highlighted page
+  is the **last one clicked**, not the page scrolled to inside the embedded viewer
+  (the app cannot see that); Chrome's own thumbnail panel is hidden with
+  `&navpanes=0` so two strips don't sit side by side; PDFs only (images have no
+  pages); shown from `lg` up. **It uses pdf.js's `legacy/` build on purpose**: the
+  modern build calls `Map.getOrInsertComputed`, which most browsers in use
+  (including the Chromium here) lack, and it then *silently draws blank
+  thumbnails* — the count and paging still work, which is what made it easy to
+  miss. `useSystemFonts` is on so a PDF naming a standard font without embedding it
+  still draws its text. A page that fails to render leaves a blank thumbnail and
+  logs `thumbnail render failed`; an unreadable file hides the strip. Verified by
+  `shop_drawings.spec.ts` with a generated 3-page PDF: the count, three
+  thumbnails, **non-white pixels in each canvas** (the check that caught the blank
+  render), and `#page=3` after a click.
+- **Deliberately not built, and why.** *Annotate* and *Coordinator references* (the screenshots' viewer) have nothing
   behind them here. *Bulk row selection*. The **Attachments tab lists each
   revision's file**: a drawing has no other attachments. *"Upload drawing" is now
   hidden without `shop_dwgs:write`* (it was shown to everyone and 403'd).
