@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0045`. Head is `0045_po_summary_left_join_cost_centre` (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 26 Playwright specs / 93 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
@@ -195,7 +195,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0044
+make migrate      # apply Alembic 0001 -> 0045
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -257,7 +257,7 @@ API health: http://localhost:3000/api/health -> `{"ok":true}` (proxied through N
 
 `jtbd_role` is a free-text column on `app_user` (no CHECK constraint, despite the Foundation spec §5 sketching one) used for display only — the seed writes mixed-case values like `CEO`, `Drafter`, `CNC operator`. Nothing branches on it: `/home/dashboard`'s `_role_view` keys off `auth_role` alone, and `estimator`/`editor` currently fall through to the viewer shape.
 
-**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). **25 endpoints** (was 32), all gated by `require_permission("orderbook", action)`. **Seven were retired**: the four `/vendors*` (Q565 — `/suppliers` is now the single surface over `vendors`, workspace-scoped; the legacy pair never were, and `0029`'s `workspace_id NOT NULL` had broken the POST) and the three `/inventory*` (Q544 — `0029` dropped `inventory`, `inventory_movements` and `v_inventory_status`, so they had been 500ing). Mounted at `/procurement/*`. The legacy DB views it reads (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`) were skipped by migration 0002 and recreated by **migration 0006**; 0009 redefines `v_po_summary` after the `app_user` repoint. This namespace (orders, vendors, budget, approvals) is **not** used by the v1 product surface — that is `procurement_v1`.
+**Procurement backend.** Ported from `legacy/procurement_api.py` (MySQL) to `apps/api/app/procurement/{schemas,queries,routes}.py` (Postgres). **25 endpoints** (was 32), all gated by `require_permission("orderbook", action)`. **Seven were retired**: the four `/vendors*` (Q565 — `/suppliers` is now the single surface over `vendors`, workspace-scoped; the legacy pair never were, and `0029`'s `workspace_id NOT NULL` had broken the POST) and the three `/inventory*` (Q544 — `0029` dropped `inventory`, `inventory_movements` and `v_inventory_status`, so they had been 500ing). Mounted at `/procurement/*`. The legacy DB views it reads (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`) were skipped by migration 0002 and recreated by **migration 0006**; 0009 redefines `v_po_summary` after the `app_user` repoint; **`0045` turns its `cost_centers` join into a LEFT JOIN** so an order with no cost centre (nullable since `0031`) is no longer invisible to these routes. This namespace (orders, vendors, budget, approvals) is **not** used by the v1 product surface — that is `procurement_v1`.
 **Fixed later — was completely unscoped.** The remaining 21 endpoints (orders, attachments, approvals, budget) had **zero workspace isolation**: any authenticated user with `orderbook` permission in *any* workspace could read or mutate *every* workspace's purchase orders, attachments, approvals and budget data. `purchase_orders`/`po_line_items`/`po_attachments`/`approval_workflows` now resolve through the same project-or-vendor join `orders/queries.py`'s `_ORDER_WORKSPACE` already established (`_PO_WORKSPACE_EXISTS` in `procurement/queries.py`); `budget_transactions`/`v_budget_utilisation` resolve through `cost_centers.workspace_id` (added by `0029` — initially missed on the first pass here, then found and fixed in the same round). `create_order` now also validates `vendor_id`, `cost_center_id` and `requester_id` against the caller's workspace before inserting, and `submit_for_approval` validates `approver_id` the same way — both FKs to `app_user` are joined to `full_name` in `v_po_summary` / `approval_history`, so an unvalidated foreign id would leak that user's name cross-workspace. (`decide_approval`'s own `approver_id` is never joined for display — only used in a changelog text string — so it is left unvalidated.) Pinned by `test_procurement_routes.py` (no prior test file existed for this module at all).
 
 ## Design system (binding)
@@ -4672,14 +4672,51 @@ since been built.**
   the code and leaves the order, workflow and budget rows unchanged — **fails against the
   unfixed source** (an unhandled `TypeError`); rejecting with none still works and approving
   with one still commits budget — both controls that pass either way.
-- **Found while testing, not fixed — the same `0031` change has another legacy consequence.**
-  `v_po_summary` (`0006`, redefined by `0009`) **inner-joins `cost_centers`**, so a
-  cost-centre-less order is absent from it: `GET /procurement/orders/{id}` answers **404** and
-  the legacy list omits the order, even though the row exists. The test reads the workflow id
-  from the table for that reason. The Orderbook page uses the v1 `/orders` layer, which does
-  not read that view, so nothing on the main surface is affected. Fixing it means a
-  `LEFT JOIN` in a new migration plus re-checking every column the view feeds; it was not asked
-  for, so it is recorded here.
+- **Found while testing — the same `0031` change had another legacy consequence; since fixed, see
+  *Legacy order views with no cost centre* below.** `v_po_summary` inner-joined `cost_centers`, so
+  a cost-centre-less order was absent from it: `GET /procurement/orders/{id}` answered 404 and the
+  legacy list omitted the order, even though the row existed.
 - **Not changed:** the seed's one purchase order still has no cost centre, so approving it
   through the legacy route now answers the 409 instead of a 500. The Orderbook UI has no
   legacy-approval control.
+
+## Legacy order views with no cost centre (migration `0045`) — shipped
+
+> Chosen by the user ("Go with The v_po_summary LEFT JOIN fix"), the gap *Approving an
+> order with no cost centre* recorded as "asked for: no". Nothing in the change was
+> under-specified — the join was the bug — so nothing was asked before building; one
+> *sibling* bug found on the way was left for a decision (below). No spec or plan doc;
+> this section is its written record.
+
+- **What was wrong.** `0031` made `purchase_orders.cost_center_id` nullable (Q563), but
+  `v_po_summary` (`0006`, redefined by `0009`) still `JOIN`ed `cost_centers`. Every read in
+  `procurement/queries.py` goes through the view, so an order with no cost centre was
+  invisible to the legacy namespace: `GET /procurement/orders/{id}` answered **404**, and the
+  list, the filters and both approval queues (pending and history) omitted it, although the
+  row existed and the order could still be approved (now refused with `409 NO_COST_CENTRE`).
+  The seed's one purchase order is such an order.
+- **The fix — `0045_po_summary_left_join_cost_centre`.** `cost_centers` becomes a `LEFT JOIN`;
+  `cost_center_id`, `cost_center` and `cost_center_code` read **NULL** for such an order.
+  The vendor and requester joins are on NOT NULL columns and are unchanged. The migration
+  is `CREATE OR REPLACE VIEW`, valid because the output columns, their order and their types
+  are identical — nothing depending on the view is dropped. The downgrade restores the
+  inner join (verified: upgrade → downgrade → upgrade on a migrated database; the view
+  definition flips `JOIN` ↔ `LEFT JOIN`). Only `v_po_summary` changes: `v_orders_due`
+  never joined `cost_centers`, and `v_budget_utilisation` reads `cost_centers` itself.
+- **Workspace scoping is unchanged.** It resolves through the project-or-vendor join, not
+  through the cost centre, so a wider view does not show another workspace's order (pinned).
+- **Tests** (`test_procurement_routes.py`, 3 new): an order with no cost centre is a `200`
+  from `GET /procurement/orders/{id}` with NULL cost-centre fields and is in the list and the
+  pending-approvals queue — **fails at `0044`** (404); an order with a cost centre still names
+  it; another workspace's cost-centre-less order stays a 404 and out of the list (both
+  controls that pass either way). The earlier helper that read the workflow id from the table
+  to dodge this 404 now goes through the same path as a real caller.
+- **Found while building, not fixed — asked, not decided.** `PATCH /procurement/orders/{po_id}/deliver`
+  has the same `int(po["cost_center_id"])` the approve route had: marking a cost-centre-less
+  order Delivered answers **500** (`TypeError`), writing nothing. The two routes differ in
+  what a refusal costs: approving is a decision the system can ask to be retried with a cost
+  centre, but *delivered* records a physical fact (the goods arrived). The options are a 409
+  like the approval's, or recording the delivery and **skipping the budget expenditure** — the
+  latter leaves the budget understated with no error. Left for the user.
+- **Known gaps, recorded.** The legacy `/procurement/*` namespace is still not used by the
+  v1 surface, so nothing on the web changed.

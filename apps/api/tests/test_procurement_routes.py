@@ -267,8 +267,6 @@ def _submitted_order(ctx: dict, *, cost_centre: bool = True) -> tuple[int, int]:
             s.close()
     r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
     assert r.status_code == 200, r.text
-    # Read it from the table: v_po_summary inner-joins cost_centers, so GET /procurement/orders/{id}
-    # answers 404 for an order with no cost centre.
     s = SessionLocal()
     try:
         wf = s.execute(text("SELECT workflow_id FROM approval_workflows WHERE po_id = :p"), {"p": po["po_id"]}).scalar()
@@ -330,6 +328,49 @@ def test_approving_an_order_with_a_cost_centre_commits_budget():
     assert r.status_code == 200, r.text
     status, wf_status, budget_rows = _po_and_workflow_state(po_id, wf)
     assert (status, wf_status, budget_rows) == ("Approved", "Approved", 1)
+
+
+def test_order_with_no_cost_centre_is_visible_to_the_legacy_reads():
+    # v_po_summary used to INNER JOIN cost_centers (0006/0009), so such an order was a 404 here
+    # and absent from every listing although the row existed. 0045 makes it a LEFT JOIN.
+    ctx = _login()
+    po_id, _wf = _submitted_order(ctx, cost_centre=False)
+
+    r = ctx["client"].get(f"/procurement/orders/{po_id}")
+    assert r.status_code == 200, r.text
+    order = r.json()["order"]
+    assert order["po_id"] == po_id
+    assert order["cost_center_id"] is None
+    assert order["cost_center"] is None
+    assert r.json()["workflow"][0]["status"] == "Pending"
+
+    listed = ctx["client"].get("/procurement/orders").json()
+    assert po_id in [o["po_id"] for o in listed]
+
+    pending = ctx["client"].get("/procurement/approvals/pending", params={"approver_id": ctx["uid"]})
+    assert pending.status_code == 200, pending.text
+    assert po_id in [p["po_id"] for p in pending.json()]
+
+
+def test_order_with_a_cost_centre_still_names_it_in_the_legacy_reads():
+    ctx = _login()
+    po_id, _wf = _submitted_order(ctx)
+
+    order = ctx["client"].get(f"/procurement/orders/{po_id}").json()["order"]
+    assert order["cost_center_id"] == ctx["cc_id"]
+    assert order["cost_center"] == "General"
+    assert order["cost_center_code"] == "GEN"
+
+
+def test_other_workspaces_order_with_no_cost_centre_stays_hidden():
+    # The LEFT JOIN widens what the view returns, never whose it is: workspace scoping
+    # still resolves through the project-or-vendor join.
+    mine = _login()
+    other = _login()
+    other_po, _ = _submitted_order(other, cost_centre=False)
+
+    assert mine["client"].get(f"/procurement/orders/{other_po}").status_code == 404
+    assert other_po not in [o["po_id"] for o in mine["client"].get("/procurement/orders").json()]
 
 
 def test_budget_list_excludes_other_workspace():
