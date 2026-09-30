@@ -315,16 +315,25 @@ class BulkItemStatusIn(BaseModel):
     note: str = Field(min_length=1)
 
 
+class LockedItemOut(BaseModel):
+    """An item a bulk status change skipped because a lock refuses the caller."""
+    item_id: int
+    code: str
+    owner_name: str | None = None
+
+
 class BulkItemStatusOut(BaseModel):
     """Response from POST /items/bulk-status.
 
     not_found: ids that don't exist in the workspace.
     cross_workspace: ids that exist but belong to another workspace
       (returned distinct from not_found so the caller can show a clearer error).
+    locked: items skipped because of a Hard Lock or someone else's Controlled Lock.
     """
     updated: int
     not_found: list[int] = []
     cross_workspace: list[int] = []
+    locked: list[LockedItemOut] = []
 
 
 class PatchLifecycleIn(BaseModel):

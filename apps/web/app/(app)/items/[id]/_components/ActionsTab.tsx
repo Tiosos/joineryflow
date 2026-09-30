@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
 import { PM, ApiError } from "@/lib/pm-fetch";
 import { StatusPopup } from "@/app/(app)/tracking/_components/StatusPopup";
+import { lockFromError, moduleLockReason } from "./cutlist/moduleLock";
 
 // PATCH /items/{id}/status and /items/{id}/lifecycle/{stage_key} both gate on
 // tracking:write, which per the RBAC matrix is {editor, drafter, manager, admin}.
@@ -16,13 +17,20 @@ function todayIso(): string {
 
 export function ActionsTab({
   item,
+  currentUserId,
   currentUserRole,
 }: {
   item: ItemOut;
+  currentUserId: number | null;
   currentUserRole: string | null;
 }) {
   const router = useRouter();
   const canAct = CAN_ACT.has(currentUserRole ?? "");
+  // Hard Lock and someone else's Controlled Lock refuse a status or stage-date
+  // change; the Approval Lock does not (status is how it is cleared).
+  const lockReason = canAct
+    ? moduleLockReason(item, currentUserId, currentUserRole, "status")
+    : null;
   const [statusOpen, setStatusOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +44,10 @@ export function ActionsTab({
       await PM.patchItemLifecycle(item.id, "REQ", { done_date: todayIso() });
       router.refresh();
     } catch (e) {
-      setError(e instanceof ApiError ? `Failed (${e.status})` : "Failed to mark REQ done");
+      setError(
+        lockFromError(e, "status") ??
+          (e instanceof ApiError ? `Failed (${e.status})` : "Failed to mark REQ done"),
+      );
     } finally {
       setBusy(false);
     }
@@ -55,17 +66,26 @@ export function ActionsTab({
         </p>
       )}
 
+      {lockReason && (
+        <p
+          data-testid="actions-locked"
+          className="col-span-full rounded bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          {lockReason}
+        </p>
+      )}
+
       <ActionCard
         label="Set status"
         description="Open the status dialog and log a status change with a note."
-        disabled={!canAct}
+        disabled={!canAct || !!lockReason}
         onClick={() => setStatusOpen(true)}
       />
 
       <ActionCard
         label={reqDone ? `REQ marked done (${reqDone})` : "Mark REQ done today"}
         description="Sets the REQ lifecycle stage's done_date to today."
-        disabled={!canAct || busy || !!reqDone}
+        disabled={!canAct || !!lockReason || busy || !!reqDone}
         onClick={markReqDone}
       />
 
@@ -81,6 +101,8 @@ export function ActionsTab({
       {statusOpen && (
         <StatusPopup
           itemId={item.id}
+          currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
           onClose={() => setStatusOpen(false)}
           onUpdated={() => router.refresh()}
         />
