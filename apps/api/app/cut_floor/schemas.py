@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 CutScheduleStatus = Literal["planned", "running", "done", "cancelled"]
 
@@ -135,6 +136,8 @@ class BoardInventoryIn(BaseModel):
 
 
 class BoardInventoryPatchIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty_on_hand")
     qty_on_hand: int | None = Field(default=None, ge=0)
     location: str | None = Field(default=None, max_length=128)
     notes: str | None = None
@@ -171,6 +174,8 @@ class CutScheduleIn(BaseModel):
 
 
 class CutSchedulePatchIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("priority")
     scheduled_for: date | None = None
     assigned_to: int | None = None
     status: CutScheduleStatus | None = None

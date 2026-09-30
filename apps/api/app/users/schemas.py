@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 
 class UserOut(BaseModel):
@@ -21,6 +22,8 @@ class UserOut(BaseModel):
 
 
 class UserPatch(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("full_name", "is_active")
     full_name: str | None = None
     auth_role: str | None = None
     jtbd_role: str | None = None

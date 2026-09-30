@@ -216,6 +216,50 @@ def test_patch_updates_and_validates(ctx):
     assert bad.status_code == 422
 
 
+def _vendor_status(vendor_id: int):
+    s = SessionLocal()
+    try:
+        return s.execute(text("SELECT status FROM vendors WHERE vendor_id = :v"), {"v": vendor_id}).scalar()
+    finally:
+        s.close()
+
+
+def test_patch_null_status_is_refused_and_does_not_poison_the_supplier_list(ctx):
+    """`vendors.status` is nullable and `SupplierOut.status` is `str`. An explicit null was
+    written, the route committed before the response was validated, and from then on
+    `GET /suppliers` and `GET /suppliers/{id}` 500'd for the whole workspace."""
+    client = ctx["client"]
+    vendor_id = _create(ctx).json()["vendor_id"]
+    before = _vendor_status(vendor_id)
+    assert before is not None
+
+    r = client.patch(f"/suppliers/{vendor_id}", json={"status": None})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "status"
+
+    assert _vendor_status(vendor_id) == before, "the refused null must not be written"
+    assert client.get("/suppliers").status_code == 200
+    assert client.get(f"/suppliers/{vendor_id}").status_code == 200
+
+
+@pytest.mark.parametrize("field", ["name", "category"])
+def test_patch_null_for_a_not_null_column_is_a_clean_422(ctx, field):
+    """Both columns are NOT NULL: the null used to reach the UPDATE and come back as a raw 500."""
+    vendor_id = _create(ctx).json()["vendor_id"]
+    r = ctx["client"].patch(f"/suppliers/{vendor_id}", json={field: None})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == field
+
+
+def test_patch_still_clears_the_optional_fields(ctx):
+    """The guard is for the fields whose column can never be NULL: a contact name still clears."""
+    vendor_id = _create(ctx).json()["vendor_id"]
+    assert ctx["client"].patch(f"/suppliers/{vendor_id}", json={"contact_name": "Ann"}).status_code == 200
+    r = ctx["client"].patch(f"/suppliers/{vendor_id}", json={"contact_name": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["contact_name"] is None
+
+
 def test_legacy_vendor_endpoints_are_gone(ctx):
     """Q565 — guard against the duplicate surface returning."""
     for method, path in (

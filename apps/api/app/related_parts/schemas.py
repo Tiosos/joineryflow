@@ -10,6 +10,7 @@ Three fields are **never** inputs:
 from datetime import datetime
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 
 class RelatedPartTypeOut(BaseModel):
@@ -46,6 +47,8 @@ class CreateRelatedPartIn(BaseModel):
 
 
 class PatchRelatedPartIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("related_part_type_key")
     related_part_type_key: str | None = None
     description: str | None = None
     qty: int | None = None

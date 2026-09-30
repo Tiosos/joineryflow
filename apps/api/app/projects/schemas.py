@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+from ..schema_guards import no_null
 
 
 # ── Contacts / lift access / labour hours sub-objects ────────────────────────
@@ -47,6 +48,8 @@ class CreateProjectIn(BaseModel):
 
 
 class PatchProjectIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("name")
     name: str | None = None
     pm_id: int | None = None
     install_start: date | None = None
