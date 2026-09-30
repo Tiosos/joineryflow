@@ -61,12 +61,12 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
       {selectedRev.status === "pending" && canApprove && (
         <>
           <button disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "approve"))}
-                  className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
+                  className="rounded bg-h-good px-3 py-1.5 text-sm text-white disabled:opacity-50">
             Approve
           </button>
           {!showRejectInput ? (
             <button disabled={busy} onClick={() => setShowRejectInput(true)}
-                    className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-rose-700 disabled:opacity-50">
+                    className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-bad disabled:opacity-50">
               Reject
             </button>
           ) : (
@@ -84,7 +84,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
                   setShowRejectInput(false);
                   setRejectNote("");
                 })}
-                className="rounded bg-rose-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
+                className="rounded bg-h-bad px-3 py-1.5 text-sm text-white disabled:opacity-50">
                 Confirm reject
               </button>
               <button onClick={() => { setShowRejectInput(false); setRejectNote(""); }}
@@ -112,7 +112,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
       {canArchive && (
         <button disabled={busy}
                 onClick={() => {
-                  if (!confirm("Archive this drawing? It will move to the Archive subtab.")) return;
+                  if (!confirm("Archive this drawing? It will move to the Archive queue.")) return;
                   run(() => archiveDrawing(detail.drawing_id));
                 }}
                 className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-muted hover:text-h-ink disabled:opacity-50">
@@ -120,7 +120,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
         </button>
       )}
 
-      {err && <p className="w-full text-xs text-rose-700">{err}</p>}
+      {err && <p className="w-full text-xs text-h-bad">{err}</p>}
 
       {newRevOpen && (
         <NewRevisionDialog

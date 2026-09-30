@@ -23,6 +23,7 @@ from .schemas import (
     CreateDrawingIn,
     CreateRevisionIn,
     DrawingDetailOut,
+    DrawingHistoryOut,
     DrawingListOut,
     PatchDrawingIn,
     RejectIn,
@@ -38,6 +39,11 @@ def list_drawings(
     room: str | None = None,
     reviewer_id: int | None = None,
     q_search: str | None = Query(None, alias="q"),
+    queue: str | None = Query(
+        None,
+        pattern="^(all|being_drawn|internal_review|update_required|completed|awaiting_submission|submitted|archive)$",
+    ),
+    assigned_to: int | None = None,
     user: AuthUser = Depends(require_permission("shop_dwgs", "read")),
     db: Session = Depends(get_db),
 ):
@@ -45,7 +51,7 @@ def list_drawings(
         raise HTTPException(status_code=404, detail="project not found")
     rows = q.list_drawings_by_subtab(
         db, project_id=pid, subtab=subtab, room=room,
-        reviewer_id=reviewer_id, q=q_search,
+        reviewer_id=reviewer_id, q=q_search, queue=queue, assigned_to=assigned_to,
     )
     summary = q.list_summary(db, project_id=pid, workspace_id=user.workspace_id)
     return DrawingListOut(
@@ -53,6 +59,7 @@ def list_drawings(
         total=summary.get("total", 0),
         awaiting_review=summary.get("awaiting_review", 0),
         distinct_rooms=summary.get("distinct_rooms", 0),
+        queues=summary.get("queues", {}),
     )
 
 
@@ -66,6 +73,18 @@ def get_drawing(
     if not row:
         raise HTTPException(status_code=404, detail="drawing not found")
     return row
+
+
+@router.get("/shop-drawings/{did}/history", response_model=DrawingHistoryOut)
+def drawing_history_route(
+    did: int,
+    user: AuthUser = Depends(require_permission("shop_dwgs", "read")),
+    db: Session = Depends(get_db),
+):
+    events = q.drawing_history(db, drawing_id=did, workspace_id=user.workspace_id)
+    if events is None:
+        raise HTTPException(status_code=404, detail="drawing not found")
+    return {"events": events}
 
 
 @router.post("/projects/{pid}/shop-drawings", response_model=DrawingDetailOut, status_code=201)
@@ -100,6 +119,8 @@ def patch_drawing_route(
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not row:
         raise HTTPException(status_code=404, detail="drawing not found")
     db.commit()

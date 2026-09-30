@@ -1,20 +1,24 @@
 import type {
   DrawingDetail,
   DrawingList,
+  HistoryEvent,
+  Queue,
+  RegisterFields,
   RevisionStatus,
-  Subtab,
 } from "./shop-drawings-types";
 
 interface ListParams {
   projectId: number;
-  subtab: Subtab;
+  queue: Queue;
+  assignedTo?: number | null;
   room?: string | null;
   reviewerId?: number | null;
   q?: string | null;
 }
 
 export async function listDrawings(p: ListParams): Promise<DrawingList> {
-  const q = new URLSearchParams({ subtab: p.subtab });
+  const q = new URLSearchParams({ queue: p.queue });
+  if (p.assignedTo != null) q.set("assigned_to", String(p.assignedTo));
   if (p.room) q.set("room", p.room);
   if (p.reviewerId != null) q.set("reviewer_id", String(p.reviewerId));
   if (p.q) q.set("q", p.q);
@@ -29,12 +33,19 @@ export async function getDrawing(drawingId: number): Promise<DrawingDetail> {
   return r.json();
 }
 
+export async function getHistory(drawingId: number): Promise<HistoryEvent[]> {
+  const r = await fetch(`/api/shop-drawings/${drawingId}/history`);
+  if (!r.ok) throw new Error(`get history failed: ${r.status}`);
+  return (await r.json()).events;
+}
+
 export async function createDrawing(input: {
   projectId: number;
   title: string;
   room: string | null;
   fileBlobId: number;
   submitImmediately: boolean;
+  register?: RegisterFields;
 }): Promise<DrawingDetail> {
   const r = await fetch(`/api/projects/${input.projectId}/shop-drawings`, {
     method: "POST",
@@ -44,6 +55,7 @@ export async function createDrawing(input: {
       room: input.room,
       file_blob_id: input.fileBlobId,
       submit_immediately: input.submitImmediately,
+      ...input.register,
     }),
   });
   if (!r.ok) throw new Error((await r.json())?.detail ?? `create failed: ${r.status}`);
@@ -52,7 +64,7 @@ export async function createDrawing(input: {
 
 export async function patchDrawing(
   drawingId: number,
-  patch: { title?: string; room?: string | null }
+  patch: { title?: string; room?: string | null; submitted_at?: string | null } & RegisterFields
 ): Promise<DrawingDetail> {
   const r = await fetch(`/api/shop-drawings/${drawingId}`, {
     method: "PATCH",

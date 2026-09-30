@@ -74,7 +74,7 @@ test("a viewer can read a module thread but not post to it", async ({ page }) =>
 test("a revision comment mentions the drafter, whose notification opens the drawer's thread", async ({ page }) => {
   await login(page, "rin.park@hartwood.test"); // manager: shop_dwgs:comment
   await page.goto("/shop-dwgs?subtab=in_review");
-  await page.getByText(/#SD-\d+/).first().click(); // any in-review drawing
+  await page.getByTestId("register-row").first().click(); // any in-review drawing
   await expect(page).toHaveURL(/drawing=\d+/, { timeout: 30_000 });
 
   // The panel is collapsed until asked for, so it never squeezes the viewer.
@@ -100,7 +100,7 @@ test("a revision comment mentions the drafter, whose notification opens the draw
 test("a viewer can read a revision thread but not post to it", async ({ page }) => {
   await login(page, "sam.ito@hartwood.test"); // viewer: shop_dwgs:read only
   await page.goto("/shop-dwgs?subtab=in_review");
-  await page.getByText(/#SD-\d+/).first().click();
+  await page.getByTestId("register-row").first().click();
   const panel = page.getByTestId("revision-comments");
   await expect(panel).toBeVisible({ timeout: 30_000 });
   await panel.getByRole("button", { name: /Comments on v\d+/ }).click();
