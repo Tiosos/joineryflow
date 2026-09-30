@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 24 Playwright specs / 84 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 25 Playwright specs / 89 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -4346,9 +4346,8 @@ since been built.**
   item, so no item's lock can govern it (the same reason the project hardware catalog stayed open). A
   refused bind therefore leaves an unreferenced `file_blob` behind — exactly like every other
   abandoned upload, and there is still no orphan GC. *An assumption made while building.*
-- **The register still has no web UI** (`ItemDetailModal` says "No documents attached for v1"), so
-  there is nothing to disable for it; its rule is covered by pytest alone. Only the Attachments tab
-  changed.
+- **The register had no web UI when this shipped** (its rule was covered by pytest alone) — **it has one
+  now, see *Document Register web UI* below.**
 - **Web.** `AttachmentsTab` takes `item` and `currentUserId` (threaded from `EditorTabs`) and shows one
   notice (`data-testid="attachments-locked"`, drafter / manager / admin only — the roles the tab already
   lets write); `AttachmentSlotCard` disables **Upload / Replace** and **Delete** with the reason as
@@ -4381,7 +4380,7 @@ since been built.**
   - A refused bind leaves an unreferenced blob (above); the Combined PDF and print routes read
     whatever the slots hold and never consult a lock.
   - `moduleLock.ts` is named for modules but now serves hardware, status, stage dates and attachments.
-- **Out of scope (deferred):** a web UI for the Document Register; gating `POST /files`; a request flow
+- **Out of scope (deferred):** ~~a web UI for the Document Register~~ (**built, see below**); gating `POST /files`; a request flow
   for a refused write; the other item-scoped writes named above.
 
 ## Small fixes: order `project_id` and the CV `ITEM_NOT_EMPTY` message (no migration) — shipped
@@ -4423,3 +4422,64 @@ since been built.**
   before reaching any code this change touches). e2e is not part of CI (which runs pytest + `tsc`).
 - **Known gaps, recorded.** `PATCH /orders/{id}` still answers a bad `vendor_id` with `404` while an
   unknown `category` is a `422` (unchanged, noted under *Order field validation*).
+
+## Document Register web UI (no migration, no API change) — shipped
+
+> Chosen by the user ("go with the next recommendation tasks"): the gap *Lock checks on
+> attachments and the document register* and *Item & Project Detail 2.0* both recorded as "the
+> register has no web UI". Two things were open, so the user was asked before any code was written;
+> the answers are **settled decisions**, not assumptions. Web only — `item_documents/` is unchanged.
+
+- **Settled decisions (user).**
+  1. **Placement: a "Document register" section on the item editor's Attachments tab**, below the five
+     named slots — not a new tab, not the Tracking modal. `ItemDetailModal`'s "No documents attached for
+     v1." placeholder is therefore **still there and still untrue**; it was not touched (not chosen).
+  2. **Write controls follow the API: `list:write` — drafter, manager, admin and editor.** That is one
+     role wider than the attachment slots on the same tab (drafter / manager / admin), so the tab now
+     holds two writer sets (`WRITER_ROLES`, `REGISTER_WRITER_ROLES` in `AttachmentsTab.tsx`). The web
+     mirrors the role set; the API decides.
+- **Web.** `DocumentRegister.tsx` (`items/[id]/_components/`) + `lib/item-documents-fetch.ts` (errors carry
+  `status` / `body`, as `attachments-fetch.ts` does, so `lockFromError` can word a 409). One row per
+  document: label (commit-on-blur / Enter, resyncs to the server's value and **skips an unchanged blur** so a
+  tab-through writes no audit row; a refused save puts the server's label back), filename · size · uploader ·
+  date, **Open**, **↑ / ↓**, **Remove** (confirm). **Add document** uploads through `/files` then binds
+  (PDF / PNG / JPEG picker hint; the API's 415 is the gate) and **appends** after the highest `sort_order`.
+  - **Reorder renumbers the whole list.** New documents default to `sort_order = 0`, so ties are the normal
+    case and swapping two values would do nothing. A move renumbers `0..n-1` and PATCHes only the rows whose
+    number changed — up to N sequential PATCHes, each an `item.document.update` audit row and each checking
+    the lock. Not atomic: a failure part-way leaves a partly renumbered list (the list is re-fetched, so the
+    screen shows the truth).
+  - **One lock notice for the tab.** `AttachmentsTab` now decides the lock reason for either writer set and
+    shows a single `attachments-locked` notice, so an **editor** (register writer, not slot writer) sees the
+    reason too; the slot cards and the register each get the reason only when their own writer set applies.
+    Same rule as everywhere (`moduleLockReason`: Hard + Approval + Controlled), so **relabelling and
+    reordering on an APPROVED item are disabled**, matching the API. Controls are disabled with the reason as
+    `title`; a `409` from a stale page shows the server's reason. The reason wording still says "cutlist,
+    hardware or attachments" — it does not name the register.
+  - Read-only roles get the list and **Open**, no inputs, no buttons. The register lists Joinery Items only,
+    like the API (a related part's editor never reaches this tab).
+- **Tests.** `tests/e2e/document_register.spec.ts` (5), run against a live migrated, seeded stack and
+  re-run six-plus times: a drafter adds, relabels, reorders and removes (and an unchanged blur writes
+  nothing); an editor can add while the slot **Upload / Replace** buttons are absent, a viewer only reads;
+  a Hard Lock disables every control for a manager with the reason; another user's Controlled Lock disables
+  an editor's and shows them the notice; a stale page shows the owner's name for a refused relabel / remove /
+  add and puts the label back. **All five fail without the `AttachmentsTab` wiring.** Each test leaves the
+  item as seeded — including every seeded document's `sort_order`, which a reorder would otherwise leave
+  renumbered. `attachments_locks.spec.ts` and `item_project_detail.spec.ts` still pass. No backend test was
+  needed or added: the routes are unchanged and already covered by `test_item_documents.py` and
+  `test_attachments_documents_locks.py`.
+- **Found while testing — a test bug that destroyed seed data.** The first draft removed `rows.last()` right
+  after an upload. The page still showed a row the spec had just deleted through the API, so the row count
+  matched instantly and the click landed on a stale row — the seeded second document. The spec now reloads
+  first and targets the new row by filename. Worth remembering: a count assertion is satisfied by stale rows.
+- **Known flake, not the feature.** About one full-spec run in ten failed with `apiRequestContext.post: read
+  ECONNRESET` on the Hard Lock test's `POST /api/items/{id}/hard-lock` through `next dev`'s proxy; the same
+  call passes on retry. `attachments_locks.spec.ts` makes the same call and is exposed to it too.
+- **Known gaps, recorded.**
+  - `ItemDetailModal` (Tracking) still shows the "No documents attached for v1." placeholder.
+  - Labels only — a register document has no other metadata, and a rename cannot be undone except by typing
+    the old one back.
+  - A refused bind leaves an unreferenced `file_blob` (as for attachments; `POST /files` is not gated).
+  - The reorder controls are per-row buttons, not drag-and-drop.
+- **Out of scope (deferred):** register UI outside the item editor (the Tracking modal); drag-and-drop;
+  bulk upload; document categories or types.
