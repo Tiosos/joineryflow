@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 # ----------------------------------------------------------------------------
 # Type literals — kept in sync with the SQL CHECK constraints in 0021
@@ -76,6 +77,8 @@ class CreateEstimateIn(BaseModel):
 
 
 class PatchEstimateIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("title")
     customer_id: int | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)
     site_address: str | None = None
@@ -106,6 +109,8 @@ class EstimateListOut(BaseModel):
 # ----------------------------------------------------------------------------
 
 class PatchRevisionIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("markup_pct", "gst_pct")
     markup_pct: Decimal | None = Field(default=None, ge=0)
     gst_pct: Decimal | None = Field(default=None, ge=0)
     terms_text: str | None = None
@@ -229,6 +234,8 @@ class CreateLineIn(BaseModel):
 
 
 class PatchLineIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("description", "qty", "unit")
     description: str | None = Field(default=None, min_length=1, max_length=255)
     qty: Decimal | None = Field(default=None, gt=0)
     unit: str | None = Field(default=None, max_length=16)
@@ -259,6 +266,8 @@ class AddHardwareIn(BaseModel):
 
 
 class PatchPartIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty", "paint_instruction")
     qty: Decimal | None = Field(default=None, gt=0)
     len_mm: int | None = Field(default=None, ge=0)
     wid_mm: int | None = Field(default=None, ge=0)
@@ -267,6 +276,8 @@ class PatchPartIn(BaseModel):
 
 
 class PatchHardwareIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty")
     qty: Decimal | None = Field(default=None, gt=0)
     comment: str | None = None
 

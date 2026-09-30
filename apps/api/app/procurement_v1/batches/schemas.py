@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ...schema_guards import no_null
 
 MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE"]
 BatchStatus = Literal["OPEN", "IN_TRANSIT", "DELIVERED", "CANCELLED"]
@@ -48,6 +49,8 @@ class CreateBatchIn(BaseModel):
 
 
 class PatchBatchIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty_ordered", "qty_received")
     supplier: str | None = None
     po_ref: str | None = None
     qty_ordered: Decimal | None = None

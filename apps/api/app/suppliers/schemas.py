@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field
+from ..schema_guards import no_null
 
 
 class SupplierOut(BaseModel):
@@ -46,6 +47,8 @@ class CreateSupplierIn(BaseModel):
 
 
 class PatchSupplierIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("name", "category", "status")
     name: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = None
     status: str | None = None

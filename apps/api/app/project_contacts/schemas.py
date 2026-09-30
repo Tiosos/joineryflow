@@ -2,6 +2,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 ContactKind = Literal["office", "site"]
 
@@ -17,6 +18,8 @@ class CreateContactIn(BaseModel):
 
 
 class PatchContactIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("kind", "name", "sort_order")
     kind: ContactKind | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)
     position: str | None = None

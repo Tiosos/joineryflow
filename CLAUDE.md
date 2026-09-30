@@ -3614,7 +3614,9 @@ since been built.**
     app, not just this one. The five fields above can no longer trigger it here;
     closing the *class* means validating before `commit()`, a cross-cutting change.
     Other nullable columns that a response model types as non-null are worth
-    auditing for the same poison.
+    auditing for the same poison. **Audited — see *Null-write audit* below**: one
+    more real case (`PATCH /suppliers` `status`) and 32 raw 500s, all fixed; the
+    "validate before `commit()`" half was deliberately **not** done.
   - ~~**`create_order` does not validate `project_id`**~~ **Closed — see *Small
     fixes: order `project_id` and the CV `ITEM_NOT_EMPTY` message* below.**
     (Found in review, then measured: `POST /orders` with another workspace's
@@ -4523,3 +4525,77 @@ since been built.**
   - The modal's `Actions` and `Query` tabs are still "Coming soon." stubs (both are real on the item editor).
   - The register list is not paged or scrollable beyond `max-h-48`, and shows label only (as on the editor).
 - **Out of scope (deferred):** editing from the modal; the four fields above; the two stub tabs.
+
+## Null-write audit (`schema_guards.no_null`, no migration) — shipped
+
+> Chosen by the user ("go with the audit", after "Suggest the next task and give me
+> reasons"). It is the audit *Order field validation* recorded as a known gap: the orders bug
+> (an explicit `null` written into a nullable column that the response model types non-null,
+> poisoning every later read) could exist anywhere. The scope was asked before any code was
+> written; the answer is a **settled decision**: **fix the poison and all the raw-500 fields**.
+> The third option offered — also reject *unknown values* for constrained string fields — was
+> **not chosen**, and moving validation ahead of `commit()` app-wide was **never in scope**.
+> No migration, no spec or plan doc; this section is its written record.
+
+- **Method (measured, not guessed).** A static scan listed every write schema field that accepts
+  an explicit `null` (**359 fields on 81 routes**; a name-matching heuristic against the database
+  was too noisy to trust). Then every PATCH / PUT field was **probed empirically**: on a scratch copy
+  of the seeded database, send `{field: null}` to the route for a real row and record what
+  happens — refused 4xx, accepted, a **raw 500 with nothing written**, or a **poison** (500 *and*
+  the column is now NULL, i.e. the write landed before the response failed validation).
+  221 (route, field) pairs across 34 routes (two routes, `/me/status` and the lifecycle date
+  route, had no row to probe). Then a **read-side crawl**: every GET route whose path ids could be resolved
+  (**96**) before and after all the accepted nulls were left in place, diffing status codes, because a
+  null a PATCH accepts can still break a *different* read model.
+- **Found, before the fix.** **One poison:** `PATCH /suppliers/{vendor_id}` `status`. `vendors.status`
+  is nullable and `SupplierOut.status` is `str`, so the null persisted and `GET /suppliers` and
+  `GET /suppliers/{id}` answered 500 for the whole workspace — the orders bug again, in the
+  module next door. **32 raw 500s:** an explicit null for a field whose column is `NOT NULL`
+  (nothing persisted, but a 500 instead of a 422). The crawl confirmed nothing else breaks a read:
+  after all 91 accepted-null probes (before the fix) the only routes that changed were `/suppliers` and
+  `/suppliers/1` (200 → 500) — the known poison, which doubled as the crawl's control.
+- **The fix — `apps/api/app/schema_guards.py`.** `no_null(*fields)` is a `field_validator`
+  factory: an explicit null is a **422 that names the field** (`loc` ends in the field), and, being a
+  `field_validator`, it runs **only for a field the caller supplied**, so omitting a field is untouched
+  (the reason the field is typed `X | None = None`). It is attached as `reject_null = no_null(...)` to
+  **18 schemas / 33 fields**: `PatchSupplierIn` (`name`, `category`, `status`), `PatchSampleIn`
+  (`title`, `hex_swatch`), `UserPatch` (`full_name`, `is_active`), `PatchBatchIn` (`qty_ordered`,
+  `qty_received`), `PatchProjectIn` (`name`), `PatchContactIn` (`kind`, `name`, `sort_order`),
+  `BoardInventoryPatchIn` (`qty_on_hand`), `CutSchedulePatchIn` (`priority`), `PatchRelatedPartIn`
+  (`related_part_type_key`), material-take `PatchLineIn` (`qty`, `wastage_pct`), and in estimating
+  `PatchEstimateIn` (`title`), `PatchRevisionIn` (`markup_pct`, `gst_pct`), `PatchLineIn`
+  (`description`, `qty`, `unit`), `PatchPartIn` (`qty`, `paint_instruction`), `PatchHardwareIn`
+  (`qty`), and QC's `PatchDefectIn` (`description`), `PatchChecklistItemIn` (`label`, `is_checked`,
+  `sort_order`), `PatchReworkIn` (`cause`, `scope`). **`PatchOrderIn` / `PatchOrderLineIn` keep their
+  own earlier validators** (untouched). Fields whose column legitimately clears (notes, dates, a contact
+  name) are deliberately **not** guarded: clearing them is the point.
+  **Re-probed after the fix:** 0 poison, 0 raw 500 (was 1 and 32); the same 33 fields now answer 422.
+- **Tests.** `test_null_write_guards.py` — every (schema, field) refuses an explicit null naming the
+  field, and every schema still accepts an empty body (33 + 18 cases) — and three new in
+  `test_supplier_routes.py`: null `status` is a 422, **writes nothing, and `GET /suppliers` and
+  `GET /suppliers/{id}` stay 200** (the poison regression); null `name` / `category` a clean 422; and
+  a control that `contact_name` still clears to null. **36 of them fail against the unfixed source**
+  (33 schema cases + the 3 supplier HTTP tests); the rest are controls. The two probe / crawl scripts
+  were throwaway and are **not in the repo**.
+- **Known gaps, recorded.**
+  - **The guard is opt-in.** A *new* PATCH schema must call `no_null` for its NOT NULL fields; nothing
+    fails if it forgets, because a generic test would have to know each field's column and nullability.
+    The next audit is the same two steps above.
+  - **Not audited:** explicit nulls on **POST** bodies (45 routes / 138 null-accepting fields; a create
+    with a null for a required field is a raw 500, not a poison); `PATCH /me/status` and
+    `PATCH /items/{id}/lifecycle/{stage_key}` (no resolvable row in the probe); **unknown values** for
+    constrained strings (`status`, `kind`, `paint_instruction`, ...) beyond what each schema already
+    validates — the option the user did not choose.
+  - **The audit saw only routes with a resolvable row and the first row of each resource**, and a
+    read that no crawled GET exercises could still be broken by a null. 96 GET routes were crawled, not all.
+  - **Accepted nulls that are legal but odd:** `PATCH /projects` accepts `status: null` (the column is
+    nullable and every crawled read tolerated it), as do related parts' `status` / `description`. They
+    are not poison, so they were left; a NULL project status is unlikely to be intended.
+  - **Commit-before-validate is unchanged** (user's decision): a *new* nullable-column-versus-non-null-
+    response mismatch introduced later can poison a row again, because every route still commits
+    before FastAPI validates the response.
+  - The 422 body is FastAPI's default (`detail: [{loc, msg}]`), so the web shows its generic
+    "Save failed (422)" — no web change was needed or made.
+- **Out of scope (deferred):** POST bodies; unknown-value validation for constrained strings; validating
+  before `commit()`; a generic guard that infers NOT NULL from the schema.
+
