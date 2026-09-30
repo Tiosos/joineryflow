@@ -113,6 +113,14 @@ export interface CvCommitOut {
   mappings_created: number;
   catalog_rows_created: number;
   replaced_module_ids: number[];
+  /** Live comments (replies included) deleted with the replaced modules. */
+  replaced_comment_count: number;
+}
+
+/** What "Replace existing modules" would delete, read when the confirm step opens. */
+export interface CvReplaceImpact {
+  modules: number;
+  live_comments: number;
 }
 
 export interface CvImportRunOut {

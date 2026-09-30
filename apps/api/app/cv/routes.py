@@ -42,6 +42,7 @@ from .schemas import (
     CvParsedPart,
     CvPreviewOut,
     CvPreviewSummary,
+    CvReplaceImpactOut,
     CvRowResolution,
     CvUnknownCode,
 )
@@ -324,6 +325,23 @@ def commit_cv_import_route(
 
     db.commit()
     return CvCommitOut(**result)
+
+
+# --- GET replace impact -------------------------------------------------------
+
+@router.get("/items/{iid}/cv-imports/replace-impact")
+def replace_impact_route(
+    iid: int,
+    user: AuthUser = Depends(require_permission("cut_floor", "write")),
+    db: Session = Depends(get_db),
+) -> CvReplaceImpactOut:
+    """Read-only: how many modules and live module comments a `replace` commit
+    would delete. Same gate as the commit it warns about."""
+    _resolve_workspace_project(db, item_id=iid, workspace_id=user.workspace_id)
+    return CvReplaceImpactOut(
+        modules=q.count_modules_for_item(db, item_id=iid),
+        live_comments=q.count_live_module_comments(db, item_id=iid),
+    )
 
 
 # --- GET history -------------------------------------------------------------

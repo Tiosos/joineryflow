@@ -168,6 +168,20 @@ def count_modules_for_item(db: Session, *, item_id: int) -> int:
     ).scalar() or 0
 
 
+def count_live_module_comments(db: Session, *, item_id: int) -> int:
+    """Comments (replies included) that wiping this item's modules would take with
+    them — a comment cascades with the module it is on (migration 0043). Only
+    live ones: a soft-deleted comment is already gone from every screen."""
+    return db.execute(
+        text("""
+            SELECT COUNT(*) FROM comment c
+              JOIN modules m ON m.module_id = c.module_id
+             WHERE m.item_id = :iid AND c.deleted_at IS NULL
+        """),
+        {"iid": item_id},
+    ).scalar() or 0
+
+
 def delete_modules_for_item(db: Session, *, item_id: int) -> list[int]:
     """DELETE all modules under an item (CASCADE wipes parts).
     Returns the list of deleted module_ids."""
@@ -335,13 +349,17 @@ def commit_import(
 ) -> dict:
     """Single-transaction commit per spec §6.6."""
     deleted_module_ids: list[int] = []
+    deleted_comment_count = 0
     if replace:
+        # Counted before the DELETE: the comments cascade away with their modules.
+        deleted_comment_count = count_live_module_comments(db, item_id=item_id)
         deleted_module_ids = delete_modules_for_item(db, item_id=item_id)
         if deleted_module_ids:
             write_audit(
                 db, workspace_id=workspace_id, actor_id=actor_id,
                 event="cv.import.replace_wipe", target=str(run_id),
-                payload={"run_id": run_id, "deleted_module_ids": deleted_module_ids},
+                payload={"run_id": run_id, "deleted_module_ids": deleted_module_ids,
+                         "deleted_comment_count": deleted_comment_count},
             )
 
     # Body resolutions keyed by cv_code.
@@ -469,6 +487,7 @@ def commit_import(
             "mappings_created": mappings_created,
             "catalog_rows_created": catalog_rows_created,
             "replaced_module_ids": deleted_module_ids,
+            "replaced_comment_count": deleted_comment_count,
             "replace": replace,
         },
     )
@@ -480,4 +499,5 @@ def commit_import(
         "mappings_created": mappings_created,
         "catalog_rows_created": catalog_rows_created,
         "replaced_module_ids": deleted_module_ids,
+        "replaced_comment_count": deleted_comment_count,
     }

@@ -292,6 +292,114 @@ def test_commit_re_import_with_replace_wipes_and_re_inserts():
     assert len(rows) == 1
 
 
+_CSV = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,18-PB\n"
+
+
+def _committed_item():
+    """A drafter, their workspace, and an item that already has an imported module."""
+    c, wid, uid, pid, iid = _login("drafter")
+    _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+    run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    r = c.post(f"/items/{iid}/cv-imports/{run}/commit", json={"resolutions": []})
+    assert r.status_code == 200, r.text
+    return c, wid, uid, pid, iid
+
+
+def _comment_on_modules(wid: int, uid: int, iid: int) -> int:
+    """Threads on the item's module: two live top-level comments, a live reply, and
+    a soft-deleted one. Returns the number that are *live* (3)."""
+    s = SessionLocal()
+    try:
+        mid = s.execute(text("SELECT module_id FROM modules WHERE item_id = :i"),
+                        {"i": iid}).scalar()
+
+        def add(body, parent=None, deleted=False):
+            return s.execute(text("""
+                INSERT INTO comment(workspace_id, module_id, author_id, body,
+                                    parent_comment_id, deleted_at)
+                VALUES (:w, :m, :u, :b, :p, CASE WHEN :d THEN now() END)
+                RETURNING comment_id
+            """), {"w": wid, "m": mid, "u": uid, "b": body, "p": parent, "d": deleted}).scalar()
+
+        first = add("first")
+        add("second")
+        add("a reply", parent=first)
+        add("soft deleted", deleted=True)
+        s.commit()
+        return 3
+    finally:
+        s.close()
+
+
+def test_replace_impact_counts_live_comments_only_and_only_this_items():
+    c, wid, uid, pid, iid = _committed_item()
+    live = _comment_on_modules(wid, uid, iid)
+    s = SessionLocal()
+    try:  # a neighbouring item's module thread is not this item's to lose
+        other = s.execute(text("INSERT INTO items(num, project_id, description)"
+                               " VALUES (:n, :p, 'Other') RETURNING item_id"),
+                          {"n": wid * 1000 + 2, "p": pid}).scalar()
+        om = s.execute(text("INSERT INTO modules(item_id, module_no) VALUES (:i, '1')"
+                            " RETURNING module_id"), {"i": other}).scalar()
+        s.execute(text("INSERT INTO comment(workspace_id, module_id, author_id, body)"
+                       " VALUES (:w, :m, :u, 'elsewhere')"), {"w": wid, "m": om, "u": uid})
+        s.commit()
+    finally:
+        s.close()
+    r = c.get(f"/items/{iid}/cv-imports/replace-impact")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"modules": 1, "live_comments": live}
+
+
+def test_replace_impact_is_zero_without_comments():
+    c, *_rest, iid = _committed_item()
+    assert c.get(f"/items/{iid}/cv-imports/replace-impact").json() == {
+        "modules": 1, "live_comments": 0}
+
+
+def test_replace_impact_needs_cut_floor_write_and_this_workspace():
+    c, wid, uid, pid, iid = _committed_item()
+    viewer, *_ = _login("viewer")
+    other_item = _login("viewer")[4]
+    assert viewer.get(f"/items/{other_item}/cv-imports/replace-impact").status_code == 403
+    theirs, *_ = _login("drafter")
+    assert theirs.get(f"/items/{iid}/cv-imports/replace-impact").status_code == 404
+    assert c.get("/items/99999999/cv-imports/replace-impact").status_code == 404
+
+
+def test_replace_reports_and_audits_the_comments_it_deleted():
+    c, wid, uid, pid, iid = _committed_item()
+    live = _comment_on_modules(wid, uid, iid)
+    run2 = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    r = c.post(f"/items/{iid}/cv-imports/{run2}/commit?mode=replace",
+               json={"resolutions": [], "replace": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["replaced_comment_count"] == live
+    s = SessionLocal()
+    try:
+        left = s.execute(text("SELECT count(*) FROM comment WHERE workspace_id = :w"),
+                         {"w": wid}).scalar()
+        wipe = s.execute(text("""SELECT payload FROM audit_log
+                                 WHERE event = 'cv.import.replace_wipe' AND target = :t"""),
+                         {"t": str(run2)}).scalar()
+        commit = s.execute(text("""SELECT payload FROM audit_log
+                                   WHERE event = 'cv.import.commit' AND target = :t"""),
+                           {"t": str(run2)}).scalar()
+    finally:
+        s.close()
+    assert left == 0                       # the cascade took every row, soft-deleted too
+    assert wipe["deleted_comment_count"] == live
+    assert commit["replaced_comment_count"] == live
+
+
+def test_first_import_reports_no_deleted_comments():
+    c, wid, uid, pid, iid = _login("drafter")
+    _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+    run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    r = c.post(f"/items/{iid}/cv-imports/{run}/commit", json={"resolutions": []})
+    assert r.json()["replaced_comment_count"] == 0
+
+
 def test_viewer_cannot_preview():
     c, wid, uid, pid, iid = _login("viewer")
     csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,18-PB\n"

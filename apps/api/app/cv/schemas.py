@@ -132,6 +132,15 @@ class CvCommitOut(BaseModel):
     mappings_created: int
     catalog_rows_created: int
     replaced_module_ids: list[int]
+    # Live comments (replies included) deleted with the replaced modules.
+    replaced_comment_count: int = 0
+
+
+class CvReplaceImpactOut(BaseModel):
+    """What ticking "Replace existing modules" would delete, read fresh when the
+    wizard reaches its confirm step (the preview snapshot can be minutes old)."""
+    modules: int
+    live_comments: int
 
 
 # --- Run history -------------------------------------------------------------
