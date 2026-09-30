@@ -1,7 +1,7 @@
 import type { ItemOut } from "@/lib/pm-types";
 
-/** Why a module cannot be deleted on this item, in words — or null if no lock
- *  applies. Mirrors `assert_item_content_unlocked` in the API (Hard Lock,
+/** Why this item's modules and parts cannot be changed, in words — or null if no
+ *  lock applies. Mirrors `assert_item_content_unlocked` in the API (Hard Lock,
  *  Approval Lock, Controlled Lock held by someone else, where the owner and
  *  managers/admins pass). Only decides what to show: the API refuses regardless. */
 export function moduleLockReason(
@@ -28,12 +28,25 @@ export function moduleLockReason(
 export function lockMessage(code: string, detail?: { owner_name?: string | null }): string | null {
   switch (code) {
     case "HARD_LOCKED":
-      return "This item is hard-locked. A manager or admin must unlock it before its modules can be deleted.";
+      return "This item is hard-locked. A manager or admin must unlock it before its modules or parts can be changed.";
     case "APPROVAL_LOCKED":
-      return "This item is approved, which locks it. Move its status off Approved before deleting its modules.";
+      return "This item is approved, which locks it. Move its status off Approved before changing its modules or parts.";
     case "ITEM_LOCKED":
-      return `${detail?.owner_name ?? "Another user"} has locked this item. Ask them, or a manager, to delete the module or unlock the item.`;
+      return `${detail?.owner_name ?? "Another user"} has locked this item. Ask them, or a manager, to make the change or unlock the item.`;
     default:
       return null;
   }
+}
+
+/** The wording for a `409` lock refusal carried by a failed request, or null when
+ *  the error is anything else. Reads both error shapes in use: `ApiError` (`body`,
+ *  pm-fetch) and the CV helper's `detail`. */
+export function lockFromError(e: unknown): string | null {
+  const err = e as { status?: number; body?: unknown; detail?: unknown };
+  const d = (
+    (err?.body ?? err?.detail) as
+      | { detail?: { code?: string; owner_name?: string | null } }
+      | undefined
+  )?.detail;
+  return err?.status === 409 && d?.code ? lockMessage(d.code, d) : null;
 }

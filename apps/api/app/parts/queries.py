@@ -130,14 +130,19 @@ def create_module(
     item_id: int,
     workspace_id: int,
     payload: CreateModuleIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> int | None:
     """INSERT a new module. Returns new module_id, or None if item not in workspace.
+    Raises `ItemContentLocked` when a lock on the item refuses it.
 
     Writes audit_log + item_edit_log(field='_create_module', new_value=module_no).
     """
     if not _item_in_workspace(db, item_id=item_id, workspace_id=workspace_id):
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     mid = db.execute(
         text(
@@ -181,15 +186,20 @@ def patch_module(
     module_id: int,
     workspace_id: int,
     payload: PatchModuleIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict | None:
     """Apply a partial update to a module. Returns updated ModuleOut dict, or None if not found.
+    Raises `ItemContentLocked` when a lock on the item refuses it.
 
     Writes one item_edit_log row per changed field.
     """
     item_id = _item_id_for_module(db, module_id=module_id, workspace_id=workspace_id)
     if item_id is None:
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     current = db.execute(
         text("SELECT name, notes FROM modules WHERE module_id = :mid"),
@@ -376,15 +386,20 @@ def create_part(
     module_id: int,
     workspace_id: int,
     payload: CreatePartIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> int | None:
     """INSERT a new part. Returns new part_id, or None if module not in workspace.
+    Raises `ItemContentLocked` when a lock on the item refuses it.
 
     Writes audit_log + item_edit_log(field='_create_part', new_value=part_name).
     """
     item_id = _item_id_for_module(db, module_id=module_id, workspace_id=workspace_id)
     if item_id is None:
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     pid = db.execute(
         text(
@@ -456,15 +471,20 @@ def patch_part(
     part_id: int,
     workspace_id: int,
     payload: PatchPartIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict | None:
     """Apply a partial update to a part. Returns updated PartOut dict, or None if not found.
+    Raises `ItemContentLocked` when a lock on the item refuses it.
 
     Writes one item_edit_log row per changed field with names like 'parts.qty', 'parts.len_mm'.
     """
     item_id = _item_id_for_part(db, part_id=part_id, workspace_id=workspace_id)
     if item_id is None:
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     current = db.execute(
         text(
@@ -523,15 +543,20 @@ def delete_part(
     *,
     part_id: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> str:
-    """Delete a part. Returns 'OK' or 'NOT_FOUND'.
+    """Delete a part. Returns 'OK' or 'NOT_FOUND'; raises `ItemContentLocked` when a
+    lock on the item refuses it.
 
     Writes audit_log + item_edit_log BEFORE delete.
     """
     item_id = _item_id_for_part(db, part_id=part_id, workspace_id=workspace_id)
     if item_id is None:
         return "NOT_FOUND"
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor
+    )
+    actor_id = actor.id
 
     part_name = db.execute(
         text("SELECT part_name FROM parts WHERE part_id = :pid"),

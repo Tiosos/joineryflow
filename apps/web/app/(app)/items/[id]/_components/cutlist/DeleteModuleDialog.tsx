@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { PM } from "@/lib/pm-fetch";
 import type { ModuleDeleteImpact } from "@/lib/pm-types";
-import { lockMessage } from "./moduleLock";
+import { lockFromError } from "./moduleLock";
 
 interface Props {
   moduleId: number;
@@ -53,9 +53,7 @@ export function DeleteModuleDialog({ moduleId, moduleName, onClose, onDeleted }:
       const status = (e as { status?: number })?.status;
       // A lock on the item refused it (Hard / Approval / another owner's Controlled
       // Lock) — the page may simply have been stale when the button was offered.
-      const detail = (e as { body?: { detail?: { code?: string; owner_name?: string | null } } })
-        ?.body?.detail;
-      const locked = status === 409 && detail?.code ? lockMessage(detail.code, detail) : null;
+      const locked = lockFromError(e);
       if (locked) {
         setErr(locked);
         setBusy(false);

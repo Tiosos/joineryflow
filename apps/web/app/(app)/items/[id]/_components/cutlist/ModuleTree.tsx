@@ -3,15 +3,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type { ModuleOut } from "@/lib/pm-types";
+import { lockFromError } from "./moduleLock";
 
 interface ModuleTreeProps {
   itemId: number;
   modules: ModuleOut[];
   activeModuleId: number | null;
   onSelect: (id: number) => void;
+  /** Why the item's modules cannot be changed right now (a lock), or null. */
+  lockReason: string | null;
 }
 
-export function ModuleTree({ itemId, modules, activeModuleId, onSelect }: ModuleTreeProps) {
+export function ModuleTree({ itemId, modules, activeModuleId, onSelect, lockReason }: ModuleTreeProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -22,8 +25,8 @@ export function ModuleTree({ itemId, modules, activeModuleId, onSelect }: Module
       setError(null);
       router.refresh();
       onSelect(m.id);
-    } catch {
-      setError("Failed to add module");
+    } catch (e) {
+      setError(lockFromError(e) ?? "Failed to add module");
     }
   }
 
@@ -48,7 +51,9 @@ export function ModuleTree({ itemId, modules, activeModuleId, onSelect }: Module
       <button
         type="button"
         onClick={addModule}
-        className="mt-2 rounded border border-dashed border-h-line px-3 py-2 text-sm text-h-muted hover:border-h-accent hover:text-h-ink transition-colors"
+        disabled={lockReason !== null}
+        title={lockReason ?? undefined}
+        className="mt-2 rounded border border-dashed border-h-line px-3 py-2 text-sm text-h-muted hover:border-h-accent hover:text-h-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50"
       >
         + Add module
       </button>

@@ -31,6 +31,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked, assert_item_content_unlocked
 from . import queries as q
 from .parser import ParsedPart, parse_csv
 from .resolver import resolve_codes, suggest_table
@@ -261,6 +262,15 @@ def commit_cv_import_route(
         raise HTTPException(
             409, {"code": "RUN_NOT_PENDING", "status": run["status"]},
         )
+
+    # A commit writes modules and parts (and `replace` deletes modules), so a lock
+    # on the item refuses it — before anything is written, leaving the run pending.
+    try:
+        assert_item_content_unlocked(
+            db, item_id=iid, workspace_id=user.workspace_id, actor=user
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
 
     error_log = run.get("error_log") or {}
     if not isinstance(error_log, dict):

@@ -3,14 +3,18 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type { ModuleOut, PartOut, PatchPartIn, PaintInstruction } from "@/lib/pm-types";
+import { lockFromError } from "./moduleLock";
 
 interface PartsGridProps {
   module: ModuleOut;
+  /** Why the item's parts cannot be changed right now (a lock), or null. */
+  lockReason: string | null;
 }
 
 type PartRow = PartOut & { _saved?: boolean; _saving?: boolean };
 
-export function PartsGrid({ module }: PartsGridProps) {
+export function PartsGrid({ module, lockReason }: PartsGridProps) {
+  const locked = lockReason !== null;
   const router = useRouter();
   const [rows, setRows] = useState<PartRow[]>(module.parts);
   const [error, setError] = useState<string | null>(null);
@@ -31,13 +35,13 @@ export function PartsGrid({ module }: PartsGridProps) {
       );
       setError(null);
       router.refresh();
-    } catch {
+    } catch (e) {
       // v1: inline error banner instead of toast — wire to a toast primitive in a future task
       // Rollback only this field on this part
       setRows((r) =>
         r.map((p) => (p.id === partId ? { ...p, [field]: prevValue } : p))
       );
-      setError(`Failed to save ${String(field)}`);
+      setError(lockFromError(e) ?? `Failed to save ${String(field)}`);
     }
   }
 
@@ -47,8 +51,8 @@ export function PartsGrid({ module }: PartsGridProps) {
       setRows((r) => [...r, { ...newPart, _saved: true }]);
       setError(null);
       router.refresh(); // keep server state in sync
-    } catch {
-      setError("Failed to add part");
+    } catch (e) {
+      setError(lockFromError(e) ?? "Failed to add part");
     }
   }
 
@@ -59,9 +63,9 @@ export function PartsGrid({ module }: PartsGridProps) {
       await PM.deletePart(partId);
       setError(null);
       router.refresh();
-    } catch {
+    } catch (e) {
       setRows(prev);
-      setError("Failed to delete part");
+      setError(lockFromError(e) ?? "Failed to delete part");
     }
   }
 
@@ -91,6 +95,7 @@ export function PartsGrid({ module }: PartsGridProps) {
               part={part}
               onPatch={patchCell}
               onDelete={deleteRow}
+              locked={locked}
             />
           ))}
         </tbody>
@@ -98,7 +103,9 @@ export function PartsGrid({ module }: PartsGridProps) {
       <button
         type="button"
         onClick={addRow}
-        className="mt-3 rounded border border-dashed border-h-line px-3 py-1.5 text-sm text-h-muted hover:border-h-accent hover:text-h-ink transition-colors"
+        disabled={locked}
+        title={lockReason ?? undefined}
+        className="mt-3 rounded border border-dashed border-h-line px-3 py-1.5 text-sm text-h-muted hover:border-h-accent hover:text-h-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50"
       >
         + Add row
       </button>
@@ -111,9 +118,10 @@ interface PartRowComponentProps {
   part: PartRow;
   onPatch: (id: number, field: keyof PatchPartIn, value: unknown) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  locked: boolean;
 }
 
-function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
+function PartRowComponent({ part, onPatch, onDelete, locked }: PartRowComponentProps) {
   return (
     <tr
       data-testid="part-row"
@@ -135,6 +143,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           type="number"
           defaultValue={String(part.qty)}
           onCommit={(v) => onPatch(part.id, "qty", Number(v) || 1)}
+          disabled={locked}
           className="w-12"
         />
       </td>
@@ -145,6 +154,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           data-field="part_name"
           defaultValue={part.part_name ?? ""}
           onCommit={(v) => onPatch(part.id, "part_name", v)}
+          disabled={locked}
           className="min-w-[110px]"
         />
       </td>
@@ -156,6 +166,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           type="number"
           defaultValue={part.len_mm !== null ? String(part.len_mm) : ""}
           onCommit={(v) => onPatch(part.id, "len_mm", v === "" ? null : Number(v))}
+          disabled={locked}
           className="w-16"
         />
       </td>
@@ -167,6 +178,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           type="number"
           defaultValue={part.wid_mm !== null ? String(part.wid_mm) : ""}
           onCommit={(v) => onPatch(part.id, "wid_mm", v === "" ? null : Number(v))}
+          disabled={locked}
           className="w-16"
         />
       </td>
@@ -187,6 +199,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           data-field="edge"
           defaultValue={part.edge ?? ""}
           onCommit={(v) => onPatch(part.id, "edge", v || null)}
+          disabled={locked}
           className="w-16"
         />
       </td>
@@ -197,14 +210,17 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           data-field="colour"
           defaultValue={part.colour ?? ""}
           onCommit={(v) => onPatch(part.id, "colour", v || null)}
+          disabled={locked}
           className="w-20"
         />
       </td>
 
       <td className="py-1 pr-1">
         <PaintSelect
+          key={String(part.paint_instruction)}
           defaultValue={part.paint_instruction}
           onCommit={(v) => onPatch(part.id, "paint_instruction", v)}
+          disabled={locked}
         />
       </td>
 
@@ -214,6 +230,7 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
           data-field="comment"
           defaultValue={part.comment ?? ""}
           onCommit={(v) => onPatch(part.id, "comment", v || null)}
+          disabled={locked}
           className="min-w-[80px]"
         />
       </td>
@@ -222,7 +239,8 @@ function PartRowComponent({ part, onPatch, onDelete }: PartRowComponentProps) {
         <button
           type="button"
           onClick={() => onDelete(part.id)}
-          className="px-1.5 text-h-muted hover:text-h-bad transition-colors"
+          disabled={locked}
+          className="px-1.5 text-h-muted hover:text-h-bad transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Delete part"
         >
           –
@@ -256,7 +274,7 @@ function CellInput({ onCommit, className, defaultValue, ...props }: CellInputPro
       className={[
         "rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-h-ink",
         "hover:border-h-line focus:border-h-accent focus:outline-none focus:bg-h-bg",
-        "transition-colors",
+        "transition-colors disabled:cursor-not-allowed disabled:opacity-60",
         className ?? "",
       ].join(" ")}
     />
@@ -274,9 +292,10 @@ const PAINT_OPTIONS: Array<{ value: string; label: string }> = [
 interface PaintSelectProps {
   defaultValue: string | null;
   onCommit: (value: string | null) => void;
+  disabled?: boolean;
 }
 
-function PaintSelect({ defaultValue, onCommit }: PaintSelectProps) {
+function PaintSelect({ defaultValue, onCommit, disabled }: PaintSelectProps) {
   const [value, setValue] = useState(defaultValue ?? "");
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -289,7 +308,8 @@ function PaintSelect({ defaultValue, onCommit }: PaintSelectProps) {
     <select
       value={value}
       onChange={handleChange}
-      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-h-ink hover:border-h-line focus:border-h-accent focus:outline-none focus:bg-h-bg transition-colors w-24"
+      disabled={disabled}
+      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-h-ink hover:border-h-line focus:border-h-accent focus:outline-none focus:bg-h-bg transition-colors w-24 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {PAINT_OPTIONS.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>

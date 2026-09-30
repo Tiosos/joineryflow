@@ -99,11 +99,21 @@ export function CutlistTab({
 
   return (
     <>
+      {canDeleteModule && lockReason && (
+        <p
+          data-testid="cutlist-locked"
+          className="mb-3 rounded-md border border-h-line bg-h-surface px-3 py-2 text-xs text-h-muted"
+        >
+          {lockReason}
+        </p>
+      )}
       <div className="mb-3 flex items-center justify-end">
         <button
           type="button"
           onClick={openImport}
-          className="rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm font-medium text-h-ink hover:bg-h-surface"
+          disabled={lockReason !== null}
+          title={lockReason ?? undefined}
+          className="rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm font-medium text-h-ink hover:bg-h-surface disabled:cursor-not-allowed disabled:opacity-50"
         >
           Import from CV
         </button>
@@ -116,6 +126,7 @@ export function CutlistTab({
             modules={item.modules}
             activeModuleId={null}
             onSelect={selectModule}
+            lockReason={lockReason}
           />
           <div className="flex-1 rounded-lg border border-h-line bg-h-surface p-8 text-center text-h-muted">
             Add a module to start the cutlist, or click <strong>Import from CV</strong>.
@@ -128,34 +139,28 @@ export function CutlistTab({
             modules={item.modules}
             activeModuleId={activeModuleId}
             onSelect={selectModule}
+            lockReason={lockReason}
           />
           {activeModule ? (
             <div className="flex min-w-0 flex-1 flex-col gap-6">
               {canDeleteModule && (
-                <div className="-mb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="truncate text-sm font-semibold text-h-ink">
-                      {activeModule.name ?? "Untitled module"}
-                    </h3>
-                    <button
-                      type="button"
-                      data-testid="delete-module"
-                      disabled={lockReason !== null}
-                      title={lockReason ?? undefined}
-                      onClick={() => setDeleting(true)}
-                      className="shrink-0 rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm text-h-bad hover:bg-h-surface disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Delete module
-                    </button>
-                  </div>
-                  {lockReason && (
-                    <p data-testid="delete-module-locked" className="mt-1 text-xs text-h-muted">
-                      {lockReason}
-                    </p>
-                  )}
+                <div className="-mb-3 flex items-center justify-between gap-3">
+                  <h3 className="truncate text-sm font-semibold text-h-ink">
+                    {activeModule.name ?? "Untitled module"}
+                  </h3>
+                  <button
+                    type="button"
+                    data-testid="delete-module"
+                    disabled={lockReason !== null}
+                    title={lockReason ?? undefined}
+                    onClick={() => setDeleting(true)}
+                    className="shrink-0 rounded-md border border-h-line bg-h-bg px-3 py-1 text-sm text-h-bad hover:bg-h-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Delete module
+                  </button>
                 </div>
               )}
-              <PartsGrid key={activeModule.id} module={activeModule} />
+              <PartsGrid key={activeModule.id} module={activeModule} lockReason={lockReason} />
               <section
                 data-testid="module-comments"
                 className="rounded-lg border border-h-line bg-h-surface p-4"

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { commitCvImport, getReplaceImpact, previewCvImport } from "@/lib/cv-fetch";
+import { lockFromError } from "./moduleLock";
 import type {
   CvCommitResolution,
   CvPreviewOut,
@@ -115,7 +116,12 @@ export function CvImportDialog({
     } catch (e: unknown) {
       const detail = (e as { detail?: { code?: string } })?.detail;
       const status = (e as { status?: number })?.status;
-      if (status === 409 && detail?.code === "ITEM_NOT_EMPTY") {
+      const locked = lockFromError(e);
+      if (locked) {
+        // A lock on the item refused the commit (nothing was written; the run stays
+        // pending) — the page may simply have been stale when the wizard was opened.
+        setErr(locked);
+      } else if (status === 409 && detail?.code === "ITEM_NOT_EMPTY") {
         setErr(
           'Item already has modules. Tick "Replace existing modules" and try again.',
         );
