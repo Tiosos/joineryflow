@@ -1362,9 +1362,11 @@ def patch_item_status(
     workspace_id: int,
     status: str,
     note: str,
-    actor_id: int,
+    actor: AuthUser,
 ) -> bool:
     """Update items.status.  Returns True if updated, False if item not found.
+    Raises `ItemContentLocked` on a Hard Lock or someone else's Controlled Lock
+    (not the Approval Lock: this is how it is cleared) — nothing is written.
 
     Writes to item_status_log (the actual table, which records status changes
     with columns: item_id, status, note, changed_by), audit_log, and item_edit_log.
@@ -1377,6 +1379,11 @@ def patch_item_status(
     current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
     if current is None:
         return False
+    actor_id = actor.id
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+        include_approval=False,
+    )
 
     prev_status = db.execute(
         text("SELECT status FROM items WHERE item_id = :iid"),
@@ -1455,7 +1462,7 @@ def bulk_patch_item_status(
     workspace_id: int,
     status: str,
     note: str,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict:
     """Apply the same status + note to a batch of items.  Single transaction.
 
@@ -1463,16 +1470,21 @@ def bulk_patch_item_status(
       - 'updated': existed and was updated; status_log + audit + edit_log written.
       - 'not_found': no item with that id exists at all.
       - 'cross_workspace': item exists but belongs to another workspace.
+      - 'locked': a Hard Lock or someone else's Controlled Lock refuses the
+        caller (not the Approval Lock); skipped, nothing written for it.
 
-    Returns {'updated': int, 'not_found': [int], 'cross_workspace': [int]}.
+    Returns {'updated': int, 'not_found': [int], 'cross_workspace': [int],
+    'locked': [{'item_id', 'code', 'owner_name'?}]}.
     """
     if not note:
         raise ValueError("note is required for bulk status changes")
     if status not in _VALID_STATUS_KEYS:
         raise ValueError(f"unknown status key: {status}")
 
+    actor_id = actor.id
     not_found: list[int] = []
     cross_workspace: list[int] = []
+    locked: list[dict] = []
     updated_count = 0
     bulk_size = len(item_ids)
 
@@ -1494,6 +1506,20 @@ def bulk_patch_item_status(
             continue
         if row["wid"] != workspace_id:
             cross_workspace.append(iid)
+            continue
+        try:
+            assert_item_content_unlocked(
+                db, item_id=iid, workspace_id=workspace_id, actor=actor,
+                include_approval=False,
+            )
+        except ItemContentLocked as e:
+            locked.append(
+                {
+                    "item_id": iid,
+                    "code": e.detail["code"],
+                    "owner_name": e.detail.get("owner_name"),
+                }
+            )
             continue
 
         prev_status = db.execute(
@@ -1546,6 +1572,7 @@ def bulk_patch_item_status(
         "updated": updated_count,
         "not_found": not_found,
         "cross_workspace": cross_workspace,
+        "locked": locked,
     }
 
 
@@ -1556,11 +1583,14 @@ def patch_lifecycle(
     workspace_id: int,
     stage_key: str,
     payload: PatchLifecycleIn,
-    actor_id: int,
+    actor: AuthUser,
 ) -> str:
     """UPSERT item_stages row for (item_id, stage_key).
 
-    Returns 'OK', 'NOT_FOUND', or 'INVALID_STAGE_KEY'.
+    Returns 'OK', 'NOT_FOUND', or 'INVALID_STAGE_KEY'.  Raises
+    `ItemContentLocked` on a Hard Lock or someone else's Controlled Lock (not
+    the Approval Lock — production dates follow approval).  Shop Floor's
+    fan-out writes `item_stages` directly and is deliberately not gated.
 
     Writes audit_log and item_edit_log per changed field.
     Does NOT write to item_status_log — that table is for status changes,
@@ -1578,6 +1608,12 @@ def patch_lifecycle(
     # genuinely does not exist for this row.
     if current["row_type"] != "joinery_item":
         return "NOT_FOUND"
+
+    actor_id = actor.id
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+        include_approval=False,
+    )
 
     # Fetch current stage row (if any) to capture old values for edit_log
     existing = db.execute(
@@ -1656,7 +1692,12 @@ class ItemContentLocked(Exception):
 
 
 def assert_item_content_unlocked(
-    db: Session, *, item_id: int, workspace_id: int, actor: AuthUser
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    actor: AuthUser,
+    include_approval: bool = True,
 ) -> None:
     """Refuse a change to an item's modules while a lock on the item forbids it.
 
@@ -1669,6 +1710,10 @@ def assert_item_content_unlocked(
     - Controlled Lock (Q509): `item_locked` with someone else as owner. The owner
       and managers/admins pass — the people who can decide a lock request.
 
+    `include_approval=False` leaves the Approval Lock out: `status` and lifecycle
+    dates are the one place it must not apply, because changing status is how an
+    approved item is unlocked and approval is when production dates start.
+
     Locks the item row `FOR UPDATE`, so a lock set concurrently is either seen
     here or waits for the caller's transaction. Raises `ItemContentLocked`.
     """
@@ -1679,7 +1724,7 @@ def assert_item_content_unlocked(
         raise ItemContentLocked(
             {"code": "HARD_LOCKED", "locked_by": current["hard_locked_by"]}
         )
-    if current["status"] == "APPROVED":
+    if include_approval and current["status"] == "APPROVED":
         raise ItemContentLocked({"code": "APPROVAL_LOCKED"})
     owner_id = current["cutlist_owner_id"]
     if (
