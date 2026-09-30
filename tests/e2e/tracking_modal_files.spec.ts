@@ -36,6 +36,54 @@ const registerRows = (page: Page) => modalRegister(page).getByTestId("modal-regi
 const slotValue = (page: Page, label: string) =>
   page.getByText(label, { exact: true }).locator("xpath=following-sibling::div");
 
+/** The value cell next to a label, scoped to the modal (the grid behind it has its own headers). */
+const modalValue = (page: Page, label: string) =>
+  page
+    .locator("div.fixed.inset-0")
+    .filter({ has: page.getByRole("heading", { name: "Item Details" }) })
+    .getByText(label, { exact: true })
+    .locator("xpath=following-sibling::div");
+
+test("the modal shows the item's reference fields and JID, read-only, instead of dashes", async ({ page }) => {
+  await login(page, "rin.park@hartwood.test");
+  const id = await openModal(page, "JO-K-101");
+  const item = await (await page.request.get(`/api/items/${id}`)).json();
+  // The seed gives this item real values; without them the checks below would pass on dashes.
+  for (const f of ["floor_plan", "rls", "joiery_details", "jid_code", "jid_color"]) {
+    expect(item[f], `seed should set ${f} on JO-K-101`).toBeTruthy();
+  }
+  // cutlist_printed defaults to TRUE for every item; the seed sets this one to FALSE so the
+  // modal has to tell the two apart (an open circle here, a tick on the next item).
+  expect(item.cutlist_printed).toBe(false);
+
+  await expect(modalValue(page, "Floor Plan")).toHaveText(item.floor_plan, { timeout: 15_000 });
+  await expect(modalValue(page, "RLS")).toHaveText(item.rls);
+  await expect(modalValue(page, "Joiery Details")).toHaveText(item.joiery_details);
+  await expect(modalValue(page, "Cutlist Printed?").locator("span.rounded-full")).toHaveCount(1);
+  await expect(modalValue(page, "Cutlist Printed?")).not.toContainText("✓");
+  await expect(modalValue(page, "Cutlist Printed?")).not.toContainText("—");
+  const jid = page.getByTestId("modal-jid");
+  await expect(jid).toContainText(item.jid_code);
+  await expect(jid.locator("span[title^='JID color']")).toHaveAttribute("title", `JID color ${item.jid_color}`);
+  // read-only: nothing in the modal's details takes input
+  await expect(page.locator("div.fixed.inset-0 input")).toHaveCount(0);
+});
+
+test("Next shows the next item's own reference fields, not the previous item's", async ({ page }) => {
+  await login(page, "rin.park@hartwood.test");
+  const id = await openModal(page, "JO-K-101");
+  const first = await (await page.request.get(`/api/items/${id}`)).json();
+  await expect(modalValue(page, "Floor Plan")).toHaveText(first.floor_plan, { timeout: 15_000 });
+  await page.getByRole("button", { name: /Next ›/ }).click();
+  // the other items have no Floor Plan / RLS / Joiery Details (an empty value renders as a
+  // dash) and keep the column's default of "printed"
+  await expect(modalValue(page, "Floor Plan")).toHaveText("—", { timeout: 15_000 });
+  await expect(modalValue(page, "RLS")).toHaveText("—");
+  await expect(modalValue(page, "Joiery Details")).toHaveText("—");
+  await expect(modalValue(page, "Cutlist Printed?")).toHaveText("✓");
+  await expect(page.getByTestId("modal-jid")).not.toContainText(first.jid_code);
+});
+
 test("the modal lists the item's register documents, read-only, with Open links", async ({ page }) => {
   await login(page, "noa.lindqvist@hartwood.test"); // drafter: could edit on the item editor
   const id = await openModal(page, "JO-K-101");

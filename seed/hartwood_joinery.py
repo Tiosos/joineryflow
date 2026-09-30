@@ -610,6 +610,10 @@ def main() -> None:
                     if idx == 0
                     else None
                 )
+                # Reference fields (0036) on the first item only, so the Tracking modal
+                # shows real values there and dashes everywhere else. Direct SQL: a PATCH
+                # through the API would claim the item's Controlled Lock.
+                first = idx == 0
                 db.execute(
                     text(
                         """
@@ -619,7 +623,11 @@ def main() -> None:
                                var_boq            = :vb,
                                contractor_id      = :cid,
                                total_amount       = :amt,
-                               site_measure_notes = COALESCE(:notes, site_measure_notes)
+                               site_measure_notes = COALESCE(:notes, site_measure_notes),
+                               floor_plan         = COALESCE(:fp, floor_plan),
+                               rls                = COALESCE(:rls, rls),
+                               joiery_details     = COALESCE(:jd, joiery_details),
+                               cutlist_printed    = COALESCE(:cp, cutlist_printed)
                          WHERE item_id = :iid
                         """
                     ),
@@ -630,6 +638,11 @@ def main() -> None:
                         "cid":   contractor_id,
                         "amt":   total_amount,
                         "notes": site_measure_notes,
+                        "fp":    "FP-L2-A" if first else None,
+                        "rls":   "RLS-0042" if first else None,
+                        "jd":    "JD-KIT-01" if first else None,
+                        # the column defaults to TRUE, so FALSE is the only way to show both states
+                        "cp":    False if first else None,
                         "iid":   row["item_id"],
                     },
                 )

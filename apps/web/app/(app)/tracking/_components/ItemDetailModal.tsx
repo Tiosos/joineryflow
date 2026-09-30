@@ -89,6 +89,21 @@ export function ItemDetailModal({ itemId, items, onClose, onNavigate }: Props) {
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">
                   JID
                 </div>
+                {item.jid_code || item.jid_color ? (
+                  <div className="mt-0.5 inline-flex items-center gap-1.5" data-testid="modal-jid">
+                    {item.jid_color ? (
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border border-h-line"
+                        style={{ backgroundColor: item.jid_color }}
+                        aria-hidden="true"
+                        title={`JID color ${item.jid_color}`}
+                      />
+                    ) : null}
+                    <span className="font-mono text-sm font-semibold text-h-ink">
+                      {item.jid_code ?? "—"}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="rounded border border-h-line bg-h-surface px-3 py-1 text-center">
                 <div className="font-mono text-sm font-semibold text-h-ink">
@@ -169,13 +184,13 @@ function DetailsPanel({ item }: { item: ItemOut }) {
         <Field label="Level" value={item.level} />
         <Field label="Room Number" value={item.room_no} />
         <Field label="Rm Description" value={item.room_desc} />
-        <Field label="Floor Plan" value={null} disabled />
-        <Field label="RLS" value={null} disabled />
-        <Field label="Joiery Details" value={null} disabled />
+        <Field label="Floor Plan" value={item.floor_plan} />
+        <Field label="RLS" value={item.rls} />
+        <Field label="Joiery Details" value={item.joiery_details} />
 
         <CheckRow label="Painting Required?" checked={item.painting_required} />
         <CheckRow label="Solid Surface Req?" checked={item.solid_surface_required} />
-        <CheckRow label="Cutlist Printed?" checked={null} disabled />
+        <CheckRow label="Cutlist Printed?" checked={item.cutlist_printed} />
 
         <Field label="Group ID" value={item.group_id} mono />
         <Field label="Item ID" value={String(item.id)} mono />
@@ -355,25 +370,23 @@ function StubPanel({ label }: { label: string }) {
 function Field({
   label,
   value,
-  disabled,
   mono,
   textarea,
   rightPlaceholder,
 }: {
   label: string;
   value: string | number | null;
-  disabled?: boolean;
   mono?: boolean;
   textarea?: boolean;
   rightPlaceholder?: string;
 }) {
   const display = value == null || value === "" ? (rightPlaceholder ?? "—") : String(value);
-  const valueClass = `flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-sm ${
-    disabled ? "text-h-muted/60" : "text-h-ink"
-  } ${mono ? "font-mono tabular-nums" : ""}`;
+  const valueClass = `flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-sm text-h-ink ${
+    mono ? "font-mono tabular-nums" : ""
+  }`;
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-2">
-      <label className={`rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink ${disabled ? "opacity-60" : ""}`}>
+      <label className="rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink">
         {label}
       </label>
       {textarea ? (
@@ -398,15 +411,13 @@ function Field({
 function CheckRow({
   label,
   checked,
-  disabled,
 }: {
   label: string;
   checked: boolean | null | undefined;
-  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-2">
-      <label className={`rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink ${disabled ? "opacity-60" : ""}`}>
+      <label className="rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink">
         {label}
       </label>
       <div className="px-2">
