@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from "react";
 import type { ItemOut, ItemStatus } from "@/lib/pm-types";
+import { lockFromError, moduleLockReason } from "@/app/(app)/items/[id]/_components/cutlist/moduleLock";
 
 interface Props {
   itemId: number | null;
+  /** Who is asking, to say up front when a lock refuses them. Optional: without
+   *  it the popup still shows the API's refusal after the attempt. */
+  currentUserId?: number | null;
+  currentUserRole?: string | null;
   onClose: () => void;
   onUpdated: () => void;
 }
@@ -13,7 +18,7 @@ const STATUS_CHOICES: ItemStatus[] = [
   "CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD",
 ];
 
-export function StatusPopup({ itemId, onClose, onUpdated }: Props) {
+export function StatusPopup({ itemId, currentUserId, currentUserRole, onClose, onUpdated }: Props) {
   const [item, setItem] = useState<ItemOut | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -47,7 +52,14 @@ export function StatusPopup({ itemId, onClose, onUpdated }: Props) {
   if (itemId == null) return null;
 
   const statusLog = item ? item.edit_log.filter((r) => r.field === "item.status") : [];
-  const canSubmit = !!pickedStatus && note.trim().length > 0 && !submitting && !!item;
+  // Hard Lock / someone else's Controlled Lock refuse a status change; the
+  // Approval Lock does not (this is how it is cleared).
+  const lockReason =
+    item && currentUserRole !== undefined
+      ? moduleLockReason(item, currentUserId ?? null, currentUserRole, "status")
+      : null;
+  const canSubmit =
+    !!pickedStatus && note.trim().length > 0 && !submitting && !!item && !lockReason;
 
   async function submit() {
     if (!canSubmit || !item || !pickedStatus) return;
@@ -61,7 +73,8 @@ export function StatusPopup({ itemId, onClose, onUpdated }: Props) {
         cache: "no-store",
       });
       if (!r.ok) {
-        throw new Error(`HTTP ${r.status}`);
+        const body = await r.json().catch(() => null);
+        throw new Error(lockFromError({ status: r.status, body }, "status") ?? `HTTP ${r.status}`);
       }
       onUpdated();
       onClose();
@@ -130,6 +143,11 @@ export function StatusPopup({ itemId, onClose, onUpdated }: Props) {
                   rows={4}
                   className="w-full resize-y rounded border border-h-line bg-h-surface p-2 text-sm text-h-ink placeholder:text-h-muted"
                 />
+                {lockReason ? (
+                  <div data-testid="status-locked" className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                    {lockReason}
+                  </div>
+                ) : null}
                 {submitError ? (
                   <div className="mt-2 text-xs text-[#b4443d]">{submitError}</div>
                 ) : null}

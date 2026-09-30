@@ -279,6 +279,8 @@ export function TrackingClient({
       />
       <StatusPopup
         itemId={statusPopupId}
+        currentUserId={me?.id ?? null}
+        currentUserRole={me?.auth_role ?? null}
         onClose={() => setStatusPopupId(null)}
         onUpdated={refresh}
       />
@@ -299,6 +301,12 @@ export function TrackingClient({
           if (result.not_found.length > 0) parts.push(`${result.not_found.length} not found`);
           if (result.cross_workspace.length > 0)
             parts.push(`${result.cross_workspace.length} skipped (workspace)`);
+          if (result.locked.length > 0)
+            parts.push(
+              `${result.locked.length} skipped (locked: ${result.locked
+                .map((l) => `#${items.find((it) => it.id === l.item_id)?.item_number ?? l.item_id}`)
+                .join(", ")})`,
+            );
           setBulkBanner(parts.join(" · "));
           clearSelection();
           refresh();

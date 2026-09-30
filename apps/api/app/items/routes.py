@@ -6,6 +6,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..projects.queries import get_project
 from .queries import (
+    ItemContentLocked,
     bulk_patch_item_status,
     claim_or_release_lock,
     clear_hard_lock,
@@ -280,14 +281,17 @@ def patch_status_route(
     """Update items.status.  Allowed for any role with tracking:write
     (admin, manager, editor, drafter — NOT purchase_officer or viewer).
     """
-    ok = patch_item_status(
-        db,
-        item_id=id,
-        workspace_id=user.workspace_id,
-        status=payload.status,
-        note=payload.note,
-        actor_id=user.id,
-    )
+    try:
+        ok = patch_item_status(
+            db,
+            item_id=id,
+            workspace_id=user.workspace_id,
+            status=payload.status,
+            note=payload.note,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if not ok:
         raise HTTPException(status_code=404, detail="item not found")
     db.commit()
@@ -314,7 +318,7 @@ def post_bulk_status(
         workspace_id=user.workspace_id,
         status=payload.status,
         note=payload.note,
-        actor_id=user.id,
+        actor=user,
     )
     db.commit()
     return result
@@ -332,14 +336,17 @@ def patch_lifecycle_route(
     Allowed for any role with tracking:write.
     Returns 400 for unknown stage_key, 404 if item not found.
     """
-    result = patch_lifecycle(
-        db,
-        item_id=id,
-        workspace_id=user.workspace_id,
-        stage_key=stage_key,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        result = patch_lifecycle(
+            db,
+            item_id=id,
+            workspace_id=user.workspace_id,
+            stage_key=stage_key,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(status_code=409, detail=e.detail)
     if result == "INVALID_STAGE_KEY":
         raise HTTPException(status_code=400, detail="unknown stage_key")
     if result == "NOT_FOUND":

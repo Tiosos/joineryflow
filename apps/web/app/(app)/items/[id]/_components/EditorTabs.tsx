@@ -113,7 +113,11 @@ export function EditorTabs({
           <AttachmentsTab itemId={item.id} currentUserRole={currentUserRole} />
         )}
         {current === "actions" && (
-          <ActionsTab item={item} currentUserRole={currentUserRole} />
+          <ActionsTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
         )}
         {current === "query" && (
           <QueryTab itemId={item.id} currentUserRole={currentUserRole} />

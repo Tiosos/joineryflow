@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0044`. Head is `0044_shop_drawing_register` (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 22 Playwright specs / 74 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 23 Playwright specs / 79 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -337,13 +337,15 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   names the approver. Saving again revises your own pending request rather than
   queueing a second (`uniq_pending_lock_request`).
   `event='item.lock_overridden'` is **retired**: nothing emits it, and existing
-  rows are history only. Scope is `PATCH /items/{id}` alone —
-  `/status` and `/lifecycle/{stage_key}` never consulted the lock and still do
-  not, and **there is no project-level lock** (Q566: `projects` has no lock
-  column). **Exceptions since *Lock checks on module delete* and *Lock checks on
-  the other module and part writes*:** every module and part write, and the CV
-  import commit and every hardware line write, now answer to the item's locks too
-  (Hard, Approval, Controlled).
+  rows are history only. Scope is `PATCH /items/{id}` alone, **and there is no
+  project-level lock** (Q566: `projects` has no lock column). **Exceptions since
+  *Lock checks on module delete* and *Lock checks on the other module and part
+  writes*:** every module and part write, and the CV import commit and every
+  hardware line write, now answer to the item's locks too (Hard, Approval,
+  Controlled). **Since *Lock checks on status and lifecycle*:** `/status`,
+  `/items/bulk-status` and `/lifecycle/{stage_key}` answer to the **Hard and
+  Controlled** locks — **not the Approval Lock**, which is cleared by a status
+  change and so cannot gate one.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -2312,8 +2314,9 @@ see *PM Workbench* above.
   pattern, not a new RBAC action) blocks the item for **everyone, including
   the current owner**, until the same authority clears it with `DELETE` on
   the same path. Scope matches the Controlled Lock's own documented
-  boundary: `/status` and `/lifecycle/{stage_key}` never consult either
-  lock. Audited as `item.hard_lock` / `item.hard_unlock`.
+  boundary: `/status` and `/lifecycle/{stage_key}` did not consult either
+  lock when this shipped (**the Hard Lock now stops them too — see *Lock checks on
+  status and lifecycle***). Audited as `item.hard_lock` / `item.hard_unlock`.
 - **Approval Lock (Q508 type 3) — derived, not stored.** Setting
   `items.status` to `APPROVED` (via `PATCH /items/{id}/status` or
   `POST /items/bulk-status`) locks `PATCH /items/{id}` with
@@ -3955,8 +3958,9 @@ since been built.**
   - ~~Every other write under a locked item is still open.~~ **Closed for module
     and part writes and CV import — see *Lock checks on the other module and part
     writes* below; hardware lines — see *Lock checks on hardware lines*.**
-  - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
-    lock (unchanged §L scope).
+  - ~~`PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
+    lock.~~ **Closed for the Hard and Controlled locks — see *Lock checks on status
+    and lifecycle* below.**
   - A Controlled Lock is not held as a request for a delete: the person is told to
     ask the owner or a manager. There is no "request a delete" flow.
   - The role check for the Controlled-Lock exemption is a hand-written
@@ -4029,8 +4033,9 @@ since been built.**
 - **Known gaps, recorded.**
   - ~~Hardware lines still ignore every lock.~~ **Closed — see *Lock checks on
     hardware lines* below.**
-  - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
-    lock (unchanged §L scope).
+  - ~~`PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
+    lock.~~ **Closed for the Hard and Controlled locks — see *Lock checks on status
+    and lifecycle* below.**
   - **`CvImportDialog`'s `ITEM_NOT_EMPTY` branch looks dead** (found while adding the
     lock branch, deliberately not fixed): it reads `e.detail.code`, but
     `cv-fetch.ts` puts the whole parsed body (`{detail: {code}}`) in `e.detail`, so
@@ -4099,8 +4104,8 @@ since been built.**
 - **Known gaps, recorded.**
   - **Locks now cover the whole item editor's writes to an item's cutlist and hardware,
     but not everything on an item**: `PATCH /items/{id}/status` and `/lifecycle/
-    {stage_key}` still never consult the lock (unchanged §L scope), and neither do the
-    other item-scoped writes — attachments, the document register, queries, QC records,
+    {stage_key}` **now consult it too (Hard and Controlled — see *Lock checks on status
+    and lifecycle* below)**, but the other item-scoped writes — attachments, the document register, queries, QC records,
     comments and material takes. None was asked for; whether any of them should follow
     is a product question (a comment on an approved item, for instance, is probably
     meant to stay possible).
@@ -4224,3 +4229,80 @@ since been built.**
     `q` over title / number / Joinery ID.
 - **Out of scope (deferred):** linking a drawing to a Joinery Item; Tg's own
   status names as stored states; a dark theme; pdf.js page navigation.
+
+## Lock checks on status and lifecycle (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is lock checks on status and lifecycle"). It closes
+> the gap every earlier lock round recorded as "unchanged §L scope". The request
+> collided with a rule already in this file, so the user was asked before any code was
+> written; the four answers below are **settled decisions**, not assumptions. No
+> migration, no spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **The Approval Lock applies to neither route.** It is derived from
+     `status = 'APPROVED'`, and changing status is the documented way to clear it
+     (*Locking + Concurrency*; `ApprovalLockBanner`), so gating `/status` on it would make
+     an approved item impossible to unlock. Lifecycle was decided the same way, because
+     approval (drawings signed off) is exactly when production dates start being recorded.
+     Hard and Controlled gate both routes.
+  2. **Bulk status skips locked items and lists them**, rather than refusing the whole
+     batch — the pattern `not_found` / `cross_workspace` already set.
+  3. **Shop Floor's fan-out is not gated.** Completing a stage writes `item_stages.done_date`
+     onto every linked item (Q439); that is the system projecting a cutlist-level fact, like
+     `sync_orders_for_item` rewriting CUTLIST NO., not a person editing the item.
+  4. **Same Controlled-Lock rule as the other writes** — the owner and managers/admins
+     pass; anyone else, foremen (`editor`) included, is refused.
+- **Backend.** `items.queries.assert_item_content_unlocked` gained
+  `include_approval: bool = True`; status and lifecycle pass `False`, so the check is the
+  Hard Lock and someone else's Controlled Lock only (codes `HARD_LOCKED`, `ITEM_LOCKED`,
+  same bodies as the other routes). `patch_item_status`, `bulk_patch_item_status` and
+  `patch_lifecycle` take the acting `AuthUser` (`actor=`, was `actor_id=`) and check right
+  after resolving the item, **before anything is written, audited or logged**; the two
+  single-item routes turn `ItemContentLocked` into `409 {detail: {code, …}}`. Unknown ids
+  stay 404, and an invalid `stage_key` is still `400` (validated before any lock).
+  `POST /items/bulk-status` answers `200` with a new **additive** field
+  `locked: [{item_id, code, owner_name}]`; skipped items get no status-log, audit or edit-log
+  row, and everything else in the batch is applied.
+- **A Hard Lock beats the Approval state**: a hard-locked APPROVED item answers
+  `HARD_LOCKED` on these routes, not a pass.
+- **Web.** `cutlist/moduleLock.ts` gained a `LockScope` (`"content"` | `"status"`) on
+  `moduleLockReason` / `lockMessage` / `lockFromError`; `"status"` leaves the Approval Lock
+  out and words the Hard Lock as "before its status or stage dates can be changed". The
+  Actions tab shows one notice (`data-testid="actions-locked"`, drafter / editor / manager /
+  admin only — the roles that can act) and disables **Set status** and **Mark REQ done**.
+  `StatusPopup` takes optional `currentUserId` / `currentUserRole` (passed by both callers):
+  with them it shows the reason up front (`data-testid="status-locked"`) and disables
+  **Update Current Item**; a `409` from a stale page shows the server's reason and keeps the
+  dialog open. `BulkStatusDialog`'s response type gained `locked`, and Tracking's banner reads
+  "N updated · M skipped (locked: #12, #14)".
+- **Tests.** `test_status_lifecycle_locks.py` (13): Hard Lock refuses everyone (an admin
+  included) on both routes, nothing changed or logged, then the same request succeeds once
+  cleared; Controlled Lock refuses a non-owner and a foreman, naming the owner, while the
+  owner and a manager pass; unlocked and sticky-owner items don't block; **the Approval Lock
+  does not stop a status change (and audits `item.approval_unlock`) or a lifecycle date**; a
+  Hard Lock wins over an approved item; unknown ids 404 and a bad stage key 400; bulk skips
+  Hard / Controlled items and lists them while updating the rest (including an APPROVED item),
+  a manager and the owner pass, and an unlocked batch reports `locked: []`. **Eight fail against
+  the unfixed source**; the other five are controls. `tests/e2e/status_locks.spec.ts` (5) ran
+  against a live migrated, seeded stack: a Hard Lock disables both Actions for a manager and
+  unlocking restores them; seeded Controlled-Locked `JO-K-103` is open to a manager and, once
+  ownership moves to the manager, disabled for the drafter — then restored; **an APPROVED item
+  keeps both Actions and the status dialog usable and can be moved off Approved**; a stale page
+  shows the owner's name for a refused status and a refused date; a mocked bulk response with a
+  skipped item reads in the banner. **Four fail against the unfixed web code** (the Approval Lock
+  one is the control). Each test puts the item back exactly as seeded.
+- **Known gaps, recorded.**
+  - **A Hard Lock can still receive a date from Shop Floor** — completing a stage on the item's
+    cutlist writes `item_stages.done_date` regardless (decision 3). Only the manual lifecycle route
+    is refused, so Tracking and the item's own lock can disagree until it is unlocked.
+  - **A foreman is refused on a drafter's Controlled Lock** (decision 4). Marking a stage date
+    for an item a drafter has claimed needs the drafter or a manager — the same friction the
+    module / part / hardware writes already have, now reaching the two things foremen actually do.
+  - No "request a change" flow for a refused status or date; the Controlled-Lock exemption is
+    still a hand-written `auth_role in (manager, admin)` check (Q472 not built).
+  - Still not lock-checked: attachments, the document register, item queries, QC records,
+    comments and material takes (none asked for; a comment on an approved item should probably
+    stay possible).
+  - `moduleLock.ts` is named for modules but now serves hardware, status and stage dates.
+- **Out of scope (deferred):** gating Shop Floor's fan-out; the Approval Lock on either route;
+  a request flow for a refused write; the other item-scoped writes named above.
