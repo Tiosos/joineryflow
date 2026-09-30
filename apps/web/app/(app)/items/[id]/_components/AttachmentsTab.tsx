@@ -9,9 +9,13 @@ import type { ItemOut } from "@/lib/pm-types";
 import { attachmentsCountLabel } from "@/lib/print";
 
 import AttachmentSlotCard from "./AttachmentSlotCard";
+import DocumentRegister from "./DocumentRegister";
 import { moduleLockReason } from "./cutlist/moduleLock";
 
 const WRITER_ROLES = new Set(["drafter", "manager", "admin"]);
+// The register is gated `list:write` alone, so editors may write it too (attachment
+// slots also require drafter+). Mirrors the API; the API decides.
+const REGISTER_WRITER_ROLES = new Set(["drafter", "manager", "admin", "editor"]);
 
 interface Props {
   item: ItemOut;
@@ -24,9 +28,13 @@ export default function AttachmentsTab({ item, currentUserId, currentUserRole }:
   const [bundle, setBundle] = useState<AttachmentsBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const canWrite = currentUserRole != null && WRITER_ROLES.has(currentUserRole);
-  // Hard, Approval and someone else's Controlled Lock refuse a slot write; the API
-  // decides, this only says why the controls are off.
-  const lockReason = canWrite ? moduleLockReason(item, currentUserId, currentUserRole) : null;
+  const canWriteRegister = currentUserRole != null && REGISTER_WRITER_ROLES.has(currentUserRole);
+  // Hard, Approval and someone else's Controlled Lock refuse a slot or register write;
+  // the API decides, this only says why the controls are off.
+  const anyLockReason =
+    canWrite || canWriteRegister ? moduleLockReason(item, currentUserId, currentUserRole) : null;
+  const lockReason = canWrite ? anyLockReason : null;
+  const registerLockReason = canWriteRegister ? anyLockReason : null;
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -49,12 +57,12 @@ export default function AttachmentsTab({ item, currentUserId, currentUserRole }:
         <p className="mt-1 text-sm text-h-muted">{attachmentsCountLabel(bundle)}</p>
       </header>
 
-      {lockReason && (
+      {anyLockReason && (
         <p
           data-testid="attachments-locked"
           className="rounded-md border border-h-line bg-h-surface px-3 py-2 text-xs text-h-muted"
         >
-          {lockReason}
+          {anyLockReason}
         </p>
       )}
 
@@ -81,6 +89,8 @@ export default function AttachmentsTab({ item, currentUserId, currentUserRole }:
           })}
         </div>
       )}
+
+      <DocumentRegister itemId={itemId} canWrite={canWriteRegister} lockReason={registerLockReason} />
     </section>
   );
 }
