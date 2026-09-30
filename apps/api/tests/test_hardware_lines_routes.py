@@ -591,3 +591,178 @@ def test_availability_endpoint_reflects_new_line():
     assert len(lines) == 1
     assert lines[0]["line_id"] == lid
     assert lines[0]["status"] == "none"
+
+
+# ── Lock checks on hardware line writes ────────────────────────────────────────
+
+
+def _login_same_workspace(wid: int, role: str, name: str = "U2"):
+    """A second user in an existing workspace: (client, user_id)."""
+    suffix = uuid.uuid4().hex[:8]
+    email = f"u2-{suffix}@example.com"
+    db = SessionLocal()
+    try:
+        slug = db.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid}).scalar()
+        uid = db.execute(
+            text(
+                """
+                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
+                VALUES (:w, :e, :n, :p, :r) RETURNING id
+                """
+            ),
+            {"w": wid, "e": email, "n": name, "p": hash_password("pw"), "r": role},
+        ).scalar()
+        db.commit()
+    finally:
+        db.close()
+    c = TestClient(app)
+    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
+    assert r.status_code == 200, r.text
+    return c, uid
+
+
+def _set_item(iid: int, sql: str, **params) -> None:
+    db = SessionLocal()
+    try:
+        db.execute(text(f"UPDATE items SET {sql} WHERE item_id = :i"), {"i": iid, **params})
+        db.commit()
+    finally:
+        db.close()
+
+
+def _hw_fixture():
+    """A drafter, their workspace, and an item with one hardware line."""
+    c, wid, uid = _login(role="drafter")
+    db = SessionLocal()
+    try:
+        pid = _create_project(db, uid=uid, code=f"HL-{uuid.uuid4().hex[:6]}")
+        mid = _insert_hardware(db, wid=wid, sku=f"HW-{uuid.uuid4().hex[:6]}")
+        cid = _add_to_catalog(db, project_id=pid, material_type="HARDWARE", material_id=mid, added_by=uid)
+        iid = _create_item(db, project_id=pid, uid=uid)
+        lid = _add_hardware_line(db, item_id=iid, catalog_id=cid, qty=2)
+    finally:
+        db.close()
+    return c, wid, uid, iid, cid, lid
+
+
+def _hw_routes(iid: int, cid: int, lid: int) -> dict:
+    """The three hardware line writes: name -> (method, path, json, ok status)."""
+    return {
+        "create": ("post", f"/items/{iid}/hardware_lines", {"catalog_id": cid, "qty": 1}, 201),
+        "patch": ("patch", f"/hardware_lines/{lid}", {"qty": 9}, 200),
+        "delete": ("delete", f"/hardware_lines/{lid}", None, 204),
+    }
+
+
+_HW_ROUTE_NAMES = ["create", "patch", "delete"]
+
+
+def _send(client, route: tuple):
+    method, path, body, _ok = route
+    return getattr(client, method)(path, **({"json": body} if body is not None else {}))
+
+
+def _hw_state(iid: int, wid: int) -> tuple:
+    """Everything a refused write must leave alone."""
+    db = SessionLocal()
+    try:
+        return (
+            db.execute(text("SELECT count(*), coalesce(sum(qty), 0) FROM item_hardware_lines"
+                            " WHERE item_id = :i"), {"i": iid}).one(),
+            db.execute(text("SELECT count(*) FROM item_edit_log WHERE item_id = :i"), {"i": iid}).scalar(),
+            db.execute(text("SELECT count(*) FROM audit_log WHERE workspace_id = :w"
+                            " AND event LIKE 'hardware_line.%'"), {"w": wid}).scalar(),
+        )
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("name", _HW_ROUTE_NAMES)
+@pytest.mark.parametrize("lock", ["hard", "approval"])
+def test_locked_item_refuses_every_hardware_line_write(name, lock):
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    route = _hw_routes(iid, cid, lid)[name]
+    if lock == "hard":
+        _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+        expected = {"code": "HARD_LOCKED", "locked_by": uid}
+    else:
+        db = SessionLocal()
+        try:
+            db.execute(text("INSERT INTO status_options(status_key, sort_order)"
+                            " VALUES ('APPROVED', 5) ON CONFLICT DO NOTHING"))
+            db.commit()
+        finally:
+            db.close()
+        _set_item(iid, "status = 'APPROVED'")
+        expected = {"code": "APPROVAL_LOCKED"}
+    admin, _ = _login_same_workspace(wid, "admin")
+
+    before = _hw_state(iid, wid)
+    for client in (c, admin):                       # a Hard / Approval Lock has no way round
+        r = _send(client, route)
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == expected
+    assert _hw_state(iid, wid) == before, "a refused write must change and log nothing"
+
+    _set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL, status = 'CLEAR'")
+    assert _send(c, route).status_code == route[3]   # the same request goes through once cleared
+
+
+@pytest.mark.parametrize("name", _HW_ROUTE_NAMES)
+def test_controlled_lock_refuses_a_non_owner_on_every_hardware_line_write(name):
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    routes = _hw_routes(iid, cid, lid)
+    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
+    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+
+    before = _hw_state(iid, wid)
+    r = _send(c, routes[name])
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {
+        "code": "ITEM_LOCKED", "owner_id": owner_id, "owner_name": "Olive Owner",
+    }
+    assert _hw_state(iid, wid) == before
+    assert _send(owner_client, routes[name]).status_code == routes[name][3]   # the owner passes
+
+
+@pytest.mark.parametrize("name", _HW_ROUTE_NAMES)
+def test_a_manager_passes_a_controlled_lock_on_every_hardware_line_write(name):
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    routes = _hw_routes(iid, cid, lid)
+    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    manager, _ = _login_same_workspace(wid, "manager")
+    assert _send(manager, routes[name]).status_code == routes[name][3]
+
+
+def test_an_unlocked_item_and_a_sticky_owner_do_not_block_hardware_line_writes():
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    _other, owner_id = _login_same_workspace(wid, "drafter")
+    # cutlist_owner_id survives an Unlock; only an active item_locked counts
+    _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
+    for name, route in _hw_routes(iid, cid, lid).items():
+        assert _send(c, route).status_code == route[3], name
+
+
+def test_unknown_ids_are_still_404_not_lock_answers_for_hardware_lines():
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    assert c.post("/items/99999999/hardware_lines", json={"catalog_id": cid, "qty": 1}).status_code == 404
+    assert c.patch("/hardware_lines/99999999", json={"qty": 1}).status_code == 404
+    assert c.delete("/hardware_lines/99999999").status_code == 404
+
+
+def test_project_catalog_writes_are_not_governed_by_an_items_lock():
+    """The catalog belongs to the project, not to an item, so no item's lock
+    governs it; removing a row still 409s while a line references it."""
+    c, wid, uid, iid, cid, lid = _hw_fixture()
+    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    db = SessionLocal()
+    try:
+        pid = db.execute(text("SELECT project_id FROM items WHERE item_id = :i"), {"i": iid}).scalar()
+        new_mid = _insert_hardware(db, wid=wid, sku=f"HW-{uuid.uuid4().hex[:6]}", description="Handle")
+    finally:
+        db.close()
+    r = c.post(f"/projects/{pid}/hardware_catalog", json={"source_table": "hardware_materials", "source_id": new_mid})
+    assert r.status_code in (200, 201), r.text
+    assert c.delete(f"/projects/{pid}/hardware_catalog/{cid}").status_code == 409   # still in use, not locked

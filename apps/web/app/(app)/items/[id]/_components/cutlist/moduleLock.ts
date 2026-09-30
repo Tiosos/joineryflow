@@ -1,6 +1,6 @@
 import type { ItemOut } from "@/lib/pm-types";
 
-/** Why this item's modules and parts cannot be changed, in words — or null if no
+/** Why this item's cutlist (modules, parts) and hardware cannot be changed, in words — or null if no
  *  lock applies. Mirrors `assert_item_content_unlocked` in the API (Hard Lock,
  *  Approval Lock, Controlled Lock held by someone else, where the owner and
  *  managers/admins pass). Only decides what to show: the API refuses regardless. */
@@ -28,9 +28,9 @@ export function moduleLockReason(
 export function lockMessage(code: string, detail?: { owner_name?: string | null }): string | null {
   switch (code) {
     case "HARD_LOCKED":
-      return "This item is hard-locked. A manager or admin must unlock it before its modules or parts can be changed.";
+      return "This item is hard-locked. A manager or admin must unlock it before its cutlist or hardware can be changed.";
     case "APPROVAL_LOCKED":
-      return "This item is approved, which locks it. Move its status off Approved before changing its modules or parts.";
+      return "This item is approved, which locks it. Move its status off Approved before changing its cutlist or hardware.";
     case "ITEM_LOCKED":
       return `${detail?.owner_name ?? "Another user"} has locked this item. Ask them, or a manager, to make the change or unlock the item.`;
     default:

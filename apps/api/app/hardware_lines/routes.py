@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import current_user, require_drafter, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked
 from ..items.schemas import HardwareLineOut
 from ..projects.queries import get_project
 from .queries import (
@@ -100,13 +101,16 @@ def post_hardware_line(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    lid = create_hardware_line(
-        db,
-        item_id=id,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        lid = create_hardware_line(
+            db,
+            item_id=id,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if lid is None:
         raise HTTPException(404, "item or catalog not found or catalog not in same project")
     db.commit()
@@ -127,13 +131,16 @@ def patch_hardware_line_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    row = patch_hardware_line(
-        db,
-        line_id=lid,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        row = patch_hardware_line(
+            db,
+            line_id=lid,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if row is None:
         raise HTTPException(404, "hardware line not found")
     db.commit()
@@ -150,12 +157,15 @@ def delete_hardware_line_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    result = delete_hardware_line(
-        db,
-        line_id=lid,
-        workspace_id=user.workspace_id,
-        actor_id=user.id,
-    )
+    try:
+        result = delete_hardware_line(
+            db,
+            line_id=lid,
+            workspace_id=user.workspace_id,
+            actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(404, "hardware line not found")
     db.commit()

@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0043`. Head is `0043_comment_module_revision` (comment threads on Modules and shop-drawing revisions, Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 21 Playwright specs / 71 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 22 Playwright specs / 74 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -342,8 +342,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   not, and **there is no project-level lock** (Q566: `projects` has no lock
   column). **Exceptions since *Lock checks on module delete* and *Lock checks on
   the other module and part writes*:** every module and part write, and the CV
-  import commit, now answer to the item's locks too (Hard, Approval, Controlled).
-  Hardware lines still do not.
+  import commit and every hardware line write, now answer to the item's locks too
+  (Hard, Approval, Controlled).
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -3952,7 +3952,7 @@ since been built.**
 - **Known gaps, recorded.**
   - ~~Every other write under a locked item is still open.~~ **Closed for module
     and part writes and CV import — see *Lock checks on the other module and part
-    writes* below.** Hardware lines are still open.
+    writes* below; hardware lines — see *Lock checks on hardware lines*.**
   - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
     lock (unchanged §L scope).
   - A Controlled Lock is not held as a request for a delete: the person is told to
@@ -3960,8 +3960,8 @@ since been built.**
   - The role check for the Controlled-Lock exemption is a hand-written
     `auth_role in (manager, admin)`, like `decide_lock_request`'s — Q472 is still
     not built.
-- **Out of scope (deferred):** the same check on hardware lines; a lock-request
-  flow for a delete; naming the lock owner in the disabled-button text.
+- **Out of scope (deferred):** a lock-request flow for a delete; naming the lock
+  owner in the disabled-button text.
 
 ## Lock checks on the other module and part writes (Plan V1 §12 follow-up, no migration) — shipped
 
@@ -4025,9 +4025,8 @@ since been built.**
   wizard shows a refused commit's reason. **All four fail against the unfixed web
   code.** Each e2e test puts the item back exactly as seeded.
 - **Known gaps, recorded.**
-  - **Hardware lines still ignore every lock** (not chosen). They are the same
-    cutlist screen's neighbour, so an item's hardware can change while its parts
-    cannot.
+  - ~~Hardware lines still ignore every lock.~~ **Closed — see *Lock checks on
+    hardware lines* below.**
   - `PATCH /items/{id}/status` and `/lifecycle/{stage_key}` still never consult the
     lock (unchanged §L scope).
   - **`CvImportDialog`'s `ITEM_NOT_EMPTY` branch looks dead** (found while adding the
@@ -4040,5 +4039,71 @@ since been built.**
     the page, not the cutlist notice.
   - The same hand-written `auth_role in (manager, admin)` Controlled-Lock exemption,
     and no "request a change" flow for a refused write — Q472 is still not built.
-- **Out of scope (deferred):** locks on hardware lines; a request flow for a refused
-  module / part write; guarding the CV `preview` (it writes only a run row).
+- **Out of scope (deferred):** a request flow for a refused module / part write; guarding the CV `preview` (it writes only a run row).
+
+## Lock checks on hardware lines (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next task is lock checks on hardware lines") — the gap
+> *Lock checks on the other module and part writes* left as "offered and not chosen".
+> Both questions it would have raised were already settled by the two rounds before
+> it, so **nothing was re-asked**: the rule is the same `assert_item_content_unlocked`
+> (Hard + Approval + Controlled, refused because none can be held as a `PatchItemIn`
+> request) and the UI is the same "one notice + controls disabled". No migration, no
+> spec or plan doc; this section is its written record.
+
+- **Backend.** `hardware_lines.queries.{create_hardware_line, patch_hardware_line,
+  delete_hardware_line}` take the acting `AuthUser` (`actor=`, was `actor_id=`) and check
+  the lock right after resolving the item, before anything is written, audited or
+  logged; the three routes (`POST /items/{id}/hardware_lines`, `PATCH` and `DELETE
+  /hardware_lines/{lid}`) turn `ItemContentLocked` into the same `409 {detail: {code,
+  …}}` the module / part routes use. Unknown ids stay 404. **A refused write changes
+  and logs nothing.** Deleting a line also **cascades its procurement allocations**
+  (`batch_allocations`, `ON DELETE CASCADE`), which is one more reason the delete is
+  refused rather than allowed. The Approval Lock consequence is the same as for parts:
+  hardware edits on an APPROVED item are refused until its status moves off Approved.
+- **Deliberately not locked: the project catalog.** `POST` / `DELETE
+  /projects/{pid}/hardware_catalog` (and the Pantry's **+ Add from global**) belong to
+  the **project**, not to an item, so no item's lock can govern them; a catalog row
+  is shared by every item of the project. Pinned by
+  `test_project_catalog_writes_are_not_governed_by_an_items_lock` (a Hard-Locked item
+  does not stop a catalog add, and `DELETE` of a row still 409s only because a line
+  references it). *This is an assumption made while building, not a user decision* —
+  the alternative (locking a project's catalog while any of its items is locked) has
+  no owner to name and would be new functionality.
+- **Estimate Convert is unaffected.** `estimating.convert_to_project` inserts hardware
+  lines for **brand-new** items it has just created, so there is no lock to consult.
+- **Web.** `HardwareTab` now takes `currentUserId` / `currentUserRole` (threaded from
+  `EditorTabs`) and reuses `moduleLockReason` / `lockFromError` from
+  `cutlist/moduleLock.ts` — the file is named for modules but now serves the whole item
+  editor, and its wording changed to "cutlist or hardware"; it was **not renamed**, to
+  keep the diff to what the task needs. One notice at the top (`data-testid=
+  "hardware-locked"`, drafter / manager / admin only, the roles that can write) and the
+  Pantry's **+**, the Cart's quantity steppers, note field and **Remove** are disabled.
+  A `409` from a stale page shows the server's reason and **reverts** the edit (the note
+  and quantity roll back, a refused add adds no line, a refused remove brings the line
+  back). **+ Add from global** stays enabled (project catalog, above).
+- **Tests.** `test_hardware_lines_routes.py` (+15): all three routes × Hard and Approval
+  Lock (refused for the owner and an admin alike, nothing changed or logged, then the same
+  request succeeds once cleared); all three × Controlled Lock (a non-owner refused naming
+  the owner; the owner and a manager pass); an unlocked item and a sticky owner do not
+  block; unknown ids stay 404; the project catalog is not governed by an item's lock.
+  **9 of the new cases fail against the unfixed source** (the rest are controls).
+  `tests/e2e/hardware_locks.spec.ts` (3): a Hard Lock disables every hardware control for
+  a manager, with the reason (and leaves **+ Add from global** on), unlocking restores
+  them; seeded `JO-K-103` (Controlled-Locked, drafter-owned) is open to a manager, and
+  after ownership moves to the manager the drafter is disabled, then restored; a stale
+  page reverts a refused note / add / remove with the owner named. **All three fail
+  against the unfixed web code.** Each puts the item back exactly as seeded.
+- **Known gaps, recorded.**
+  - **Locks now cover the whole item editor's writes to an item's cutlist and hardware,
+    but not everything on an item**: `PATCH /items/{id}/status` and `/lifecycle/
+    {stage_key}` still never consult the lock (unchanged §L scope), and neither do the
+    other item-scoped writes — attachments, the document register, queries, QC records,
+    comments and material takes. None was asked for; whether any of them should follow
+    is a product question (a comment on an approved item, for instance, is probably
+    meant to stay possible).
+  - No "request a change" flow for a refused write, and the same hand-written
+    `auth_role in (manager, admin)` Controlled-Lock exemption — Q472 is still not built.
+  - `moduleLock.ts` is named for modules but serves hardware too (above).
+- **Out of scope (deferred):** locks on the other item-scoped writes named above; a
+  request flow for a refused write; locking the project catalog.

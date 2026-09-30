@@ -3,12 +3,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PM } from "@/lib/pm-fetch";
 import type { HardwareCatalogOut, HardwareCatalogRow, ItemOut } from "@/lib/pm-types";
+import { lockFromError } from "../cutlist/moduleLock";
 
 interface PantryProps {
   item: ItemOut;
   catalog: HardwareCatalogOut | null;
   onOpenModal: () => void;
   onRefresh: () => void;
+  /** Why the item's hardware cannot be changed right now (a lock), or null. */
+  lockReason: string | null;
 }
 
 function groupBySourceTable(
@@ -20,7 +23,7 @@ function groupBySourceTable(
   }, {});
 }
 
-export function Pantry({ item, catalog, onOpenModal, onRefresh }: PantryProps) {
+export function Pantry({ item, catalog, onOpenModal, onRefresh, lockReason }: PantryProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState<number | null>(null);
@@ -44,8 +47,8 @@ export function Pantry({ item, catalog, onOpenModal, onRefresh }: PantryProps) {
       await PM.createHardwareLine(item.id, { catalog_id: catalogId, qty: 1 });
       router.refresh();
       onRefresh();
-    } catch {
-      setError("Failed to add hardware line");
+    } catch (e) {
+      setError(lockFromError(e) ?? "Failed to add hardware line");
     } finally {
       setAdding(null);
     }
@@ -90,8 +93,9 @@ export function Pantry({ item, catalog, onOpenModal, onRefresh }: PantryProps) {
                   type="button"
                   aria-label="Add"
                   onClick={() => addToCart(r.catalog_id)}
-                  disabled={adding === r.catalog_id}
-                  className="shrink-0 rounded border border-h-line px-2 py-0.5 text-sm text-h-muted hover:border-h-accent hover:text-h-ink disabled:opacity-50 transition-colors"
+                  disabled={adding === r.catalog_id || lockReason !== null}
+                  title={lockReason ?? undefined}
+                  className="shrink-0 rounded border border-h-line px-2 py-0.5 text-sm text-h-muted hover:border-h-accent hover:text-h-ink disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                 >
                   +
                 </button>
