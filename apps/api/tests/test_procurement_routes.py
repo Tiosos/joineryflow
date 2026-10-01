@@ -10,7 +10,9 @@ MySQL app and had NO workspace scoping anywhere until this fix:
 
 No prior test file existed for this module.
 """
+import re
 import uuid
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +21,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from app.procurement import routes as proc_routes
 
 from .conftest import TRUNCATE_TABLES
 
@@ -199,9 +202,9 @@ def test_filter_rto_excludes_other_workspace():
     other = _login()
     mine_po = _create_order(mine)
     other_po = _create_order(other)
-    for c, po in ((mine["client"], mine_po), (other["client"], other_po)):
-        r = c.patch(f"/procurement/orders/{po['po_id']}", json={"status": "Next"})
-        assert r.status_code == 200, r.text
+    # Staged directly: PATCH no longer moves the status of a live order (see the audit tests).
+    for po in (mine_po, other_po):
+        _set_status(po["po_id"], "Next")
 
     rows = mine["client"].get("/procurement/orders/filter/rto").json()
     assert [r["po_id"] for r in rows] == [mine_po["po_id"]]
@@ -512,3 +515,520 @@ def test_cost_center_transactions_cross_workspace_is_empty():
     r = mine["client"].get(f"/procurement/budget/{other['cc_id']}/transactions")
     assert r.status_code == 200, r.text
     assert r.json() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Audit of the legacy namespace: PO numbers, totals, the budget ledger, status
+# rules and attachments. Each test names the measured bug it pins.
+# ═══════════════════════════════════════════════════════════════════════════════
+def _sql(query: str, **params) -> list[dict]:
+    s = SessionLocal()
+    try:
+        result = s.execute(text(query), params)
+        rows = [dict(r) for r in result.mappings()] if result.returns_rows else []
+        s.commit()
+        return rows
+    finally:
+        s.close()
+
+
+def _set_status(po_id: int, status: str) -> None:
+    _sql("UPDATE purchase_orders SET status = :s WHERE po_id = :p", s=status, p=po_id)
+
+
+def _lines(*pairs: tuple) -> list[dict]:
+    return [
+        {"line_number": i + 1, "item_description": f"item {i + 1}", "quantity": q, "unit_price": p}
+        for i, (q, p) in enumerate(pairs)
+    ]
+
+
+def _totals(po_id: int) -> dict:
+    return _sql("SELECT total_amount, grand_total FROM purchase_orders WHERE po_id = :p", p=po_id)[0]
+
+
+def _committed(cc_id: int) -> Decimal:
+    return _sql(
+        "SELECT total_committed FROM v_budget_utilisation WHERE cost_center_id = :c", c=cc_id
+    )[0]["total_committed"]
+
+
+def _v1_order(ctx: dict):
+    return ctx["client"].post(
+        "/orders",
+        json={"vendor_id": ctx["vendor_id"], "description": "v1 order", "category": "Office"},
+    )
+
+
+# ── PO numbers ────────────────────────────────────────────────────────────────
+def test_legacy_po_numbers_come_from_the_sequence_and_never_collide_with_v1():
+    # Legacy create / duplicate used MAX(seq)+1; the v1 module uses po_number_seq; both write
+    # purchase_orders. After a legacy create handed out the number the sequence was about to
+    # give, the next v1 POST /orders failed with a unique violation.
+    ctx = _login()
+    _sql("SELECT setval('po_number_seq', 40, true)")
+
+    numbers = [_v1_order(ctx).json()["po_number"]]
+    legacy = _create_order(ctx)
+    numbers.append(legacy["po_number"])
+    numbers.append(_v1_order(ctx).json()["po_number"])  # the sequence's next value
+    dup = ctx["client"].post(f"/procurement/orders/{legacy['po_id']}/duplicate")
+    assert dup.status_code == 201, dup.text
+    numbers.append(dup.json()["po_number"])
+    r = _v1_order(ctx)
+    assert r.status_code == 201, r.text
+    numbers.append(r.json()["po_number"])
+
+    assert len(set(numbers)) == len(numbers), numbers
+    assert all(re.fullmatch(r"PO-\d{4}-\d{4}", n) for n in numbers), numbers
+
+
+# ── Totals ────────────────────────────────────────────────────────────────────
+def test_legacy_create_sums_the_lines_into_the_total_and_commits_it():
+    # 0002 did not port the MySQL triggers that summed the lines into total_amount and left it
+    # to the application; this route never did, so every approval committed $0.
+    ctx = _login()
+    po = _create_order(ctx, line_items=_lines((2, 50), (1, 25.5)))
+
+    assert _totals(po["po_id"])["total_amount"] == Decimal("125.50")
+    assert _totals(po["po_id"])["grand_total"] == Decimal("138.05")  # + 10% GST
+    ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
+    wf_id = _sql("SELECT workflow_id FROM approval_workflows WHERE po_id = :p", p=po["po_id"])[0]["workflow_id"]
+    assert _decide(ctx, wf_id, "approve").status_code == 200
+    assert _budget_rows(po["po_id"]) == [("Commitment", Decimal("138.05"))]
+
+
+def test_an_order_without_lines_keeps_a_zero_total():
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _totals(po["po_id"])["total_amount"] == Decimal("0.00")
+
+
+def test_duplicate_recomputes_the_total_from_the_copied_lines():
+    ctx = _login()
+    po = _create_order(ctx, line_items=_lines((2, 50)))
+    _sql("UPDATE purchase_orders SET total_amount = 0 WHERE po_id = :p", p=po["po_id"])  # a stale source
+
+    dup = ctx["client"].post(f"/procurement/orders/{po['po_id']}/duplicate").json()
+
+    assert _totals(dup["po_id"])["total_amount"] == Decimal("100.00")
+    assert _sql("SELECT count(*) n FROM po_line_items WHERE po_id = :p", p=dup["po_id"])[0]["n"] == 1
+
+
+# ── The budget ledger ─────────────────────────────────────────────────────────
+def test_delivering_releases_the_commitment_so_the_order_counts_once():
+    # v_budget_utilisation sums Commitment and Expenditure; delivery posted an Expenditure
+    # and never released the Commitment, so a $110 order read as $220.
+    ctx = _login()
+    po = _create_order(ctx, line_items=_lines((2, 50)))
+    ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
+    wf = _sql("SELECT workflow_id FROM approval_workflows WHERE po_id = :p", p=po["po_id"])[0]["workflow_id"]
+    assert _decide(ctx, wf, "approve").status_code == 200
+    assert _committed(ctx["cc_id"]) == Decimal("110.00")
+
+    assert ctx["client"].patch(f"/procurement/orders/{po['po_id']}/deliver").status_code == 200
+
+    assert _budget_rows(po["po_id"]) == [
+        ("Commitment", Decimal("110.00")),
+        ("Expenditure", Decimal("110.00")),
+        ("Release", Decimal("-110.00")),
+    ]
+    assert _committed(ctx["cc_id"]) == Decimal("110.00")
+
+
+def test_delivering_an_order_with_no_outstanding_commitment_posts_no_release():
+    ctx = _login()
+    po_id = _approved_order(ctx)  # no lines: committed at $0
+
+    assert ctx["client"].patch(f"/procurement/orders/{po_id}/deliver").status_code == 200
+
+    assert "Release" not in [t for t, _ in _budget_rows(po_id)]
+
+
+def test_a_release_is_limited_to_what_is_still_outstanding():
+    ctx = _login()
+    po = _create_order(ctx, line_items=_lines((2, 50)))
+    ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
+    wf = _sql("SELECT workflow_id FROM approval_workflows WHERE po_id = :p", p=po["po_id"])[0]["workflow_id"]
+    _decide(ctx, wf, "approve")
+    _sql(
+        "INSERT INTO budget_transactions (cost_center_id, po_id, amount, transaction_type, transaction_date)"
+        " VALUES (:c, :p, -30, 'Release', CURRENT_DATE)",
+        c=ctx["cc_id"], p=po["po_id"],
+    )
+
+    ctx["client"].patch(f"/procurement/orders/{po['po_id']}/deliver")
+
+    assert sum(a for _t, a in _budget_rows(po["po_id"]) if _t in ("Commitment", "Release")) == Decimal("0.00")
+    assert ("Release", Decimal("-80.00")) in _budget_rows(po["po_id"])
+
+
+# ── PATCH rules ───────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("target", ["Approved", "Delivered", "Cancelled"])
+def test_patch_cannot_move_a_live_order_to_another_status(target):
+    # PATCH status used to jump Draft -> Approved (no workflow, no commitment) or Delivered (no
+    # expenditure); status moves through submit / decide / deliver / delete, which post the budget.
+    ctx = _login()
+    po = _create_order(ctx)
+    before = _order_row(po["po_id"])
+
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}", json={"status": target})
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "STATUS_NOT_PATCHABLE"
+    assert _order_row(po["po_id"]) == before
+    assert _budget_rows(po["po_id"]) == []
+
+
+def test_patch_cannot_cancel_an_approved_order_and_strand_its_commitment():
+    ctx = _login()
+    po = _create_order(ctx, line_items=_lines((2, 50)))
+    ctx["client"].patch(f"/procurement/orders/{po['po_id']}/submit", params={"approver_id": ctx["uid"]})
+    wf = _sql("SELECT workflow_id FROM approval_workflows WHERE po_id = :p", p=po["po_id"])[0]["workflow_id"]
+    _decide(ctx, wf, "approve")
+
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}", json={"status": "Cancelled"})
+
+    assert r.status_code == 409, r.text
+    assert _order_row(po["po_id"])["status"] == "Approved"
+    assert _budget_rows(po["po_id"]) == [("Commitment", Decimal("110.00"))]
+
+
+def test_patch_still_edits_ordinary_fields_of_a_live_order():
+    ctx = _login()
+    po = _create_order(ctx)
+
+    r = ctx["client"].patch(
+        f"/procurement/orders/{po['po_id']}", json={"notes": "call before delivery", "description": "renamed"}
+    )
+
+    assert r.status_code == 200, r.text
+    row = _sql("SELECT notes, description FROM purchase_orders WHERE po_id = :p", p=po["po_id"])[0]
+    assert row == {"notes": "call before delivery", "description": "renamed"}
+    changelog = _order_row(po["po_id"])["changelog"]
+    assert "Updated fields:" in changelog and "notes" in changelog and "description" in changelog
+
+
+@pytest.mark.parametrize("frozen", ["Cancelled", "Delivered"])
+def test_a_frozen_order_is_read_only_except_for_status(frozen):
+    ctx = _login()
+    po = _create_order(ctx)
+    _set_status(po["po_id"], frozen)
+    before = _order_row(po["po_id"])
+
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}", json={"notes": "late edit"})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"code": "ORDER_LOCKED", "status": frozen, "blocked_fields": ["notes"]}
+
+    # a mixed PATCH is refused whole, the way the v1 module does it
+    mixed = ctx["client"].patch(
+        f"/procurement/orders/{po['po_id']}", json={"status": "Draft", "notes": "late edit"}
+    )
+    assert mixed.status_code == 409, mixed.text
+    assert _order_row(po["po_id"]) == before
+
+
+def test_status_is_the_way_back_in_for_a_frozen_order():
+    ctx = _login()
+    po = _create_order(ctx)
+    _set_status(po["po_id"], "Delivered")
+
+    r = ctx["client"].patch(f"/procurement/orders/{po['po_id']}", json={"status": "Approved"})
+
+    assert r.status_code == 200, r.text
+    row = _order_row(po["po_id"])
+    assert row["status"] == "Approved"
+    assert "status Delivered → Approved" in row["changelog"]
+    assert ctx["client"].patch(f"/procurement/orders/{po['po_id']}", json={"notes": "ok now"}).status_code == 200
+
+
+def test_patch_cannot_overwrite_the_changelog():
+    ctx = _login()
+    po = _create_order(ctx)
+    before = _order_row(po["po_id"])
+
+    r = ctx["client"].patch(
+        f"/procurement/orders/{po['po_id']}", json={"changelog": "tampered", "notes": "x"}
+    )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "changelog"
+    assert _order_row(po["po_id"]) == before
+
+
+# ── DELETE (cancel) ───────────────────────────────────────────────────────────
+@pytest.mark.parametrize("status", ["Approved", "Pending", "Delivered"])
+def test_cancelling_an_order_that_cannot_be_cancelled_is_a_409_and_changes_nothing(status):
+    # It answered 200 {"status": "Cancelled"} and logged "Cancelled" for any status, with the
+    # order untouched.
+    ctx = _login()
+    po = _create_order(ctx)
+    _set_status(po["po_id"], status)
+    before = _order_row(po["po_id"])
+
+    r = ctx["client"].delete(f"/procurement/orders/{po['po_id']}")
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "BAD_STATUS"
+    assert _order_row(po["po_id"]) == before
+
+
+@pytest.mark.parametrize("status", ["Draft", "Rejected", "Hold"])
+def test_cancelling_a_draft_rejected_or_held_order_still_works_once(status):
+    ctx = _login()
+    po = _create_order(ctx)
+    _set_status(po["po_id"], status)
+
+    r = ctx["client"].delete(f"/procurement/orders/{po['po_id']}")
+
+    assert r.status_code == 200, r.text
+    assert _order_row(po["po_id"])["status"] == "Cancelled"
+    assert ctx["client"].delete(f"/procurement/orders/{po['po_id']}").status_code == 409
+
+
+# ── Decisions ─────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_only_a_pending_order_can_be_decided(decision):
+    # Approving a Cancelled order made it Approved again (and committed budget for it).
+    ctx = _login()
+    po_id, wf = _submitted_order(ctx)
+    _set_status(po_id, "Cancelled")
+
+    r = _decide(ctx, wf, decision)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "BAD_STATUS"
+    assert _po_and_workflow_state(po_id, wf) == ("Cancelled", "Pending", 0)
+
+
+def test_the_pending_queue_omits_workflows_whose_order_is_no_longer_pending():
+    ctx = _login()
+    live, _ = _submitted_order(ctx)
+    gone, _ = _submitted_order(ctx)
+    _set_status(gone, "Cancelled")
+
+    ids = [p["po_id"] for p in ctx["client"].get(
+        "/procurement/approvals/pending", params={"approver_id": ctx["uid"]}).json()]
+
+    assert live in ids and gone not in ids
+
+
+# ── Attachments ───────────────────────────────────────────────────────────────
+@pytest.fixture
+def upload_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(proc_routes, "UPLOAD_DIR", tmp_path)
+    return tmp_path
+
+
+def _files_on_disk(root) -> list:
+    return [p for p in root.rglob("*") if p.is_file()]
+
+
+def _upload(ctx: dict, po_id: int, name: str = "quote.pdf", content: bytes = b"data", **form):
+    return ctx["client"].post(
+        f"/procurement/orders/{po_id}/attachments",
+        files={"file": (name, content)},
+        data={k: str(v) for k, v in form.items()},
+    )
+
+
+def _attachment_rows(po_id: int) -> list[dict]:
+    return _sql(
+        "SELECT attachment_id, file_name, file_path FROM po_attachments WHERE po_id = :p ORDER BY 1", p=po_id
+    )
+
+
+@pytest.mark.parametrize("uploader", ["foreign", "missing"])
+def test_upload_refuses_an_uploader_who_is_not_in_this_workspace(upload_dir, uploader):
+    # uploaded_by is joined to app_user.full_name, so another workspace's user id leaked that
+    # name; an id that did not exist was a raw 500 after the file had been written.
+    mine = _login()
+    other = _login()
+    po = _create_order(mine)
+    uid = other["uid"] if uploader == "foreign" else 999_999_999
+
+    r = _upload(mine, po["po_id"], uploaded_by=uid)
+
+    assert r.status_code == 422, r.text
+    assert _attachment_rows(po["po_id"]) == []
+    assert _files_on_disk(upload_dir) == []
+
+
+def test_an_older_row_naming_a_foreign_uploader_shows_no_name():
+    mine = _login()
+    other = _login()
+    po = _create_order(mine)
+    _sql(
+        "INSERT INTO po_attachments (po_id, attachment_type, file_name, file_path, uploaded_by)"
+        " VALUES (:p, 'File', 'old.pdf', '/nowhere', :u)",
+        p=po["po_id"], u=other["uid"],
+    )
+
+    listed = mine["client"].get(f"/procurement/orders/{po['po_id']}/attachments").json()
+    detail = mine["client"].get(f"/procurement/orders/{po['po_id']}").json()["attachments"]
+
+    assert [a["uploaded_by_name"] for a in listed] == [None]
+    assert [a["uploaded_by_name"] for a in detail] == [None]
+
+
+def test_an_uploader_in_this_workspace_is_named(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], uploaded_by=ctx["uid"]).status_code == 201
+    listed = ctx["client"].get(f"/procurement/orders/{po['po_id']}/attachments").json()
+    assert [a["uploaded_by_name"] for a in listed] == ["U"]
+
+
+def test_two_uploads_with_the_same_name_keep_their_own_content(upload_dir):
+    # Both used to be written to <po>/<name>: the second replaced the first's content and
+    # deleting one removed the file under the other.
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], "quote.pdf", b"first").status_code == 201
+    assert _upload(ctx, po["po_id"], "quote.pdf", b"second").status_code == 201
+    first, second = _attachment_rows(po["po_id"])
+
+    assert first["file_name"] == second["file_name"] == "quote.pdf"
+    assert first["file_path"] != second["file_path"]
+    assert open(first["file_path"], "rb").read() == b"first"
+    assert open(second["file_path"], "rb").read() == b"second"
+
+    r = ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{first['attachment_id']}")
+    assert r.status_code == 200, r.text
+    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [b"second"]
+
+
+def test_a_file_shared_by_older_rows_stays_until_the_last_row_goes(tmp_path):
+    ctx = _login()
+    po = _create_order(ctx)
+    shared = tmp_path / "shared.pdf"
+    shared.write_bytes(b"x")
+    for _ in range(2):
+        _sql(
+            "INSERT INTO po_attachments (po_id, attachment_type, file_name, file_path)"
+            " VALUES (:p, 'File', 'shared.pdf', :fp)",
+            p=po["po_id"], fp=str(shared),
+        )
+    a, b = _attachment_rows(po["po_id"])
+
+    assert ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{a['attachment_id']}").status_code == 200
+    assert shared.exists()
+    assert ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{b['attachment_id']}").status_code == 200
+    assert not shared.exists()
+
+
+def test_an_upload_over_the_cap_is_refused_and_leaves_nothing(upload_dir, monkeypatch):
+    # No cap at all before: a 30 MB file was accepted (POST /files stops at 25 MB).
+    monkeypatch.setattr(proc_routes, "MAX_BYTE_SIZE", 10)
+    ctx = _login()
+    po = _create_order(ctx)
+
+    too_big = _upload(ctx, po["po_id"], content=b"x" * 11)
+    assert too_big.status_code == 413, too_big.text
+    assert _attachment_rows(po["po_id"]) == []
+    assert _files_on_disk(upload_dir) == []
+
+    assert _upload(ctx, po["po_id"], content=b"x" * 10).status_code == 201
+
+
+@pytest.mark.parametrize("frozen", ["Delivered", "Cancelled"])
+def test_a_frozen_order_takes_and_loses_no_attachments(upload_dir, frozen):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], content=b"keep").status_code == 201
+    kept = _attachment_rows(po["po_id"])[0]
+    _set_status(po["po_id"], frozen)
+
+    up = _upload(ctx, po["po_id"], "late.pdf")
+    assert up.status_code == 409, up.text
+    assert up.json()["detail"] == {"code": "ORDER_LOCKED", "status": frozen}
+    rm = ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{kept['attachment_id']}")
+    assert rm.status_code == 409, rm.text
+
+    assert len(_attachment_rows(po["po_id"])) == 1
+    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [b"keep"]
+
+
+def test_attachment_responses_do_not_expose_the_server_path(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"]).status_code == 201
+
+    listed = ctx["client"].get(f"/procurement/orders/{po['po_id']}/attachments").json()
+    detail = ctx["client"].get(f"/procurement/orders/{po['po_id']}").json()["attachments"]
+
+    for row in listed + detail:
+        assert "file_path" not in row
+        assert {"attachment_id", "file_name", "file_size_bytes", "uploaded_at"} <= set(row)
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    "path",
+    ["/procurement/orders?offset=-1", "/procurement/orders?limit=-1", "/procurement/approvals/history?limit=-1"],
+)
+def test_negative_paging_is_a_422_not_a_500(path):
+    ctx = _login()
+    assert ctx["client"].get(path).status_code == 422
+
+
+def test_a_zero_limit_is_still_allowed():
+    ctx = _login()
+    r = ctx["client"].get("/procurement/orders?limit=0")
+    assert r.status_code == 200 and r.json() == []
+
+
+def test_duplicate_line_numbers_are_a_422_and_create_nothing():
+    ctx = _login()
+    before = _sql("SELECT count(*) n FROM purchase_orders")[0]["n"]
+
+    r = ctx["client"].post(
+        "/procurement/orders",
+        json={
+            "vendor_id": ctx["vendor_id"], "requester_id": ctx["uid"], "cost_center_id": ctx["cc_id"],
+            "description": "x", "category": "Office",
+            "line_items": [
+                {"line_number": 1, "item_description": "a", "quantity": 1, "unit_price": 1},
+                {"line_number": 1, "item_description": "b", "quantity": 1, "unit_price": 1},
+            ],
+        },
+    )
+
+    assert r.status_code == 422, r.text
+    assert _sql("SELECT count(*) n FROM purchase_orders")[0]["n"] == before
+
+
+# ── Duplicate ─────────────────────────────────────────────────────────────────
+def test_duplicate_keeps_the_project_item_attributes_and_line_provenance():
+    # It dropped project_id, item_id and attributes: a copy of a v1 order lost its links and,
+    # with no project, reached its workspace through the vendor instead.
+    ctx = _login()
+    project_id = _sql(
+        "INSERT INTO projects(project_code, name, workspace_id) VALUES (:c, 'P', :w) RETURNING project_id",
+        c=f"D-{uuid.uuid4().hex[:6]}", w=ctx["wid"],
+    )[0]["project_id"]
+    item_id = _sql(
+        "INSERT INTO items(num, project_id, description, status, stage)"
+        " VALUES (nextval('joinery_number_seq'), :p, 'unit', 'CLEAR', 'Block B') RETURNING item_id",
+        p=project_id,
+    )[0]["item_id"]
+    po = _create_order(ctx, line_items=_lines((2, 50)))
+    _sql(
+        "UPDATE purchase_orders SET project_id = :p, item_id = :i, attributes = '{\"k\": \"v\"}'::jsonb"
+        " WHERE po_id = :po",
+        p=project_id, i=item_id, po=po["po_id"],
+    )
+    _sql(
+        "UPDATE po_line_items SET attributes = '{\"finish\": \"matt\"}'::jsonb,"
+        " material_table = 'board_materials', material_id = 12345 WHERE po_id = :po",
+        po=po["po_id"],
+    )
+
+    dup = ctx["client"].post(f"/procurement/orders/{po['po_id']}/duplicate").json()
+
+    head = _sql("SELECT project_id, item_id, attributes FROM purchase_orders WHERE po_id = :p", p=dup["po_id"])[0]
+    assert head == {"project_id": project_id, "item_id": item_id, "attributes": {"k": "v"}}
+    line = _sql(
+        "SELECT attributes, material_table, material_id FROM po_line_items WHERE po_id = :p", p=dup["po_id"]
+    )[0]
+    assert line == {"attributes": {"finish": "matt"}, "material_table": "board_materials", "material_id": 12345}
