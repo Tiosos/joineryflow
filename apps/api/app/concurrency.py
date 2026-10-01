@@ -23,7 +23,28 @@ last-write-wins for that field. This is additive: every existing caller of
 these three modules that predates this migration keeps working unchanged.
 """
 
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
 FieldVersions = dict[str, int]
+
+
+def conflict_safe_value(v: Any) -> Any:
+    """Make a `FIELD_CONFLICT`'s `current_value` JSON-serialisable.
+
+    The conflict payload rides in `HTTPException(detail=...)`, which bypasses the
+    response_model's encoding and goes through Starlette's plain `json.dumps` — a
+    Decimal or date in it is a raw 500 instead of the 409. Stringify them here,
+    because this API's invariant is that money / quantities serialise as a JSON
+    **string**, never a number (`toFixed is not a function` on the web side), and
+    `jsonable_encoder` alone would turn a Decimal into a float.
+    """
+    if isinstance(v, Decimal):
+        return str(v)
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    return v
 
 
 def check_field_conflicts(

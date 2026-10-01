@@ -21,15 +21,13 @@ cutlist link/unlink paths. It is deliberately in this module rather than in
 `cutlists/`: the orders own the column being written.
 """
 import json
-from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..concurrency import bump_field_versions, check_field_conflicts
+from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn, PatchOrderLineIn
 
 # An order reaches its workspace through its project, or, when it has none,
@@ -365,22 +363,6 @@ def create_order(
     return "OK", order
 
 
-def _conflict_safe_value(v: Any) -> Any:
-    """A `FIELD_CONFLICT`'s `current_value` reuses whatever type the column
-    holds — but `orders-types.ts`'s own documented invariant (and every
-    money/quantity field elsewhere in this API) is that Decimal serializes
-    as a **string**, never a JSON number (`toFixed is not a function`
-    otherwise). `jsonable_encoder` alone would encode a Decimal as a float,
-    breaking that; stringify Decimal/date/datetime here so the conflict
-    payload matches the rest of the API regardless of which encoder wraps
-    the final response."""
-    if isinstance(v, Decimal):
-        return str(v)
-    if isinstance(v, (date, datetime)):
-        return v.isoformat()
-    return v
-
-
 def patch_order(
     db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
 ) -> tuple[str, dict | None]:
@@ -453,7 +435,7 @@ def patch_order(
     )
     if conflicts:
         for field, info in conflicts.items():
-            info["current_value"] = _conflict_safe_value(current.get(field))
+            info["current_value"] = conflict_safe_value(current.get(field))
         return "FIELD_CONFLICT", conflicts
 
     new_versions = bump_field_versions(current.get("field_versions"), list(fields))
