@@ -759,6 +759,50 @@ def test_status_is_the_way_back_in_from_a_frozen_order(ctx):
     assert float(r.json()["total_amount"]) == 180.0
 
 
+# `locked` on OrderOut — the server's answer to "is this order read-only?", so the
+# web does not keep its own copy of the frozen set. The expected set is written out
+# here rather than read from FROZEN_STATUSES, or the test could not disagree with it.
+_ALL_STATUSES = [
+    "Draft", "Pending", "Approved", "Rejected", "Delivered",
+    "Cancelled", "Hold", "Quote", "Next",
+]
+
+
+@pytest.mark.parametrize("status", _ALL_STATUSES)
+def test_locked_flag_is_true_exactly_for_cancelled_and_delivered(ctx, status):
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    po_id = po["po_id"]
+    assert c.patch(f"/orders/{po_id}", json={"status": status}).status_code == 200
+
+    expected = status in {"Cancelled", "Delivered"}
+    detail = c.get(f"/orders/{po_id}").json()
+    assert detail["locked"] is expected
+    listed = next(o for o in c.get("/orders").json()["orders"] if o["po_id"] == po_id)
+    assert listed["locked"] is expected
+
+
+def test_locked_flag_follows_a_reopen(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    assert c.get(f"/orders/{ids['po_id']}").json()["locked"] is False
+
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    assert c.get(f"/orders/{ids['po_id']}").json()["locked"] is True
+
+    # the response of the reopening PATCH itself already says so
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": "Draft"})
+    assert r.status_code == 200, r.text
+    assert r.json()["locked"] is False
+
+    # and so do the line mutations, which return the whole order
+    r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "4"})
+    assert r.status_code == 200, r.text
+    assert r.json()["locked"] is False
+
+
 def test_frozen_orders_may_move_between_frozen_statuses(ctx):
     """Status-only PATCH is allowed whatever the target, including another
     frozen status (a Delivered order later found to be cancelled)."""

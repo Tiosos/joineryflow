@@ -2930,10 +2930,9 @@ see *PM Workbench* above.
   elsewhere while this one sat open) shows "Order is Cancelled — change its
   status to edit" beside the field, **refetches the order and refreshes the
   list**, so the panel lands in the frozen state instead of staying editable
-  and failing again. The status-set duplicated in TypeScript is a small
-  drift risk (a third frozen status added server-side would still be
-  enforced, just not hidden); exposing a server-computed `locked` flag on
-  `OrderOut` would remove it, but touches the list payload too — not done.
+  and failing again. ~~The status-set duplicated in TypeScript is a small
+  drift risk~~ — **removed: `OrderOut.locked` is server-computed and the web
+  reads it, see *Server-computed `locked` on orders* below.**
 - **Fixed in review (same day).** `cancel_order` (`DELETE /orders/{po_id}`)
   is the *other* way into a frozen state, and it read the order with a plain
   `SELECT` and never bumped `field_versions["status"]` — so a panel that
@@ -2954,8 +2953,8 @@ see *PM Workbench* above.
   an unvalidated string on `PatchOrderIn`~~ **Closed — see *Order field
   validation* below** (and note the `null` half was worse than described here:
   it persisted and broke every read; `priority` had the same bug, and a
-  cross-workspace `vendor_id` hole turned up beside it). (2) The `FROZEN_STATUSES` set exists in Python
-  and TypeScript (drift risk, noted above), and the four handlers in
+  cross-workspace `vendor_id` hole turned up beside it). (2) ~~The `FROZEN_STATUSES` set exists in Python
+  and TypeScript~~ (**closed — see *Server-computed `locked` on orders***), and the four handlers in
   `OrdersClient.tsx` each repeat a three-line "if locked, refetch and refresh
   the list" block; a shared helper would remove the latter but is a refactor of
   handlers this change only touched at the edges.
@@ -2973,8 +2972,8 @@ see *PM Workbench* above.
   status select, banner and editors gone, still frozen after reload, reopen,
   the stale-panel case (order cancelled out-of-band → refused, panel
   refreshed, nothing persisted), and a viewer sees no banner.
-- **Out of scope (deferred):** guarding `Rejected`; a server-computed
-  `locked` flag; the same guard on the legacy `/procurement/*` routes;
+- **Out of scope (deferred):** guarding `Rejected`; ~~a server-computed
+  `locked` flag~~ (**built, see below**); the same guard on the legacy `/procurement/*` routes;
   restricting who may reopen a frozen order (today anyone with
   `orderbook:write`, like every other status change) — a
   manager-only reopen would be a rule to decide, not assume.
@@ -4917,3 +4916,41 @@ since been built.**
   caller can still name any key (cutlist reads it from the row; items falls back to the key itself). That
   is the behaviour `test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500` pins on purpose.
   The three modules each still call `check_field_conflicts` and fill `current_value` themselves.
+
+## Server-computed `locked` on orders (no migration) — shipped
+
+> Chosen by the user ("go with the next recommendation task") from the suggestion list after the
+> `FIELD_CONFLICT` fix — the drift risk *Purchase order status guard* recorded. Nothing in it was
+> under-specified, so nothing was asked. **Guarding `Rejected`, which that list paired with it, was
+> deliberately dropped, not built:** the status guard's settled decision is that `Rejected` stays editable
+> ("it can be fixed and resubmitted"), and reopening that would contradict the user's own answer. No
+> migration, no spec or plan doc; this section is its written record.
+
+- **What was wrong.** "Which statuses freeze an order" lived twice: `FROZEN_STATUSES` in Python, which
+  enforces it (`409 ORDER_LOCKED`), and a hand-copied constant in `OrdersClient.tsx`, which decided what to
+  render. A third frozen status added server-side would have been enforced but not hidden, and nothing
+  pinned the two together (unlike `OrderStatus`, which a test checks against the DB CHECK).
+- **The fix.** `OrderOut` gained a pydantic `computed_field` **`locked: bool`** — `status in FROZEN_STATUSES`.
+  `OrderDetailOut` extends `OrderOut`, so `GET /orders`, `GET /orders/{id}` and every response that returns the
+  order (the header PATCH, all three line mutations) carry it; it is computed on serialisation, so there is no
+  column, no extra query and nothing to keep in sync. The web's `OrderRow.locked` is read by
+  `OrderDetailPanel` in place of the old constant, which is deleted. The API still enforces the rule exactly as
+  before; the flag only tells the UI what to render.
+- **`FROZEN_STATUSES` moved to `orders/schemas.py`** (beside `OrderOut`), because `queries.py` already
+  imports `schemas.py` and the flag needs the set — the other direction would be a circular import.
+  `orders.queries` re-imports it under the same name, so `orders.queries.FROZEN_STATUSES`, the legacy
+  `procurement` module's re-export of it and the existing test import are unchanged.
+- **Tests** (`test_order_routes.py`, 10 new). `locked` is true for exactly `Cancelled` and `Delivered` across
+  **all nine statuses**, on both the detail and the list; and it follows a reopen — on the reopening PATCH's own
+  response and on a line mutation's. The expected set is written out literally in the test, not read from
+  `FROZEN_STATUSES`, so the test can disagree with the code. **All 10 fail against the unfixed source**
+  (`KeyError: 'locked'`). 195 pass across the order, legacy-procurement and lock test files; `tsc --noEmit` is clean.
+  **Not verified in a browser or by an e2e run** — the stack was not up and no spec covers the frozen banner; the
+  UI change is a one-line swap of where `frozen` comes from, with every `setOrder` call fed from an API response
+  that carries the flag.
+- **Known gaps, recorded.**
+  - **`OrdersClient.tsx`'s `STATUSES` (the status select) is still a hand-kept copy** of the DB CHECK; only the
+    frozen set was removed.
+  - The four handlers in `OrdersClient.tsx` still each repeat the "if locked, refetch and refresh the list"
+    block (unchanged).
+  - The legacy `/procurement/*` routes do not return `locked` (the web does not call them).

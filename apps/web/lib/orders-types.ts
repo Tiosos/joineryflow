@@ -54,6 +54,9 @@ export interface OrderRow {
 
   /** §L Q511/Q512 — field-level optimistic concurrency. */
   field_versions: Record<string, number>;
+  /** Server-computed: true for a Cancelled / Delivered order (read-only except
+   *  `status`). The API enforces it; the UI only reads it to decide what to render. */
+  locked: boolean;
 }
 
 export interface OrderListOut {
