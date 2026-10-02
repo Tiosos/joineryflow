@@ -107,7 +107,11 @@ export function EditorTabs({
         )}
         {current === "board" && <BoardTab itemId={item.id} />}
         {current === "take" && (
-          <MaterialTakeTab itemId={item.id} currentUserRole={currentUserRole} />
+          <MaterialTakeTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
         )}
         {current === "attachments" && (
           <AttachmentsTab
@@ -124,7 +128,11 @@ export function EditorTabs({
           />
         )}
         {current === "query" && (
-          <QueryTab itemId={item.id} currentUserRole={currentUserRole} />
+          <QueryTab
+            item={item}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
         )}
         {current === "comments" && (
           <CommentThread

@@ -6,7 +6,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
+from ..items.queries import assert_item_content_unlocked
 
 
 _QUERY_COLS = """
@@ -81,10 +83,17 @@ def create_query(
     item_id: int,
     workspace_id: int,
     question: str,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict | None:
+    """Raises `ItemContentLocked` on a Hard Lock only: asking is open to anyone with
+    `list:read`, so neither the Controlled nor the Approval Lock may stop it."""
     if not _item_in_workspace(db, item_id=item_id, workspace_id=workspace_id):
         return None
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+        include_approval=False, include_controlled=False,
+    )
+    actor_id = actor.id
 
     qid = db.execute(
         text(
@@ -118,13 +127,21 @@ def answer_query(
     query_id: int,
     workspace_id: int,
     answer: str,
-    actor_id: int,
+    actor: AuthUser,
     allow_overwrite: bool = False,
 ) -> str | dict:
-    """Returns 'NOT_FOUND', 'ALREADY_ANSWERED' (when not overwriting), or row dict."""
+    """Returns 'NOT_FOUND', 'ALREADY_ANSWERED' (when not overwriting), or row dict.
+
+    Raises `ItemContentLocked` on a Hard Lock or someone else's Controlled Lock — not
+    the Approval Lock: an approved item is exactly when its queries get answered."""
     current = _query_in_workspace(db, query_id=query_id, workspace_id=workspace_id)
     if current is None:
         return "NOT_FOUND"
+    assert_item_content_unlocked(
+        db, item_id=current["item_id"], workspace_id=workspace_id, actor=actor,
+        include_approval=False,
+    )
+    actor_id = actor.id
     if current["answer"] is not None and not allow_overwrite:
         return "ALREADY_ANSWERED"
 

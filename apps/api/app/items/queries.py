@@ -1704,6 +1704,7 @@ def assert_item_content_unlocked(
     workspace_id: int,
     actor: AuthUser,
     include_approval: bool = True,
+    include_controlled: bool = True,
 ) -> None:
     """Refuse a change to an item's modules while a lock on the item forbids it.
 
@@ -1720,6 +1721,10 @@ def assert_item_content_unlocked(
     dates are the one place it must not apply, because changing status is how an
     approved item is unlocked and approval is when production dates start.
 
+    `include_controlled=False` leaves the Controlled Lock out: for *asking* an item
+    query, which anyone with `list:read` may do — a lock must not stop a person
+    putting a question to the lock's owner.
+
     Locks the item row `FOR UPDATE`, so a lock set concurrently is either seen
     here or waits for the caller's transaction. Raises `ItemContentLocked`.
     """
@@ -1734,7 +1739,8 @@ def assert_item_content_unlocked(
         raise ItemContentLocked({"code": "APPROVAL_LOCKED"})
     owner_id = current["cutlist_owner_id"]
     if (
-        current["item_locked"]
+        include_controlled
+        and current["item_locked"]
         and owner_id is not None
         and owner_id != actor.id
         and actor.auth_role not in ("manager", "admin")

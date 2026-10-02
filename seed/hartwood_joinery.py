@@ -2884,6 +2884,7 @@ def main() -> None:
         # approves a v2, so that summary shows a stale line. Idempotent: the
         # project's takes and summaries are dropped first.
         # ------------------------------------------------------------------
+        from app.auth.sessions import AuthUser as _TakeAuthUser
         from app.material_summaries import queries as _summaries
         from app.material_takes import queries as _takes
 
@@ -2902,13 +2903,21 @@ def main() -> None:
                    AND EXISTS (SELECT 1 FROM modules m WHERE m.item_id = i.item_id)
                  ORDER BY i.num"""), {"p": _alf})]
             if len(_take_items) >= 2:
+                # The take functions check the item's locks as the acting user.
+                _take_actor = _TakeAuthUser(
+                    **db.execute(
+                        text("SELECT id, workspace_id, email, full_name, auth_role"
+                             " FROM app_user WHERE id = :u"),
+                        {"u": _drafter},
+                    ).mappings().one()
+                )
                 _draft_only, _revised = _take_items[1], _take_items[0]
                 for _iid in _take_items:
-                    _tid = _takes.generate(db, _iid, wid, _drafter)
+                    _tid = _takes.generate(db, _iid, wid, _take_actor)
                     if _iid != _draft_only:
-                        _takes.approve(db, _tid, wid, _drafter)
+                        _takes.approve(db, _tid, wid, _take_actor)
                 _summaries.build(db, _alf, wid, _drafter)
-                _takes.approve(db, _takes.generate(db, _revised, wid, _drafter), wid, _drafter)
+                _takes.approve(db, _takes.generate(db, _revised, wid, _take_actor), wid, _take_actor)
                 db.commit()
                 print(f"seeded #12 material take: {len(_take_items) - 1} approved takes "
                       f"(1 at v2), 1 draft, 1 project summary whose lines for that item read stale")
@@ -2993,20 +3002,30 @@ def main() -> None:
             """), {"p": _alf}).scalar()
 
             if _item1:
+                # Asking and answering check the item's locks as the acting user.
+                def _seed_actor(_uid):
+                    return _SeedAuthUser(
+                        **db.execute(
+                            text("SELECT id, workspace_id, email, full_name, auth_role"
+                                 " FROM app_user WHERE id = :u"),
+                            {"u": _uid},
+                        ).mappings().one()
+                    )
+
                 db.execute(text("DELETE FROM item_query WHERE item_id = :i"), {"i": _item1})
                 _iqueries.create_query(
-                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    db, item_id=_item1, workspace_id=wid, actor=_seed_actor(_manager),
                     question="Client wants to confirm handle finish — brushed "
                              "nickel or matte black?",
                 )
                 _answered = _iqueries.create_query(
-                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    db, item_id=_item1, workspace_id=wid, actor=_seed_actor(_manager),
                     question="Can the island bench overhang be increased to "
                              "400mm for stool clearance?",
                 )
                 _iqueries.answer_query(
                     db, query_id=_answered["query_id"], workspace_id=wid,
-                    actor_id=_drafter,
+                    actor=_seed_actor(_drafter),
                     answer="Confirmed with engineering — 400mm overhang is "
                            "within tolerance, cutlist updated.",
                 )

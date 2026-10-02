@@ -3,8 +3,10 @@ import type { ItemOut } from "@/lib/pm-types";
 /** What a lock is being checked against. "content" is the item's cutlist (modules,
  *  parts), hardware, attachment slots and document register, which every lock covers. "status" is its status and stage
  *  dates, which the Approval Lock does not cover: changing status is how an
- *  approved item is unlocked, and production dates follow approval. */
-export type LockScope = "content" | "status";
+ *  approved item is unlocked, and production dates follow approval. "records" is
+ *  item queries (answering) and the Material Take, which the Approval Lock also
+ *  leaves out: takes are approved and queries answered on approved items. */
+export type LockScope = "content" | "status" | "records";
 
 /** Why this item's cutlist (modules, parts), hardware and attachments — or, with scope "status",
  *  its status and stage dates — cannot be changed, in words — or null if no
@@ -41,7 +43,11 @@ export function lockMessage(
   switch (code) {
     case "HARD_LOCKED":
       return `This item is hard-locked. A manager or admin must unlock it before its ${
-        scope === "status" ? "status or stage dates" : "cutlist, hardware or attachments"
+        scope === "status"
+          ? "status or stage dates"
+          : scope === "records"
+            ? "queries or material take"
+            : "cutlist, hardware or attachments"
       } can be changed.`;
     case "APPROVAL_LOCKED":
       return "This item is approved, which locks it. Move its status off Approved before changing its cutlist, hardware or attachments.";
