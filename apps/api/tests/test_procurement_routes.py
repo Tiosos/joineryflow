@@ -814,9 +814,15 @@ def test_the_pending_queue_omits_workflows_whose_order_is_no_longer_pending():
 
 
 # ── Attachments ───────────────────────────────────────────────────────────────
+# Uploads go through the shared file store (`FILE_STORE_ROOT`), like every other upload, and
+# the file must pass the same sniff as POST /files — so test content is a real PDF header.
+def _pdf(tag: bytes = b"") -> bytes:
+    return b"%PDF-1.4\n" + tag
+
+
 @pytest.fixture
 def upload_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(proc_routes, "UPLOAD_DIR", tmp_path)
+    monkeypatch.setenv("FILE_STORE_ROOT", str(tmp_path))
     return tmp_path
 
 
@@ -824,18 +830,24 @@ def _files_on_disk(root) -> list:
     return [p for p in root.rglob("*") if p.is_file()]
 
 
-def _upload(ctx: dict, po_id: int, name: str = "quote.pdf", content: bytes = b"data", **form):
+def _upload(ctx: dict, po_id: int, name: str = "quote.pdf", content: bytes | None = None, **form):
     return ctx["client"].post(
         f"/procurement/orders/{po_id}/attachments",
-        files={"file": (name, content)},
+        files={"file": (name, _pdf() if content is None else content)},
         data={k: str(v) for k, v in form.items()},
     )
 
 
 def _attachment_rows(po_id: int) -> list[dict]:
     return _sql(
-        "SELECT attachment_id, file_name, file_path FROM po_attachments WHERE po_id = :p ORDER BY 1", p=po_id
+        "SELECT attachment_id, file_name, file_path, file_blob_id"
+        " FROM po_attachments WHERE po_id = :p ORDER BY 1",
+        p=po_id,
     )
+
+
+def _download(ctx: dict, po_id: int, attachment_id: int):
+    return ctx["client"].get(f"/procurement/orders/{po_id}/attachments/{attachment_id}/download")
 
 
 @pytest.mark.parametrize("uploader", ["foreign", "missing"])
@@ -879,23 +891,74 @@ def test_an_uploader_in_this_workspace_is_named(upload_dir):
     assert [a["uploaded_by_name"] for a in listed] == ["U"]
 
 
-def test_two_uploads_with_the_same_name_keep_their_own_content(upload_dir):
-    # Both used to be written to <po>/<name>: the second replaced the first's content and
-    # deleting one removed the file under the other.
+def test_an_upload_lands_in_the_shared_store_not_the_working_directory(upload_dir):
+    # It used to be written to ./uploads, relative to the api process — the container's own
+    # layer rather than the mounted volume — and nothing could read it back.
     ctx = _login()
     po = _create_order(ctx)
-    assert _upload(ctx, po["po_id"], "quote.pdf", b"first").status_code == 201
-    assert _upload(ctx, po["po_id"], "quote.pdf", b"second").status_code == 201
+    content = _pdf(b"body")
+
+    assert _upload(ctx, po["po_id"], content=content).status_code == 201
+
+    (row,) = _attachment_rows(po["po_id"])
+    assert row["file_blob_id"] is not None and row["file_path"] is None
+    (blob,) = _sql(
+        "SELECT workspace_id, mime, byte_size, storage_key FROM file_blob WHERE file_blob_id = :b",
+        b=row["file_blob_id"],
+    )
+    assert blob["workspace_id"] == ctx["wid"] and blob["mime"] == "application/pdf"
+    assert blob["byte_size"] == len(content)
+    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [content]
+    assert _files_on_disk(upload_dir)[0].relative_to(upload_dir).as_posix() == blob["storage_key"]
+    audits = _sql("SELECT event FROM audit_log WHERE event = 'file_blob.create' AND workspace_id = :w", w=ctx["wid"])
+    assert len(audits) == 1
+
+
+def test_the_same_bytes_attached_twice_share_one_blob(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    other_po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], "a.pdf").status_code == 201
+    assert _upload(ctx, other_po["po_id"], "b.pdf").status_code == 201
+
+    ids = {r["file_blob_id"] for r in _attachment_rows(po["po_id"]) + _attachment_rows(other_po["po_id"])}
+    assert len(ids) == 1
+    assert len(_files_on_disk(upload_dir)) == 1
+    assert _sql("SELECT count(*) AS n FROM file_blob")[0]["n"] == 1
+
+
+def test_two_uploads_with_the_same_name_keep_their_own_content(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], "quote.pdf", _pdf(b"first")).status_code == 201
+    assert _upload(ctx, po["po_id"], "quote.pdf", _pdf(b"second")).status_code == 201
     first, second = _attachment_rows(po["po_id"])
 
     assert first["file_name"] == second["file_name"] == "quote.pdf"
-    assert first["file_path"] != second["file_path"]
-    assert open(first["file_path"], "rb").read() == b"first"
-    assert open(second["file_path"], "rb").read() == b"second"
+    assert first["file_blob_id"] != second["file_blob_id"]
+    assert _download(ctx, po["po_id"], first["attachment_id"]).content == _pdf(b"first")
+    assert _download(ctx, po["po_id"], second["attachment_id"]).content == _pdf(b"second")
 
     r = ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{first['attachment_id']}")
     assert r.status_code == 200, r.text
-    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [b"second"]
+    assert _download(ctx, po["po_id"], second["attachment_id"]).content == _pdf(b"second")
+
+
+def test_deleting_an_attachment_keeps_a_blob_another_row_still_uses(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    other_po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"], "a.pdf").status_code == 201
+    assert _upload(ctx, other_po["po_id"], "b.pdf").status_code == 201
+    (gone,) = _attachment_rows(po["po_id"])
+    (kept,) = _attachment_rows(other_po["po_id"])
+
+    r = ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{gone['attachment_id']}")
+
+    assert r.status_code == 200, r.text
+    assert _attachment_rows(po["po_id"]) == []
+    assert len(_files_on_disk(upload_dir)) == 1
+    assert _download(ctx, other_po["po_id"], kept["attachment_id"]).content == _pdf()
 
 
 def test_a_file_shared_by_older_rows_stays_until_the_last_row_goes(tmp_path):
@@ -923,30 +986,85 @@ def test_an_upload_over_the_cap_is_refused_and_leaves_nothing(upload_dir, monkey
     ctx = _login()
     po = _create_order(ctx)
 
-    too_big = _upload(ctx, po["po_id"], content=b"x" * 11)
+    too_big = _upload(ctx, po["po_id"], content=b"%PDF-" + b"x" * 6)
     assert too_big.status_code == 413, too_big.text
     assert _attachment_rows(po["po_id"]) == []
     assert _files_on_disk(upload_dir) == []
 
-    assert _upload(ctx, po["po_id"], content=b"x" * 10).status_code == 201
+    assert _upload(ctx, po["po_id"], content=b"%PDF-" + b"x" * 5).status_code == 201
+
+
+@pytest.mark.parametrize(
+    "name, content, status",
+    [
+        ("sheet.xlsx", b"PK\x03\x04 zipped office document", 415),  # not an accepted type
+        ("notes.txt", b"just some text", 415),
+        ("quote.png", _pdf(), 415),  # extension disagrees with the bytes
+        ("empty.pdf", b"", 400),
+    ],
+)
+def test_an_upload_that_fails_the_shared_checks_is_refused_and_leaves_nothing(upload_dir, name, content, status):
+    # Any type used to be accepted unchecked; the store is shared now, so its rules apply.
+    ctx = _login()
+    po = _create_order(ctx)
+
+    r = _upload(ctx, po["po_id"], name, content)
+
+    assert r.status_code == status, r.text
+    assert _attachment_rows(po["po_id"]) == []
+    assert _files_on_disk(upload_dir) == []
+    assert _sql("SELECT count(*) AS n FROM file_blob")[0]["n"] == 0
+
+
+def test_a_failure_after_the_bytes_were_written_removes_them(upload_dir, monkeypatch):
+    ctx = _login()
+    po = _create_order(ctx)
+
+    def boom(*a, **k):
+        raise RuntimeError("db went away")
+
+    monkeypatch.setattr(proc_routes.q, "insert_attachment", boom)
+    with pytest.raises(RuntimeError):
+        _upload(ctx, po["po_id"])
+
+    assert _files_on_disk(upload_dir) == []
+    assert _sql("SELECT count(*) AS n FROM file_blob")[0]["n"] == 0
+
+
+def test_a_failure_does_not_remove_a_blob_other_rows_share(upload_dir, monkeypatch):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"]).status_code == 201
+
+    def boom(*a, **k):
+        raise RuntimeError("db went away")
+
+    monkeypatch.setattr(proc_routes.q, "insert_attachment", boom)
+    with pytest.raises(RuntimeError):
+        _upload(ctx, po["po_id"], "again.pdf")
+
+    assert len(_files_on_disk(upload_dir)) == 1
 
 
 @pytest.mark.parametrize("frozen", ["Delivered", "Cancelled"])
 def test_a_frozen_order_takes_and_loses_no_attachments(upload_dir, frozen):
     ctx = _login()
     po = _create_order(ctx)
-    assert _upload(ctx, po["po_id"], content=b"keep").status_code == 201
+    keep = _pdf(b"keep")
+    assert _upload(ctx, po["po_id"], content=keep).status_code == 201
     kept = _attachment_rows(po["po_id"])[0]
     _set_status(po["po_id"], frozen)
 
-    up = _upload(ctx, po["po_id"], "late.pdf")
+    up = _upload(ctx, po["po_id"], "late.pdf", _pdf(b"late"))
     assert up.status_code == 409, up.text
     assert up.json()["detail"] == {"code": "ORDER_LOCKED", "status": frozen}
     rm = ctx["client"].delete(f"/procurement/orders/{po['po_id']}/attachments/{kept['attachment_id']}")
     assert rm.status_code == 409, rm.text
 
     assert len(_attachment_rows(po["po_id"])) == 1
-    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [b"keep"]
+    assert [p.read_bytes() for p in _files_on_disk(upload_dir)] == [keep]
+    # Reading is not editing: a frozen order's attachment can still be downloaded.
+    assert _download(ctx, po["po_id"], kept["attachment_id"]).content == keep
 
 
 def test_attachment_responses_do_not_expose_the_server_path(upload_dir):
@@ -958,8 +1076,135 @@ def test_attachment_responses_do_not_expose_the_server_path(upload_dir):
     detail = ctx["client"].get(f"/procurement/orders/{po['po_id']}").json()["attachments"]
 
     for row in listed + detail:
-        assert "file_path" not in row
+        assert "file_path" not in row and "storage_key" not in row
         assert {"attachment_id", "file_name", "file_size_bytes", "uploaded_at"} <= set(row)
+
+
+# ── Attachment download ───────────────────────────────────────────────────────
+def test_download_streams_the_uploaded_bytes(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    content = _pdf(b"hello")
+    assert _upload(ctx, po["po_id"], "Quote – v2.pdf", content).status_code == 201
+    (row,) = _attachment_rows(po["po_id"])
+
+    r = _download(ctx, po["po_id"], row["attachment_id"])
+
+    assert r.status_code == 200, r.text
+    assert r.content == content
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-length"] == str(len(content))
+    disposition = r.headers["content-disposition"]
+    assert disposition.startswith("inline;") and "filename*=UTF-8''Quote%20%E2%80%93%20v2.pdf" in disposition
+
+
+def test_download_is_404_across_workspaces(upload_dir):
+    mine = _login()
+    other = _login()
+    po = _create_order(other)
+    assert _upload(other, po["po_id"]).status_code == 201
+    (row,) = _attachment_rows(po["po_id"])
+
+    assert _download(mine, po["po_id"], row["attachment_id"]).status_code == 404
+    assert _download(other, po["po_id"], row["attachment_id"]).status_code == 200
+
+
+def test_download_does_not_serve_another_workspaces_blob(upload_dir):
+    # file_blob_id is a plain FK with no workspace of its own, so the join to the blob is
+    # scoped: a row pointing at a foreign workspace's blob serves nothing.
+    mine = _login()
+    other = _login()
+    other_po = _create_order(other)
+    assert _upload(other, other_po["po_id"]).status_code == 201
+    foreign_blob = _attachment_rows(other_po["po_id"])[0]["file_blob_id"]
+    po = _create_order(mine)
+    _sql(
+        "INSERT INTO po_attachments (po_id, attachment_type, file_name, file_blob_id)"
+        " VALUES (:p, 'PDF', 'x.pdf', :b)",
+        p=po["po_id"], b=foreign_blob,
+    )
+    (row,) = _attachment_rows(po["po_id"])
+
+    assert _download(mine, po["po_id"], row["attachment_id"]).status_code == 404
+
+
+def test_download_unknown_attachment_or_wrong_order_is_404(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    other_po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"]).status_code == 201
+    (row,) = _attachment_rows(po["po_id"])
+
+    assert _download(ctx, po["po_id"], 999_999).status_code == 404
+    assert _download(ctx, other_po["po_id"], row["attachment_id"]).status_code == 404
+    assert _download(ctx, 999_999, row["attachment_id"]).status_code == 404
+
+
+def test_download_needs_orderbook_read(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"]).status_code == 201
+    (row,) = _attachment_rows(po["po_id"])
+    # A group that holds nothing on orderbook: a real "no" from the RBAC engine.
+    _sql("DELETE FROM user_group_membership WHERE user_id = :u", u=ctx["uid"])
+    gid = _sql(
+        "INSERT INTO permission_group(workspace_id, name, is_system) VALUES (:w, 'none', false) RETURNING group_id",
+        w=ctx["wid"],
+    )[0]["group_id"]
+    _sql("INSERT INTO user_group_membership(user_id, group_id) VALUES (:u, :g)", u=ctx["uid"], g=gid)
+
+    assert _download(ctx, po["po_id"], row["attachment_id"]).status_code == 403
+
+
+def test_a_legacy_row_downloads_from_its_path_as_an_attachment_only(tmp_path):
+    ctx = _login()
+    po = _create_order(ctx)
+    old = tmp_path / "old.html"
+    old.write_bytes(b"<script>alert(1)</script>")
+    _sql(
+        "INSERT INTO po_attachments (po_id, attachment_type, file_name, file_path)"
+        " VALUES (:p, 'File', 'old.html', :fp)",
+        p=po["po_id"], fp=str(old),
+    )
+    (row,) = _attachment_rows(po["po_id"])
+
+    r = _download(ctx, po["po_id"], row["attachment_id"])
+
+    assert r.status_code == 200, r.text
+    assert r.content == b"<script>alert(1)</script>"
+    # Never rendered: these files were not sniffed on the way in.
+    assert r.headers["content-disposition"].startswith("attachment;")
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_a_legacy_row_whose_file_is_gone_is_404():
+    ctx = _login()
+    po = _create_order(ctx)
+    _sql(
+        "INSERT INTO po_attachments (po_id, attachment_type, file_name, file_path)"
+        " VALUES (:p, 'File', 'lost.pdf', '/nowhere/lost.pdf')",
+        p=po["po_id"],
+    )
+    _sql(
+        "INSERT INTO po_attachments (po_id, attachment_type, file_name)"
+        " VALUES (:p, 'File', 'no-path.pdf')",
+        p=po["po_id"],
+    )
+
+    for row in _attachment_rows(po["po_id"]):
+        r = _download(ctx, po["po_id"], row["attachment_id"])
+        assert r.status_code == 404, r.text
+
+
+def test_a_blob_whose_bytes_are_gone_is_404(upload_dir):
+    ctx = _login()
+    po = _create_order(ctx)
+    assert _upload(ctx, po["po_id"]).status_code == 201
+    (row,) = _attachment_rows(po["po_id"])
+    for f in _files_on_disk(upload_dir):
+        f.unlink()
+
+    assert _download(ctx, po["po_id"], row["attachment_id"]).status_code == 404
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
