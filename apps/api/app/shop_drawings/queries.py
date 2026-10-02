@@ -226,7 +226,10 @@ def get_drawing_with_revisions(db: Session, *, drawing_id: int, workspace_id: in
                    fb.mime AS file_mime,
                    r.uploaded_by, up.full_name AS uploaded_by_name, r.uploaded_at,
                    r.reviewed_by, rv.full_name AS reviewed_by_name, r.reviewed_at,
-                   r.review_note
+                   r.review_note,
+                   (SELECT count(*) FROM comment c
+                     WHERE c.revision_id = r.revision_id
+                       AND c.deleted_at IS NULL) AS comment_count
               FROM shop_drawing_revision r
               JOIN file_blob fb ON fb.file_blob_id = r.file_blob_id
               LEFT JOIN app_user up ON up.id = r.uploaded_by

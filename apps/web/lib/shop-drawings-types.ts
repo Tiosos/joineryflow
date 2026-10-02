@@ -107,6 +107,8 @@ export interface Revision {
   reviewed_by_name: string | null;
   reviewed_at: string | null;
   review_note: string | null;
+  /** Live comments on this revision's thread, replies included. */
+  comment_count: number;
 }
 
 export interface DrawingDetail {

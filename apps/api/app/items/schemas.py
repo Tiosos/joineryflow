@@ -124,6 +124,8 @@ class ModuleOut(BaseModel):
     id: int
     name: str | None
     parts: list[PartOut]
+    # Live comments on the module's thread, replies included, deleted ones not.
+    comment_count: int = 0
 
 
 class HardwareLineOut(BaseModel):

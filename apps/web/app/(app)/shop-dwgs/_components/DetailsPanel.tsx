@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CommentBadge } from "@/components/comments/CommentBadge";
 import { CommentThread } from "@/components/comments/CommentThread";
 import type { Mentionable } from "@/lib/comments-types";
 import { can } from "@/lib/permissions";
@@ -258,7 +259,7 @@ export default function DetailsPanel(props: Props) {
                     currentUserId={me.id}
                     currentUserRole={me.auth_role}
                     canComment={can(me, "shop_dwgs", "comment")}
-                    onMutated={props.onChanged}
+                    onMutated={() => { void refresh(); props.onChanged(); }}
                     roster={props.roster}
                   />
                 </div>
@@ -343,6 +344,7 @@ function RevisionList({ revisions, selectedId, onSelect, onView }: {
               {i === 0 && <span className="rounded bg-h-good/15 px-1.5 text-[10px] font-semibold uppercase text-h-good">Latest</span>}
               <span className="min-w-0 flex-1 truncate text-xs text-h-muted">{r.uploaded_by_name ?? "—"}</span>
               <span className="h-mono text-xs text-h-muted">{fmtTs(r.uploaded_at).slice(0, -6)}</span>
+              <CommentBadge n={r.comment_count} />
             </button>
             <button type="button" onClick={() => onView(r.revision_id)} aria-label={`View v${r.rev_no}`}
                     className="rounded border border-h-line px-2 py-0.5 text-xs text-h-accent hover:bg-h-surface-alt">View</button>

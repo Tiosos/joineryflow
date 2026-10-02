@@ -103,7 +103,10 @@ def get_module(db: Session, *, module_id: int, workspace_id: int) -> dict | None
     row = db.execute(
         text(
             f"""
-            SELECT m.module_id AS id, m.name
+            SELECT m.module_id AS id, m.name,
+                   (SELECT count(*) FROM comment c
+                     WHERE c.module_id = m.module_id
+                       AND c.deleted_at IS NULL) AS comment_count
             FROM modules m
             JOIN items i ON i.item_id = m.item_id AND {_JOINERY_ITEM}
             WHERE m.module_id = :mid
@@ -118,7 +121,12 @@ def get_module(db: Session, *, module_id: int, workspace_id: int) -> dict | None
     ).mappings().first()
     if row is None:
         return None
-    return {"id": row["id"], "name": row["name"], "parts": []}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "parts": [],
+        "comment_count": row["comment_count"],
+    }
 
 
 # ── Module mutations ───────────────────────────────────────────────────────────

@@ -255,6 +255,8 @@ export interface ModuleOut {
   id: number;
   name: string | null;
   parts: PartOut[];
+  /** Live comments on the module's thread, replies included. */
+  comment_count: number;
 }
 
 /** What deleting a module would take with it (besides the module): its parts and

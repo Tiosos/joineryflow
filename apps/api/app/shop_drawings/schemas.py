@@ -90,6 +90,8 @@ class RevisionOut(BaseModel):
     reviewed_by_name: str | None
     reviewed_at: datetime | None
     review_note: str | None
+    # Live comments on this revision's thread, replies included, deleted ones not.
+    comment_count: int = 0
 
 
 class DrawingCardOut(BaseModel):
