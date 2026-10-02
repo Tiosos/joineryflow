@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
+from app.auth.sessions import AuthUser
 from app.db import SessionLocal
 from app.main import app
 from app.material_takes import queries as q
@@ -94,7 +95,9 @@ def _bootstrap() -> dict:
 
 def test_concurrent_generate_serializes_instead_of_raw_500():
     ctx = _bootstrap()
-    wid, uid, iid = ctx["wid"], ctx["uid"], ctx["iid"]
+    wid, iid = ctx["wid"], ctx["iid"]
+    uid = AuthUser(id=ctx["uid"], workspace_id=wid, email="d@x.test",
+                   full_name="U", auth_role="drafter")
 
     lock_acquired = threading.Event()
 

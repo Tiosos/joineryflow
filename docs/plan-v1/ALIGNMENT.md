@@ -1,14 +1,20 @@
 # Plan V1 vs. shipped JoineryFlow — alignment record
 
-> **Status: analysis only. No code has been written against Plan V1.**
+> **Status: re-scored 2026-10-02 against the tree at Alembic `0047`.** This file
+> began as analysis only (2026-09-18, "no code has been written against Plan V1").
+> That is no longer true: Plan V1 is the roadmap for this codebase (Q433) and a
+> large part of it is now built — Cutlist + related parts + Orderbook (#10), Global
+> Search (#11), Material Take → Summary (#12), the Dynamic RBAC engine, the tender
+> lifecycle + financials (§I), QC / Rework / Packing (§M), locking + concurrency
+> (§L), PO generation, comments and the QC Dashboard. `CLAUDE.md` has a section for
+> each and is the record of what is true.
 >
-> **Re-scored 2026-09-18** against the 115 decisions in
-> [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). **The 82 verdicts in §4 are
-> unchanged and still correct** — they describe what exists in the tree today,
-> and no code has been written, so nothing about current state has moved. What
-> the decisions changed is §3 (which conflicts are still live), §5's reading of
-> the tally, and §6's sequencing. Those three are rewritten below; §4 is left
-> alone deliberately rather than churned.
+> **What was re-scored.** In §4, the **37 rows that built work moved** carry their
+> new verdict and a description of what shipped (with the migration or Q-number
+> that explains it); the rest keep their 2026-09-18 wording on purpose, rather than
+> being churned. **§3 and §6 are still the 2026-09-18 narrative** — the sequencing
+> and the "next to build" language there is history; each carries a note saying so.
+> §5's tally is recounted.
 > Source of truth for the target: [`plan_v1.md`](./plan_v1.md) (canonical,
 > committed verbatim as supplied 2026-09-17, questions answered through Q431).
 > Source of truth for what exists today: `CLAUDE.md` at the repo root, and the
@@ -17,10 +23,11 @@
 ## 1. What this document is
 
 Plan V1 describes a **company-wide joinery workflow and control platform**.
-The repository currently holds **JoineryFlow**, nine shipped sub-projects
-(Foundation → PM Workbench → Procurement Workbench → Shop Drawings → PDF
-Generation → iSample → Catalog/CV Import/Cut Floor → Shop Floor → Estimating →
-CutPlan Optimiser), at Alembic head `0025`.
+The repository currently holds **JoineryFlow**: the nine sub-projects it
+had on 2026-09-18 (Foundation → PM Workbench → Procurement Workbench → Shop
+Drawings → PDF Generation → iSample → Catalog/CV Import/Cut Floor → Shop Floor →
+Estimating → CutPlan Optimiser, then at Alembic head `0025`) **plus** the Plan V1
+builds listed in the banner above, at Alembic head `0047`.
 
 The two overlap substantially but are **not** the same system, and Plan V1 is
 not a superset — in five places it *contradicts* a shipped invariant rather
@@ -43,6 +50,13 @@ Plan V1's own sequence.
 | `REARCH` | **Plan V1 contradicts a shipped invariant.** Cannot be added without changing existing schema, code or a documented rule. |
 
 ## 3. The five structural conflicts — all now decided
+
+> **Since built (2026-10-02).** Conflicts 3.1, 3.2, 3.4 and the Area / Room row
+> below were **built** (`0026`–`0030`, `0037`); 3.5 closed as decided; 3.3 stays
+> bounded and blocked on customer input; the stage-list row stands with Packing as
+> the first addition (`0039`). The text in this section is the 2026-09-18
+> analysis and decision record — read the *outcome* in `CLAUDE.md`'s Plan V1
+> table, not "built next" below.
 
 These were the decisions that had to be made before sequencing was meaningful.
 **All five are settled**, along with the two narrower ones named in §4:
@@ -234,9 +248,9 @@ strip against Plan V1's stated arrangement.
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
-| `Company → Project → Area → Room → Joinery Item → Activity` | `workspace → projects → items → modules → parts`. **Area and Room are not entities** — `items` carries free-text `stage` (site location), `zone`, `level`, `rm_no`, `rm_desc`. | `REARCH` |
+| `Company → Project → Area → Room → Joinery Item → Activity` | `workspace → projects → area → room → items → modules → parts`. **Sub-project #10 (`0026`)** made Area and Room real project-scoped tables, Room nested under Area (Q552), with a composite FK from `items`; `items.stage` / `rm_no` / `rm_desc` are kept and still written (Q435). **"Activity" is not a hierarchy level** — lifecycle stages, QC records and comments hang off the item without one. | `PARTIAL` |
 | Joinery Item is the central operational unit, not a cabinet | Matches — `items` is the unit; `modules`/`parts` sit beneath it. | `SHIPPED` |
-| Item carries workflow, docs, 3D + cutlist, materials, costs, variations, revisions, tasks, comms, approvals, production, QC, delivery, install, audit, rework | Has: workflow (`item_stages`), docs (`item_attachment` 3 slots + shop drawings), cutlist (`modules`/`parts`), materials (`item_hardware_lines` → `project_hardware_catalog`), audit (`audit_log` + `item_edit_log`). **Missing: costs at item level, variations, revisions, tasks, comms, approvals-as-records, QC, delivery/install records, rework.** | `PARTIAL` |
+| Item carries workflow, docs, 3D + cutlist, materials, costs, variations, revisions, tasks, comms, approvals, production, QC, delivery, install, audit, rework | Has: workflow (`item_stages`, now a projection of the cutlist's stages), docs (five `item_attachment` slots + the Document Register + shop drawings), cutlist (`modules`/`parts`), materials (hardware lines, the versioned Material Take), QC (defects, checklist, rework — `0039`), comms (comment threads, `0042`/`0043`), a Q&A log (`item_query`), audit (`audit_log` + `item_edit_log`) and the three locks. **Missing: costs at item level (Q543 — orders carry cost, nothing rolls up onto an item), revisions, tasks, approvals-as-records, delivery/install records.** Variations exist at project level only. | `PARTIAL` |
 | Component-level access limited to authorised roles | `require_drafter()` gates module/part mutation to `{drafter, manager, admin}`. | `SHIPPED` |
 | Item duplication with selective copy, and a hard exclusion list for execution history | Nothing. No duplicate endpoint anywhere. | `ABSENT` |
 
@@ -246,15 +260,15 @@ strip against Plan V1's stated arrangement.
 | --- | --- | --- |
 | Designer and Draftsperson are one role | `drafter` auth role, elevated to PM-parity on `tracking/list/shop_dwgs/isample/orderbook/catalog/cut_floor`. Closest existing analogue. | `SHIPPED` |
 | ~21 departments (Sales, Site Measure, QC, Packing, Delivery, Installation, Accounts, …) | 7 auth roles. `app_user.jtbd_role` is **free-text, display-only, nothing branches on it**. No department entity. | `ABSENT` |
-| 7-level permission scope, 11 actions, custom groups, most-permissive-wins | Static 7×11×4 matrix, single role per user. | `REARCH` (§3.4) |
-| Only IT edits master templates; Upper Management applies locks | No templates, no lock framework. | `ABSENT` |
+| 7-level permission scope, 11 actions, custom groups, most-permissive-wins | **Dynamic RBAC engine (`0037`):** DB-backed groups with most-permissive-wins; the 7 roles became 7 seed groups with identical grants, an admin panel on `/it` edits them, and `require_permission`, search and `/auth/me` all follow the groups. **Project scope only** — not item, tab or the 7 levels (Q466) — and **4 actions**, not 11 (Q469). Q470's critical actions stay outside the grants and Q472's per-object rules (`require_drafter()` etc.) are still hand-written in route handlers. | `PARTIAL` |
+| Only IT edits master templates; Upper Management applies locks | No templates. **Locks now exist** (§L): a Hard Lock is set and cleared by manager / admin only, and a Controlled Lock is decided by its owner or a manager — hand-written `auth_role` checks, not RBAC actions. | `PARTIAL` |
 
 ### Plan V1 §4 — Dashboards
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
 | Common Tracking Dashboard, consistent layout, actual completion date/time forward, planning in Details | `/tracking` — quick-filter chips, sub-tabs, search, `ItemsTable`, `ItemDetailModal`, `ProjectDetailModal`, `StatusPopup`, `TrackingMetrics`. Shows stage strip; no explicit actual-vs-scheduled split. | `PARTIAL` |
-| Eight named department dashboards, IT-assigned via user groups | `/dashboard` has one `_role_view` keyed off `auth_role`; `estimator` and `editor` have their own shapes, the rest fall through to viewer. Not configurable, not group-assigned. | `PARTIAL` |
+| Eight named department dashboards, IT-assigned via user groups | `/dashboard` has one `_role_view` keyed off `auth_role`; `estimator` and `editor` have their own shapes, the rest fall through to viewer. Not configurable, not group-assigned. **The QC Dashboard (§4.2, `/qc`, gated on `qc:read`) is built** — one of the eight, read-only, fixed numbers. | `PARTIAL` |
 | Management company-wide dashboards, drill-down, configurable numeric KPIs | Nothing configurable. `GET /public/stats` + the dashboard's live workspace stats are the whole of it. | `ABSENT` |
 
 ### Plan V1 §5–§6 — Tender and handover
@@ -262,11 +276,11 @@ strip against Plan V1's stated arrangement.
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
 | Separate Tender Dashboard, Estimating + selected Upper Management only | Nothing. `/estimating` is the only quoting surface and every role holds `read` on the module. | `ABSENT` |
-| 12-step tender lifecycle (Opportunity → … → Won/Lost/Withdrawn), Go/No-Go, feasibility/risk check | `estimate_revision` has a 6-state machine: `draft → sent → accepted\|rejected\|expired\|withdrawn`, `_LEGAL_TRANSITIONS` in `estimating/queries.py`. **No pre-quote stages at all** — no Opportunity, Initial Review, Go/No-Go, Information Requested, Documents Received, Supplier Pricing, Internal Review, Management Approval. | `PARTIAL` |
-| Preliminary Joinery Items during tender | Estimate lines (`estimate_line` + `_part`/`_hardware`/`_labour`) are the analogue but are not items and do not become items on convert. | `PARTIAL` |
+| 12-step tender lifecycle (Opportunity → … → Won/Lost/Withdrawn), Go/No-Go, feasibility/risk check | **Built (`0038`):** `estimate_revision.status` is the 12-stage lifecycle (11 sequential stages, then Won / Lost / Withdrawn) with one generic `advance()`, `locked_at` set once at `MGMT_APPROVAL → SUBMITTED`, and the old six states remapped data-preservingly. **The stages are ordering and a label** — nothing in the tree records a Go/No-Go decision or a feasibility / risk check. | `PARTIAL` |
+| Preliminary Joinery Items during tender | Estimate lines (`estimate_line` + `_part`/`_hardware`/`_labour`) are the analogue but are not items **during tender**. `convert_to_project()` has created real Joinery Items since #9a (this row and Q489 used to say it did not — corrected), and since `0038` the PM chooses which lines convert. | `PARTIAL` |
 | Detailed / lump-sum / hybrid estimating | Detailed only (per-line parts + hardware + labour). | `PARTIAL` |
-| Handover: PM review → select information → validate → confirm | `POST /revisions/{rid}/convert` requires status `accepted`, rejects double-convert and archived customers, re-resolves part snapshots, creates the project. **It is a one-shot action with no review-and-select step.** | `PARTIAL` |
-| Contract Value baseline, selling price fixed, PM decides variation | `projects.estimate_revision_id` links the source. **No contract-value column, no variation concept.** | `ABSENT` |
+| Handover: PM review → select information → validate → confirm | **Built (`0038`):** `GET /revisions/{rid}/handover-preview` shows the lines that would become items and the contract value; `POST /revisions/{rid}/convert` takes `include_line_ids` (Q490), re-resolves every snapshot against the live catalog (`409 CATALOG_GONE`), rejects double-convert and archived customers, and creates the project, items and contract in one transaction. Generate Orders (`0041`) then turns the won quote's materials into draft purchase orders. | `SHIPPED` |
+| Contract Value baseline, selling price fixed, PM decides variation | **Built (`0038`):** `project_contract` (immutable `original_value`) plus an append-only `project_contract_variation`; `current_value` is computed on read, never stored (Q491). Creating a variation *is* the PM's decision — there is no separate approval step. | `SHIPPED` |
 
 ### Plan V1 §7–§8 — Templates, versioning, validation, simulation, initiatives
 
@@ -294,9 +308,9 @@ strip against Plan V1's stated arrangement.
 | Tasks — auto, manual, rule-driven, change-driven, request-driven | No task entity. | `ABSENT` |
 | Change-impact rules, suggested actions, owner decides | Nothing. | `ABSENT` |
 | Every significant object records who/what/when | `audit_log` (workspace governance, every authenticated mutation) + `item_edit_log` (per-item field history, written in the same transaction). Genuinely solid. | `SHIPPED` |
-| Formal revisions coexisting with automatic history | Only `shop_drawing_revision` and `estimate_revision` — two entities, not a general mechanism. | `PARTIAL` |
+| Formal revisions coexisting with automatic history | `shop_drawing_revision`, `estimate_revision` and the versioned `material_take` — three entities, not a general mechanism. | `PARTIAL` |
 | **Retain last 20 change states for rollback; rollback creates a restorative revision** | `item_edit_log` stores `old_value`/`new_value` as `varchar(255)` per field — enough to *display* history, **not** enough to reconstruct and restore an object state. No rollback anywhere. | `ABSENT` |
-| Three lock types (Hard / Controlled / Approval), applicable to fields, components, items, areas, projects, tabs, revisions | **§L (2026-09-27, migration `0040`): all three ship**, at item scope only (Q510's confirmed ceiling — no field/tab/area/project/revision locks). Controlled Lock (`0032`, B7) is unchanged: a non-owner's save is held as an `item_lock_request` for the owner or a manager to decide. Hard Lock blocks `PATCH /items/{id}` for everyone, including the owner, until a manager/admin explicitly clears it. Approval Lock has no column — it is `items.status == 'APPROVED'`. Also ships Q511/Q512's field-level optimistic concurrency (not itself in Plan V1's §12 text, but the mechanism the customer's interview settled on for "conflicting changes are never silently overwritten") on the three named surfaces: item editor, cutlist, orders. Still **no lock below or above item scope**: `projects` has no lock column (Q566, unchanged by this pass). | `PARTIAL` |
+| Three lock types (Hard / Controlled / Approval), applicable to fields, components, items, areas, projects, tabs, revisions | **§L (2026-09-27, migration `0040`): all three ship**, at item scope only (Q510's confirmed ceiling — no field/tab/area/project/revision locks). Controlled Lock (`0032`, B7) is unchanged: a non-owner's save is held as an `item_lock_request` for the owner or a manager to decide. Hard Lock blocks `PATCH /items/{id}` for everyone, including the owner, until a manager/admin explicitly clears it. **Later rounds widened what the item's locks answer for** — still item scope, so the ceiling below stands: every module / part write, CV import, hardware lines, attachments and the Document Register answer to all three; status, bulk status and stage dates to Hard + Controlled (the Approval Lock cannot gate the write that clears it); item queries (answering) and material-take writes to Hard + Controlled, and *asking* a query to the Hard Lock only. QC records and comments are deliberately not lock-checked. Approval Lock has no column — it is `items.status == 'APPROVED'`. Also ships Q511/Q512's field-level optimistic concurrency (not itself in Plan V1's §12 text, but the mechanism the customer's interview settled on for "conflicting changes are never silently overwritten") on the three named surfaces: item editor, cutlist, orders. Still **no lock below or above item scope**: `projects` has no lock column (Q566, unchanged by this pass). | `PARTIAL` |
 
 ### Plan V1 §13–§15 — Search, mobile, QR
 
@@ -306,16 +320,16 @@ strip against Plan V1's stated arrangement.
 | Desktop + tablet + mobile responsive | Desktop-only in practice. `legacy/REFINEMENT_BACKLOG.md` still carries the mobile pass as an open follow-up; #8 explicitly deferred "mobile-first responsive UI". | `ABSENT` |
 | Site mobile: photos, measurements, markup, defects, scanning, signatures | Nothing. | `ABSENT` |
 | **Offline work with sync, conflict detection, never silently overwritten** | Nothing. The whole stack is server-rendered with raw `fetch()` and no client cache (no TanStack Query by design). | `ABSENT` |
-| QR/barcode for production, packing, installation | Nothing. | `ABSENT` |
+| QR/barcode for production, packing, installation | **Packing only (`0039`):** `/items/{id}/label` prints a QR of the item's `num`, and the Shop Floor kiosk's Packing step scans it with the browser camera (`getUserMedia` + `jsQR`, manual entry as the fallback) — no native app (Q532). Production and installation scanning are absent: `DEL` / `INST` are not Shop Floor stages (Q561). | `PARTIAL` |
 
 ### Plan V1 §16–§17 — Financials and variations
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
-| Ten tracked financial figures (Original Estimate → Forecast Final Cost, Budget vs Actual/Forecast) at Project + Item level | `projects.total_value` (a single numeric) and estimate-side snapshot costs. **No committed cost, no actual cost, no forecast, no margin.** The legacy `/procurement/*` namespace has `v_budget_utilisation`, but `CLAUDE.md` records it as **not used by the v1 product surface**. | `ABSENT` |
-| Real-time cost aggregation from departments | Nothing to aggregate — departments do not record cost. | `ABSENT` |
+| Ten tracked financial figures (Original Estimate → Forecast Final Cost, Budget vs Actual/Forecast) at Project + Item level | `projects.total_value`, plus (`0038`) the contract's original and current value and a derived **actual cost** at Project level — materials received × cost plus labour durations × `workspace_labour_rate`, apportioned across a cutlist's items by part area (`GET /projects/{pid}/actual-costs`, Q493 / Q549). **No committed cost, forecast or margin, and no budget-vs-actual at Item level.** | `PARTIAL` |
+| Real-time cost aggregation from departments | Two sources are rolled up on read and never stored: procurement receipts and Shop Floor completions (Q493). No other department records cost. | `PARTIAL` |
 | Financial Close Snapshot (mandatory) + manual named snapshots + comparison + Open Financial Exceptions + post-close adjustment | Nothing. | `ABSENT` |
-| Variations linked to items, full flow, Original Contract Value never overwritten | Nothing. | `ABSENT` |
+| Variations linked to items, full flow, Original Contract Value never overwritten | Project-level only: `project_contract_variation` is append-only and the original value is never overwritten (Q491), but **a variation is not linked to an item and has no flow** beyond the PM adding it. | `PARTIAL` |
 
 ### Plan V1 §18–§21 — Materials, Material Take, summary, procurement
 
@@ -327,8 +341,8 @@ strip against Plan V1's stated arrangement.
 | Multi-location stock, transfers, stocktake, cycle counting, variance investigation | `board_inventory.location` is a free-text label on the row, not a location entity. | `ABSENT` |
 | **Material Take** before Shop Drawing Approved, system-generated + manual adjust, audited, impact review on later drawing change (Q80) | **Sub-project #12 (2026-09-24):** versioned per-item take (`0034`), generated from parts + hardware (boards in fractional sheets, Q586), adjusted, approved, audited; impact review triggered by drift in the take's own inputs. **Not** triggered by drawing changes and no warning at drawing approval — drawings are not linked to items (Q583). | `PARTIAL` |
 | **Project Material Summary** consolidating approved takes, PM confirms, only then released to Procurement, stale-line flagging | **Sub-project #12:** consolidates approved takes with per-item breakdown, stale lines, nest sheet counts and read-only on-order / received; PM confirmation is **advisory** (Q499, a deliberate departure). No ordering from summary lines yet (Q585). | `PARTIAL` |
-| Split across suppliers/POs with required/ordered/received/outstanding | `procurement_batches` + `batch_allocations` track ordered/received and over-commit 409s. Genuinely close in spirit; no PO entity on the v1 surface. | `PARTIAL` |
-| Supplier comparison, performance tracking, statuses (Approved/Conditional/Trial/Suspended/Blocked) | Supplier is a **free-text string** on catalog rows (`supplier`, `default_supplier`). No vendor entity on the v1 surface. The legacy `/procurement/*` namespace has vendors and POs but is unused by v1. | `ABSENT` |
+| Split across suppliers/POs with required/ordered/received/outstanding | `procurement_batches` + `batch_allocations` track ordered / received and over-commit 409s, now **beneath orders** (Q504): `purchase_orders` + `po_line_items` are the PO layer (`0029`), with an Orderbook editing UI, a status guard (Cancelled / Delivered are read-only) and PO generation from a won quote. **No requisition, confirmation, receipt or inspection flow**, and no required / ordered / received / outstanding view per line. | `PARTIAL` |
+| Supplier comparison, performance tracking, statuses (Approved/Conditional/Trial/Suspended/Blocked) | `vendors` is now the supplier entity (`0029`, Q556) behind a workspace-scoped `/suppliers` surface, and catalog rows link to it beside their free-text column. **No comparison, performance tracking, or Approved / Conditional / Trial / Suspended / Blocked statuses.** | `PARTIAL` |
 | Price history, purchase history, quote validity with no silent fallback, evidence thresholds | Nothing. Catalog rows hold one current cost. | `ABSENT` |
 | Requisitions, shared/bulk POs, cost allocation rules, claims/credits, payment terms | Nothing on the v1 surface. | `ABSENT` |
 
@@ -336,7 +350,7 @@ strip against Plan V1's stated arrangement.
 
 | Plan V1 stage order | Current `stages` seed | Verdict |
 | --- | --- | --- |
-| `Shop Drawing → Material Take → Shop Drawing Approved → Procurement → Listing → CNC → Edging → Assembly → Painting → QC → Packing → Delivery → Installation → Completed` (14) | `REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST` (10) | ~~`REARCH`~~ **deferred (Q459)** — today's 10 stand; Plan V1's extra stages arrive with the sub-projects that need them. Q461 keeps the existing paint ordering and Q462 keeps the single global lookup, so no lifecycle migration happens. |
+| `Shop Drawing → Material Take → Shop Drawing Approved → Procurement → Listing → CNC → Edging → Assembly → Painting → QC → Packing → Delivery → Installation → Completed` (14) | `REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST` (10) **+ `PACKING` (11), added by `0039`** (`sort_order` 85, between `MADE` and `DEL`) | ~~`REARCH`~~ **deferred (Q459)** — today's 10 stood, and **Packing has since arrived as the 11th (Q519)**; Plan V1's other extra stages arrive with the sub-projects that need them. Q461 keeps the existing paint ordering and Q462 keeps the single global lookup, so no lifecycle migration happens. |
 
 The lists are not a relabelling of each other:
 
@@ -357,16 +371,16 @@ The lists are not a relabelling of each other:
 | **Installation scheduling is coordinated outside the system (Q414)**; Site Installation Manager records actual completion per item (Q415) | `projects.installation_start` exists as a date column. No install completion capture beyond the `INST` stage. | `PARTIAL` |
 | Workers explicitly Start / Complete / Block / On Hold; automatic timestamp; manager correction preserving original | Shop Floor has Start / Complete / Cancel and a 5-minute worker undo (supervisor any time). **No Block and no On Hold.** No manager correction-with-reason path. | `PARTIAL` |
 | Delay engine: Overdue / At Risk / Delayed with notification, alerts, impact, escalation | Nothing. `due_date` is stored and displayed; nothing evaluates it. | `ABSENT` |
-| QC stage, defects tied to the completed stage, Internal Rework (post-Assembly) and Full Rework (post-Installation) | Nothing — no QC entity, no defect, no rework. | `ABSENT` |
-| Packing, delivery, installation tracking with scanning | `DEL`/`INST` are stage keys only. No packing. | `ABSENT` |
+| QC stage, defects tied to the completed stage, Internal Rework (post-Assembly) and Full Rework (post-Installation) | **Built (`0039`; QC Dashboard):** `qc_defect` (optionally tagged with the stage checked; `qc:write` raises, `qc:approve` resolves), `qc_checklist_item`, and one `rework` entity with `kind` internal / full (Q516) that never reopens a completed stage (Q517). **QC is a module, not a workflow stage (Q515)**, and the timing rule that decides which kind a defect becomes is guidance, not enforced (Q518). The `/qc` dashboard covers items whose cutlist has started but not finished. | `SHIPPED` |
+| Packing, delivery, installation tracking with scanning | **Packing is built:** the 11th stage, assignable on Shop Floor and completed on the kiosk by scanning a label (Q519). `DEL` / `INST` are stage keys only — Shop Floor has never been able to hold them (Q561). | `PARTIAL` |
 
 ### Plan V1 §28–§33 — Completion, comms, notifications, reporting, KPIs, integrations
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
-| Completion → Defects → Final QC → Handover → Financial Close → Complete → Archived, with override; archived read-only with audited limited additions | `projects.status` is `Current \| Closed \| Hold`. No close checks, no archive semantics, no post-close rules. | `ABSENT` |
-| Context-based comms on 8 object types, mentions, attachments, replies; general discussion areas | **Partly built (`0042`).** A `comment` thread over **4 of the 8 types** (Project, Area, Room, Joinery Item — Task and Change are not entities, Component / Revision are ambiguous), one-level replies and @mentions, with a minimal in-app notification inbox. `tracking:comment` is now enforced. Area and Room threads have a home on the project page's Areas & Rooms card. **Not built:** attachments / photos, decisions, internal notes, discussion areas. Updated in place; the rest of this file is still the 2026-09-18 baseline. | `PARTIAL` |
-| In-app + email + push, preferences, mandatory notifications, `Event → Recipient → Channel → Priority`, grouping, acknowledgement, escalation | Nothing. No notification table, no mail transport, no push. | `ABSENT` |
+| Completion → Defects → Final QC → Handover → Financial Close → Complete → Archived, with override; archived read-only with audited limited additions | `POST /projects/{id}/close-out` (admin / manager) stamps `closed_at` / `closed_by`, and PATCHing `status` back to `Current` / `Hold` re-opens. **No close checks (defects, final QC, handover, financial close), no archive semantics, no post-close rules.** | `PARTIAL` |
+| Context-based comms on 8 object types, mentions, attachments, replies; general discussion areas | **Partly built (`0042`).** A `comment` thread over **6 of the 8 types** (Project, Area, Room, Joinery Item, plus a Module as Component and a shop-drawing revision as Revision since `0043` — Task and Change are not entities), one-level replies and @mentions, with a minimal in-app notification inbox. `tracking:comment` is now enforced. Area and Room threads have a home on the project page's Areas & Rooms card. **Not built:** attachments / photos, decisions, internal notes, discussion areas. Updated in place; the rest of this file is still the 2026-09-18 baseline. | `PARTIAL` |
+| In-app + email + push, preferences, mandatory notifications, `Event → Recipient → Channel → Priority`, grouping, acknowledgement, escalation | A minimal **in-app inbox** (`0042`, Q521): `notification` rows for mentions and replies, a bell in the top bar that polls once a minute, `/notifications`, mark-read audited. **No email or push, no preferences, no grouping, acknowledgement or escalation, and no `Event → Recipient → Channel → Priority` rules.** | `PARTIAL` |
 | External reporting: no client accounts, PM-generated secure reports, field selection, links with password/expiry/revoke/tracking, templates, snapshots, scheduling, revisions, comparison | PDF rendering exists (WeasyPrint + pypdf, five print templates, `quote.pdf`) and is a real foundation. **Everything above the renderer — sharing, scheduling, snapshots, templates, delivery — is absent.** | `PARTIAL` |
 | IT-defined KPI formulas, management-selected displays, numeric-only, reporting-only | Nothing configurable. | `ABSENT` |
 | AutoCAD, Revit, Cabinet Vision, CNC, Excel, Xero, MYOB, M365, Teams, Outlook, Drive, Dropbox, supplier systems, barcode, accounting/payroll, CRM | **Cabinet Vision is the one built integration** — CSV import wizard (#7b), `cv_material_mapping`, synonym resolver. Everything else absent. Note §33 wants M365 and Q398 depends on SharePoint. | `PARTIAL` |
@@ -376,7 +390,7 @@ The lists are not a relabelling of each other:
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
 | Side panel first, full page for complex actions, fixed system rules for which is which, context preserved, auto-return, auto-refresh (Q352–Q359) | Drawers exist and are deep-linkable (`?drawer=item-availability&itemId=`, `?drawing=N&rev=M`, `?sample=N`) — the pattern is established. **No simple/complex classification, no return-and-refresh choreography.** | `PARTIAL` |
-| Field-level concurrent-change conflicts: detect, lock only conflicting fields, owner-or-manager resolves, compare/merge, notify, daily reminders, escalate when blocking, set stage to Blocked, resolver picks new status (Q364–Q378) | **Nothing. There is no optimistic concurrency control at all** — no version column, no `If-Match`, no conflict detection. Last write wins everywhere. | `ABSENT` |
+| Field-level concurrent-change conflicts: detect, lock only conflicting fields, owner-or-manager resolves, compare/merge, notify, daily reminders, escalate when blocking, set stage to Blocked, resolver picks new status (Q364–Q378) | **Detection is built (§L, `0040`):** `field_versions` on items, cutlists and orders; a PATCH may carry `expected_versions`, and a stale field answers `409 FIELD_CONFLICT` naming just that field with its `current_value` (Q511 / Q512). **Not built:** locking only the conflicting fields, owner-or-manager resolution, compare / merge (the UI says reload), notification, reminders, escalation, the Blocked stage. Omitting `expected_versions` keeps last-write-wins, as does every surface Q511 did not name. | `PARTIAL` |
 | Resolved-conflict retention to archive, read-only in archive, captured access list, IT/Upper-Management edits, audit, PDF export (Q379–Q390) | Nothing (depends on the above). | `ABSENT` |
 | Project files in SharePoint, view-only pop-up, auto-refresh, drawing-number matching, revision ordering (Q391–Q405) | See §3.3. | `REARCH` |
 
@@ -384,51 +398,56 @@ The lists are not a relabelling of each other:
 
 | Plan V1 | Current state | Verdict |
 | --- | --- | --- |
-| Dashboard-as-entrance, Orderbook/Tracking/**Cutlist** module workspaces (Q406–Q407) | 6 primary tabs + secondary strip; **no Cutlist module**. | `REARCH` (§3.5) |
-| Tracking **Info** button → Project Details window with `Project Stats / Cars / OH&S / Scope` tabs, sharing one record with the Dashboard Project tab (Q408–Q409) | `ProjectDetailModal` exists in Tracking and `/projects/[id]` exists. **None of the four named tabs exist** — no Cars, no OH&S, no Scope, no labour-hours or lift/access fields. | `PARTIAL` |
+| Dashboard-as-entrance, Orderbook/Tracking/**Cutlist** module workspaces (Q406–Q407) | `/dashboard` is the landing page, `/tracking` and `/orderbook` are module workspaces, and **`/list` is the Cutlist module workspace** — Q474 settled that Cutlist *is* the `List` tab, so there is no seventh primary tab. | `SHIPPED` |
+| Tracking **Info** button → Project Details window with `Project Stats / Cars / OH&S / Scope` tabs, sharing one record with the Dashboard Project tab (Q408–Q409) | `ProjectDetailModal` gained a **Project Stats** tab (#10), and `/projects/[id]` carries details, contacts, lift & access, labour hours, the contract and actual costs. **Cars and OH&S (Q550) and Scope (Q572) are still absent** — blocked on customer input, not stubbed. | `PARTIAL` |
 | Item pop-up with `Details / Log / Actions / Query` tabs, creation + modification metadata, change history (screenshot 06) | `ItemDetailModal.tsx` already has exactly these four tabs. **`Actions` and `Query` are `StubPanel` placeholders** (`:119-120`); `Details` and `Log` are real. The closest thing in the tree to a reference screenshot already being implemented. | `PARTIAL` |
-| JID: project-defined, **non-unique**, own convention per project (Q410) | `items.code` and `items.item_code` are free-text `varchar`; neither is documented as the JID and neither has a per-project convention. | `PARTIAL` |
-| Cutlist number: six digits, created in a Cutlist panel, shared by several items (Q410–Q413) | `items.num` — `UNIQUE`, integer, per item, allocated by seed/insert. **Contradicts sharing.** | `REARCH` (§3.1) |
-| Item ID == Group ID for a main item; related parts share the Group ID (Q416) | `items.group_id` free-text, unused for hierarchy. | `REARCH` (§3.2) |
-| Related parts show the issued **order number** in the cutlist column and click through to Orderbook (Q417–Q418) | Nothing. The leftmost column is always the cutlist number and always links to `/items/[id]`. | `ABSENT` |
-| Empty workflow-stage area for related parts (Q419) | Every row renders a stage strip. | `ABSENT` |
-| Nested, expand/collapse, collapsed by default (Q420–Q422) | Flat table. | `ABSENT` |
-| Drafter or PM creates related-part rows (Q423) | No row type to create. | `ABSENT` |
-| Creating a related part does **not** auto-create an order (Q424) | N/A — nothing to not-create. | `ABSENT` |
-| Tracking **O/BOOK subtab** with a **Create Order** button (Q425) | No O/BOOK subtab. `TrackingClient.tsx:116` carries a **disabled `Orders` quick-filter chip** titled *"Backend wiring pending"* — the nearest existing hook. Otherwise the only procurement affordance is the `AvailabilityDrawer` and the `/orderbook` link behind `NEXT_PUBLIC_PROCUREMENT_UI_READY`. | `ABSENT` |
-| Order-details form per screenshots 07–09 (acoustic panel / benchtop / contractor manufacturing), type-specific fields (Q426) | `procurement_v1` has batches and allocations — **no order-details form, no per-type field sets, no PO creation on the v1 surface.** The legacy `/procurement/*` namespace has orders but is unused by v1. | `ABSENT` |
-| Prefill PROJECT, LOCATION, CUTLIST NO. from the parent (Q427–Q428); allow blank cutlist (Q429); backfill when the parent gets one (Q430); update all linked orders when replaced (Q431) | Nothing. Also depends on both §3.1 and §3.2. | `ABSENT` |
+| JID: project-defined, **non-unique**, own convention per project (Q410) | `items.jid_code` + `jid_color` (`0035`) are free-text / hex columns shown in the Tracking grid and the item pop-up. There is **no per-project convention** (Q410 asks for one). | `PARTIAL` |
+| Cutlist number: six digits, created in a Cutlist panel, shared by several items (Q410–Q413) | **Built (`0027`):** `cutlist` is an entity; `items.cutlist_id` is nullable and single-column, so an item has none or one (Q440 / Q411), and `joinery_number_seq` feeds Item IDs, cutlist numbers and related parts so a six-digit number never means two things (Q541). Every pre-existing item got its own cutlist carrying its `num` (Q540). | `SHIPPED` |
+| Item ID == Group ID for a main item; related parts share the Group ID (Q416) | **Built (`0028`):** related parts are rows in `items` with a `row_type` and a one-level parent FK (Q447 / Q449), and share the parent's Group ID (Q416 / Q453). | `SHIPPED` |
+| Related parts show the issued **order number** in the cutlist column and click through to Orderbook (Q417–Q418) | **Built (#10):** a related part shows its issued order number where a cutlist number would be (Q417 — a DB CHECK stops it holding a cutlist), and the Orderbook honours `?order=<po_number>` to locate it (Q418). | `SHIPPED` |
+| Empty workflow-stage area for related parts (Q419) | **Built:** related parts render an empty stage-strip area (Q419) while their other columns still render. | `SHIPPED` |
+| Nested, expand/collapse, collapsed by default (Q420–Q422) | **Built:** `ItemsTable` nests related parts under their parent, collapsed by default (Q420–Q422). | `SHIPPED` |
+| Drafter or PM creates related-part rows (Q423) | **Built:** `apps/api/app/related_parts/` — writes sit behind `require_drafter()` (drafter / manager / admin) and `tracking:write`. | `SHIPPED` |
+| Creating a related part does **not** auto-create an order (Q424) | **Holds:** nothing in `related_parts/` creates an order (Q424); Create Order is a separate, explicit action. | `SHIPPED` |
+| Tracking **O/BOOK subtab** with a **Create Order** button (Q425) | **Built:** a seventh Tracking column-set, `O/BOOK` (Order # / Supplier / Status / ETA, Q570), and a Create Order action. | `SHIPPED` |
+| Order-details form per screenshots 07–09 (acoustic panel / benchtop / contractor manufacturing), type-specific fields (Q426) | **Built as decided, not as drawn:** one generic Create Order form plus key/value `attributes` rows (Q426 / Q503). The screenshots' type-specific field sets (acoustic panel, benchtop, contractor manufacturing) are carried as attributes on `purchase_orders` / `po_line_items`, not as per-type forms. | `PARTIAL` |
+| Prefill PROJECT, LOCATION, CUTLIST NO. from the parent (Q427–Q428); allow blank cutlist (Q429); backfill when the parent gets one (Q430); update all linked orders when replaced (Q431) | **Built:** `POST /orders` prefills project, location and cutlist number from the item (Q427); the cutlist number is the parent's (Q428), may be blank (Q429), and `orders.queries.sync_orders_for_item` fills or rewrites it on every linked order when the parent gains or changes a cutlist (Q430 / Q431). | `SHIPPED` |
 
 ## 5. Tally
 
-> **Later change (2026-09-24):** the §13 search row moved `ABSENT` → `PARTIAL`
-> with sub-project #11, and the §19 / §20 Material Take and Summary rows with #12. **The counts below were not re-scored** — they also
-> predate #10 (Cutlist + related parts + Orderbook), which moved several rows,
-> so treat them as the 2026-09-18 baseline, not current state.
+> **Re-scored 2026-10-02.** The counts below are recounted mechanically from §4's
+> verdict column, not carried over from the 2026-09-18 baseline.
 
-Counting the 82 mapped rows in §4: **4 `SHIPPED`, 21 `PARTIAL`, 50 `ABSENT`,
-7 `REARCH`.** These are unchanged by the decisions — they describe the tree as
-it is, and no Plan V1 code has been written. (A mechanical count of the
-verdict column now returns **6** `REARCH`, because the stage-list row carries
-its deferral inline in that cell — the seventh row is that one, at §4's
-*Plan V1 §22–§27* table.)
+Counting the 82 mapped rows in §4: **17 `SHIPPED`, 37 `PARTIAL`, 26 `ABSENT`**,
+plus **2 rows still labelled re-architecture** — *Project files in SharePoint*
+(bounded, §3.3) and the stage-list row (deferred, Q459), whose verdict cell
+carries the label inline, so a mechanical count of the verdict column sees only
+1 `REARCH`.
 
-What the decisions changed is **what those 7 `REARCH` rows mean**:
+For comparison, the 2026-09-18 baseline was 4 / 21 / 50 / 7. Four in-place
+updates between then and now (search, Material Take, Material Summary, comments)
+had already made the mechanical count 4 / 25 / 46 / 6 before this pass. This
+pass changed **26 verdicts**: **13 rows to `SHIPPED`** (12 from `ABSENT` or
+`REARCH`, one from `PARTIAL` — among them the contract, handover, QC, cutlist,
+related-part and module-workspace rows) and **13 to `PARTIAL`** (11 from `ABSENT`,
+2 from `REARCH`), which took `REARCH` from 6 to 1. Another 11 rows kept their
+verdict but have new text.
+
+What the seven conflicts became:
 
 | Was | Now | Decided by |
 | --- | --- | --- |
-| Cutlist owns the workflow | accepted, next to build | Q438–Q446, Q539–Q541 |
-| Related-part rows | accepted, next to build | Q447–Q453 |
-| Project files in SharePoint | **bounded** — additive, nothing rewritten | Q479 |
-| RBAC as data | **bounded** — project scope only | Q466 |
+| Cutlist owns the workflow | **built** (`0027`, `0030`) | Q438–Q446, Q539–Q541 |
+| Related-part rows | **built** (`0028`) | Q447–Q453 |
+| Project files in SharePoint | **bounded** — additive, nothing rewritten; blocked on Q480 / Q547 | Q479 |
+| RBAC as data | **built** (`0037`), project scope only | Q466 |
 | Navigation / Cutlist module | **closed** — it is the `List` tab | Q474 |
-| Area / Room as entities | accepted — a rename of existing columns | Q454/Q455 |
-| 10 vs 14 lifecycle stages | **deferred** — today's 10 stand | Q459 |
+| Area / Room as entities | **built** (`0026`) — not a pure rename: `items.stage` / `rm_no` / `rm_desc` are kept and still written | Q552, Q435 |
+| 10 vs 14 lifecycle stages | **deferred** — today's 10 stood, Packing arrived as the 11th (`0039`) | Q459, Q519 |
 
-So of seven contradictions, **one dissolved on inspection**, **two were scoped
-down to something additive**, **one was deferred**, and **three are real work
-now in hand** — two of which turned out to be a rename and a projection rather
-than a rewrite.
+So of seven contradictions, **four are built**, **one closed on inspection**,
+**one is bounded and waiting on customer inputs**, and **one is deferred** with
+Packing as its first addition.
 
 The shipped system remains a strong foundation for Plan V1's §2 (item-centric
 data model), §11 (audit), §22 (production stages), §18–§21 (procurement
@@ -438,6 +457,12 @@ governance half — templates, validation, initiatives, reporting, KPIs — whic
 alongside it.
 
 ## 6. Sequencing, as decided
+
+> **History, not a plan (2026-10-02).** Items 1–4 and 6 below have been built (#10,
+> #11, #12 — in an order that differs from this list — the tender / financials
+> block §I, and the §L concurrency scope); item 5 (§7–§8, §35–§38) is still
+> deferred. Kept as the record of what was decided, since `CLAUDE.md` records what
+> was done.
 
 No longer a dependency sketch — this is what the answers settled.
 

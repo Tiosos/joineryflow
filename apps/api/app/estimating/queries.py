@@ -1664,7 +1664,8 @@ def revision_detail(
             """
             SELECT line_id, seq, description, qty, unit, has_breakdown,
                    material_cost, labour_cost, total_cost,
-                   unit_sell_override, notes, included_at_convert
+                   unit_sell_override, notes, included_at_convert,
+                   orders_generated_at
               FROM estimate_line
              WHERE revision_id = :rid
              ORDER BY seq, line_id
@@ -2282,29 +2283,65 @@ def _build_order_groups(
     return groups, unassigned
 
 
+def _order_selection(
+    rev: dict, lines: list[dict], include_line_ids: list[int] | None,
+) -> tuple[list[dict], list[dict]]:
+    """(lines the dialog can show, lines this run covers) — one rule for the
+    preview and for `generate_orders`, so they cannot disagree.
+
+    Shown: once converted, the lines included at Convert (a line the PM excluded
+    there has no Joinery Item and shouldn't have materials ordered for it); before
+    conversion nothing has been decided, so every line is shown as a what-if.
+    Covered: with no `include_line_ids`, every shown line no earlier run has
+    covered; with ids, exactly those. A line a run covered
+    (`estimate_line.orders_generated_at`) is never covered again — that is the
+    guard `estimate_revision.orders_generated_at` used to be for the whole quote.
+    Raises `UNKNOWN_LINE_IDS` and `LINES_ALREADY_GENERATED` as ValueError."""
+    shown = (
+        [l for l in lines if l.get("included_at_convert")]
+        if rev["converted_project_id"] is not None else list(lines)
+    )
+    if include_line_ids is None:
+        return shown, [l for l in shown if l.get("orders_generated_at") is None]
+    ids = set(include_line_ids)
+    unknown = ids - {int(l["line_id"]) for l in lines}
+    if unknown:
+        raise ValueError(
+            json.dumps({"code": "UNKNOWN_LINE_IDS", "line_ids": sorted(unknown)})
+        )
+    done = {
+        int(l["line_id"]) for l in lines
+        if int(l["line_id"]) in ids and l.get("orders_generated_at") is not None
+    }
+    if done:
+        raise ValueError(
+            json.dumps({"code": "LINES_ALREADY_GENERATED", "line_ids": sorted(done)})
+        )
+    return shown, [l for l in lines if int(l["line_id"]) in ids]
+
+
 def order_preview(
-    db: Session, *, revision_id: int, workspace_id: int
+    db: Session, *, revision_id: int, workspace_id: int,
+    include_line_ids: list[int] | None = None,
 ) -> dict | None:
     """The review screen before `generate_orders`: every distinct material
-    across the revision's lines, grouped by its live default supplier —
-    same shape Convert's own `handover_preview` established for Q490. Once
-    converted, only lines actually included at Convert are considered
-    (`included_at_convert`) — a line the PM excluded there has no Joinery
-    Item in the project and shouldn't have materials ordered for it either.
-    Before conversion nothing has been decided yet, so every line is shown
-    as a what-if preview."""
+    across the selected lines, grouped by its live default supplier — same shape
+    Convert's own `handover_preview` established for Q490. `lines` lists the
+    quote lines the PM can tick (those an earlier run covered are listed but
+    marked, and never selected); the groups are computed for exactly the lines
+    flagged `selected`, which is every line still to order unless
+    `include_line_ids` narrows it."""
     rev = get_revision(db, revision_id=revision_id, workspace_id=workspace_id)
     if rev is None:
         return None
     detail = revision_detail(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
-    lines = detail["lines"]
-    if rev["converted_project_id"] is not None:
-        lines = [l for l in lines if l.get("included_at_convert")]
+    shown, selected = _order_selection(rev, detail["lines"], include_line_ids)
     groups, unassigned = _build_order_groups(
-        db, workspace_id=workspace_id, lines=lines,
+        db, workspace_id=workspace_id, lines=selected,
     )
+    selected_ids = {int(l["line_id"]) for l in selected}
     return {
         "revision_id": revision_id,
         "status": rev["status"],
@@ -2313,6 +2350,15 @@ def order_preview(
             if rev["converted_project_id"] is not None else None
         ),
         "orders_generated_at": rev["orders_generated_at"],
+        "lines": [
+            {
+                "line_id": int(l["line_id"]), "seq": l["seq"],
+                "description": l["description"], "qty": l["qty"], "unit": l["unit"],
+                "orders_generated_at": l.get("orders_generated_at"),
+                "selected": int(l["line_id"]) in selected_ids,
+            }
+            for l in shown
+        ],
         "groups": sorted(
             groups.values(), key=lambda g: g["supplier_name"] or ""
         ),
@@ -2332,13 +2378,19 @@ def generate_orders(
     already established for #10.
 
     Requires the revision already converted (a PO needs a real project to
-    attach to — `409 NOT_CONVERTED` otherwise) and runs at most once per
-    revision (`409 ORDERS_ALREADY_GENERATED` on a second call) —
-    `orders_generated_at` is set here and never cleared, mirroring the
-    "quote is frozen" stance `locked_at` already takes; there is no
-    legitimate reason to regenerate from a breakdown that cannot change.
+    attach to — `409 NOT_CONVERTED` otherwise). A run covers the lines in
+    `include_line_ids` (default: every line included at Convert that no earlier
+    run covered) and marks each `estimate_line.orders_generated_at`, which is
+    set once and never cleared — the quote is frozen, so there is no
+    legitimate way to order a line twice. So a run can cover part of a quote
+    and a later run the rest: `409 LINES_ALREADY_GENERATED` for a line an
+    earlier run covered, `409 ORDERS_ALREADY_GENERATED` when no default
+    selection is left, `409 NO_LINES_SELECTED` for an empty one. Each run makes
+    its own POs, so a supplier used by two runs gets two draft POs.
+    `estimate_revision.orders_generated_at` is the time of the most recent run.
     Materials with no default supplier are returned as `unassigned` rather
-    than blocking the suppliers that DO have orders generated for them."""
+    than blocking the suppliers that DO have orders generated for them; the
+    line they came from still counts as covered, since they are ordered by hand."""
     rev = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
@@ -2346,8 +2398,6 @@ def generate_orders(
         raise ValueError("NOT_FOUND")
     if rev["converted_project_id"] is None:
         raise ValueError("NOT_CONVERTED")
-    if rev["orders_generated_at"] is not None:
-        raise ValueError("ORDERS_ALREADY_GENERATED")
 
     estimate_no = db.execute(
         text("SELECT estimate_no FROM estimate WHERE estimate_id = :eid"),
@@ -2357,24 +2407,16 @@ def generate_orders(
     detail = revision_detail(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
-    all_line_ids = {int(l["line_id"]) for l in detail["lines"]}
-    if include_line_ids is None:
-        # Only lines actually included at Convert (`included_at_convert`) —
-        # not every line in the revision. A line the PM excluded at Convert
-        # has no Joinery Item in the project; defaulting to the whole
-        # revision would purchase-order materials for work that isn't
-        # part of the project.
-        selected_ids = {
-            int(l["line_id"]) for l in detail["lines"] if l.get("included_at_convert")
-        }
-    else:
-        unknown = set(include_line_ids) - all_line_ids
-        if unknown:
-            raise ValueError(
-                json.dumps({"code": "UNKNOWN_LINE_IDS", "line_ids": sorted(unknown)})
-            )
-        selected_ids = set(include_line_ids)
-    selected_lines = [l for l in detail["lines"] if int(l["line_id"]) in selected_ids]
+    shown, selected_lines = _order_selection(rev, detail["lines"], include_line_ids)
+    if not selected_lines:
+        # Every default line already ordered is the old "ran once" answer; an
+        # empty explicit selection (or a quote with nothing to order) is not.
+        if include_line_ids is None and any(
+            l.get("orders_generated_at") is not None for l in shown
+        ):
+            raise ValueError("ORDERS_ALREADY_GENERATED")
+        raise ValueError("NO_LINES_SELECTED")
+    selected_ids = {int(l["line_id"]) for l in selected_lines}
 
     groups, unassigned = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected_lines,
@@ -2422,6 +2464,15 @@ def generate_orders(
             )
             lines_created += 1
 
+    # The lines this run covered can never be ordered again; the revision's own
+    # timestamp is just "the most recent run".
+    db.execute(
+        text(
+            "UPDATE estimate_line SET orders_generated_at = now()"
+            " WHERE line_id = ANY(:ids)"
+        ),
+        {"ids": sorted(selected_ids)},
+    )
     db.execute(
         text(
             "UPDATE estimate_revision SET orders_generated_at = now()"

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { errorText, takeApi } from "@/lib/material-take-fetch";
+import { ApiError, errorText, takeApi } from "@/lib/material-take-fetch";
 import {
   UNIT_LABEL,
   type CurrentTake,
@@ -11,16 +11,34 @@ import {
   type TakeVersion,
   type Unit,
 } from "@/lib/material-take-types";
+import type { ItemOut } from "@/lib/pm-types";
+
+import { lockMessage, moduleLockReason } from "./cutlist/moduleLock";
 
 // Material Take (sub-project #12, Plan V1 §19). Editing needs drafter+,
 // approving needs `list` approve — the same three roles today.
 const EDITORS = ["drafter", "manager", "admin"];
 
-export function MaterialTakeTab({ itemId, currentUserRole }: {
-  itemId: number;
+/** A refused write in words: the lock's reason for a 409 lock refusal, else the code. */
+function failureText(e: unknown): string {
+  if (e instanceof ApiError && e.status === 409) {
+    const d = e.detail as { code?: string; owner_name?: string | null } | undefined;
+    const msg = d?.code ? lockMessage(d.code, d, "records") : null;
+    if (msg) return msg;
+  }
+  return errorText(e);
+}
+
+export function MaterialTakeTab({ item, currentUserId, currentUserRole }: {
+  item: ItemOut;
+  currentUserId: number | null;
   currentUserRole: string | null;
 }) {
+  const itemId = item.id;
   const canEdit = EDITORS.includes(currentUserRole ?? "");
+  // Every take write answers to the Hard Lock and someone else's Controlled Lock — not
+  // the Approval Lock (a take is approved on an approved item). The API decides.
+  const lockReason = canEdit ? moduleLockReason(item, currentUserId, currentUserRole, "records") : null;
   const [cur, setCur] = useState<CurrentTake | null>(null);
   const [history, setHistory] = useState<TakeVersion[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +65,10 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
       await fn();
       await load();
     } catch (e) {
-      setError(errorText(e));
+      // Reload first (it clears the error) so a refused edit's cell snaps back to
+      // what the server holds, then say why.
+      await load();
+      setError(failureText(e));
     } finally {
       setBusy(false);
     }
@@ -61,6 +82,15 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
     <div className="grid gap-4">
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
 
+      {lockReason && (
+        <div
+          className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="take-locked"
+        >
+          {lockReason}
+        </div>
+      )}
+
       {cur.outdated && cur.approved && (
         <div className="rounded border border-h-line bg-h-surface px-3 py-2 text-sm">
           <p className="text-h-ink">
@@ -70,7 +100,9 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
           {canEdit && (
             <div className="mt-2 flex gap-2">
               {(["no_impact", "partial", "full"] as const).map((o) => (
-                <button key={o} type="button" disabled={busy || (o !== "no_impact" && !!cur.draft)}
+                <button key={o} type="button"
+                  disabled={busy || !!lockReason || (o !== "no_impact" && !!cur.draft)}
+                  title={lockReason ?? undefined}
                   onClick={() => act(() => takeApi.review(cur.approved!.take_id, o))}
                   className="rounded border border-h-line px-2 py-1 text-xs text-h-ink disabled:opacity-50">
                   {o === "no_impact" ? "No impact" : o === "partial" ? "Partial impact" : "Full impact"}
@@ -83,7 +115,8 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
 
       {!cur.draft && canEdit && (
         <div>
-          <button type="button" disabled={busy} onClick={() => act(() => takeApi.generate(itemId))}
+          <button type="button" disabled={busy || !!lockReason} title={lockReason ?? undefined}
+            onClick={() => act(() => takeApi.generate(itemId))}
             className="rounded bg-h-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
             {cur.approved ? `Start v${cur.approved.version + 1}` : "Generate material take"}
           </button>
@@ -91,10 +124,12 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
       )}
 
       {cur.draft && (
-        <TakeTable take={cur.draft} editable={canEdit} busy={busy} act={act}
+        <TakeTable take={cur.draft} editable={canEdit} lockReason={lockReason} busy={busy} act={act}
           onApprove={() => act(() => takeApi.approve(cur.draft!.take_id))} />
       )}
-      {cur.approved && <TakeTable take={cur.approved} editable={false} busy={busy} act={act} />}
+      {cur.approved && (
+        <TakeTable take={cur.approved} editable={false} lockReason={null} busy={busy} act={act} />
+      )}
       {!cur.draft && !cur.approved && !canEdit && (
         <p className="text-sm text-h-muted">No material take yet.</p>
       )}
@@ -109,9 +144,10 @@ export function MaterialTakeTab({ itemId, currentUserRole }: {
   );
 }
 
-function TakeTable({ take, editable, busy, act, onApprove }: {
+function TakeTable({ take, editable, lockReason, busy, act, onApprove }: {
   take: Take;
   editable: boolean;
+  lockReason: string | null;
   busy: boolean;
   act: (fn: () => Promise<unknown>) => Promise<void>;
   onApprove?: () => void;
@@ -126,11 +162,13 @@ function TakeTable({ take, editable, busy, act, onApprove }: {
         </h3>
         {editable && take.status === "draft" && (
           <div className="ml-auto flex gap-2">
-            <button type="button" disabled={busy} onClick={() => act(() => takeApi.regenerate(take.take_id))}
+            <button type="button" disabled={busy || !!lockReason} title={lockReason ?? undefined}
+              onClick={() => act(() => takeApi.regenerate(take.take_id))}
               className="rounded border border-h-line px-2 py-1 text-xs text-h-ink disabled:opacity-50">
               Regenerate
             </button>
-            <button type="button" disabled={busy} onClick={onApprove}
+            <button type="button" disabled={busy || !!lockReason} title={lockReason ?? undefined}
+              onClick={onApprove}
               className="rounded bg-h-accent px-2 py-1 text-xs font-medium text-white disabled:opacity-50">
               Approve
             </button>
@@ -151,7 +189,8 @@ function TakeTable({ take, editable, busy, act, onApprove }: {
         </thead>
         <tbody>
           {take.lines.map((l) => (
-            <LineRow key={l.line_id} line={l} takeId={take.take_id} editable={editable} act={act} />
+            <LineRow key={l.line_id} line={l} takeId={take.take_id} editable={editable}
+              lockReason={lockReason} act={act} />
           ))}
           {take.lines.length === 0 && (
             <tr><td colSpan={7} className="px-3 py-2 text-h-muted">No lines — this item has no parts or hardware.</td></tr>
@@ -168,16 +207,19 @@ function TakeTable({ take, editable, busy, act, onApprove }: {
           }}>
           <input aria-label="New line description" placeholder="Add a line — e.g. edge tape, finishing"
             value={adding.description} onChange={(e) => setAdding({ ...adding, description: e.target.value })}
+            disabled={!!lockReason}
             className="min-w-64 flex-1 rounded border border-h-line bg-white px-2 py-1 text-sm" />
           <input aria-label="New line qty" inputMode="decimal" placeholder="Qty" value={adding.qty}
             onChange={(e) => setAdding({ ...adding, qty: e.target.value })}
+            disabled={!!lockReason}
             className="h-mono w-20 rounded border border-h-line bg-white px-2 py-1 text-sm" />
           <select aria-label="New line unit" value={adding.unit}
             onChange={(e) => setAdding({ ...adding, unit: e.target.value as Unit })}
+            disabled={!!lockReason}
             className="rounded border border-h-line bg-white px-2 py-1 text-sm">
             {(Object.keys(UNIT_LABEL) as Unit[]).map((u) => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
           </select>
-          <button type="submit" disabled={busy}
+          <button type="submit" disabled={busy || !!lockReason} title={lockReason ?? undefined}
             className="rounded border border-h-line px-2 py-1 text-xs text-h-ink disabled:opacity-50">Add line</button>
         </form>
       )}
@@ -185,10 +227,11 @@ function TakeTable({ take, editable, busy, act, onApprove }: {
   );
 }
 
-function LineRow({ line, takeId, editable, act }: {
+function LineRow({ line, takeId, editable, lockReason, act }: {
   line: TakeLine;
   takeId: number;
   editable: boolean;
+  lockReason: string | null;
   act: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const [wastage, setWastage] = useState(line.wastage_pct);
@@ -214,14 +257,14 @@ function LineRow({ line, takeId, editable, act }: {
       <td className="px-3 py-1.5 text-right">
         {editable ? (
           <input aria-label={`Wastage for ${line.description}`} inputMode="decimal" className={cell}
-            value={wastage} onChange={(e) => setWastage(e.target.value)}
+            value={wastage} onChange={(e) => setWastage(e.target.value)} disabled={!!lockReason}
             onBlur={() => wastage !== line.wastage_pct && save({ wastage_pct: wastage })} />
         ) : <span className="h-mono">{line.wastage_pct}</span>}
       </td>
       <td className="px-3 py-1.5 text-right">
         {editable ? (
           <input aria-label={`Qty for ${line.description}`} inputMode="decimal" className={cell}
-            value={qty} onChange={(e) => setQty(e.target.value)}
+            value={qty} onChange={(e) => setQty(e.target.value)} disabled={!!lockReason}
             onBlur={() => qty !== line.qty && save({ qty })} />
         ) : <span className="h-mono text-h-ink">{line.qty}</span>}
       </td>
@@ -229,15 +272,16 @@ function LineRow({ line, takeId, editable, act }: {
       <td className="px-3 py-1.5">
         {editable ? (
           <input aria-label={`Note for ${line.description}`} value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => setNote(e.target.value)} disabled={!!lockReason}
             onBlur={() => note !== (line.note ?? "") && save({ note: note || null })}
             className="w-full rounded border border-h-line bg-white px-2 py-0.5 text-sm" />
         ) : <span className="text-h-muted">{line.note}</span>}
       </td>
       <td className="px-3 py-1.5 text-right">
         {editable && line.source === "manual" && (
-          <button type="button" onClick={() => act(() => takeApi.deleteLine(takeId, line.line_id))}
-            className="text-xs text-h-muted hover:text-h-ink">Remove</button>
+          <button type="button" disabled={!!lockReason} title={lockReason ?? undefined}
+            onClick={() => act(() => takeApi.deleteLine(takeId, line.line_id))}
+            className="text-xs text-h-muted hover:text-h-ink disabled:opacity-50">Remove</button>
         )}
       </td>
     </tr>

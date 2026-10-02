@@ -117,6 +117,10 @@ export interface Line {
   unit_sell: string;
   total_sell: string;
   notes?: string | null;
+  /** Set when the line became a Joinery Item at Convert (Q490). */
+  included_at_convert?: boolean;
+  /** Set when a Generate Orders run covered this line; it cannot be ordered again. */
+  orders_generated_at?: string | null;
   parts: LinePart[];
   hardware: LineHardware[];
   labour: LineLabour[];
@@ -210,11 +214,25 @@ export interface OrderPreviewGroup {
   lines: OrderPreviewLine[];
 }
 
+/** A quote line the Generate Orders dialog can tick. */
+export interface OrderPreviewSourceLine {
+  line_id: number;
+  seq: number;
+  description: string;
+  qty: string;
+  unit: string;
+  /** Already covered by an earlier run: shown, but not selectable. */
+  orders_generated_at: string | null;
+  /** In the selection the groups below were computed for. */
+  selected: boolean;
+}
+
 export interface OrderPreview {
   revision_id: number;
   status: EstimateStatus;
   converted_project_id: number | null;
   orders_generated_at?: string | null;
+  lines: OrderPreviewSourceLine[];
   groups: OrderPreviewGroup[];
   unassigned: OrderPreviewLine[];
 }

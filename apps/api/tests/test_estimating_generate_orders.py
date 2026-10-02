@@ -420,3 +420,245 @@ def test_generate_orders_audit_and_revision_flag():
         assert event == "estimate.generate_orders"
     finally:
         s.close()
+
+
+# ----------------------------------------------------------------------------
+# Per-line selection — a run can cover part of a quote and a later run the rest
+# (migration 0048: `estimate_line.orders_generated_at` is the guard, not the
+# revision's flag)
+# ----------------------------------------------------------------------------
+
+def _sql_scalar(sql: str, **params):
+    s = SessionLocal()
+    try:
+        return s.execute(text(sql), params).scalar()
+    finally:
+        s.close()
+
+
+def _line_flags(c: TestClient, estimate_id: int, rid: int) -> dict[int, dict]:
+    est = c.get(f"/estimates/{estimate_id}").json()
+    rev = next(r for r in est["revisions"] if r["revision_id"] == rid)
+    return {l["line_id"]: l for l in rev["lines"]}
+
+
+def _board_qty(c: TestClient, po_id: int) -> float:
+    po = c.get(f"/orders/{po_id}").json()
+    return float(next(l for l in po["lines"] if l["material_table"] == "board_materials")["quantity"])
+
+
+def _po_count(wid: int) -> int:
+    return _sql_scalar(
+        "SELECT count(*) FROM purchase_orders po JOIN vendors v ON v.vendor_id = po.vendor_id"
+        " WHERE v.workspace_id = :w", w=wid)
+
+
+def _two_line_quote():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, second_board_line=True)
+    _convert(c, quote["revision_id"])
+    return ctx, c, quote, quote["line_ids"][0], quote["line_ids"][1]
+
+
+def test_a_partial_run_covers_only_its_lines_and_a_later_run_takes_the_rest():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    assert r.status_code == 200, r.text
+    first_po = r.json()["po_ids"][0]
+    assert _board_qty(c, first_po) == 2.0
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["orders_generated_at"] is not None
+    assert flags[l2]["orders_generated_at"] is None
+
+    # No ids: every line still to order — just line 2, its own PO, not line 1 again.
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1
+    second_po = r.json()["po_ids"][0]
+    assert second_po != first_po
+    assert _board_qty(c, second_po) == 3.0
+    assert len(c.get(f"/orders/{second_po}").json()["lines"]) == 1   # no hardware: that was line 1's
+    assert _po_count(ctx["wid"]) == 2
+
+    # Everything is covered now: the old once-per-quote answer.
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
+    assert _po_count(ctx["wid"]) == 2
+
+
+def test_a_line_an_earlier_run_covered_cannot_be_ordered_again():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    assert c.post(f"/revisions/{rid}/generate-orders",
+                  json={"include_line_ids": [l1]}).status_code == 200
+    before = _po_count(ctx["wid"])
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1, l2]})
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"code": "LINES_ALREADY_GENERATED", "line_ids": [l1]}
+    assert _po_count(ctx["wid"]) == before, "a refused run creates nothing"
+    assert _line_flags(c, quote["estimate_id"], rid)[l2]["orders_generated_at"] is None
+    # ...and line 2 is still there to order.
+    assert c.post(f"/revisions/{rid}/generate-orders",
+                  json={"include_line_ids": [l2]}).status_code == 200
+
+
+def test_an_empty_selection_is_refused_and_leaves_the_quote_orderable():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": []})
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "NO_LINES_SELECTED"
+    assert _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r",
+                       r=rid) is None
+    assert _po_count(ctx["wid"]) == 0
+    assert c.post(f"/revisions/{rid}/generate-orders").status_code == 200
+
+
+def test_a_line_whose_materials_were_all_unassigned_still_counts_as_covered():
+    """Unassigned materials are ordered by hand, so the run that returned them is
+    the run that covered the line."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    _convert(c, quote["revision_id"])
+    rid, orphan = quote["revision_id"], quote["line_ids"][1]
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [orphan]})
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 0
+    assert len(r.json()["unassigned"]) == 1
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [orphan]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "LINES_ALREADY_GENERATED"
+
+
+def test_the_revision_timestamp_is_the_latest_run_and_each_run_is_audited():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    first = _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r", r=rid)
+    c.post(f"/revisions/{rid}/generate-orders")
+    second = _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r", r=rid)
+    assert first is not None and second > first
+
+    s = SessionLocal()
+    try:
+        rows = s.execute(
+            text("SELECT payload FROM audit_log WHERE event = 'estimate.generate_orders'"
+                 " AND target = :t ORDER BY id"), {"t": str(rid)}).scalars().all()
+    finally:
+        s.close()
+    assert [p["included_line_ids"] for p in rows] == [[l1], [l2]]
+
+
+def test_revision_detail_lines_carry_the_per_line_flags():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["included_at_convert"] is True
+    assert flags[l1]["orders_generated_at"] is None
+
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["orders_generated_at"] is not None
+    assert flags[l2]["orders_generated_at"] is None
+
+
+def test_preview_lists_the_lines_and_follows_the_selection():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.get(f"/revisions/{rid}/order-preview")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [(l["line_id"], l["selected"]) for l in body["lines"]] == [(l1, True), (l2, True)]
+    board = next(x for x in body["groups"][0]["lines"] if x["material_type"] == "BOARD")
+    assert float(board["qty"]) == 5.0
+
+    # Narrowed to line 2: the groups are for exactly that selection.
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [l2]})
+    body = r.json()
+    assert [(l["line_id"], l["selected"]) for l in body["lines"]] == [(l1, False), (l2, True)]
+    assert [x["material_type"] for x in body["groups"][0]["lines"]] == ["BOARD"]
+    assert float(body["groups"][0]["lines"][0]["qty"]) == 3.0
+
+
+def test_preview_after_a_partial_run_marks_the_covered_line_and_selects_the_rest():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+
+    body = c.get(f"/revisions/{rid}/order-preview").json()
+
+    by_id = {l["line_id"]: l for l in body["lines"]}
+    assert by_id[l1]["orders_generated_at"] is not None and by_id[l1]["selected"] is False
+    assert by_id[l2]["orders_generated_at"] is None and by_id[l2]["selected"] is True
+    assert float(next(x for x in body["groups"][0]["lines"]
+                      if x["material_type"] == "BOARD")["qty"]) == 3.0
+
+
+def test_preview_refuses_a_covered_or_unknown_line_like_generate_does():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [l1]})
+    assert r.status_code == 409
+    assert r.json()["detail"] == {"code": "LINES_ALREADY_GENERATED", "line_ids": [l1]}
+
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [999999]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "UNKNOWN_LINE_IDS"
+
+
+def test_concurrent_runs_cannot_order_the_same_line_twice():
+    """Two runs naming the same line serialize on the revision lock, so the second
+    sees the first's flag instead of both passing the check and making two POs."""
+    import threading
+    import time
+
+    from app.estimating import queries as q
+
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid, wid, uid = quote["revision_id"], ctx["wid"], ctx["uid"]
+    holding = threading.Event()
+
+    def worker_a():
+        s = SessionLocal()
+        try:
+            q.generate_orders(s, revision_id=rid, workspace_id=wid, actor_id=uid,
+                              include_line_ids=[l1])
+            holding.set()
+            time.sleep(0.4)     # hold the revision lock so B is forced to wait
+            s.commit()
+        finally:
+            s.close()
+
+    t = threading.Thread(target=worker_a)
+    t.start()
+    assert holding.wait(timeout=5), "run A never finished generating"
+
+    s2 = SessionLocal()
+    try:
+        start = time.monotonic()
+        with pytest.raises(ValueError) as exc:
+            q.generate_orders(s2, revision_id=rid, workspace_id=wid, actor_id=uid,
+                              include_line_ids=[l1])
+        elapsed = time.monotonic() - start
+        s2.rollback()
+    finally:
+        s2.close()
+    t.join(timeout=5)
+
+    assert elapsed >= 0.3, f"run B did not wait for run A's lock ({elapsed:.3f}s)"
+    assert "LINES_ALREADY_GENERATED" in str(exc.value)
+    assert _po_count(wid) == 1
