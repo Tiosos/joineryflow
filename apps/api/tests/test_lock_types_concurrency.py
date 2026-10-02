@@ -12,6 +12,7 @@ Uses the same truncate/seed/login helper patterns as test_lock_semantics.py.
 import threading
 import time
 import uuid
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -644,3 +645,51 @@ def test_approving_a_lock_request_is_blocked_by_approval_lock():
     assert _item_field(iid, "description") == "A's edit", (
         "B's held proposal must not slip through while the item is approval-locked"
     )
+
+
+# ── Regression: a FIELD_CONFLICT's current_value must be JSON-serialisable ──
+#
+# `HTTPException(detail=...)` bypasses the response_model's encoding and goes
+# through Starlette's plain `json.dumps`, so a Decimal or datetime in the
+# conflict payload is a raw 500 instead of the 409. Orders solved this first
+# (`_conflict_safe_value`); items and cutlists put the raw column value in.
+
+
+def test_item_conflict_on_a_decimal_field_is_a_409_with_a_string_value():
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        iid = _insert_item(db, project_id=ctx["pid"], num=3013)
+    finally:
+        db.close()
+
+    assert ctx["c_a"].patch(
+        f"/items/{iid}", json={"total_amount": "1234.50"}
+    ).status_code == 200
+
+    r = ctx["c_a"].patch(
+        f"/items/{iid}",
+        json={"total_amount": "99.00", "expected_versions": {"total_amount": 0}},
+    )
+    assert r.status_code == 409, r.text
+    conflict = r.json()["detail"]["conflicts"]["total_amount"]
+    assert conflict["current"] == 1
+    # Money is a JSON string everywhere in this API, never a number.
+    assert conflict["current_value"] == "1234.50"
+    assert _item_field(iid, "total_amount") == Decimal("1234.50")
+
+
+def test_cutlist_conflict_naming_a_datetime_column_does_not_500():
+    ctx = _setup_workspace_and_project(role_a="manager")
+    db = SessionLocal()
+    try:
+        cid = _insert_cutlist(db, project_id=ctx["pid"], actor_id=ctx["uid_a"])
+    finally:
+        db.close()
+
+    r = ctx["c_a"].patch(
+        f"/cutlists/{cid}",
+        json={"name": "Renamed", "expected_versions": {"created_at": 1}},
+    )
+    assert r.status_code == 409, r.text
+    assert "created_at" in r.json()["detail"]["conflicts"]

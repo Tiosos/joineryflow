@@ -2755,7 +2755,8 @@ see *PM Workbench* above.
   here, scoped to the `orders` module alone, by wrapping the detail in
   `jsonable_encoder()`; the identical shape likely exists in `items`'s and
   `cutlist`'s own conflict paths too (neither touched by this diff), left
-  as a known gap rather than fixed opportunistically outside this module.
+  as a known gap rather than fixed opportunistically outside this module
+  (**since fixed — see *FIELD_CONFLICT serialisation on items and cutlists***).
   Pinned by `test_recomputed_total_amount_bumps_its_field_version` (the
   version bump) and `test_field_conflict_current_value_serializes_decimal_as_string`
   (the encoder fix, added in the next pass below — this test alone would
@@ -4882,3 +4883,37 @@ since been built.**
     pending-queue filter hides the effect).
   - The legacy category enum has 6 of the 14 `order_category` keys.
   - Historical Commitment / Expenditure rows posted at $0 remain.
+
+## FIELD_CONFLICT serialisation on items and cutlists (no migration) — shipped
+
+> Chosen by the user ("go with 1") from the suggestion list after the legacy procurement audit; it is
+> the gap *Orderbook — Purchase Order editing UI* recorded as "the identical shape likely exists in
+> `items`'s and `cutlist`'s own conflict paths". Nothing in it was under-specified, so nothing was
+> asked. No migration, no spec or plan doc; this section is its written record.
+
+- **What was wrong (reproduced before fixing).** A `FIELD_CONFLICT`'s `current_value` rides in
+  `HTTPException(detail=...)`, which bypasses the response_model's encoding and goes through
+  Starlette's plain `json.dumps`. `patch_order` had been fixed for this; `patch_item` and
+  `patch_cutlist` still put the raw column value in, so a conflict on a non-string value was a raw
+  `TypeError` 500 instead of the 409:
+  - **Items:** `total_amount` is a versioned, patchable `Decimal`. A stale-version PATCH on it
+    500'd. This is the one *reachable by a normal client*.
+  - **Cutlists:** `expected_versions` may name any key and `current_value` is read from the row for
+    whatever key it names, so naming a datetime column (`created_at`) 500'd. Contrived, but the same
+    code path. (`name`, the only patchable field, is a string.)
+  - Items cannot hit the datetime case: the items row carries no datetime column a caller can reach
+    (`hard_locked_at` is only set under a Hard Lock, which refuses the PATCH before the conflict check).
+- **The fix.** The orders module's private `_conflict_safe_value` moved to
+  `app/concurrency.py::conflict_safe_value` and all three modules call it where they fill
+  `current_value`. Decimal and date / datetime become **strings** (not `jsonable_encoder`'s float, which
+  would break this API's money-is-a-string invariant). Items and cutlist routes are unchanged; orders keeps
+  its `jsonable_encoder` wrapper.
+- **Tests** (`test_lock_types_concurrency.py`, 2 new): an item `total_amount` conflict answers 409 with
+  `current_value == "1234.50"` (a string) and the stale write does not land; a cutlist conflict naming
+  `created_at` answers 409. **Both fail against the unfixed source** (`TypeError: Object of type Decimal /
+  datetime is not JSON serializable`). The existing orders conflict test still passes through the shared
+  helper. 173 pass across the lock, order, cutlist and item route files.
+- **Known gaps, recorded.** `expected_versions` is not validated against the real field names, so a
+  caller can still name any key (cutlist reads it from the row; items falls back to the key itself). That
+  is the behaviour `test_cutlist_conflict_on_unrelated_expected_version_key_does_not_500` pins on purpose.
+  The three modules each still call `check_field_conflicts` and fill `current_value` themselves.

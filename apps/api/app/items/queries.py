@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
-from ..concurrency import bump_field_versions, check_field_conflicts
+from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..row_types import joinery_items_only
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
@@ -1267,7 +1267,9 @@ def patch_item(
     if conflicts:
         row_key_by_attr = {attr: rk for attr, _col, rk in _PATCH_FIELD_MAP}
         for field, info in conflicts.items():
-            info["current_value"] = current.get(row_key_by_attr.get(field, field))
+            info["current_value"] = conflict_safe_value(
+                current.get(row_key_by_attr.get(field, field))
+            )
         return {"outcome": "FIELD_CONFLICT", "conflicts": conflicts}
 
     extra: dict[str, object] = {}

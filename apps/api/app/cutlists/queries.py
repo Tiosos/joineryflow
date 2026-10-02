@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..concurrency import bump_field_versions, check_field_conflicts
+from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from ..edit_log import write_edit_log
 from ..orders.queries import sync_orders_for_item
 from ..row_types import joinery_items_only
@@ -302,7 +302,7 @@ def patch_cutlist(
         # key, including one that was never a real field (its version then
         # defaults to 0 and conflicts against a nonzero `expected`).
         for field, info in conflicts.items():
-            info["current_value"] = current.get(field)
+            info["current_value"] = conflict_safe_value(current.get(field))
         return "FIELD_CONFLICT", conflicts
 
     new_versions = bump_field_versions(current.get("field_versions"), ["name"])
