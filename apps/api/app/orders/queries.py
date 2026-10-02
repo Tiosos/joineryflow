@@ -28,7 +28,13 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
-from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn, PatchOrderLineIn
+from .schemas import (
+    FROZEN_STATUSES,
+    CreateOrderIn,
+    CreateOrderLineIn,
+    PatchOrderIn,
+    PatchOrderLineIn,
+)
 
 # An order reaches its workspace through its project, or, when it has none,
 # through its vendor (Q554/Q555).
@@ -65,15 +71,9 @@ _ORDER_FROM = """
     LEFT JOIN items   i ON i.item_id   = po.item_id
 """
 
-# End-of-life statuses: a cancelled order is dead, and a delivered one has been
-# reconciled against goods received and invoices, so neither should change
-# silently after the fact. Lines and every header field except `status` are
-# read-only on these — `status` stays writable as the audited way to reopen.
-# Scope is this module's own routes: the legacy `/procurement/*` namespace
-# writes `Delivered`/`Cancelled` itself and is untouched, and
-# `sync_orders_for_item` still rewrites CUTLIST NO. on a frozen order because
-# that is the system keeping a reference true, not a person editing the order.
-FROZEN_STATUSES = frozenset({"Cancelled", "Delivered"})
+# `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
+# `OrderOut.locked`, which reads it; it is imported above so `orders.queries.
+# FROZEN_STATUSES` keeps working for the routes, the legacy namespace and tests.
 
 
 class OrderLocked(Exception):
