@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 30 Playwright specs / 116 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 119 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -5335,12 +5335,13 @@ since been built.**
   collapsed-by-default test (3 toggles where it expects 1, live-database state — it fails identically with this change's
   web code stashed) were red for reasons unrelated to this work.
 - **Known gaps, recorded.**
-  - **Creating a catalog row cannot set the link** (the New dialog and bulk import), and **CV-import "Create new"
-    rows start unlinked** — link them afterwards in the grid.
+  - ~~**Creating a catalog row cannot set the link** (the New dialog and bulk import), and **CV-import "Create new"
+    rows start unlinked**~~ **Closed — see *Supplier link at create, bulk import and CV Create new* below.**
   - **A text edit does not move the link**, and neither the other way: changing the free-text Default supplier
     leaves `default_supplier_id` alone, so the two can name different suppliers. By decision (2).
-  - **The grid's own free-text clear does not work**: the Default supplier cell sends `null` for an empty value
-    and the route drops nulls (`exclude_none`). Found while building, **not fixed**, unrelated to the link.
+  - ~~**The grid's own free-text clear does not work**: the Default supplier cell sends `null` for an empty value
+    and the route drops nulls (`exclude_none`).~~ **Closed — see *Supplier link at create, bulk import and CV
+    Create new* below** (the lead-time cell had the identical bug).
   - A supplier link says nothing about price or lead time; those still come from the catalog row.
   - ~~Linking a supplier *after* a run did not re-open the lines that were returned as unassigned.~~ **Closed
     — see *Generate Orders: a line is covered only if something on it was ordered* below** (found reviewing this
@@ -5463,5 +5464,73 @@ since been built.**
   - **There is no "ordered by hand" dismissal** for a held-back line (unchanged from before); the way out is to link the
     supplier or to leave the line unticked.
   - The estimator who runs Generate Orders still cannot link a supplier (`catalog:write` excludes estimator).
-  - **#6 left alone:** the Catalog grid's free-text *Default supplier* cell sends `null` to clear and the route drops
-    nulls, so clearing it does nothing. Unrelated to the supplier link.
+  - ~~**#6 left alone:** the Catalog grid's free-text *Default supplier* cell sends `null` to clear and the route drops
+    nulls, so clearing it does nothing.~~ **Closed — see *Supplier link at create, bulk import and CV Create new*.**
+
+## Supplier link at create, bulk import and CV Create new (Plan V1 §21 follow-up, no migration) — shipped
+
+> Chosen by the user ("do 1 now, ask me about 2", from the next-step list after PR #66): the gap *Catalog
+> supplier link* recorded as "creating a catalog row cannot set the link". Two things were open, so the user
+> was asked before any code was written; the answers are **settled decisions**: bulk import **matches the
+> free-text `default_supplier` by name**, and CV import's Create new form **gets an optional picker**. The free-text
+> clear fix (#6 of the PR #66 review) rode along because it sits in the same grid and PATCH route. No migration,
+> no spec or plan doc; this section is its written record.
+
+- **Why.** Every new catalog row — New dialog, bulk import, CV-import "Create new" — started unlinked, and since a
+  quote line using any unlinked material is *held back whole* (*Generate Orders: a line is ordered whole or held
+  back whole*), each new material blocked its lines until someone found it in the grid.
+- **Backend (`apps/api/app/catalog/`, `app/cv/`).**
+  - **`POST /catalog/{slug}`** accepts `default_supplier_id` (`_EnrichmentFields`, all six create schemas;
+    `default_supplier_id` joined `ENRICHMENT_INSERT`, so `PATCH_ONLY` is gone — nothing else was PATCH-only). An unknown
+    or another workspace's supplier is `422 {code: "UNKNOWN_SUPPLIER", supplier_id}` — the same body PATCH uses
+    (`queries.unknown_supplier_detail`, `routes._require_supplier`) — and **nothing is created**. A row created
+    without one is unlinked, as before.
+  - **Bulk import links by name.** `POST /catalog/{slug}/bulk` matches each row's free-text `default_supplier` against
+    this workspace's supplier names, **exact and case-insensitive** (the rule the seed and migration `0029` used,
+    `queries.supplier_ids_by_name`). Exactly one match links the row; **no match, or two suppliers sharing the name
+    (ambiguous), leaves it unlinked** and the row is reported. The response gained `linked: int` and
+    `unlinked: [{row_index, default_supplier, reason}]`. **Only rows that named a supplier are reported** — a row naming
+    none has nothing to match. A **`default_supplier_id` in a CSV row is ignored, never trusted** (the id-column option was
+    declined: whoever prepares the CSV should not have to look up vendor ids). The free text is kept as typed. The import
+    stays all-or-nothing: a failed import links and reports nothing. The audit row carries `linked` and `unlinked` counts.
+  - **PATCH clears the free-text fields too (#6).** An explicit `null` now clears `default_supplier`,
+    `default_lead_time_days` **and** `default_supplier_id` (`routes._CLEARABLE`, read from `model_fields_set`); every other
+    field still drops a null, so `description: null` is still a no-op (it is `NOT NULL`). Omitting a field leaves it alone.
+    The grid's lead-time cell sent `null` for an empty value and was equally dead.
+  - **CV Create new.** `CvCreateNewResolution.default_supplier_id` (optional) is written by
+    `insert_catalog_row_from_create_new`. **A supplier that is not this workspace's is refused `422 UNKNOWN_SUPPLIER` in the
+    commit route before anything is written**, so the run stays a `preview` and the same run commits once the supplier is
+    dropped (a refusal inside `commit_import` would have marked it `failed`).
+- **Web.**
+  - **New dialog** (`NewCatalogRowDialog`) gets a **Supplier link** select (default "Not linked"). It reuses the supplier list
+    `CatalogClient` already fetches for the grid picker; if that list could not be read (`orderbook:read`) the select is disabled
+    and says the row will start unlinked.
+  - **Bulk import dialog** shows a result panel after a clean import (`data-testid="bulk-import-result"`): rows created, how
+    many were linked, and each row that named a supplier it could not match ("Row 2 'Nobody Ltd' — no supplier has this
+    name") so they can be linked in the grid. A hint above the textarea states the matching rule. An import with errors keeps
+    the old alert path. `BulkImportResp` gained `linked` / `unlinked`.
+  - **CV wizard** (`CvImportDialog` → `UnknownCodeRow`): an optional **Supplier link** select inside the *Create new* form.
+    The supplier list is fetched once when the *resolve* phase opens and passed down; unreadable → disabled with a note, the
+    import still works. `CvCreateNewResolution` gained `default_supplier_id`.
+- **Tests.** `test_catalog_supplier_link.py` (22 → 38): create with a link (and on each of the five simple tables), unlinked by
+  default, an unknown / foreign supplier refused with nothing created and no foreign name; bulk — a match links (case-insensitive,
+  free text kept), no match is reported, a name two suppliers share is never linked, another workspace's supplier never matches, a
+  `default_supplier_id` in a row is ignored, a failed import links nothing; PATCH null clears the free-text supplier and lead time,
+  omitting leaves them, a null on a `NOT NULL` field is a no-op. `test_cv_routes.py` (+3): a create-new row can be linked, one without a
+  supplier stays unlinked, a foreign / unknown supplier is a 422 that leaves the run a preview and the same run then commits.
+  The test that pinned "creating a row cannot set the link" was replaced. **16 of the new backend cases fail against the previous
+  source** (the rest are controls). `catalog_supplier_link.spec.ts` (8 → 11): the New dialog links at once; bulk import reports
+  "1 linked" and lists `Row 2 … Nobody Ltd` and the rows end up linked / unlinked as reported; a CV import's Create new row is linked to
+  Plyco. **All three fail against the previous web code** and pass with it; all 11 pass against a live migrated stack. Each test archives
+  what it created (the CV test also deletes its `cv_material_mapping`), and the CV test shares `JO-TP01` with the other CV specs
+  (tick Replace if offered, as they do). `tsc --noEmit` is clean.
+- **Settled for the next task, not built:** *estimators and suppliers.* The user chose a **link-supplier shortcut in the Generate Orders
+  dialog** over granting estimators `catalog:write`. **Not built yet**, because it raises one more decision: the supplier-link route
+  (`POST /suppliers/{id}/materials`) needs `orderbook:write`, which estimators do not hold either (read only), so the shortcut
+  needs either that grant or a different route — asked before building.
+- **Known gaps, recorded.**
+  - **Bulk import matches only exact names** (any case). "Plyco Pty Ltd" against a supplier named "Plyco" is reported unlinked and
+    must be linked in the grid; there is no fuzzy matching, by decision.
+  - A supplier that is inactive can still be linked at create (as with PATCH).
+  - The New dialog's free-text *Default supplier* and the picker are independent, so they can disagree (by the earlier decision).
+  - Bulk-import result is shown only after a clean import; a failed one still uses the alert listing the error count.

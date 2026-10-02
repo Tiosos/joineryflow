@@ -248,6 +248,89 @@ def test_commit_with_create_new_inserts_catalog_row():
     assert m == bm
 
 
+def _create_new_body(**extra):
+    return {
+        "resolutions": [{
+            "action": "create_new", "cv_code": "99-NEW", "target_table": "board_materials",
+            "sku": "99-NEW", "description": "New board", **extra,
+        }],
+        "replace": False,
+    }
+
+
+def _vendor_for(wid: int, name: str = "Plyco") -> int:
+    s = SessionLocal()
+    try:
+        vid = s.execute(
+            text("INSERT INTO vendors(workspace_id, name, category)"
+                 " VALUES (:w, :n, 'Board') RETURNING vendor_id"),
+            {"w": wid, "n": name},
+        ).scalar()
+        s.commit()
+        return vid
+    finally:
+        s.close()
+
+
+def test_create_new_can_link_the_new_row_to_a_supplier():
+    c, wid, uid, pid, iid = _login("drafter")
+    vid = _vendor_for(wid)
+    csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,99-NEW\n"
+    run_id = c.post(f"/items/{iid}/cv-imports/preview", data={"body": csv}).json()["run_id"]
+    r = c.post(f"/items/{iid}/cv-imports/{run_id}/commit", json=_create_new_body(default_supplier_id=vid))
+    assert r.status_code == 200, r.text
+    s = SessionLocal()
+    try:
+        link = s.execute(text(
+            "SELECT default_supplier_id FROM board_materials WHERE sku = '99-NEW' AND workspace_id = :w"
+        ), {"w": wid}).scalar()
+    finally:
+        s.close()
+    assert link == vid
+
+
+def test_create_new_without_a_supplier_stays_unlinked():
+    c, wid, uid, pid, iid = _login("drafter")
+    _vendor_for(wid)
+    csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,99-NEW\n"
+    run_id = c.post(f"/items/{iid}/cv-imports/preview", data={"body": csv}).json()["run_id"]
+    r = c.post(f"/items/{iid}/cv-imports/{run_id}/commit", json=_create_new_body())
+    assert r.status_code == 200, r.text
+    s = SessionLocal()
+    try:
+        link = s.execute(text(
+            "SELECT default_supplier_id FROM board_materials WHERE sku = '99-NEW' AND workspace_id = :w"
+        ), {"w": wid}).scalar()
+    finally:
+        s.close()
+    assert link is None
+
+
+def test_create_new_refuses_a_foreign_supplier_and_the_run_stays_a_preview():
+    c, wid, uid, pid, iid = _login("drafter")
+    _, other_wid, *_ = _login("drafter")
+    foreign = _vendor_for(other_wid, "Foreign Co")
+    csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,99-NEW\n"
+    run_id = c.post(f"/items/{iid}/cv-imports/preview", data={"body": csv}).json()["run_id"]
+    for sid in (foreign, 999999):
+        r = c.post(f"/items/{iid}/cv-imports/{run_id}/commit", json=_create_new_body(default_supplier_id=sid))
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"]["code"] == "UNKNOWN_SUPPLIER"
+        assert "Foreign Co" not in r.text
+    s = SessionLocal()
+    try:
+        status = s.execute(text(
+            "SELECT status FROM cv_import_run WHERE cv_import_run_id = :r"), {"r": run_id}).scalar()
+        made = s.execute(text(
+            "SELECT count(*) FROM board_materials WHERE sku = '99-NEW'")).scalar()
+    finally:
+        s.close()
+    assert status == "preview" and made == 0
+    # and the same run still commits once the supplier is dropped
+    r = c.post(f"/items/{iid}/cv-imports/{run_id}/commit", json=_create_new_body())
+    assert r.status_code == 200, r.text
+
+
 def test_commit_re_import_without_replace_returns_409():
     c, wid, uid, pid, iid = _login("drafter")
     _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")

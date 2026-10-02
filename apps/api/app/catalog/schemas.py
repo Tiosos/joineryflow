@@ -19,6 +19,9 @@ class _EnrichmentFields(BaseModel):
     """Fields added to every catalog table by migration 0017."""
     synonyms: list[str] = Field(default_factory=list)
     default_supplier: str | None = Field(default=None, max_length=128)
+    # The supplier link (`vendors`). Checked against the caller's workspace by
+    # the route. Bulk import ignores it and matches `default_supplier` by name.
+    default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
 
 
@@ -64,8 +67,9 @@ class PatchBaseIn(BaseModel):
     not silently zero the existing array when the client omits it."""
     synonyms: list[str] | None = None
     default_supplier: str | None = Field(default=None, max_length=128)
-    # The supplier link (`vendors`). Unlike the fields around it an explicit
-    # null means "clear the link" — the route reads `model_fields_set`.
+    # The supplier link (`vendors`). Like `default_supplier` and
+    # `default_lead_time_days`, an explicit null means "clear it" — the route
+    # reads `model_fields_set`.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
     description: str | None = Field(default=None, max_length=255)
@@ -123,9 +127,20 @@ class BulkImportIn(BaseModel):
     rows: list[dict] = Field(min_length=1, max_length=1000)
 
 
+class BulkUnlinkedRow(BaseModel):
+    """A created row that named a supplier no single supplier matches."""
+    row_index: int
+    default_supplier: str
+    reason: str
+
+
 class BulkImportOut(BaseModel):
     created: int
     errors: list[BulkRowError]
+    # Created rows whose supplier name matched exactly one supplier.
+    linked: int = 0
+    # Created rows that named a supplier but were left unlinked.
+    unlinked: list[BulkUnlinkedRow] = []
 
 
 class CreateCvMappingIn(BaseModel):

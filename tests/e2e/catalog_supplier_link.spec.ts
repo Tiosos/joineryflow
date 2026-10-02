@@ -301,3 +301,108 @@ test("a selection with nothing to order can be confirmed, and the line is marked
   );
   expect(mine).toHaveLength(0);
 });
+
+test("a row created from the New dialog can be linked to a supplier at once", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const sku = `E2E-NEW-${stamp}`;
+  const description = `E2E new board ${stamp}`;
+  await openBoards(page);
+  await page.getByRole("button", { name: "+ New" }).click();
+  const dialog = page.getByRole("heading", { name: /New board/ }).locator("xpath=..");
+  await dialog.getByLabel("Description").fill(description);
+  await dialog.getByLabel("SKU").fill(sku);
+  await dialog.getByLabel("Code").fill(sku);
+  await dialog.getByLabel("Supplier link").selectOption({ label: "Plyco" });
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+  const id = await boardId(page, sku);
+  try {
+    const row = await (await page.request.get(`/api/catalog/board-materials/${id}`)).json();
+    expect(row.default_supplier_name).toBe("Plyco");
+    // and the grid shows it as linked, not flagged
+    await openBoards(page, description);
+    expect(await shownSupplier(gridRow(page, description))).toBe("Plyco");
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${id}/archive`);
+  }
+});
+
+test("bulk import links rows by supplier name and lists the ones it could not match", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const a = `E2E-BLK-A-${stamp}`;
+  const b = `E2E-BLK-B-${stamp}`;
+  await openBoards(page);
+  await page.getByRole("button", { name: "Bulk import" }).click();
+  await page.getByPlaceholder(/header1,header2/).fill(
+    "code,sku,description,default_supplier\n" +
+    `${a},${a},E2E bulk match ${stamp},plyco\n` +
+    `${b},${b},E2E bulk nomatch ${stamp},Nobody Ltd\n`,
+  );
+  await page.getByRole("button", { name: /^Import 2 rows$/ }).click();
+
+  const result = page.getByTestId("bulk-import-result");
+  await expect(result).toBeVisible({ timeout: 15_000 });
+  await expect(result.getByTestId("bulk-import-linked")).toHaveText("1 linked to a supplier.");
+  const unlinked = result.getByTestId("bulk-import-unlinked");
+  await expect(unlinked).toContainText("Row 2");
+  await expect(unlinked).toContainText("Nobody Ltd");
+  await expect(unlinked).not.toContainText("Row 1");
+  await result.getByRole("button", { name: "Done" }).click();
+  await expect(result).toBeHidden();
+
+  const idA = await boardId(page, a);
+  const idB = await boardId(page, b);
+  try {
+    const rowA = await (await page.request.get(`/api/catalog/board-materials/${idA}`)).json();
+    const rowB = await (await page.request.get(`/api/catalog/board-materials/${idB}`)).json();
+    expect(rowA.default_supplier_name).toBe("Plyco");
+    expect(rowB.default_supplier_id).toBeNull();
+    expect(rowB.default_supplier).toBe("Nobody Ltd");
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${idA}/archive`);
+    await page.request.post(`/api/catalog/board-materials/${idB}/archive`);
+  }
+});
+
+test("a CV import's Create new row can be linked to a supplier", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const code = `E2E-CV-${stamp}`;
+  // JO-TP01 is the item the CV specs share: seeded with no modules, and a re-run offers Replace.
+  await page.goto("/tracking?project_id=1");
+  const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: "JO-TP01" });
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  const href = await row.locator('a[href^="/items/"]').first().getAttribute("href");
+  await page.goto(`${href}?tab=cutlist`);
+  await page.getByRole("button", { name: /Import from CV/i }).click();
+  await page.getByPlaceholder(/Module,Part Name/).fill(
+    `Module,Part Name,Qty,Length,Width,Material\n1,Side L,1,720,580,${code}\n`,
+  );
+  await page.getByRole("button", { name: /^Preview$/ }).click();
+  await expect(page.getByText(code).first()).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: /^Create new$/ }).first().click();
+  await page.getByPlaceholder(code).fill(code);
+  await page.getByPlaceholder(/18mm Particleboard/).fill(`E2E cv board ${stamp}`);
+  await page.getByLabel("Supplier link").selectOption({ label: "Plyco" });
+  await page.getByRole("button", { name: /^Continue$/ }).click();
+  const replace = page.getByRole("checkbox", { name: /Replace existing modules/i });
+  await expect(page.getByRole("button", { name: /^Import$/ })).toBeVisible({ timeout: 15_000 });
+  if (await replace.count()) await replace.check();
+  await page.getByRole("button", { name: /^Import$/ }).click();
+  await expect(page.getByText(/imported/i)).toBeVisible({ timeout: 15_000 });
+
+  const id = await boardId(page, code);
+  try {
+    const created = await (await page.request.get(`/api/catalog/board-materials/${id}`)).json();
+    expect(created.default_supplier_name).toBe("Plyco");
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${id}/archive`);
+    const maps = await (await page.request.get(`/api/catalog/cv-mappings?q=${encodeURIComponent(code)}`)).json();
+    for (const m of (maps.mappings ?? maps.rows ?? maps) as { cv_material_mapping_id: number }[]) {
+      await page.request.delete(`/api/catalog/cv-mappings/${m.cv_material_mapping_id}`);
+    }
+  }
+});

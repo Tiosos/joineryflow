@@ -53,6 +53,10 @@ export interface CatalogListResp {
 export interface BulkImportResp {
   created: number;
   errors: { row_index: number; error: string }[];
+  /** Created rows whose `default_supplier` matched exactly one supplier. */
+  linked: number;
+  /** Created rows that named a supplier but were left unlinked. */
+  unlinked: { row_index: number; default_supplier: string; reason: string }[];
 }
 
 export interface CvMapping {

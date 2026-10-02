@@ -203,6 +203,7 @@ export default function CatalogClient(props: Props) {
           tab={materialTab}
           slug={slug}
           projects={props.projects}
+          suppliers={supplierOptions}
           onClose={() => setNewOpen(false)}
           onCreated={() => { setNewOpen(false); setReloadTick((n) => n + 1); }}
         />

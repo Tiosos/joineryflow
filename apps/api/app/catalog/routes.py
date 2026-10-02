@@ -24,6 +24,7 @@ from .schemas import (
     BulkImportIn,
     BulkImportOut,
     BulkRowError,
+    BulkUnlinkedRow,
     CreateApplianceIn,
     CreateBenchtopIn,
     CreateBoardIn,
@@ -56,6 +57,18 @@ def _resolve_type(slug: str) -> str:
     if slug not in URL_TO_TYPE:
         raise HTTPException(404, f"Unknown catalog slug: {slug}")
     return URL_TO_TYPE[slug]
+
+
+# Nullable columns a PATCH may clear: everything else drops an explicit null.
+_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days")
+
+
+def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:
+    """422 `UNKNOWN_SUPPLIER` when the id is unknown or another workspace's."""
+    if supplier_id is not None and not q.supplier_in_workspace(
+        db, vendor_id=supplier_id, workspace_id=workspace_id
+    ):
+        raise HTTPException(422, q.unknown_supplier_detail(supplier_id))
 
 
 # ============================================================
@@ -187,6 +200,27 @@ def bulk_import_route(
     if errors:
         return BulkImportOut(created=0, errors=errors)
 
+    # A bulk row names its supplier in free text; link it when exactly one supplier
+    # has that name. `default_supplier_id` in a row is ignored, never trusted.
+    by_name = q.supplier_ids_by_name(db, workspace_id=user.workspace_id)
+    linked = 0
+    unlinked: list[BulkUnlinkedRow] = []
+    for i, v in enumerate(validated_rows):
+        v["default_supplier_id"] = None
+        name = (v.get("default_supplier") or "").strip()
+        if not name:
+            continue
+        if name.lower() not in by_name:
+            unlinked.append(BulkUnlinkedRow(
+                row_index=i, default_supplier=name, reason="no supplier has this name"))
+        elif by_name[name.lower()] is None:
+            unlinked.append(BulkUnlinkedRow(
+                row_index=i, default_supplier=name,
+                reason="more than one supplier has this name"))
+        else:
+            v["default_supplier_id"] = by_name[name.lower()]
+            linked += 1
+
     created = 0
     for i, v in enumerate(validated_rows):
         try:
@@ -204,10 +238,10 @@ def bulk_import_route(
     write_audit(
         db, workspace_id=user.workspace_id, actor_id=user.id,
         event=f"catalog.{type_}.csv_import", target=f"catalog.{type_}:bulk",
-        payload={"created": created},
+        payload={"created": created, "linked": linked, "unlinked": len(unlinked)},
     )
     db.commit()
-    return BulkImportOut(created=created, errors=[])
+    return BulkImportOut(created=created, errors=[], linked=linked, unlinked=unlinked)
 
 
 @router.get("/catalog/{slug}/{mid}")
@@ -240,6 +274,7 @@ def create_catalog_row_route(
         validated = schema_cls.model_validate(payload).model_dump()
     except Exception as e:
         raise HTTPException(422, str(e))
+    _require_supplier(db, validated.get("default_supplier_id"), user.workspace_id)
     try:
         mid = q.create_catalog_row(
             db, type_=type_, fields=validated, workspace_id=user.workspace_id
@@ -275,17 +310,11 @@ def patch_catalog_row_route(
     except Exception as e:
         raise HTTPException(422, str(e))
     validated = model.model_dump(exclude_none=True)
-    if "default_supplier_id" in model.model_fields_set:
-        # Everything else drops a null; for the supplier link null clears it.
-        sid = model.default_supplier_id
-        if sid is not None and not q.supplier_in_workspace(
-            db, vendor_id=sid, workspace_id=user.workspace_id
-        ):
-            raise HTTPException(422, {
-                "code": "UNKNOWN_SUPPLIER", "supplier_id": sid,
-                "message": "supplier not found in this workspace",
-            })
-        validated["default_supplier_id"] = sid
+    # Everything else drops a null; for these three (nullable columns) null clears.
+    for field in _CLEARABLE:
+        if field in model.model_fields_set:
+            validated[field] = getattr(model, field)
+    _require_supplier(db, validated.get("default_supplier_id"), user.workspace_id)
     q.patch_catalog_row(
         db, type_=type_, mid=mid, fields=validated, workspace_id=user.workspace_id,
     )

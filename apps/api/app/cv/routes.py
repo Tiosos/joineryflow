@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
+from ..catalog import queries as catalog_q
 from ..db import get_db
 from ..items.queries import ItemContentLocked, assert_item_content_unlocked
 from . import queries as q
@@ -291,6 +292,15 @@ def commit_cv_import_route(
             422,
             {"code": "UNRESOLVED_CODES", "codes": sorted(missing)},
         )
+
+    # A supplier on a "create new" row must be this workspace's: refused here, before
+    # anything is written, so the run stays a preview and can be committed again.
+    for r in body.resolutions:
+        sid = getattr(r, "default_supplier_id", None)
+        if sid is not None and not catalog_q.supplier_in_workspace(
+            db, vendor_id=sid, workspace_id=user.workspace_id
+        ):
+            raise HTTPException(422, catalog_q.unknown_supplier_detail(sid))
 
     replace = (mode == "replace") or body.replace
 
