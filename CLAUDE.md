@@ -112,7 +112,7 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0046`. Head is `0046_budget_release_and_po_totals` (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0047`. Head is `0047_po_attachment_file_blob` (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 26 Playwright specs / 95 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
@@ -195,7 +195,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0046
+make migrate      # apply Alembic 0001 -> 0047
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (88 test files, ~961 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -4861,7 +4861,8 @@ since been built.**
     workspace-scoped for older rows, so a historic foreign id no longer leaks a name.
   - Files get a unique on-disk name (`{uuid}_{name}`): two uploads called `quote.pdf` used to share a path, the
     second replacing the first's bytes and deleting one removing both. Delete keeps a file another row still
-    points at (historic shared paths).
+    points at (historic shared paths). *(Superseded for new uploads by migration `0047` — they no longer touch
+    the local disk; see *Legacy PO attachments in the shared file store*. Rows older than it still use this.)*
   - Uploads are read in 1 MB chunks with the 25 MB `MAX_BYTE_SIZE` cap (`413`) and the file is removed if
     anything fails after it was written. `file_path` is no longer in the listing.
   - **Attachments on a Cancelled / Delivered order are read-only**, upload **and delete** (`409 ORDER_LOCKED`).
@@ -4876,12 +4877,75 @@ since been built.**
     posted on reopen.
   - Workflow design left as found: any user with `orderbook:approve` can decide any workflow, the named approver
     need not hold a role that can approve, self-approval is allowed, and a Rejected order cannot be resubmitted.
-  - Attachments still go to `./uploads` (CWD-relative), **not** the mounted `uploads` volume, and there is no
-    download route.
+  - ~~Attachments still go to `./uploads` (CWD-relative), **not** the mounted `uploads` volume, and there is no
+    download route.~~ **Closed — see *Legacy PO attachments in the shared file store* below.**
   - The v1 `orders/` module can still set a Pending order's status directly, orphaning its workflow (the
     pending-queue filter hides the effect).
   - The legacy category enum has 6 of the 14 `order_category` keys.
   - Historical Commitment / Expenditure rows posted at $0 remain.
+
+## Legacy PO attachments in the shared file store (`/procurement/*`, migration `0047`) — shipped
+
+> Chosen by the user ("go with the next recommendation task" — the first follow-up I listed: the gap *Legacy
+> procurement audit* recorded as "attachments still go to `./uploads`… and there is no download route").
+> Two things were open, each asked before any code was written; the answers are **settled decisions**, not
+> assumptions: **move to the shared `FileStore` / `file_blob`** (over just pointing `UPLOAD_DIR` at the volume),
+> **add a download route**, **new uploads follow the app-wide allowlist**, and **old rows are left alone**
+> (no backfill). No spec or plan doc; this section is its written record. The web does not call this
+> namespace, so no web change was needed.
+
+- **What was wrong.** `POST /procurement/orders/{id}/attachments` wrote to `UPLOAD_DIR` = `./uploads`, relative
+  to the api process's working directory — inside the container's own layer, not the mounted `uploads` volume —
+  so a rebuilt container lost every file while the rows stayed. Nothing could read a file back at all (no download
+  route), and any type was accepted unchecked.
+- **Migration `0047`** — one nullable column, `po_attachments.file_blob_id` → `file_blob`. No `ON DELETE`: a blob is
+  never deleted anywhere in this app (no orphan GC). `file_path` stays and is nullable. **Nothing is backfilled**
+  (reading the filesystem in a migration is fragile and untestable in CI; most old files are probably already gone).
+- **Upload — `procurement/routes.py::upload_attachment`.** Same contract as `POST /files`, which it now shares a
+  store with: 25 MB cap (`413`), empty file `400`, magic-byte sniff that must agree with the extension
+  (**`415`**), sha256 dedup per workspace. So the accepted types are **PDF, PNG, JPEG, `.skp`, `.cvj`** — an `.xlsx`,
+  `.docx` or `.txt` quote is now a `415` where it used to be accepted. *That is a deliberate tightening the user
+  chose*; the `attachment_type` field (`File | PDF | Image`) is unchanged and unrelated to the sniff. The bytes go
+  through `FileStore.put`, the `file_blob` row is written (with the same `file_blob.create` audit as `/files`), and
+  the attachment row points at it with `file_path` NULL. A dedup hit reuses the existing blob and writes no
+  bytes. Gated `orderbook:write` (not `shop_dwgs:write`, which `/files` needs). All earlier checks are kept and
+  still run **first**: workspace, `uploaded_by` in this workspace (`422`), and the Cancelled / Delivered freeze
+  (`409 ORDER_LOCKED`).
+  - **Failure cleanup removes only bytes this request wrote.** A deduplicated blob belongs to other rows, so a
+    failure after a dedup hit deletes nothing; a failure after a fresh `put` rolls back and deletes the file.
+- **Download — `GET /procurement/orders/{po_id}/attachments/{attachment_id}/download`** (new), `orderbook:read`.
+  Workspace-scoped through `po_in_workspace`; the blob join is **also** scoped to the caller's workspace
+  (`file_blob_id` is a plain FK with no workspace of its own, so a row pointing across workspaces serves nothing —
+  `404`). Unknown attachment, attachment on another order, and a file whose bytes are gone are all `404`. A
+  frozen order's attachments can still be downloaded (reading is not editing).
+  - **Blob-backed rows stream `inline`** with the stored mime and the RFC 8187 dual filename, like `GET /files/{id}`
+    — safe because the type was sniffed on the way in.
+  - **Legacy rows (no blob) stream from `file_path` if it still exists, always as `attachment`** with
+    `X-Content-Type-Options: nosniff` and `no-store`: those files were never sniffed, so the browser must never
+    render one (an uploaded `.html` would otherwise run in the app's origin). A missing file or NULL path is `404`.
+- **Delete.** A blob-backed attachment deletes its **row only** — the blob is deduplicated, other rows (and other
+  modules) may share it, and nothing collects orphans. A legacy row keeps its old behaviour (unlink the file unless
+  another row shares the path). `queries.get_attachment` now takes `workspace_id` and returns the blob columns.
+- **Removed:** the `UPLOAD_DIR` constant and its `UPLOAD_DIR` env var (nothing else read it). `FILE_STORE_ROOT`
+  (`/uploads`, the mounted volume) is the only storage setting.
+- **Tests** (`test_procurement_routes.py`, 66 → 83). The `upload_dir` fixture now sets `FILE_STORE_ROOT`, and test
+  content is a real PDF header (`b"data"` would now be a 415). New: an upload lands in the store with a blob row and
+  NULL `file_path`; identical bytes share one blob across orders; same-name uploads keep their own content; deleting
+  a row keeps a blob another row uses; the four refusals (`.xlsx`, `.txt`, extension disagreeing with the bytes,
+  empty) leave no row, no blob and no file; a failure after the write removes the bytes, and does **not** when the
+  blob is shared; download streams the bytes with the right headers and filename; `404` across workspaces, for a
+  foreign workspace's blob, for an unknown id / wrong order, for a gone legacy file, for a gone blob; `403` for a
+  group with no `orderbook` grant; a legacy row downloads only as an attachment with `nosniff`; a frozen order can
+  still be downloaded from. **15 fail against the unfixed source**; the 12 that pass there are controls (several
+  are `404` cases that pass only because the route did not exist). Migration checked on a scratch database: upgrade
+  → downgrade → upgrade.
+- **Known gaps, recorded.**
+  - **Old attachments are not recoverable by this change.** Rows from before `0047` still point at a container-local
+    path; where the file is gone the download is a `404` and the row stays in the list.
+  - The `/files` upload route is unchanged and still gated `shop_dwgs:write`; a user with `orderbook:write` and no
+    `shop_dwgs` grant can attach through this route (which writes the blob itself) but cannot use `/files`.
+  - Orphaned blobs from removed attachments stay (no GC), as everywhere else; the 25 MB cap is unchanged.
+  - **Not verified in a browser or by e2e** — there is no web surface for this namespace.
 
 ## FIELD_CONFLICT serialisation on items and cutlists (no migration) — shipped
 

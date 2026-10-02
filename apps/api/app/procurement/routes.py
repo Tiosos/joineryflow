@@ -12,8 +12,10 @@ Workspace isolation: every order/attachment/approval route either passes
 `workspace_id` through to the `_CC_IN_WORKSPACE` filter — see the note atop
 queries.py.
 """
-import os
-import uuid
+import hashlib
+import io
+import mimetypes
+import urllib.parse
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
@@ -27,12 +29,15 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
-from ..files.validators import MAX_BYTE_SIZE
+from ..files.store import FileStore, get_default_store
+from ..files.validators import MAX_BYTE_SIZE, sniff_mime, validate_extension_matches
 from . import queries as q
 from .schemas import (
     ApprovalDecision,
@@ -49,7 +54,9 @@ from .schemas import (
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
 
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
+
+def _get_store() -> FileStore:
+    return get_default_store()
 
 
 def _enum_value(v):
@@ -379,6 +386,7 @@ async def upload_attachment(
     uploaded_by: Optional[int] = Form(None),
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
+    store: FileStore = Depends(_get_store),
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Purchase order not found")
@@ -391,29 +399,59 @@ async def upload_attachment(
         raise HTTPException(422, "uploader not found in this workspace")
     _assert_order_not_frozen(db, po_id)
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    target_dir = UPLOAD_DIR / str(po_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # Same contract as POST /files, which this now shares a store with: 25 MB cap, a
+    # magic-byte sniff that must agree with the extension, sha256 dedup per workspace.
     safe_name = Path(file.filename or "attachment").name
-    # A unique name on disk: two uploads called `quote.pdf` used to share one path, the
-    # second silently replacing the first's content, and deleting one removed both.
-    target = target_dir / f"{uuid.uuid4().hex}_{safe_name}"
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await file.read(1024 * 1024):
+        size += len(chunk)
+        if size > MAX_BYTE_SIZE:
+            raise HTTPException(413, f"file size exceeds {MAX_BYTE_SIZE} bytes")
+        chunks.append(chunk)
+    if size == 0:
+        raise HTTPException(400, "empty file")
+    payload = b"".join(chunks)
+    mime = sniff_mime(payload[:16], safe_name)
+    if mime is None:
+        raise HTTPException(415, "unsupported file type (magic-byte sniff failed)")
+    if not validate_extension_matches(safe_name, mime):
+        raise HTTPException(415, f"filename extension does not match content type {mime}")
 
+    sha = hashlib.sha256(payload).hexdigest()
+    blob_id = q.find_blob(db, workspace_id=user.workspace_id, sha256=sha)
+    storage_key: Optional[str] = None  # set only when this request wrote new bytes
     try:
-        size = 0
-        with target.open("wb") as out:
-            while chunk := file.file.read(1024 * 1024):
-                size += len(chunk)
-                if size > MAX_BYTE_SIZE:
-                    raise HTTPException(413, f"file size exceeds {MAX_BYTE_SIZE} bytes")
-                out.write(chunk)
+        if blob_id is None:
+            storage_key = store.put(
+                q.workspace_slug(db, user.workspace_id), sha, io.BytesIO(payload)
+            )
+            blob_id = q.insert_blob(
+                db,
+                workspace_id=user.workspace_id,
+                sha256=sha,
+                mime=mime,
+                byte_size=size,
+                original_filename=safe_name,
+                storage_key=storage_key,
+                uploaded_by=user.id,
+            )
+            write_audit(
+                db,
+                workspace_id=user.workspace_id,
+                actor_id=user.id,
+                event="file_blob.create",
+                target=str(blob_id),
+                payload={"sha256": sha, "byte_size": size, "mime": mime,
+                         "original_filename": safe_name},
+            )
         attachment_id = q.insert_attachment(
             db,
             po_id=po_id,
             attachment_type=attachment_type.value,
             file_name=safe_name,
             file_size_bytes=size,
-            file_path=str(target),
+            file_blob_id=blob_id,
             uploaded_by=uploaded_by,
         )
         q.append_changelog(
@@ -424,8 +462,11 @@ async def upload_attachment(
         )
         db.commit()
     except Exception:
-        # Whatever failed (too large, a constraint), do not leave the file behind.
-        target.unlink(missing_ok=True)
+        # Whatever failed after the bytes were written, do not leave them behind. Only bytes
+        # this request wrote: a deduplicated blob belongs to other rows too.
+        db.rollback()
+        if storage_key is not None:
+            store.delete(storage_key)
         raise
     return {
         "attachment_id": attachment_id,
@@ -434,6 +475,58 @@ async def upload_attachment(
         "file_size_bytes": size,
         "attachment_type": attachment_type.value,
     }
+
+
+@router.get("/orders/{po_id}/attachments/{attachment_id}/download")
+def download_attachment(
+    po_id: int,
+    attachment_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_get_store),
+):
+    if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
+        raise HTTPException(404, "Attachment not found")
+    row = q.get_attachment(db, po_id, attachment_id, workspace_id=user.workspace_id)
+    if not row:
+        raise HTTPException(404, "Attachment not found")
+
+    raw = row["file_name"] or "file"
+    ascii_fallback = raw.encode("ascii", errors="replace").decode("ascii").replace('"', "_")
+    encoded_name = urllib.parse.quote(raw, safe="")
+    name_part = f'filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded_name}'
+
+    if row["blob_storage_key"]:
+        # The upload checks (PDF / image / SketchUp / Cabinet Vision, sniffed) are why this may
+        # be shown inline, as GET /files/{id} does.
+        if not store.exists(row["blob_storage_key"]):
+            raise HTTPException(404, "File is no longer available")
+        return StreamingResponse(
+            store.get(row["blob_storage_key"]),
+            media_type=row["blob_mime"],
+            headers={
+                "Content-Length": str(row["blob_size"]),
+                "Content-Disposition": f"inline; {name_part}",
+                "Cache-Control": "private, max-age=300",
+            },
+        )
+
+    # A row written before migration 0047: a path on whatever disk the api ran on, often gone.
+    # Those files were never sniffed (any type was accepted), so they are only ever a
+    # download, never rendered by the browser.
+    path = Path(row["file_path"]) if row["file_path"] else None
+    if path is None or not path.is_file():
+        raise HTTPException(404, "File is no longer available")
+    return StreamingResponse(
+        path.open("rb"),
+        media_type=mimetypes.guess_type(raw)[0] or "application/octet-stream",
+        headers={
+            "Content-Length": str(path.stat().st_size),
+            "Content-Disposition": f"attachment; {name_part}",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.delete("/orders/{po_id}/attachments/{attachment_id}")
@@ -445,21 +538,24 @@ def delete_attachment(
 ):
     if not q.po_in_workspace(db, po_id=po_id, workspace_id=user.workspace_id):
         raise HTTPException(404, "Attachment not found")
-    row = q.get_attachment(db, po_id, attachment_id)
+    row = q.get_attachment(db, po_id, attachment_id, workspace_id=user.workspace_id)
     if not row:
         raise HTTPException(404, "Attachment not found")
     _assert_order_not_frozen(db, po_id)
-    try:
-        # Uploads made before each got its own file name can share one path with another
-        # row; the file stays while any other row still points at it.
-        if (
-            row["file_path"]
-            and Path(row["file_path"]).exists()
-            and not q.attachment_file_is_shared(db, row["file_path"], attachment_id)
-        ):
-            Path(row["file_path"]).unlink()
-    except OSError:
-        pass
+    # A blob-backed attachment removes its row only: the `file_blob` is deduplicated, so other
+    # rows (and other modules) may share it, and nothing in the app collects orphans.
+    if not row["file_blob_id"]:
+        try:
+            # Uploads made before each got its own file name can share one path with another
+            # row; the file stays while any other row still points at it.
+            if (
+                row["file_path"]
+                and Path(row["file_path"]).exists()
+                and not q.attachment_file_is_shared(db, row["file_path"], attachment_id)
+            ):
+                Path(row["file_path"]).unlink()
+        except OSError:
+            pass
     q.delete_attachment(db, attachment_id)
     q.append_changelog(db, po_id, f"Removed attachment: {row['file_name']}")
     db.commit()

@@ -626,16 +626,18 @@ def insert_attachment(
     attachment_type: str,
     file_name: str,
     file_size_bytes: int,
-    file_path: str,
+    file_blob_id: int,
     uploaded_by: Optional[int],
 ) -> int:
+    """New rows always point at a `file_blob`; `file_path` is left NULL (it is only read for
+    rows written before migration 0047)."""
     row = db.execute(
         text(
             """
             INSERT INTO po_attachments
-                (po_id, attachment_type, file_name, file_size_bytes, file_path, uploaded_by)
+                (po_id, attachment_type, file_name, file_size_bytes, file_blob_id, uploaded_by)
             VALUES
-                (:po_id, :atype, :fn, :sz, :fp, :uid)
+                (:po_id, :atype, :fn, :sz, :bid, :uid)
             RETURNING attachment_id
             """
         ),
@@ -644,20 +646,75 @@ def insert_attachment(
             "atype": attachment_type,
             "fn": file_name,
             "sz": file_size_bytes,
-            "fp": file_path,
+            "bid": file_blob_id,
             "uid": uploaded_by,
         },
     ).mappings().first()
     return int(row["attachment_id"])
 
 
-def get_attachment(db: Session, po_id: int, attachment_id: int) -> Optional[dict]:
+def find_blob(db: Session, *, workspace_id: int, sha256: str) -> Optional[int]:
+    row = db.execute(
+        text("SELECT file_blob_id FROM file_blob WHERE workspace_id = :w AND sha256 = :s"),
+        {"w": workspace_id, "s": sha256},
+    ).first()
+    return int(row[0]) if row else None
+
+
+def insert_blob(
+    db: Session,
+    *,
+    workspace_id: int,
+    sha256: str,
+    mime: str,
+    byte_size: int,
+    original_filename: str,
+    storage_key: str,
+    uploaded_by: int,
+) -> int:
+    return int(
+        db.execute(
+            text(
+                """
+                INSERT INTO file_blob(workspace_id, sha256, mime, byte_size,
+                                      original_filename, storage_key, uploaded_by)
+                VALUES (:w, :s, :m, :sz, :n, :k, :u)
+                RETURNING file_blob_id
+                """
+            ),
+            {
+                "w": workspace_id, "s": sha256, "m": mime, "sz": byte_size,
+                "n": original_filename, "k": storage_key, "u": uploaded_by,
+            },
+        ).scalar()
+    )
+
+
+def workspace_slug(db: Session, workspace_id: int) -> str:
+    return db.execute(
+        text("SELECT slug FROM workspace WHERE id = :w"), {"w": workspace_id}
+    ).scalar_one()
+
+
+def get_attachment(
+    db: Session, po_id: int, attachment_id: int, *, workspace_id: int
+) -> Optional[dict]:
+    """The attachment's file reference. `blob_*` come from the `file_blob` row and are NULL for
+    a row written before migration 0047 (which has only `file_path`). The blob join is also
+    scoped to the caller's workspace, so a blob id pointing across workspaces serves nothing."""
     row = db.execute(
         text(
-            "SELECT file_path, file_name FROM po_attachments"
-            " WHERE attachment_id = :a AND po_id = :p"
+            """
+            SELECT a.file_path, a.file_name, a.file_blob_id,
+                   b.mime AS blob_mime, b.byte_size AS blob_size,
+                   b.storage_key AS blob_storage_key
+              FROM po_attachments a
+              LEFT JOIN file_blob b
+                     ON b.file_blob_id = a.file_blob_id AND b.workspace_id = :w
+             WHERE a.attachment_id = :a AND a.po_id = :p
+            """
         ),
-        {"a": attachment_id, "p": po_id},
+        {"a": attachment_id, "p": po_id, "w": workspace_id},
     ).mappings().first()
     return dict(row) if row else None
 
