@@ -106,6 +106,11 @@ function summariseGenerateResult(result: GenerateOrdersResult): string {
     const materialWord = result.unassigned.length === 1 ? "material has" : "materials have";
     msg += ` ${result.unassigned.length} ${materialWord} no default supplier and need to be ordered by hand.`;
   }
+  const left = result.uncovered_line_ids?.length ?? 0;
+  if (left > 0) {
+    msg += ` ${left} ${left === 1 ? "line was" : "lines were"} left unordered because none of`
+      + ` ${left === 1 ? "its" : "their"} materials has a supplier — link one in the Catalog and generate again.`;
+  }
   return msg;
 }
 
@@ -845,7 +850,8 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
           {preview.unassigned.length > 0 ? (
             <div className="rounded border border-amber-300 bg-amber-50 p-3">
               <div className="mb-1 text-sm font-medium text-amber-900">
-                No default supplier — order these by hand
+                No default supplier — order these by hand, or link a supplier in the
+                Catalog and generate again
               </div>
               <ul className="space-y-0.5 text-xs text-amber-900">
                 {preview.unassigned.map((l) => (
@@ -857,6 +863,14 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
             </div>
           ) : null}
         </div>
+        {!refreshing && !refreshError && selected.size > 0
+          && preview.groups.length === 0 && preview.unassigned.length > 0 ? (
+          <p className="text-sm text-amber-900" data-testid="order-preview-nothing-orderable">
+            Nothing can be generated yet — none of the ticked lines&apos; materials has a
+            supplier. Link them in the Catalog (Supplier link) and come back; the lines stay
+            orderable.
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"

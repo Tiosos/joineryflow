@@ -2224,6 +2224,17 @@ def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
     return materials
 
 
+def _line_material_keys(line: dict) -> set[tuple[str, int]]:
+    """The distinct (material_type, material_id) one quote line references — the
+    same rows `_collect_order_materials` reads, kept per line so a run can tell
+    which lines actually got something ordered."""
+    return {
+        (r["material_type"], int(r["material_id"]))
+        for r in line["parts"] + line["hardware"]
+        if r.get("material_id") is not None
+    }
+
+
 def _build_order_groups(
     db: Session, *, workspace_id: int, lines: list[dict],
 ) -> tuple[dict[int, dict], list[dict]]:
@@ -2389,8 +2400,15 @@ def generate_orders(
     its own POs, so a supplier used by two runs gets two draft POs.
     `estimate_revision.orders_generated_at` is the time of the most recent run.
     Materials with no default supplier are returned as `unassigned` rather
-    than blocking the suppliers that DO have orders generated for them; the
-    line they came from still counts as covered, since they are ordered by hand."""
+    than blocking the suppliers that DO have orders generated for them. **A line
+    counts as covered only if something on it was ordered** — at least one of its
+    materials became a PO line, or it references no catalog material at all. A
+    line whose every material lacks a supplier stays uncovered (and is returned in
+    `uncovered_line_ids`), so it can be generated once a supplier is linked in the
+    Catalog; a run that would create no order at all is `409 NOTHING_ORDERABLE` and
+    writes nothing. A line with *some* materials ordered and some not is covered,
+    and the unassigned remainder is ordered by hand (per-material coverage would
+    need its own state)."""
     rev = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
@@ -2421,6 +2439,25 @@ def generate_orders(
     groups, unassigned = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected_lines,
     )
+    if not groups and unassigned:
+        # Nothing would be ordered. Marking the lines covered here is what used to
+        # lock a quote out of ever ordering them once a supplier was linked.
+        raise ValueError(
+            json.dumps({
+                "code": "NOTHING_ORDERABLE",
+                "unassigned_count": len(unassigned),
+            })
+        )
+    assigned_keys = {
+        (e["material_type"], int(e["material_id"]))
+        for g in groups.values() for e in g["lines"]
+    }
+    covered_ids: set[int] = set()
+    for l in selected_lines:
+        keys = _line_material_keys(l)
+        if not keys or keys & assigned_keys:
+            covered_ids.add(int(l["line_id"]))
+    uncovered_ids = sorted(selected_ids - covered_ids)
 
     po_ids: list[int] = []
     lines_created = 0
@@ -2465,13 +2502,14 @@ def generate_orders(
             lines_created += 1
 
     # The lines this run covered can never be ordered again; the revision's own
-    # timestamp is just "the most recent run".
+    # timestamp is just "the most recent run". A line none of whose materials had a
+    # supplier is not stamped, so a later run can still order it.
     db.execute(
         text(
             "UPDATE estimate_line SET orders_generated_at = now()"
             " WHERE line_id = ANY(:ids)"
         ),
-        {"ids": sorted(selected_ids)},
+        {"ids": sorted(covered_ids)},
     )
     db.execute(
         text(
@@ -2490,7 +2528,9 @@ def generate_orders(
             "lines_created": lines_created,
             "po_ids": po_ids,
             "unassigned_count": len(unassigned),
-            "included_line_ids": sorted(selected_ids),
+            # The lines this run covered (what migration 0048's backfill reads).
+            "included_line_ids": sorted(covered_ids),
+            "uncovered_line_ids": uncovered_ids,
         },
     )
     db.flush()
@@ -2499,4 +2539,5 @@ def generate_orders(
         "lines_created": lines_created,
         "po_ids": po_ids,
         "unassigned": unassigned,
+        "uncovered_line_ids": uncovered_ids,
     }

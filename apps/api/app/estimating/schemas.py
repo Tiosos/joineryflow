@@ -404,3 +404,6 @@ class GenerateOrdersResultOut(BaseModel):
     lines_created: int
     po_ids: list[int]
     unassigned: list[OrderPreviewLineOut] = []
+    # Selected lines left uncovered because none of their materials had a
+    # supplier — they can be generated once one is linked in the Catalog.
+    uncovered_line_ids: list[int] = []

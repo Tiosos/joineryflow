@@ -242,4 +242,6 @@ export interface GenerateOrdersResult {
   lines_created: number;
   po_ids: number[];
   unassigned: OrderPreviewLine[];
+  /** Selected lines nothing was ordered for (no material had a supplier); still orderable. */
+  uncovered_line_ids: number[];
 }

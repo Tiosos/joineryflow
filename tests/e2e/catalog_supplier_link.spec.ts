@@ -189,3 +189,67 @@ test("a material linked in the Catalog is ordered from that supplier by Generate
     await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
   }
 });
+
+test("a quote line whose material has no supplier can be ordered after linking it in the Catalog", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const sku = `E2E-NOSUP-${stamp}`;
+  const description = `E2E unlinked board ${stamp}`;
+
+  // An unlinked board on a won, converted quote (built through the API).
+  const created = await page.request.post("/api/catalog/board-materials", {
+    data: { code: sku, sku, description },
+  });
+  expect(created.status()).toBe(201);
+  const materialId = (await created.json()).material_id as number;
+  try {
+    const post = async (url: string, data?: unknown) => {
+      const r = await page.request.post(`/api${url}`, data === undefined ? {} : { data });
+      expect(r.ok(), `${url} -> ${r.status()} ${await r.text()}`).toBe(true);
+      return r.json();
+    };
+    const cust = await post("/customers", { name: `E2E customer ${stamp}` });
+    const est = await post("/estimates", { customer_id: cust.customer_id, title: `E2E ${stamp}` });
+    const rid = est.current_revision_id as number;
+    const line = await post(`/revisions/${rid}/lines`, { description: "Unlinked board line", qty: 1 });
+    await post(`/lines/${line.line_id}/parts`, { material_type: "BOARD", material_id: materialId, qty: 3 });
+    for (let i = 0; i < 10; i++) await post(`/revisions/${rid}/advance`);
+    await post(`/revisions/${rid}/accept`);
+    await post(`/revisions/${rid}/convert`);
+
+    // 1. Nothing can be ordered yet: the dialog says why and will not generate.
+    await page.goto(`/estimating/${est.estimate_id}`);
+    await page.getByTestId("generate-orders-btn").click();
+    const dialog = page.getByTestId("order-preview-dialog");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId("order-preview-nothing-orderable")).toBeVisible();
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeDisabled();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    // 2. Link it in the Catalog.
+    await openBoards(page, description);
+    await gridRow(page, description).getByLabel("Supplier link", { exact: true }).selectOption({ label: "Plyco" });
+    await expect.poll(async () => {
+      const r = await (await page.request.get(`/api/catalog/board-materials/${materialId}`)).json();
+      return r.default_supplier_name;
+    }).toBe("Plyco");
+
+    // 3. The same line now orders — it was never locked out.
+    await page.goto(`/estimating/${est.estimate_id}`);
+    await page.getByTestId("generate-orders-btn").click();
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId("order-preview-group")).toContainText("Plyco");
+    await expect(dialog.getByTestId("order-preview-nothing-orderable")).toHaveCount(0);
+    await page.getByTestId("generate-orders-confirm-btn").click();
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+    const { orders } = await (await page.request.get("/api/orders")).json();
+    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
+      (o) => o.attributes?.generated_from_revision_id === rid,
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0].vendor_name).toBe("Plyco");
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
+  }
+});
