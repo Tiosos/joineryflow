@@ -107,6 +107,8 @@ class CvCreateNewResolution(BaseModel):
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
     default_supplier: str | None = Field(default=None, max_length=128)
+    # The supplier link; checked against the caller's workspace before the commit.
+    default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
 
 

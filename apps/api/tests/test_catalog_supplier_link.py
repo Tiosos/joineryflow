@@ -207,14 +207,152 @@ def test_linking_leaves_the_free_text_supplier_untouched():
     assert r.json()["default_supplier_name"] == "Laminex Australia"
 
 
-def test_creating_a_row_cannot_set_the_link():
+def test_a_row_can_be_created_with_a_supplier_link():
     c, wid, _ = _login()
     vid = _vendor(wid)
     r = c.post("/catalog/board-materials", json={
         "code": "B9", "sku": "s-9", "description": "X", "default_supplier_id": vid,
     })
     assert r.status_code == 201, r.text
+    assert r.json()["default_supplier_id"] == vid
+    assert r.json()["default_supplier_name"] == "Laminex Australia"
+    assert _db_link("board_materials", "material_id", r.json()["material_id"]) == vid
+
+
+@pytest.mark.parametrize("slug", [s for s in TABLES if s != "equipment-hire"])
+def test_every_simple_table_takes_a_link_at_create(slug):
+    c, wid, _ = _login()
+    vid = _vendor(wid)
+    mid = _row(c, slug, default_supplier_id=vid)
+    _, id_col, table = TABLES[slug]
+    assert _db_link(table, id_col, mid) == vid
+
+
+def test_a_row_created_without_a_link_is_unlinked():
+    c, wid, _ = _login()
+    _vendor(wid)
+    r = c.post("/catalog/board-materials", json={"code": "B9", "sku": "s-9", "description": "X"})
+    assert r.status_code == 201, r.text
     assert r.json()["default_supplier_id"] is None
+
+
+def test_create_refuses_an_unknown_or_foreign_supplier_and_creates_nothing():
+    c, wid, _ = _login()
+    _, other_wid, _ = _login()
+    foreign = _vendor(other_wid, "Plyco")
+    for sid in (999999, foreign):
+        r = c.post("/catalog/board-materials", json={
+            "code": "B9", "sku": "s-9", "description": "X", "default_supplier_id": sid,
+        })
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"]["code"] == "UNKNOWN_SUPPLIER"
+        assert "Plyco" not in r.text
+    assert c.get("/catalog/board-materials").json()["rows"] == []
+
+
+# ── Bulk import links by name ─────────────────────────────────────────────────
+
+def _bulk(c, slug, rows):
+    r = c.post(f"/catalog/{slug}/bulk", json={"rows": rows})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_bulk_import_links_a_row_whose_supplier_name_matches_exactly_one_supplier():
+    c, wid, _ = _login()
+    vid = _vendor(wid, "Laminex Australia")
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "laminex AUSTRALIA"},
+    ])
+    assert out["created"] == 1 and out["linked"] == 1 and out["unlinked"] == []
+    row = c.get("/catalog/board-materials").json()["rows"][0]
+    assert row["default_supplier_id"] == vid
+    assert row["default_supplier"] == "laminex AUSTRALIA"  # the free text is kept as typed
+
+
+def test_bulk_import_reports_rows_whose_supplier_name_matches_nobody():
+    c, wid, _ = _login()
+    _vendor(wid, "Laminex Australia")
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Nobody Ltd"},
+        {"code": "B2", "sku": "b-2", "description": "Two"},
+    ])
+    assert out["created"] == 2 and out["linked"] == 0
+    # only the row that NAMED a supplier is reported; a row naming none has nothing to match
+    assert [(u["row_index"], u["default_supplier"]) for u in out["unlinked"]] == [(0, "Nobody Ltd")]
+    assert all(r["default_supplier_id"] is None for r in c.get("/catalog/board-materials").json()["rows"])
+
+
+def test_bulk_import_never_links_a_name_two_suppliers_share():
+    c, wid, _ = _login()
+    _vendor(wid, "Plyco")
+    _vendor(wid, "plyco")
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Plyco"},
+    ])
+    assert out["created"] == 1 and out["linked"] == 0
+    assert out["unlinked"][0]["reason"] == "more than one supplier has this name"
+    assert c.get("/catalog/board-materials").json()["rows"][0]["default_supplier_id"] is None
+
+
+def test_bulk_import_does_not_match_another_workspaces_supplier():
+    c, wid, _ = _login()
+    _, other_wid, _ = _login()
+    _vendor(other_wid, "Plyco")
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Plyco"},
+    ])
+    assert out["linked"] == 0 and len(out["unlinked"]) == 1
+
+
+def test_bulk_import_ignores_a_supplier_id_in_a_row():
+    c, wid, _ = _login()
+    vid = _vendor(wid)
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier_id": vid},
+    ])
+    assert out["created"] == 1 and out["linked"] == 0
+    assert c.get("/catalog/board-materials").json()["rows"][0]["default_supplier_id"] is None
+
+
+def test_a_failed_bulk_import_links_and_reports_nothing():
+    c, wid, _ = _login()
+    _vendor(wid)
+    out = _bulk(c, "board-materials", [
+        {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Laminex Australia"},
+        {"code": "", "sku": "b-2", "description": "Bad"},
+    ])
+    assert out["created"] == 0 and out["linked"] == 0 and out["unlinked"] == []
+    assert len(out["errors"]) == 1
+
+
+# ── Clearing the free-text fields ─────────────────────────────────────────────
+
+def test_an_explicit_null_clears_the_free_text_supplier_and_lead_time():
+    c, wid, _ = _login()
+    mid = _row(c, "board-materials", default_supplier="Old Name", default_lead_time_days=7)
+    r = c.patch(f"/catalog/board-materials/{mid}", json={
+        "default_supplier": None, "default_lead_time_days": None,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["default_supplier"] is None
+    assert r.json()["default_lead_time_days"] is None
+
+
+def test_omitting_the_free_text_fields_leaves_them_alone():
+    c, wid, _ = _login()
+    mid = _row(c, "board-materials", default_supplier="Old Name", default_lead_time_days=7)
+    r = c.patch(f"/catalog/board-materials/{mid}", json={"description": "Renamed"})
+    assert r.json()["default_supplier"] == "Old Name"
+    assert r.json()["default_lead_time_days"] == 7
+
+
+def test_a_null_does_not_clear_a_not_null_field():
+    c, wid, _ = _login()
+    mid = _row(c, "board-materials")
+    r = c.patch(f"/catalog/board-materials/{mid}", json={"description": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["description"] == "Board"
 
 
 # ── Refusals ──────────────────────────────────────────────────────────────────

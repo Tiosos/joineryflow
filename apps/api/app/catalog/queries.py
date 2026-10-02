@@ -18,10 +18,9 @@ ENRICHMENT_SELECT = (
 )
 ENRICHMENT_INSERT = (
     "synonyms", "default_supplier", "default_lead_time_days",
+    # The supplier link (`0029`): settable at create as well as on PATCH.
+    "default_supplier_id",
 )
-# Writable on PATCH only: the supplier link (`0029`). Creating a row with a
-# link is not offered, so it is deliberately not in `insert_cols`.
-PATCH_ONLY = ("default_supplier_id",)
 
 
 def _supplier_link_cols(table: str) -> str:
@@ -43,6 +42,32 @@ def supplier_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> 
         text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
         {"v": vendor_id, "w": workspace_id},
     ).first() is not None
+
+
+def unknown_supplier_detail(supplier_id: int) -> dict:
+    """The 422 body for a supplier that is unknown or in another workspace."""
+    return {
+        "code": "UNKNOWN_SUPPLIER", "supplier_id": supplier_id,
+        "message": "supplier not found in this workspace",
+    }
+
+
+def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | None]:
+    """Lower-cased supplier name -> vendor_id, for matching a free-text name.
+
+    The same exact, case-insensitive rule the seed and migration `0029` used. A
+    name two suppliers share maps to None: ambiguous, so never linked by guess.
+    """
+    out: dict[str, int | None] = {}
+    for vid, name in db.execute(
+        text("SELECT vendor_id, name FROM vendors WHERE workspace_id = :w"),
+        {"w": workspace_id},
+    ).all():
+        key = (name or "").strip().lower()
+        if not key:
+            continue
+        out[key] = None if key in out else vid
+    return out
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -150,7 +175,7 @@ def patch_catalog_row(
     if not fields:
         return mid
     table, id_col, _, insert_cols = REGISTRY[type_]
-    use = {k: v for k, v in fields.items() if k in insert_cols or k in PATCH_ONLY}
+    use = {k: v for k, v in fields.items() if k in insert_cols}
     if not use:
         return mid
     sets = ", ".join(f"{c} = :{c}" for c in use.keys())

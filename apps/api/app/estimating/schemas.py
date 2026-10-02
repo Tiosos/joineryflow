@@ -398,6 +398,13 @@ class OrderPreviewOut(BaseModel):
     unassigned: list[OrderPreviewLineOut] = []
 
 
+class LinkSupplierIn(BaseModel):
+    """Give a supplier-less material on this revision its supplier (Generate Orders)."""
+    material_type: Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
+    material_id: int
+    supplier_id: int
+
+
 class GenerateOrdersIn(BaseModel):
     # None (the default) means every line — same shape as ConvertIn.
     include_line_ids: list[int] | None = None

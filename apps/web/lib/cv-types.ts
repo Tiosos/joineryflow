@@ -88,6 +88,8 @@ export type CvCreateNewResolution = {
   sku: string;
   description: string;
   default_supplier?: string | null;
+  /** The supplier link (a vendor id); null / omitted leaves the new row unlinked. */
+  default_supplier_id?: number | null;
   default_lead_time_days?: number | null;
 };
 
