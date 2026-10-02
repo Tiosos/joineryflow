@@ -117,7 +117,7 @@ Layout:
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
 - `tests/e2e/` — 28 Playwright specs / 104 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
-- `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
+- `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
 ## Plan V1 — target architecture (seven sub-projects built)
 
@@ -204,7 +204,8 @@ make reindex      # rebuild the search index from Postgres (swap-index, no downt
                   # container is unavailable: `pyproject.toml` needs Python >=3.12
                   # (the shell default may be older), so make a 3.12 venv, run
                   # `pip install -e ".[dev]"`, point DATABASE_URL at any Postgres
-                  # migrated to head, and run pytest. Takes ~2 minutes.
+                  # migrated to head, and run pytest. Takes ~13 minutes (measured; the
+                  # suite is ~1400 tests against a real Postgres).
 make e2e-docker   # Playwright smoke via official image (Windows-friendly; use `make e2e` on Linux/Mac with pnpm on PATH)
 ```
 
