@@ -3,12 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { listSupplierOptions } from "@/lib/catalog-fetch";
+import type { SupplierOption } from "@/lib/catalog-types";
 import type { TrackingItemRow } from "@/lib/pm-types";
-
-interface Supplier {
-  vendor_id: number;
-  name: string;
-}
 
 interface Category {
   category_key: string;
@@ -38,7 +35,7 @@ export function CreateOrderDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,10 +52,7 @@ export function CreateOrderDialog({
   const [attrs, setAttrs] = useState<{ k: string; v: string }[]>([{ k: "", v: "" }]);
 
   useEffect(() => {
-    fetch("/api/suppliers", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setSuppliers(d?.suppliers ?? []))
-      .catch(() => {});
+    listSupplierOptions().then(setSuppliers).catch(() => {});
     fetch("/api/order-categories", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setCategories(d ?? []))

@@ -5371,9 +5371,9 @@ since been built.**
     with no materials at all still answers `200` with 0 orders and covers them — nothing was left to order.)
   - The audit row's `included_line_ids` now means **the lines the run covered** (what migration `0048`'s backfill
     reads for older runs), with `uncovered_line_ids` beside it.
-  - **A line with some materials ordered and some not is covered**, and its unassigned remainder is reported in
-    `unassigned` to order by hand. Per-material coverage would need its own state (a migration); this was the user's
-    "option A", not "option B".
+  - ~~**A line with some materials ordered and some not is covered**, and its unassigned remainder is reported in
+    `unassigned` to order by hand.~~ **Superseded — see *Generate Orders: a line is ordered whole or held back whole*
+    below** (the review found it silently lost the remainder).
 - **Web (`EstimateDetailClient.tsx`).** The confirm button was already disabled when no supplier group exists; the
   dialog now says why (`data-testid="order-preview-nothing-orderable"`: link them in the Catalog, the lines stay
   orderable), the amber card reads "order these by hand, or link a supplier in the Catalog and generate again", and the
@@ -5401,3 +5401,65 @@ since been built.**
     editor); the dialog's message says to link in the Catalog, not who can.
 - **Out of scope (deferred):** per-material coverage; an "ordered by hand" dismissal; a link-supplier shortcut inside the
   dialog.
+
+## Generate Orders: a line is ordered whole or held back whole (no migration) — shipped
+
+> Chosen by the user ("Go with your recommendation of fixes to build") after the max-level review of PR #66 listed
+> eight findings. This builds #1–#5, #7 and #8; **#6 (the Catalog grid's free-text clear is a no-op) was
+> deliberately left alone**, and true per-material coverage ("option B", a migration) is still deferred. No
+> migration, no spec or plan doc; this section is its record. It **supersedes** the "partly ordered line is
+> covered" rule of *Generate Orders: a line is covered only if something on it was ordered*.
+
+- **The rule (`estimating/queries.py::_build_order_groups`).** A line is ordered **whole or not at all.** A line
+  using any material with no default supplier is **held back**: none of its materials are ordered by this run, it is
+  not stamped, and it comes back in `uncovered_line_ids`. A line is **covered** when every material it references has
+  a supplier — or it references none at all (labour-only). Groups are built from covered lines **only**, so a material
+  shared with a held-back line is ordered for the covered lines' quantity alone; when the held line is later
+  generated it orders its own share. `unassigned` is the supplier-less materials (of every selected line) that are
+  holding lines back. `409 NOTHING_ORDERABLE` still answers a run that would create no order but has such materials.
+  *Why not order the assigned part of a mixed line and leave the line pending:* the next run would order that part a
+  second time. *Why not count it covered:* the remainder is silently lost (what the review found). Whole-or-nothing is
+  the only one of the three that neither loses nor duplicates, without per-material state. **Its cost: a line whose
+  board has a supplier but whose hinge has none cannot order the board until the hinge is linked** (or the line is
+  left out of the selection). That departs from the "option A" the user chose last round, in the direction of the
+  recommendation made after review; it is flagged here and in the PR rather than assumed.
+- **Archived-but-linked materials order from their supplier (#2).** `_resolve_order_sources_batch` no longer filters
+  `archived_at IS NULL`; it returns an `archived` flag instead. Before, an archived row was treated as missing, so a
+  linked material fell to "unassigned" with its stale quote snapshot. An archived row with **no** supplier is still
+  unassigned, now with its live SKU. The dialog tags such a line "(archived in catalog)" (`OrderPreviewLineOut.archived`).
+  **Consequence for the Catalog grid (#5): archived rows are not disabled in the picker and stay in the "N rows have no
+  supplier link" count**, the opposite of what the review first suggested — an archived row's link now matters for
+  ordering, so disabling it would be wrong. (The grid hides archived rows unless the Archived filter is on.)
+- **Preview and run share the plan.** `order_preview` and `generate_orders` both take
+  `(groups, unassigned, covered_ids, held_ids)` from the one function, so they cannot disagree. The preview's source
+  lines gained `held_back` (`OrderPreviewSourceLineOut`), shown as a "held back — no supplier" tag on a ticked line.
+  `_line_material_keys` and `_collect_order_materials` share `_material_rows` (#8); coverage is derived in the same
+  pass that builds the groups.
+- **A selection with nothing to order can be confirmed (#3).** The dialog's confirm button was disabled whenever there
+  were no supplier groups, so lines that reference no catalog material (labour-only) could never be marked ordered
+  and kept the page's "N lines not yet ordered" counter forever. It is now enabled when there are no groups **and** no
+  unassigned material, labelled "Mark ticked lines done (nothing to order)". With unassigned materials and no groups it
+  stays disabled with the "nothing can be generated yet" note, as before.
+- **Result banner (#4).** The old banner said the unassigned materials "need to be ordered by hand" while the same line
+  stayed orderable — so ordering by hand and then generating again double-ordered. It now says the lines were **held
+  back whole** and to link a supplier and generate again; nothing is "ordered by hand".
+- **Shared supplier fetch (#7).** `CreateOrderDialog.tsx` used a private `Supplier` interface and its own
+  `/api/suppliers` fetch; it now uses `listSupplierOptions` / `SupplierOption` from `lib/catalog-fetch` /
+  `lib/catalog-types` (the Catalog grid's), so the two cannot drift.
+- **Tests.** `test_estimating_generate_orders.py` (29 → 33): the "some materials ordered is covered" test was replaced
+  by six — a mixed line is held back whole (preview flags it, run is `NOTHING_ORDERABLE`, nothing written); it orders once,
+  with all its materials, after the link; a material shared with a held-back line is ordered for the covered line's
+  quantity only (3, not 5) and the held line later orders its own 2; an archived linked material still orders and is
+  flagged; an archived unlinked material is unassigned with its live SKU. **Four fail against the previous source**
+  (the mixed-line, shared-material and two archived tests); the rest are controls. `catalog_supplier_link.spec.ts` (7) and
+  `catalog.spec.ts` pass against a live migrated stack running the new code. `tsc --noEmit` is clean (apart from
+  generated `.next/dev` files). **No new e2e for the #3 confirm path** — it is covered by the pytest case for a
+  no-material line and by reading the one-line condition; say so if you want a browser test for it.
+- **Known gaps, recorded.**
+  - **Whole-or-nothing is coarser than the data**: no per-material state, so a line cannot be ordered "board now, hinge
+    later". That is option B (a migration), still not built.
+  - **There is no "ordered by hand" dismissal** for a held-back line (unchanged from before); the way out is to link the
+    supplier or to leave the line unticked.
+  - The estimator who runs Generate Orders still cannot link a supplier (`catalog:write` excludes estimator).
+  - **#6 left alone:** the Catalog grid's free-text *Default supplier* cell sends `null` to clear and the route drops
+    nulls, so clearing it does nothing. Unrelated to the supplier link.

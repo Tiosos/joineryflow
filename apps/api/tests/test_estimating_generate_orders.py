@@ -611,28 +611,129 @@ def test_a_line_with_only_unassigned_materials_can_be_ordered_once_a_supplier_is
     assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
 
 
-def test_a_line_with_some_materials_ordered_is_covered_and_reports_the_rest():
-    """Per-material coverage would need its own state, so a partly ordered line is
-    covered and its unassigned remainder is reported to be ordered by hand."""
-    ctx = _bootstrap()
+def _mixed_quote(ctx, *, shared_line: bool = False):
+    """A converted quote whose line 'Mixed' uses a supplied board AND a board with no
+    supplier. With `shared_line`, a second line 'Plain' uses the supplied board alone."""
     c = ctx["client"]
     cust = c.post("/customers", json={"name": "Mixed"}).json()
     est = c.post("/estimates", json={"customer_id": cust["customer_id"], "title": "Mixed"}).json()
     rid = est["current_revision_id"]
-    ln = c.post(f"/revisions/{rid}/lines", json={"description": "Mixed", "qty": 1}).json()
-    c.post(f"/lines/{ln['line_id']}/parts",
+    mixed = c.post(f"/revisions/{rid}/lines", json={"description": "Mixed", "qty": 1}).json()
+    c.post(f"/lines/{mixed['line_id']}/parts",
            json={"material_type": "BOARD", "material_id": ctx["board_id"], "qty": 2})
-    c.post(f"/lines/{ln['line_id']}/parts",
+    c.post(f"/lines/{mixed['line_id']}/parts",
            json={"material_type": "BOARD", "material_id": ctx["unassigned_board_id"], "qty": 1})
+    plain = None
+    if shared_line:
+        plain = c.post(f"/revisions/{rid}/lines", json={"description": "Plain", "qty": 1}).json()
+        c.post(f"/lines/{plain['line_id']}/parts",
+               json={"material_type": "BOARD", "material_id": ctx["board_id"], "qty": 3})
     _advance_to_won(c, rid)
     _convert(c, rid)
+    return est["estimate_id"], rid, mixed["line_id"], plain["line_id"] if plain else None
+
+
+def test_a_line_with_any_unassigned_material_is_held_back_whole():
+    """Ordering part of a line would either lose the rest (if the line counted as
+    covered) or order that part twice on the next run (if it did not). So the line
+    waits, whole, until every material on it has a supplier."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, _ = _mixed_quote(ctx)
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["groups"] == [] and len(pv["unassigned"]) == 1
+    assert [(l["selected"], l["held_back"]) for l in pv["lines"]] == [(True, True)]
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
+    assert _po_count(ctx["wid"]) == 0
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is None
+
+
+def test_a_held_back_line_orders_once_with_all_its_materials_after_the_link():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, _ = _mixed_quote(ctx)
+    _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
 
     r = c.post(f"/revisions/{rid}/generate-orders")
     assert r.status_code == 200, r.text
-    assert r.json()["orders_created"] == 1
-    assert r.json()["uncovered_line_ids"] == []
-    assert len(r.json()["unassigned"]) == 1
-    assert _line_flags(c, est["estimate_id"], rid)[ln["line_id"]]["orders_generated_at"] is not None
+    body = r.json()
+    assert body["orders_created"] == 1 and body["lines_created"] == 2
+    assert body["unassigned"] == [] and body["uncovered_line_ids"] == []
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is not None
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
+
+
+def test_a_material_shared_with_a_held_back_line_is_ordered_for_the_covered_line_only():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, plain = _mixed_quote(ctx, shared_line=True)
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    held = {l["line_id"]: l["held_back"] for l in pv["lines"]}
+    assert held == {mixed: True, plain: False}
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orders_created"] == 1 and body["uncovered_line_ids"] == [mixed]
+    assert _board_qty(c, body["po_ids"][0]) == 3.0  # Plain's 3, not Mixed's 2 as well
+    flags = _line_flags(c, eid, rid)
+    assert flags[plain]["orders_generated_at"] is not None
+    assert flags[mixed]["orders_generated_at"] is None
+
+    # once linked, the held line orders in full — the shared board for its own 2
+    _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["lines_created"] == 2 and r.json()["uncovered_line_ids"] == []
+    po = c.get(f"/orders/{r.json()['po_ids'][0]}").json()
+    qty = {l["material_id"]: float(l["quantity"]) for l in po["lines"]}
+    assert qty == {ctx["board_id"]: 2.0, ctx["unassigned_board_id"]: 1.0}
+
+
+def _archive(table: str, id_col: str, material_id: int) -> None:
+    s = SessionLocal()
+    try:
+        s.execute(
+            text(f"UPDATE {table} SET archived_at = now() WHERE {id_col} = :m"),
+            {"m": material_id},
+        )
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_an_archived_material_that_is_linked_still_orders_from_its_supplier():
+    """The quote priced it before it was archived; treating the row as missing sent it
+    to 'unassigned' with a stale snapshot even though it has a supplier."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    _convert(c, quote["revision_id"])
+    _archive("board_materials", "material_id", ctx["board_id"])
+    rid = quote["revision_id"]
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["unassigned"] == [] and len(pv["groups"]) == 1
+    flags = {l["material_id"]: l["archived"] for l in pv["groups"][0]["lines"]}
+    assert flags == {ctx["board_id"]: True, ctx["hw_id"]: False}
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1 and r.json()["lines_created"] == 2
+
+
+def test_an_archived_material_with_no_supplier_is_still_unassigned_with_its_live_sku():
+    ctx, c, eid, rid, line = _orphan_only_quote()
+    _archive("board_materials", "material_id", ctx["unassigned_board_id"])
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["groups"] == [] and len(pv["unassigned"]) == 1
+    assert pv["unassigned"][0]["archived"] is True
+    assert pv["unassigned"][0]["sku"].startswith("TORPHAN-")
 
 
 def test_a_line_that_references_no_catalog_material_is_covered_by_a_run():

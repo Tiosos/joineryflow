@@ -205,6 +205,8 @@ export interface OrderPreviewLine {
   qty: string;
   unit: string;
   unit_cost: string;
+  /** The catalog row has since been archived (still orderable if linked). */
+  archived?: boolean;
 }
 
 export interface OrderPreviewGroup {
@@ -225,6 +227,8 @@ export interface OrderPreviewSourceLine {
   orders_generated_at: string | null;
   /** In the selection the groups below were computed for. */
   selected: boolean;
+  /** Selected, but a material on it has no supplier: a run holds the line back whole. */
+  held_back?: boolean;
 }
 
 export interface OrderPreview {
@@ -242,6 +246,6 @@ export interface GenerateOrdersResult {
   lines_created: number;
   po_ids: number[];
   unassigned: OrderPreviewLine[];
-  /** Selected lines nothing was ordered for (no material had a supplier); still orderable. */
+  /** Selected lines held back whole (a material on them has no supplier); still orderable. */
   uncovered_line_ids: number[];
 }
