@@ -1668,13 +1668,16 @@ def revision_detail(
     lines = db.execute(
         text(
             """
-            SELECT line_id, seq, description, qty, unit, has_breakdown,
-                   material_cost, labour_cost, total_cost,
-                   unit_sell_override, notes, included_at_convert,
-                   orders_generated_at
-              FROM estimate_line
-             WHERE revision_id = :rid
-             ORDER BY seq, line_id
+            SELECT l.line_id, l.seq, l.description, l.qty, l.unit, l.has_breakdown,
+                   l.material_cost, l.labour_cost, l.total_cost,
+                   l.unit_sell_override, l.notes, l.included_at_convert,
+                   l.orders_generated_at,
+                   l.orders_dismissed_at, l.orders_dismissed_reason,
+                   u.full_name AS orders_dismissed_by_name
+              FROM estimate_line l
+              LEFT JOIN app_user u ON u.id = l.orders_dismissed_by
+             WHERE l.revision_id = :rid
+             ORDER BY l.seq, l.line_id
             """
         ),
         {"rid": revision_id},
@@ -2323,6 +2326,11 @@ def _build_order_groups(
     return groups, unassigned, covered_ids, held_ids
 
 
+def _line_pending(l: dict) -> bool:
+    """Still to order: no run covered it and nobody marked it ordered by hand."""
+    return l.get("orders_generated_at") is None and l.get("orders_dismissed_at") is None
+
+
 def _order_selection(
     rev: dict, lines: list[dict], include_line_ids: list[int] | None,
 ) -> tuple[list[dict], list[dict]]:
@@ -2336,13 +2344,15 @@ def _order_selection(
     covered; with ids, exactly those. A line a run covered
     (`estimate_line.orders_generated_at`) is never covered again — that is the
     guard `estimate_revision.orders_generated_at` used to be for the whole quote.
-    Raises `UNKNOWN_LINE_IDS` and `LINES_ALREADY_GENERATED` as ValueError."""
+    A line marked **ordered by hand** (`orders_dismissed_at`) is neither selected by default
+    nor accepted by id (`LINES_DISMISSED`) until the dismissal is undone.
+    Raises `UNKNOWN_LINE_IDS`, `LINES_ALREADY_GENERATED` and `LINES_DISMISSED` as ValueError."""
     shown = (
         [l for l in lines if l.get("included_at_convert")]
         if rev["converted_project_id"] is not None else list(lines)
     )
     if include_line_ids is None:
-        return shown, [l for l in shown if l.get("orders_generated_at") is None]
+        return shown, [l for l in shown if _line_pending(l)]
     ids = set(include_line_ids)
     unknown = ids - {int(l["line_id"]) for l in lines}
     if unknown:
@@ -2356,6 +2366,14 @@ def _order_selection(
     if done:
         raise ValueError(
             json.dumps({"code": "LINES_ALREADY_GENERATED", "line_ids": sorted(done)})
+        )
+    dismissed = {
+        int(l["line_id"]) for l in lines
+        if int(l["line_id"]) in ids and l.get("orders_dismissed_at") is not None
+    }
+    if dismissed:
+        raise ValueError(
+            json.dumps({"code": "LINES_DISMISSED", "line_ids": sorted(dismissed)})
         )
     return shown, [l for l in lines if int(l["line_id"]) in ids]
 
@@ -2466,6 +2484,9 @@ def order_preview(
                 "line_id": int(l["line_id"]), "seq": l["seq"],
                 "description": l["description"], "qty": l["qty"], "unit": l["unit"],
                 "orders_generated_at": l.get("orders_generated_at"),
+                "orders_dismissed_at": l.get("orders_dismissed_at"),
+                "orders_dismissed_reason": l.get("orders_dismissed_reason"),
+                "orders_dismissed_by_name": l.get("orders_dismissed_by_name"),
                 "selected": int(l["line_id"]) in selected_ids,
                 "held_back": int(l["line_id"]) in held_ids,
             }
@@ -2476,6 +2497,109 @@ def order_preview(
         ),
         "unassigned": unassigned,
     }
+
+
+def dismiss_order_line(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    line_id: int, reason: str,
+) -> None:
+    """Mark a quote line **ordered by hand**, so it stops counting as "not yet ordered".
+
+    For a line the PM ordered outside the system: nothing else can clear the quote's
+    "N lines not yet ordered" bar for a line Generate Orders holds back. It is recorded in
+    its own columns, not `orders_generated_at` (which means "a run made POs for this line").
+    Allowed for any line still to order — held back or not — that was handed over at Convert.
+    The reason is required (it is the only trail; the system cannot see the order).
+
+    Raises ValueError with a JSON body: NOT_FOUND (revision), NOT_CONVERTED, LINE_NOT_FOUND,
+    LINE_NOT_IN_HANDOVER, ALREADY_GENERATED, ALREADY_DISMISSED."""
+    rev = lock_revision_for_update(db, revision_id=revision_id, workspace_id=workspace_id)
+    if rev is None:
+        raise ValueError("NOT_FOUND")
+    if rev["converted_project_id"] is None:
+        raise ValueError("NOT_CONVERTED")
+    row = db.execute(
+        text(
+            """
+            SELECT included_at_convert, orders_generated_at, orders_dismissed_at
+              FROM estimate_line
+             WHERE line_id = :lid AND revision_id = :rid
+               FOR UPDATE
+            """
+        ),
+        {"lid": line_id, "rid": revision_id},
+    ).mappings().first()
+    if row is None:
+        raise ValueError(json.dumps({"code": "LINE_NOT_FOUND"}))
+    if not row["included_at_convert"]:
+        raise ValueError(json.dumps({"code": "LINE_NOT_IN_HANDOVER"}))
+    if row["orders_generated_at"] is not None:
+        raise ValueError(json.dumps({"code": "ALREADY_GENERATED"}))
+    if row["orders_dismissed_at"] is not None:
+        raise ValueError(json.dumps({"code": "ALREADY_DISMISSED"}))
+    db.execute(
+        text(
+            """
+            UPDATE estimate_line
+               SET orders_dismissed_at = now(), orders_dismissed_by = :u,
+                   orders_dismissed_reason = :why
+             WHERE line_id = :lid
+            """
+        ),
+        {"u": actor_id, "why": reason, "lid": line_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="estimate.order_dismiss", target=str(revision_id),
+        payload={"revision_id": revision_id, "line_id": line_id, "reason": reason},
+    )
+    db.flush()
+
+
+def restore_order_line(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int, line_id: int,
+) -> None:
+    """Undo `dismiss_order_line`: the line is orderable again. Safe against ordering a
+    line twice because the system never ordered it. The reason being cleared is kept in
+    the audit row. Raises NOT_FOUND (revision), LINE_NOT_FOUND, NOT_DISMISSED."""
+    rev = lock_revision_for_update(db, revision_id=revision_id, workspace_id=workspace_id)
+    if rev is None:
+        raise ValueError("NOT_FOUND")
+    row = db.execute(
+        text(
+            """
+            SELECT orders_dismissed_at, orders_dismissed_reason
+              FROM estimate_line
+             WHERE line_id = :lid AND revision_id = :rid
+               FOR UPDATE
+            """
+        ),
+        {"lid": line_id, "rid": revision_id},
+    ).mappings().first()
+    if row is None:
+        raise ValueError(json.dumps({"code": "LINE_NOT_FOUND"}))
+    if row["orders_dismissed_at"] is None:
+        raise ValueError(json.dumps({"code": "NOT_DISMISSED"}))
+    db.execute(
+        text(
+            """
+            UPDATE estimate_line
+               SET orders_dismissed_at = NULL, orders_dismissed_by = NULL,
+                   orders_dismissed_reason = NULL
+             WHERE line_id = :lid
+            """
+        ),
+        {"lid": line_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="estimate.order_undismiss", target=str(revision_id),
+        payload={
+            "revision_id": revision_id, "line_id": line_id,
+            "previous_reason": row["orders_dismissed_reason"],
+        },
+    )
+    db.flush()
 
 
 def generate_orders(
@@ -2528,9 +2652,7 @@ def generate_orders(
     if not selected_lines:
         # Every default line already ordered is the old "ran once" answer; an
         # empty explicit selection (or a quote with nothing to order) is not.
-        if include_line_ids is None and any(
-            l.get("orders_generated_at") is not None for l in shown
-        ):
+        if include_line_ids is None and any(not _line_pending(l) for l in shown):
             raise ValueError("ORDERS_ALREADY_GENERATED")
         raise ValueError("NO_LINES_SELECTED")
     groups, unassigned, covered_ids, held_ids = _build_order_groups(

@@ -35,6 +35,7 @@ from .schemas import (
     ExpireIn,
     GenerateOrdersIn,
     LinkSupplierIn,
+    DismissOrderLineIn,
     GenerateOrdersResultOut,
     HandoverPreviewOut,
     LabourRateOut,
@@ -516,6 +517,51 @@ def link_supplier_route(
         if code == "ALREADY_LINKED":
             raise HTTPException(409, decoded)
         raise HTTPException(404 if code in ("MATERIAL_NOT_IN_REVISION", "MATERIAL_NOT_FOUND") else 422, decoded)
+    db.commit()
+    return None
+
+
+@router.post("/revisions/{rid}/lines/{lid}/order-dismissal", status_code=204)
+def dismiss_order_line_route(
+    rid: int,
+    lid: int,
+    body: DismissOrderLineIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Mark a quote line "ordered by hand" (reason required) so it leaves the quote's
+    "not yet ordered" count. Gated like Generate Orders itself (`estimating:approve`)."""
+    try:
+        q.dismiss_order_line(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, reason=body.reason,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in ("NOT_FOUND", "LINE_NOT_FOUND") else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.delete("/revisions/{rid}/lines/{lid}/order-dismissal", status_code=204)
+def restore_order_line_route(
+    rid: int,
+    lid: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Undo "ordered by hand": the line is orderable again (the old reason stays in the audit row)."""
+    try:
+        q.restore_order_line(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id, line_id=lid,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in ("NOT_FOUND", "LINE_NOT_FOUND") else 409, decoded
+        )
     db.commit()
     return None
 

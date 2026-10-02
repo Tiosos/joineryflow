@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from ..schema_guards import no_null
 
 # ----------------------------------------------------------------------------
@@ -184,6 +184,10 @@ class LineOut(BaseModel):
     included_at_convert: bool = False
     # A Generate Orders run covered this line; it can never be ordered again.
     orders_generated_at: datetime | None = None
+    # Marked "ordered by hand" instead: when, why, and by whom (reversible).
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
     parts: list[LinePartOut] = []
     hardware: list[LineHardwareOut] = []
     labour: list[LineLabourOut] = []
@@ -381,6 +385,10 @@ class OrderPreviewSourceLineOut(BaseModel):
     unit: str
     # Covered by an earlier run: listed, never selected.
     orders_generated_at: datetime | None = None
+    # Marked "ordered by hand": listed, never selected, until the dismissal is undone.
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
     # In the selection the groups below were computed for.
     selected: bool
     # Selected, but a material on it has no supplier, so a run holds it back.
@@ -403,6 +411,20 @@ class LinkSupplierIn(BaseModel):
     material_type: Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
     material_id: int
     supplier_id: int
+
+
+class DismissOrderLineIn(BaseModel):
+    """Mark a quote line "ordered by hand". The reason is required: the system cannot see
+    the order, so the note is the only trail."""
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_required(cls, v: str) -> str:
+        v = v.strip()
+        if not 1 <= len(v) <= 500:
+            raise ValueError("reason must be 1-500 characters")
+        return v
 
 
 class GenerateOrdersIn(BaseModel):
