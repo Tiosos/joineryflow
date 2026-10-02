@@ -593,6 +593,9 @@ def get_item_detail(
             SELECT
                 m.module_id     AS module_id,
                 m.name          AS module_name,
+                (SELECT count(*) FROM comment c
+                  WHERE c.module_id = m.module_id
+                    AND c.deleted_at IS NULL) AS comment_count,
                 p.part_id,
                 p.qty,
                 p.part_name,
@@ -622,6 +625,7 @@ def get_item_detail(
                 "id": mid,
                 "name": mp["module_name"],
                 "parts": [],
+                "comment_count": mp["comment_count"],
             }
         # part_id is None when module has no parts (LEFT JOIN)
         if mp["part_id"] is not None:

@@ -175,6 +175,7 @@ export function CutlistTab({
                   currentUserId={currentUserId}
                   currentUserRole={currentUserRole}
                   canComment={canComment}
+                  onMutated={() => router.refresh()}
                 />
               </section>
             </div>

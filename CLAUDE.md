@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0047`. Head is `0047_po_attachment_file_blob` (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 26 Playwright specs / 95 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 26 Playwright specs / 95 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 107 open questions. Nothing in it is built. See *Plan V1 — target architecture* below.
 
@@ -3799,10 +3799,12 @@ since been built.**
     wizard warns, and the count is on the commit response and both audit rows.
     **Deleting a single module is now covered too — see *Delete module asks
     first* below** (it also gained the UI control it never had).
-  - **No comment counts for modules or revisions.** The Areas & Rooms card has
+  - ~~**No comment counts for modules or revisions.** The Areas & Rooms card has
     badges (`GET /projects/{pid}/comment-counts`); the module list and the
     revision history strip do not, so a thread is found by opening it (or by a
-    mention). One count endpoint per parent would close it.
+    mention). One count endpoint per parent would close it.~~ **Closed — see
+    *Comment counts on modules and revisions* below** (by embedding the counts in
+    payloads the screens already fetch, not by adding count endpoints).
   - **A module's thread is not shown on the Hardware or other item tabs**, only
     on Cutlist, and a revision's only in the drawer.
   - The same workspace-wide-grants ceiling as the other comment routes: a
@@ -3810,7 +3812,7 @@ since been built.**
   - An **estimate** revision still has no thread, and Component means Module, not
     Part — both are the user's settled scope, not oversights.
 - **Out of scope (deferred):** Task and Change threads; Part and estimate-revision
-  threads; counts / badges on the module list and revision strip; everything the
+  threads; ~~counts / badges on the module list and revision strip~~ (**built, see *Comment counts on modules and revisions***); everything the
   *Comments* section already defers (attachments, decisions, internal notes,
   discussion areas, §30's rules engine).
 
@@ -5018,3 +5020,71 @@ since been built.**
   - The four handlers in `OrdersClient.tsx` still each repeat the "if locked, refetch and refresh the list"
     block (unchanged).
   - The legacy `/procurement/*` routes do not return `locked` (the web does not call them).
+
+## Comment counts on modules and revisions (Plan V1 §29 follow-up, no migration) — shipped
+
+> Chosen by the user ("go with the next recommendation task" — the first gap *Comment threads on
+> Modules and shop-drawing revisions* recorded: "no comment counts for modules or revisions"). Two
+> things were open, each asked before any code was written; the answers are **settled decisions**,
+> not assumptions: **embed `comment_count` in payloads the screens already fetch** (over new
+> count endpoints like `GET /projects/{pid}/comment-counts`), and **badges on the module list and on
+> both revision lists** (the details panel's Revisions tab and the viewer's versions list).
+
+- **What a count is.** The thread's **live** comments — `deleted_at IS NULL`, **replies included** —
+  the rule the Areas & Rooms badges and the register's per-drawing count already follow. So a deleted
+  parent that survives only as a blanked placeholder (because a live reply hangs off it) is **not**
+  counted, and a top-level comment deleted with no replies simply drops out.
+- **Backend (no new route, no migration).**
+  - `ModuleOut.comment_count` (`items/schemas.py`, default 0) is filled by `GET /items/{id}`'s module
+    query (a correlated `count(*)` on `comment.module_id`) **and** by `parts.queries.get_module`, the
+    helper behind `POST /items/{id}/modules` and `PATCH /modules/{mid}` — so a patched module's
+    response carries its true count, not a default zero. A new module reads 0.
+  - `RevisionOut.comment_count` (`shop_drawings/schemas.py`, default 0) is filled by the one query
+    that builds a drawing's revision list, which every route returning a `DrawingDetailOut` shares
+    (`GET`, the `PATCH`, the create and the add-revision routes), so none can answer a stale zero.
+  - **Gating needed no change:** each count rides a route whose read rule already equals its thread's —
+    `list:read` for `GET /items/{id}` (a module thread needs `list:read`) and `shop_dwgs:read` for
+    `GET /shop-drawings/{id}` (a revision thread needs `shop_dwgs:read`) — so a count is never served
+    to someone who could not open the thread. Counts are workspace-scoped through the same item /
+    drawing lookups, and a related part's modules never reach this code (404, as before).
+- **Web.** `components/comments/CommentBadge.tsx` — the "💬 N" chip (nothing at 0, `data-testid=
+  "comment-badge"`), the same look as the Areas & Rooms card's own `CountBadge`, which was **left as it
+  was** rather than migrated (it is a private copy in `ProjectAreasCommentsCard.tsx`; a later cleanup
+  can point it at the shared one). Used by `ModuleTree` (each module row), `DetailsPanel`'s
+  `RevisionList` and `DrawingViewer`'s Versions list. `ModuleOut` / `Revision` in
+  `lib/pm-types.ts` / `lib/shop-drawings-types.ts` gained `comment_count: number`.
+  **The badges follow a post, reply, edit or delete with no reload**, because each thread now tells its
+  parent: the Cutlist tab's module thread calls `router.refresh()`; the details panel and the viewer
+  call their own `refresh()` (each holds its own copy of the drawing detail) as well as
+  `props.onChanged` (the register list). **Both hookups are load-bearing** — with either removed the
+  badge stayed one behind (6 vs 7, 9 vs 10) and the e2e failed. `router.refresh()` here is safe against
+  the `+ Add module` race recorded under *Comment threads on Modules…* because the module thread never
+  touches the URL.
+- **Seed.** Nothing new: the seed already leaves one comment on the first item's first module and one
+  on an in-review revision, so a fresh `make seed` opens with a 💬 1 on each.
+- **Tests.** `test_comment_counts_module_revision.py` (15): a module / revision with no comments reads 0;
+  the count is its live thread with replies included; per module and per revision, not per item or per
+  drawing; the item, project and the *other* kind of thread do not count; a deleted comment is not
+  counted, and a deleted parent with a live reply counts only the reply; the module create / patch and
+  the drawing PATCH responses carry the true count; a read-only role sees the same numbers; another
+  workspace's comments never count. **All 15 fail against the unfixed source** (`comment_count` is
+  absent from the payloads). `tests/e2e/comment_counts.spec.ts` (2), run against a live migrated, seeded
+  stack and **re-run back to back**: the first module's badge shows the seed's 💬 1 and becomes baseline
+  + 1 after a post from the screen; the latest revision's badge in the details panel, then in the
+  viewer's Versions list, each following a post made there. Both fail without the web changes (no badge)
+  and, separately, with the `onMutated` hookups removed (stale badge). The neighbouring
+  `comments_module_revision`, `cv_replace_comments` and `shop_drawings` specs still pass (12). Like the
+  other comment specs these add comments and leave the rows behind.
+- **Known gaps, recorded.**
+  - **The counts are loaded with the page, not pushed**: a comment another person makes shows up on the
+    next page load or after you post, reply, edit or delete on that thread yourself — there is no poll
+    (the bell polls; these badges do not).
+  - **Only the module and revision lists carry a badge.** A module's thread is still shown only on the
+    Cutlist tab, a revision's only in the details panel and viewer, and the Hardware / other item tabs and
+    the register table's per-drawing count (all revisions summed, unchanged) are as they were.
+  - The module count query runs once per module row of the item detail (a correlated subquery); an item
+    has a handful of modules, so this is negligible, but a bulk "counts for N items" surface would want a
+    grouped query instead.
+- **Out of scope (deferred):** counts on the Tracking grid or the Cutlist module summary elsewhere; an
+  unread / "new since you looked" marker; polling the counts; migrating the Areas & Rooms card onto
+  `CommentBadge`.

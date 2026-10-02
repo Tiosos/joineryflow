@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CommentBadge } from "@/components/comments/CommentBadge";
 import { PM } from "@/lib/pm-fetch";
 import type { ModuleOut } from "@/lib/pm-types";
 import { lockFromError } from "./moduleLock";
@@ -38,13 +39,14 @@ export function ModuleTree({ itemId, modules, activeModuleId, onSelect, lockReas
           type="button"
           onClick={() => onSelect(m.id)}
           className={[
-            "w-full text-left px-3 py-2 text-sm rounded transition-colors",
+            "flex w-full items-center justify-between gap-2 text-left px-3 py-2 text-sm rounded transition-colors",
             m.id === activeModuleId
               ? "bg-h-accent/15 border-l-2 border-h-accent font-medium text-h-ink"
               : "text-h-muted hover:bg-h-surface hover:text-h-ink border-l-2 border-transparent",
           ].join(" ")}
         >
-          {m.name ?? "Untitled module"}
+          <span className="min-w-0 truncate">{m.name ?? "Untitled module"}</span>
+          <CommentBadge n={m.comment_count} />
         </button>
       ))}
       {error && <p className="text-xs text-h-bad px-3">{error}</p>}
