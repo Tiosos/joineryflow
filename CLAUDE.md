@@ -196,7 +196,7 @@ IT-defined formulas).
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
 make migrate      # apply Alembic 0001 -> 0048
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (98 test files, ~1470 tests; the `meili`-marked
+make test         # pytest in api container (99 test files, ~1490 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -5328,6 +5328,11 @@ since been built.**
   **All six fail against the unfixed web code.** Every test puts the seed back (BM-203 unlinked; the new board is
   archived); the last one leaves its quote, project and one draft PO behind, so it is re-runnable but not
   side-effect free.
+- **Full suite:** 1482 passed, 10 skipped, 1 failed against a real migrated Postgres 16 (the same local-only
+  `MEILI_URL` gap `test_search_reindex.py::test_real_reindex_swaps_and_drops_temp` has always had here); `tsc --noEmit`
+  is clean. In the e2e run, `search.spec.ts` (two tests, no Meilisearch here) and `cutlist_related_parts.spec.ts`'s
+  collapsed-by-default test (3 toggles where it expects 1, live-database state — it fails identically with this change's
+  web code stashed) were red for reasons unrelated to this work.
 - **Known gaps, recorded.**
   - **Creating a catalog row cannot set the link** (the New dialog and bulk import), and **CV-import "Create new"
     rows start unlinked** — link them afterwards in the grid.
