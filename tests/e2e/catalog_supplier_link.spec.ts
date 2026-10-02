@@ -22,6 +22,7 @@ async function login(page: Page, email: string) {
 
 const MANAGER = "rin.park@hartwood.test";
 const VIEWER = "sam.ito@hartwood.test";
+const ESTIMATOR = "kai.ngata@hartwood.test";
 
 /** The grid row whose Description cell (an input for writers, text for readers) holds `description`. */
 function gridRow(page: Page, description: string) {
@@ -404,5 +405,68 @@ test("a CV import's Create new row can be linked to a supplier", async ({ page }
     for (const m of (maps.mappings ?? maps.rows ?? maps) as { cv_material_mapping_id: number }[]) {
       await page.request.delete(`/api/catalog/cv-mappings/${m.cv_material_mapping_id}`);
     }
+  }
+});
+
+test("an estimator links a supplier from the Generate Orders dialog and orders", async ({ page }) => {
+  // The estimator holds estimating:approve but neither catalog:write nor orderbook:write, so this
+  // can only work through the narrow estimating route. Setup (catalog row, quote) is the manager's.
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const sku = `E2E-EST-${stamp}`;
+  const description = `E2E estimator board ${stamp}`;
+  const created = await page.request.post("/api/catalog/board-materials", {
+    data: { code: sku, sku, description },
+  });
+  expect(created.status()).toBe(201);
+  const materialId = (await created.json()).material_id as number;
+  const post = async (url: string, data?: unknown) => {
+    const r = await page.request.post(`/api${url}`, data === undefined ? {} : { data });
+    expect(r.ok(), `${url} -> ${r.status()} ${await r.text()}`).toBe(true);
+    return r.json();
+  };
+  try {
+    const cust = await post("/customers", { name: `E2E customer ${stamp}` });
+    const est = await post("/estimates", { customer_id: cust.customer_id, title: `E2E ${stamp}` });
+    const rid = est.current_revision_id as number;
+    const line = await post(`/revisions/${rid}/lines`, { description: "Estimator line", qty: 1 });
+    await post(`/lines/${line.line_id}/parts`, { material_type: "BOARD", material_id: materialId, qty: 2 });
+    for (let i = 0; i < 10; i++) await post(`/revisions/${rid}/advance`);
+    await post(`/revisions/${rid}/accept`);
+    await post(`/revisions/${rid}/convert`);
+
+    // The estimator cannot edit the catalog (the control for why the route is narrow).
+    await page.context().clearCookies();
+    await login(page, ESTIMATOR);
+    const denied = await page.request.patch(`/api/catalog/board-materials/${materialId}`, {
+      data: { default_supplier_id: 1 },
+    });
+    expect(denied.status()).toBe(403);
+
+    await page.goto(`/estimating/${est.estimate_id}`);
+    await page.getByTestId("generate-orders-btn").click();
+    const dialog = page.getByTestId("order-preview-dialog");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId("order-preview-nothing-orderable")).toBeVisible();
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeDisabled();
+
+    // Link it from the dialog: the material leaves "no supplier" and a Plyco order appears.
+    await dialog.getByTestId(`link-supplier-BOARD-${materialId}`).selectOption({ label: "Plyco" });
+    await expect(dialog.getByTestId("order-preview-nothing-orderable")).toHaveCount(0, { timeout: 15_000 });
+    await expect(dialog.getByTestId("order-preview-group")).toContainText("Plyco");
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeEnabled();
+    await page.getByTestId("generate-orders-confirm-btn").click();
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+    const { orders } = await (await page.request.get("/api/orders")).json();
+    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
+      (o) => o.attributes?.generated_from_revision_id === rid,
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0].vendor_name).toBe("Plyco");
+  } finally {
+    await page.context().clearCookies();
+    await login(page, MANAGER);
+    await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
   }
 });

@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 30 Playwright specs / 119 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 120 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -5524,13 +5524,59 @@ since been built.**
   Plyco. **All three fail against the previous web code** and pass with it; all 11 pass against a live migrated stack. Each test archives
   what it created (the CV test also deletes its `cv_material_mapping`), and the CV test shares `JO-TP01` with the other CV specs
   (tick Replace if offered, as they do). `tsc --noEmit` is clean.
-- **Settled for the next task, not built:** *estimators and suppliers.* The user chose a **link-supplier shortcut in the Generate Orders
-  dialog** over granting estimators `catalog:write`. **Not built yet**, because it raises one more decision: the supplier-link route
-  (`POST /suppliers/{id}/materials`) needs `orderbook:write`, which estimators do not hold either (read only), so the shortcut
-  needs either that grant or a different route — asked before building.
+- **Estimators and suppliers — built; see *Link a supplier from Generate Orders* below.**
 - **Known gaps, recorded.**
   - **Bulk import matches only exact names** (any case). "Plyco Pty Ltd" against a supplier named "Plyco" is reported unlinked and
     must be linked in the grid; there is no fuzzy matching, by decision.
   - A supplier that is inactive can still be linked at create (as with PATCH).
   - The New dialog's free-text *Default supplier* and the picker are independent, so they can disagree (by the earlier decision).
   - Bulk-import result is shown only after a clean import; a failed one still uses the alert listing the error count.
+
+## Link a supplier from Generate Orders (Plan V1 §21 follow-up, no migration) — shipped
+
+> Chosen by the user: the "estimators and suppliers" item of the next-step list. The estimator (who runs Generate
+> Orders) could not clear the "no supplier" warning because `catalog:write` excludes them, and the existing link route
+> needs `orderbook:write`, which they lack too. The user was asked and chose a **shortcut in the dialog** over granting
+> `catalog:write`; asked the follow-up the shortcut raised (it needed some route an estimator may call), the user chose
+> **the narrower route** — a new estimating endpoint — over granting `orderbook:write`. **Settled decisions.** No
+> migration, no spec or plan doc; this section is its written record.
+
+- **`POST /revisions/{rid}/link-supplier`** (`estimating/routes.py`, `queries.link_material_supplier`), gated
+  **`estimating:approve`** — the dialog's own gate (admin / manager / estimator), nothing wider. Body
+  `{material_type, material_id, supplier_id}`, `204` on success. **What makes it narrow** (each pinned by a test):
+  - it only touches a catalog row that **this revision's parts or hardware reference** (`404 MATERIAL_NOT_IN_REVISION`
+    otherwise), so it is not a general catalog write;
+  - it only links a row whose `default_supplier_id` is **NULL** — it **never re-points an existing link**
+    (`409 ALREADY_LINKED`, carrying the current supplier). *That second limit is a call made while building, not one the
+    user stated:* the shortcut exists to fix "no supplier", and silently re-pointing a material for the whole workspace is
+    a bigger power than the user chose to give estimators. Re-pointing stays a Catalog job;
+  - the supplier must be this workspace's (`422 UNKNOWN_SUPPLIER`, the same body the Catalog PATCH uses; the foreign
+    name never appears); an unknown revision, or another workspace's, is `404`; a material that no longer exists is `404
+    MATERIAL_NOT_FOUND`. A refusal writes nothing. The five order-eligible types only (`BOARD / CUSTOM / BENCHTOP /
+    HARDWARE / APPLIANCE`; hire is never on a quote).
+  - **Audit:** the catalog's own `catalog.{type}.update` event with target `catalog.{type}:{id}` and payload
+    `{default_supplier_id, via: "estimate.link_supplier", revision_id}`, so the **catalog row's history shows it** and says
+    why. No separate estimate event.
+  - The estimator **still cannot edit the catalog**: `PATCH /catalog/...` is a 403 for them (pinned, and checked in the e2e).
+- **Web (`OrderPreviewDialog`).** Each material in the amber *No default supplier* card gets a **Link supplier…** select
+  (`data-testid="link-supplier-{type}-{id}"`). Picking one calls the route, then **re-asks the server for the current
+  selection** (the shared `refreshFor`, which `toggle` now also uses — newest request wins), so the material leaves the
+  card, its held-back lines become orderable and the confirm button enables. The supplier list is `listSupplierOptions`
+  (`GET /suppliers`, `orderbook:read` — the estimator holds it); unreadable → the selects are disabled with a note. An
+  `ALREADY_LINKED` / `UNKNOWN_SUPPLIER` / other failure shows a message and the preview is refreshed anyway. The card and
+  "nothing can be generated yet" copy now say "link a supplier here (or in the Catalog)".
+- **Tests.** `test_estimating_generate_orders.py` (33 → 44): an estimator links an unassigned material and then orders it
+  (preview shows nothing unassigned, no held-back line, one order); the link is audited as `catalog.board.update` naming the
+  revision; a material the revision does not use is `404` and unchanged; an existing link is never re-pointed (`409`, unchanged);
+  an unknown or another workspace's supplier is `422` and writes nothing; another workspace's revision is `404`; `viewer`,
+  `drafter` and `purchase_officer` are `403`; an estimator still cannot PATCH the catalog; hardware works too. The route is
+  new, so all of them fail against the previous source. `catalog_supplier_link.spec.ts` (11 → 12): **as the seeded
+  estimator** (`kai.ngata@hartwood.test`), against a quote and an unlinked board set up by the manager — a catalog PATCH is a
+  403; the dialog says nothing can be generated; picking Plyco in the card clears that, shows a Plyco group and enables
+  confirm; generating makes one draft PO from Plyco. **It fails without the dialog change** and passes with it; all 12 pass
+  against a live migrated stack. `tsc --noEmit` is clean.
+- **Known gaps, recorded.**
+  - **No unlink and no re-point from the dialog** (above). A material with a wrong supplier is fixed in the Catalog, by someone
+    with `catalog:write`.
+  - A drafter cannot use it (no `estimating:approve`), but a drafter can already link in the Catalog.
+  - The picker lists every supplier of the workspace, inactive ones included (as the Catalog grid's does).

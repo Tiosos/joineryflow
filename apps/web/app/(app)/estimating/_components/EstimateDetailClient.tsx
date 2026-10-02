@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Me } from "@/lib/session";
 import type {
@@ -14,9 +14,12 @@ import type {
   LineHardware,
   LinePart,
   OrderPreview,
+  OrderPreviewLine,
   PartMaterialType,
   StageKey,
 } from "@/lib/estimating-types";
+import { listSupplierOptions } from "@/lib/catalog-fetch";
+import type { SupplierOption } from "@/lib/catalog-types";
 import { TENDER_STAGE_LABELS, TENDER_STAGE_ORDER } from "@/lib/estimating-types";
 
 function nextStageLabel(status: EstimateStatus | undefined): string | null {
@@ -738,11 +741,31 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
   // Several quick ticks fire several requests; only the newest may write.
   const refreshSeq = useRef(0);
 
-  async function toggle(lineId: number) {
+  // For the "Link supplier" shortcut on an unassigned material. null = not loaded or
+  // unreadable (`GET /suppliers` needs orderbook:read): the shortcut is then disabled.
+  const [suppliers, setSuppliers] = useState<SupplierOption[] | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkingKey, setLinkingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    listSupplierOptions()
+      .then((l) => live && setSuppliers(l))
+      .catch(() => live && setSuppliers(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  function toggle(lineId: number) {
     const next = new Set(selected);
     if (next.has(lineId)) next.delete(lineId);
     else next.add(lineId);
     setSelected(next);
+    return refreshFor(next);
+  }
+
+  async function refreshFor(next: Set<number>) {
     const mine = ++refreshSeq.current;
     setRefreshError(null);
     if (next.size === 0) {
@@ -763,6 +786,43 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
       setRefreshError(e instanceof Error ? e.message : "Could not refresh the preview");
     } finally {
       if (mine === refreshSeq.current) setRefreshing(false);
+    }
+  }
+
+  // Give a supplier-less material its supplier (the narrow estimating route, not the
+  // Catalog's), then re-ask the server: the material leaves "no supplier" and its
+  // held-back lines become orderable.
+  async function linkSupplier(material: OrderPreviewLine, supplierId: number) {
+    const key = `${material.material_type}-${material.material_id}`;
+    setLinkingKey(key);
+    setLinkError(null);
+    try {
+      const r = await fetch(`/api/revisions/${preview.revision_id}/link-supplier`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          material_type: material.material_type,
+          material_id: material.material_id,
+          supplier_id: supplierId,
+        }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        const code = body?.detail?.code;
+        setLinkError(
+          code === "ALREADY_LINKED"
+            ? "Someone already linked a supplier to this material — refreshing."
+            : code === "UNKNOWN_SUPPLIER"
+              ? "That supplier is no longer available."
+              : `Could not link the supplier (${r.status}).`,
+        );
+      }
+      // Either way the server's answer is the truth now.
+      if (selected.size > 0) await refreshFor(selected);
+    } catch {
+      setLinkError("Could not link the supplier (network error).");
+    } finally {
+      setLinkingKey(null);
     }
   }
 
@@ -858,15 +918,43 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
             <div className="rounded border border-amber-300 bg-amber-50 p-3">
               <div className="mb-1 text-sm font-medium text-amber-900">
                 No default supplier — the lines using these are held back whole. Link a
-                supplier in the Catalog and generate again
+                supplier here (or in the Catalog) and they become orderable
               </div>
               <ul className="space-y-0.5 text-xs text-amber-900">
-                {preview.unassigned.map((l) => (
-                  <li key={`${l.material_type}-${l.material_id}`}>
-                    {l.description ?? l.sku ?? "material"} × {l.qty} {l.unit}
-                  </li>
-                ))}
+                {preview.unassigned.map((l) => {
+                  const key = `${l.material_type}-${l.material_id}`;
+                  return (
+                    <li key={key} className="flex items-center justify-between gap-2 py-0.5">
+                      <span className="truncate">
+                        {l.description ?? l.sku ?? "material"} × {l.qty} {l.unit}
+                      </span>
+                      <select
+                        aria-label={`Link supplier for ${l.description ?? l.sku ?? "material"}`}
+                        data-testid={`link-supplier-${key}`}
+                        value=""
+                        disabled={suppliers == null || linkingKey != null || refreshing}
+                        onChange={(e) => {
+                          if (e.target.value) void linkSupplier(l, Number(e.target.value));
+                        }}
+                        className="max-w-[10rem] rounded border border-amber-300 bg-white px-1 py-0.5 text-xs text-amber-900"
+                      >
+                        <option value="">{linkingKey === key ? "Linking…" : "Link supplier…"}</option>
+                        {(suppliers ?? []).map((sp) => (
+                          <option key={sp.vendor_id} value={sp.vendor_id}>{sp.name}</option>
+                        ))}
+                      </select>
+                    </li>
+                  );
+                })}
               </ul>
+              {linkError ? (
+                <p className="mt-1 text-xs text-red-800" data-testid="link-supplier-error">{linkError}</p>
+              ) : null}
+              {suppliers == null ? (
+                <p className="mt-1 text-xs text-amber-900">
+                  The supplier list couldn&apos;t be read, so suppliers can&apos;t be linked from here.
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -874,8 +962,8 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
           && preview.groups.length === 0 && preview.unassigned.length > 0 ? (
           <p className="text-sm text-amber-900" data-testid="order-preview-nothing-orderable">
             Nothing can be generated yet — every ticked line uses a material with no
-            supplier. Link them in the Catalog (Supplier link) and come back; the lines stay
-            orderable.
+            supplier. Link a supplier to each material above (or in the Catalog); the lines
+            stay orderable.
           </p>
         ) : null}
         <div className="flex justify-end gap-2 pt-2">

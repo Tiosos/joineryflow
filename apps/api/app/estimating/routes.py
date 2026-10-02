@@ -34,6 +34,7 @@ from .schemas import (
     EstimateSummaryOut,
     ExpireIn,
     GenerateOrdersIn,
+    LinkSupplierIn,
     GenerateOrdersResultOut,
     HandoverPreviewOut,
     LabourRateOut,
@@ -489,6 +490,34 @@ def order_preview_route(
     if row is None:
         raise HTTPException(404, "revision not found")
     return OrderPreviewOut(**row)
+
+
+@router.post("/revisions/{rid}/link-supplier", status_code=204)
+def link_supplier_route(
+    rid: int,
+    body: LinkSupplierIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Narrow shortcut for the Generate Orders dialog: link a supplier to a material on
+    this revision that has none. Gated like the dialog itself (`estimating:approve`), not
+    `catalog:write` — see `queries.link_material_supplier` for what it can and cannot touch."""
+    try:
+        q.link_material_supplier(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            material_type=body.material_type, material_id=body.material_id,
+            supplier_id=body.supplier_id,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        code = decoded.get("code")
+        if code == "NOT_FOUND":
+            raise HTTPException(404, decoded)
+        if code == "ALREADY_LINKED":
+            raise HTTPException(409, decoded)
+        raise HTTPException(404 if code in ("MATERIAL_NOT_IN_REVISION", "MATERIAL_NOT_FOUND") else 422, decoded)
+    db.commit()
+    return None
 
 
 @router.post("/revisions/{rid}/generate-orders")

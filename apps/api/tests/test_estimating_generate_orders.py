@@ -894,3 +894,142 @@ def test_concurrent_runs_cannot_order_the_same_line_twice():
     assert elapsed >= 0.3, f"run B did not wait for run A's lock ({elapsed:.3f}s)"
     assert "LINES_ALREADY_GENERATED" in str(exc.value)
     assert _po_count(wid) == 1
+
+
+# ----------------------------------------------------------------------------
+# link-supplier — the narrow shortcut for a material that has no supplier
+# ----------------------------------------------------------------------------
+
+def _link(c: TestClient, rid: int, material_id: int, supplier_id: int, material_type: str = "BOARD"):
+    return c.post(f"/revisions/{rid}/link-supplier", json={
+        "material_type": material_type, "material_id": material_id, "supplier_id": supplier_id,
+    })
+
+
+def _board_link(material_id: int):
+    return _sql_scalar(
+        "SELECT default_supplier_id FROM board_materials WHERE material_id = :m", m=material_id)
+
+
+def test_an_estimator_can_give_an_unassigned_material_its_supplier_and_then_order_it():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    _convert(c, rid)
+    assert c.get(f"/revisions/{rid}/order-preview").json()["groups"][0]["lines"]  # the pantry only
+    assert len(c.get(f"/revisions/{rid}/order-preview").json()["unassigned"]) == 1
+
+    r = _link(c, rid, ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 204, r.text
+    assert _board_link(ctx["unassigned_board_id"]) == ctx["vendor_a"]
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["unassigned"] == []
+    assert not any(l["held_back"] for l in pv["lines"])
+    out = c.post(f"/revisions/{rid}/generate-orders")
+    assert out.status_code == 200, out.text
+    assert out.json()["orders_created"] == 1 and out.json()["uncovered_line_ids"] == []
+
+
+def test_a_link_is_recorded_as_a_catalog_update_naming_the_revision():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    assert _link(c, rid, ctx["unassigned_board_id"], ctx["vendor_a"]).status_code == 204
+    payload = _sql_scalar(
+        "SELECT payload FROM audit_log WHERE event = 'catalog.board.update' AND target = :t"
+        " ORDER BY id DESC LIMIT 1", t=f"catalog.board:{ctx['unassigned_board_id']}")
+    assert payload == {
+        "default_supplier_id": ctx["vendor_a"], "via": "estimate.link_supplier", "revision_id": rid,
+    }
+
+
+def test_the_shortcut_cannot_touch_a_material_the_revision_does_not_use():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)  # uses board + hardware, NOT the unassigned board
+    r = _link(c, quote["revision_id"], ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "MATERIAL_NOT_IN_REVISION"
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_never_re_points_an_existing_link():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    db = SessionLocal()
+    try:
+        other = db.execute(
+            text("INSERT INTO vendors(name, category, workspace_id) VALUES ('Vendor B', 'Board', :w)"
+                 " RETURNING vendor_id"), {"w": ctx["wid"]},
+        ).scalar()
+        db.commit()
+    finally:
+        db.close()
+    r = _link(c, quote["revision_id"], ctx["board_id"], other)  # the board already has Vendor A
+    assert r.status_code == 409
+    assert r.json()["detail"] == {"code": "ALREADY_LINKED", "supplier_id": ctx["vendor_a"]}
+    assert _board_link(ctx["board_id"]) == ctx["vendor_a"]
+
+
+def test_the_shortcut_refuses_an_unknown_or_foreign_supplier_and_writes_nothing():
+    ctx, other = _bootstrap(), _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    before = _sql_scalar(
+        "SELECT count(*) FROM audit_log WHERE event = 'catalog.board.update'")
+    for sid in (999999, other["vendor_a"]):
+        r = _link(c, rid, ctx["unassigned_board_id"], sid)
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "UNKNOWN_SUPPLIER"
+        assert "Vendor A" not in r.text
+    assert _board_link(ctx["unassigned_board_id"]) is None
+    assert _sql_scalar("SELECT count(*) FROM audit_log WHERE event = 'catalog.board.update'") == before
+
+
+def test_another_workspaces_revision_is_a_404():
+    ctx, other = _bootstrap(), _bootstrap()
+    quote = _make_quote(ctx, include_unassigned=True)
+    r = _link(other["client"], quote["revision_id"], ctx["unassigned_board_id"], other["vendor_a"])
+    assert r.status_code == 404
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+@pytest.mark.parametrize("role", ["viewer", "drafter", "purchase_officer"])
+def test_a_role_without_estimating_approve_cannot_use_the_shortcut(role):
+    ctx = _bootstrap()
+    quote = _make_quote(ctx, include_unassigned=True)
+    other = _login_as(ctx["slug"], role)
+    r = _link(other, quote["revision_id"], ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 403
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_does_not_give_an_estimator_catalog_write():
+    """The point of the narrow route: the estimator still cannot edit the catalog itself."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    r = c.patch(f"/catalog/board-materials/{ctx['unassigned_board_id']}",
+                json={"default_supplier_id": ctx["vendor_a"]})
+    assert r.status_code == 403
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_covers_hardware_too():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    s = SessionLocal()
+    try:
+        s.execute(text("UPDATE hardware_materials SET default_supplier_id = NULL WHERE material_id = :m"),
+                  {"m": ctx["hw_id"]})
+        s.commit()
+    finally:
+        s.close()
+    r = _link(c, quote["revision_id"], ctx["hw_id"], ctx["vendor_a"], material_type="HARDWARE")
+    assert r.status_code == 204, r.text
+    assert _sql_scalar(
+        "SELECT default_supplier_id FROM hardware_materials WHERE material_id = :m",
+        m=ctx["hw_id"]) == ctx["vendor_a"]

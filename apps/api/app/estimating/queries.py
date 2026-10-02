@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..catalog import queries as catalog_q
 from ..edit_log import write_edit_log
 from ..orders import queries as orders_q
 from ..orders.schemas import CreateOrderIn, CreateOrderLineIn
@@ -2357,6 +2358,77 @@ def _order_selection(
             json.dumps({"code": "LINES_ALREADY_GENERATED", "line_ids": sorted(done)})
         )
     return shown, [l for l in lines if int(l["line_id"]) in ids]
+
+
+# The catalog event name a material type's row writes on an update (`catalog/routes.py`).
+_CATALOG_EVENT_TYPE = {
+    "BOARD": "board", "HARDWARE": "hardware", "CUSTOM": "custom_made",
+    "BENCHTOP": "benchtop", "APPLIANCE": "appliance",
+}
+
+
+def link_material_supplier(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    material_type: str, material_id: int, supplier_id: int,
+) -> None:
+    """Give a material that has **no** supplier one, from Generate Orders.
+
+    The narrow alternative to handing estimators `catalog:write` (or `orderbook:write`):
+    it can only touch a catalog row that this revision's parts / hardware reference, and
+    only while that row's `default_supplier_id` is NULL — it never re-points a link. It is
+    recorded as the catalog's own `catalog.{type}.update` audit event, with the revision
+    that caused it, so the catalog row's history shows it.
+
+    Raises ValueError with a JSON body: NOT_FOUND (revision), MATERIAL_NOT_IN_REVISION,
+    MATERIAL_NOT_FOUND, ALREADY_LINKED (carrying the current supplier), UNKNOWN_SUPPLIER.
+    """
+    if get_revision(db, revision_id=revision_id, workspace_id=workspace_id) is None:
+        raise ValueError("NOT_FOUND")
+    cfg = _CATALOG_BY_TYPE.get(material_type)
+    if cfg is None:
+        raise ValueError(json.dumps({"code": "MATERIAL_NOT_IN_REVISION"}))
+    table, id_col, *_ = cfg
+    child = "estimate_line_part" if material_type in _PART_CATALOG_BY_TYPE else "estimate_line_hardware"
+    referenced = db.execute(
+        text(
+            f"""
+            SELECT 1 FROM {child} c
+              JOIN estimate_line l ON l.line_id = c.line_id
+             WHERE l.revision_id = :rid AND c.material_type = :t AND c.material_id = :m
+             LIMIT 1
+            """
+        ),
+        {"rid": revision_id, "t": material_type, "m": material_id},
+    ).first()
+    if referenced is None:
+        raise ValueError(json.dumps({"code": "MATERIAL_NOT_IN_REVISION"}))
+    row = db.execute(
+        text(
+            f"SELECT default_supplier_id FROM {table}"
+            f" WHERE {id_col} = :m AND workspace_id = :w FOR UPDATE"
+        ),
+        {"m": material_id, "w": workspace_id},
+    ).first()
+    if row is None:
+        raise ValueError(json.dumps({"code": "MATERIAL_NOT_FOUND"}))
+    if row[0] is not None:
+        raise ValueError(json.dumps({"code": "ALREADY_LINKED", "supplier_id": int(row[0])}))
+    if not catalog_q.supplier_in_workspace(db, vendor_id=supplier_id, workspace_id=workspace_id):
+        raise ValueError(json.dumps(catalog_q.unknown_supplier_detail(supplier_id)))
+    db.execute(
+        text(f"UPDATE {table} SET default_supplier_id = :s WHERE {id_col} = :m AND workspace_id = :w"),
+        {"s": supplier_id, "m": material_id, "w": workspace_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event=f"catalog.{_CATALOG_EVENT_TYPE[material_type]}.update",
+        target=f"catalog.{_CATALOG_EVENT_TYPE[material_type]}:{material_id}",
+        payload={
+            "default_supplier_id": supplier_id,
+            "via": "estimate.link_supplier", "revision_id": revision_id,
+        },
+    )
+    db.flush()
 
 
 def order_preview(
