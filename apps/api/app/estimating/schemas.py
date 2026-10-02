@@ -180,6 +180,10 @@ class LineOut(BaseModel):
     unit_sell: Decimal
     total_sell: Decimal
     notes: str | None = None
+    # Became a Joinery Item at Convert (Q490).
+    included_at_convert: bool = False
+    # A Generate Orders run covered this line; it can never be ordered again.
+    orders_generated_at: datetime | None = None
     parts: list[LinePartOut] = []
     hardware: list[LineHardwareOut] = []
     labour: list[LineLabourOut] = []
@@ -366,11 +370,26 @@ class OrderPreviewGroupOut(BaseModel):
     lines: list[OrderPreviewLineOut] = []
 
 
+class OrderPreviewSourceLineOut(BaseModel):
+    """A quote line the Generate Orders dialog can tick."""
+    line_id: int
+    seq: int
+    description: str
+    qty: Decimal
+    unit: str
+    # Covered by an earlier run: listed, never selected.
+    orders_generated_at: datetime | None = None
+    # In the selection the groups below were computed for.
+    selected: bool
+
+
 class OrderPreviewOut(BaseModel):
     revision_id: int
     status: EstimateStatus
     converted_project_id: int | None = None
+    # The most recent Generate Orders run (per-line state is on `lines`).
     orders_generated_at: datetime | None = None
+    lines: list[OrderPreviewSourceLineOut] = []
     groups: list[OrderPreviewGroupOut] = []
     unassigned: list[OrderPreviewLineOut] = []
 

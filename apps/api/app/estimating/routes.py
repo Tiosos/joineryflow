@@ -475,10 +475,17 @@ def convert_revision_route(
 @router.get("/revisions/{rid}/order-preview")
 def order_preview_route(
     rid: int,
+    include_line_ids: list[int] | None = Query(None),
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> OrderPreviewOut:
-    row = q.order_preview(db, revision_id=rid, workspace_id=user.workspace_id)
+    try:
+        row = q.order_preview(
+            db, revision_id=rid, workspace_id=user.workspace_id,
+            include_line_ids=include_line_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, _decode_value_error(exc))
     if row is None:
         raise HTTPException(404, "revision not found")
     return OrderPreviewOut(**row)

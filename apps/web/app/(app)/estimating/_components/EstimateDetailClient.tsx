@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { Me } from "@/lib/session";
 import type {
@@ -139,6 +139,12 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     estimate.revisions.find((r) => r.revision_id === estimate.current_revision_id)
     ?? estimate.revisions[0];
 
+  // Lines that became Joinery Items at Convert and no Generate Orders run has
+  // covered yet — what "Generate orders" can still order.
+  const pendingOrderLines = currentRev?.converted_project_id
+    ? currentRev.lines.filter((l) => l.included_at_convert && !l.orders_generated_at).length
+    : 0;
+
   const revParam = sp.get("rev");
   const selectedRevId = revParam ? Number(revParam) : null;
   const selectedRev =
@@ -259,7 +265,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     if (r.ok) setOrderPreview(r.data as OrderPreview);
   }
 
-  async function confirmGenerateOrders() {
+  async function confirmGenerateOrders(includeLineIds: number[]) {
     if (!currentRev) return;
     // Close before awaiting, same as doConvert() — on failure (e.g. a
     // stale preview racing a second tab's already-completed generation)
@@ -269,7 +275,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
     const r = await callApi(
       "POST",
       `/api/revisions/${currentRev.revision_id}/generate-orders`,
-      {},
+      { include_line_ids: includeLineIds },
     );
     if (r.ok) {
       setGenerateResult(r.data as GenerateOrdersResult);
@@ -561,10 +567,12 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
       ) : null}
 
       {canWrite && isViewingCurrent && currentRev?.converted_project_id
-      && !currentRev?.orders_generated_at ? (
+      && pendingOrderLines > 0 ? (
         <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 p-3">
           <span className="text-sm text-blue-900">
-            Converted — materials can now be ordered from this quote.
+            {currentRev.orders_generated_at
+              ? `${pendingOrderLines} line${pendingOrderLines === 1 ? "" : "s"} not yet ordered from this quote.`
+              : "Converted — materials can now be ordered from this quote."}
           </span>
           <button
             type="button"
@@ -580,7 +588,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
       {currentRev?.orders_generated_at ? (
         <div className="rounded border border-h-line bg-h-surface p-3 text-sm text-h-muted">
-          Orders generated {new Date(currentRev.orders_generated_at).toLocaleString()}
+          Orders {pendingOrderLines > 0 ? "last " : ""}generated {new Date(currentRev.orders_generated_at).toLocaleString()}
           {currentRev.converted_project_id ? (
             <>
               {" — see "}
@@ -710,11 +718,54 @@ function ConvertPreviewDialog({
 interface OrderPreviewDialogProps {
   preview: OrderPreview;
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (includeLineIds: number[]) => void;
   onCancel: () => void;
 }
 
-function OrderPreviewDialog({ preview, busy, onConfirm, onCancel }: OrderPreviewDialogProps) {
+function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: OrderPreviewDialogProps) {
+  // The quote lines to order now are the PM's choice; the supplier groups below
+  // are always the server's answer for exactly that selection, so ticking a line
+  // re-asks it. Lines an earlier run covered stay visible but cannot be ticked.
+  const [preview, setPreview] = useState(initial);
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(initial.lines.filter((l) => l.selected).map((l) => l.line_id)),
+  );
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Several quick ticks fire several requests; only the newest may write.
+  const refreshSeq = useRef(0);
+
+  async function toggle(lineId: number) {
+    const next = new Set(selected);
+    if (next.has(lineId)) next.delete(lineId);
+    else next.add(lineId);
+    setSelected(next);
+    const mine = ++refreshSeq.current;
+    setRefreshError(null);
+    if (next.size === 0) {
+      // Nothing selected cannot be asked of the API (no ids means "all pending").
+      setRefreshing(false);
+      setPreview((p) => ({ ...p, groups: [], unassigned: [] }));
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const qs = Array.from(next).map((id) => `include_line_ids=${id}`).join("&");
+      const r = await fetch(`/api/revisions/${preview.revision_id}/order-preview?${qs}`);
+      if (mine !== refreshSeq.current) return;
+      if (!r.ok) throw new Error(`order-preview → ${r.status}`);
+      setPreview((await r.json()) as OrderPreview);
+    } catch (e) {
+      if (mine !== refreshSeq.current) return;
+      setRefreshError(e instanceof Error ? e.message : "Could not refresh the preview");
+    } finally {
+      if (mine === refreshSeq.current) setRefreshing(false);
+    }
+  }
+
+  const ready = !busy && !refreshing && !refreshError && selected.size > 0
+    && preview.groups.length > 0;
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
       <div
@@ -723,14 +774,52 @@ function OrderPreviewDialog({ preview, busy, onConfirm, onCancel }: OrderPreview
       >
         <h2 className="text-lg font-semibold text-h-ink">Generate orders</h2>
         <p className="text-sm text-h-muted">
-          One draft purchase order per supplier, grouped from this quote&apos;s
+          Tick the quote lines to order now — the rest can be generated later.
+          One draft purchase order per supplier is made from the ticked lines&apos;
           material breakdown at today&apos;s catalog pricing. Review before
           creating them — each PO can still be edited in the Orderbook
           afterwards.
         </p>
-        <div className="max-h-72 space-y-3 overflow-y-auto">
+        <ul
+          className="max-h-36 space-y-1 overflow-y-auto rounded border border-h-line p-2 text-sm"
+          data-testid="order-preview-lines"
+        >
+          {preview.lines.map((l) => {
+            const done = l.orders_generated_at != null;
+            return (
+              <li key={l.line_id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selected.has(l.line_id)}
+                  disabled={done}
+                  onChange={() => toggle(l.line_id)}
+                  data-testid={`order-line-${l.line_id}`}
+                />
+                <span className={`flex-1 ${done ? "text-h-muted" : ""}`}>{l.description}</span>
+                <span className="whitespace-nowrap text-xs text-h-muted">
+                  {done
+                    ? `ordered ${new Date(l.orders_generated_at as string).toLocaleDateString()}`
+                    : `× ${l.qty} ${l.unit}`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {refreshError ? (
+          <p className="text-sm text-red-800" data-testid="order-preview-error">
+            Could not refresh the preview ({refreshError}). Tick a line again to retry.
+          </p>
+        ) : null}
+        <div
+          className={`max-h-72 space-y-3 overflow-y-auto ${refreshing ? "opacity-50" : ""}`}
+          data-testid="order-preview-groups"
+        >
           {preview.groups.length === 0 ? (
-            <p className="text-sm text-h-muted">Nothing to order — no line has a real material link.</p>
+            <p className="text-sm text-h-muted">
+              {selected.size === 0
+                ? "No lines ticked."
+                : "Nothing to order — no ticked line has a real material link."}
+            </p>
           ) : (
             preview.groups.map((g) => (
               <div key={g.supplier_id} className="rounded border border-h-line p-3" data-testid="order-preview-group">
@@ -778,8 +867,8 @@ function OrderPreviewDialog({ preview, busy, onConfirm, onCancel }: OrderPreview
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={busy || preview.groups.length === 0}
+            onClick={() => onConfirm(Array.from(selected))}
+            disabled={!ready}
             className="rounded bg-green-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
             data-testid="generate-orders-confirm-btn"
           >
