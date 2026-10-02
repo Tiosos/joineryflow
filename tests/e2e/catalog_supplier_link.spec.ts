@@ -253,3 +253,51 @@ test("a quote line whose material has no supplier can be ordered after linking i
     await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
   }
 });
+
+test("a selection with nothing to order can be confirmed, and the line is marked ordered", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+
+  // A won, converted quote whose only line references no catalog material (labour only).
+  const post = async (url: string, data?: unknown) => {
+    const r = await page.request.post(`/api${url}`, data === undefined ? {} : { data });
+    expect(r.ok(), `${url} -> ${r.status()} ${await r.text()}`).toBe(true);
+    return r.json();
+  };
+  const cust = await post("/customers", { name: `E2E customer ${stamp}` });
+  const est = await post("/estimates", { customer_id: cust.customer_id, title: `E2E ${stamp}` });
+  const rid = est.current_revision_id as number;
+  const line = await post(`/revisions/${rid}/lines`, { description: "Labour only line", qty: 1 });
+  for (let i = 0; i < 10; i++) await post(`/revisions/${rid}/advance`);
+  await post(`/revisions/${rid}/accept`);
+  await post(`/revisions/${rid}/convert`);
+
+  await page.goto(`/estimating/${est.estimate_id}`);
+  await expect(page.getByText("Converted — materials can now be ordered from this quote.")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("generate-orders-btn").click();
+  const dialog = page.getByTestId("order-preview-dialog");
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+  // No supplier groups and nothing unassigned: the confirm button is enabled (it used to be disabled
+  // whenever there were no groups) and says there is nothing to order.
+  await expect(dialog.getByTestId("order-preview-group")).toHaveCount(0);
+  await expect(dialog.getByTestId("order-preview-nothing-orderable")).toHaveCount(0);
+  const confirm = page.getByTestId("generate-orders-confirm-btn");
+  await expect(confirm).toBeEnabled();
+  await expect(confirm).toHaveText("Mark ticked lines done (nothing to order)");
+  await confirm.click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+  // The line is covered: the Generate orders bar is gone and the page says orders were generated
+  // (with no "last" — nothing is left to order), and no PO was made.
+  await page.reload();
+  await expect(page.getByText(/^Orders generated /)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("generate-orders-btn")).toHaveCount(0);
+  const pv = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
+  expect(pv.lines.find((l: { line_id: number }) => l.line_id === line.line_id).orders_generated_at).not.toBeNull();
+  const { orders } = await (await page.request.get("/api/orders")).json();
+  const mine = (orders as { attributes?: Record<string, unknown> }[]).filter(
+    (o) => o.attributes?.generated_from_revision_id === rid,
+  );
+  expect(mine).toHaveLength(0);
+});
