@@ -32,7 +32,10 @@ test.describe("CV Import wizard (#7b)", () => {
     await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
     const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: "JO-TP01" });
     await expect(row).toHaveCount(1);
-    await row.locator('a[href^="/items/"]').first().click();
+    // goto the link's href rather than click it: a click before the dev build hydrates
+    // does nothing (the test below and the lock specs do the same).
+    const href = await row.locator('a[href^="/items/"]').first().getAttribute("href");
+    await page.goto(href!);
     await expect(page).toHaveURL(/\/items\/\d+/, { timeout: 15_000 });
     // Switch to the cutlist tab.
     await page.getByRole("tab", { name: /cutlist/i }).click();
