@@ -5,6 +5,7 @@ import type {
   CatalogSlug,
   CvMapping,
   CvMappingListResp,
+  SupplierOption,
 } from "./catalog-types";
 
 const headers = { "Content-Type": "application/json" };
@@ -23,6 +24,15 @@ export async function listCatalog(args: {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`listCatalog: ${res.status}`);
   return res.json();
+}
+
+/** Every supplier of the workspace, for the supplier-link picker. `GET /suppliers`
+ *  needs `orderbook:read`, a different grant from the grid's `catalog:write`. */
+export async function listSupplierOptions(): Promise<SupplierOption[]> {
+  const res = await fetch("/api/suppliers", { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw new Error(`listSuppliers: ${res.status}`);
+  const body = await res.json();
+  return body.suppliers ?? [];
 }
 
 export async function createRow(slug: CatalogSlug, body: Record<string, unknown>): Promise<CatalogRow> {

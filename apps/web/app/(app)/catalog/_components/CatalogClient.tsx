@@ -3,8 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { listCatalog } from "@/lib/catalog-fetch";
-import type { CatalogListResp, CatalogSlug } from "@/lib/catalog-types";
+import { listCatalog, listSupplierOptions } from "@/lib/catalog-fetch";
+import type { CatalogListResp, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import CatalogBulkImportDialog from "./CatalogBulkImportDialog";
 import CatalogFilters from "./CatalogFilters";
@@ -51,6 +51,7 @@ interface Props {
   initialQ: string | null;
   initialSupplier: string | null;
   initialArchived: boolean;
+  initialLink: "all" | "linked" | "unlinked";
   initialProjectId: number | null;
 }
 
@@ -62,6 +63,7 @@ export default function CatalogClient(props: Props) {
   const q = props.initialQ;
   const supplier = props.initialSupplier;
   const archived = props.initialArchived;
+  const link = props.initialLink;
 
   const [list, setList] = useState<CatalogListResp | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,6 +71,10 @@ export default function CatalogClient(props: Props) {
   const [newOpen, setNewOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  // null = not loaded or unreadable. `GET /suppliers` needs `orderbook:read`, a
+  // different grant from the grid's `catalog:write`, so it can fail on its own.
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[] | null>(null);
+  const [supplierError, setSupplierError] = useState(false);
 
   // Only the six material tabs map to a catalog slug; "stock" and
   // "cv-mappings" render their own panels.
@@ -86,6 +92,15 @@ export default function CatalogClient(props: Props) {
       .finally(() => setLoading(false));
   }, [slug, q, supplier, archived, reloadTick]);
 
+  useEffect(() => {
+    if (!isWriter || slug == null) return;
+    let live = true;
+    listSupplierOptions()
+      .then((l) => { if (live) { setSupplierOptions(l); setSupplierError(false); } })
+      .catch(() => { if (live) { setSupplierOptions(null); setSupplierError(true); } });
+    return () => { live = false; };
+  }, [isWriter, slug]);
+
   const updateUrl = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(sp.toString());
     for (const [k, v] of Object.entries(patch)) {
@@ -100,10 +115,18 @@ export default function CatalogClient(props: Props) {
     return Array.from(seen).sort();
   }, [list]);
 
+  const rows = useMemo(() => {
+    const all = list?.rows ?? [];
+    if (link === "linked") return all.filter((r) => r.default_supplier_id != null);
+    if (link === "unlinked") return all.filter((r) => r.default_supplier_id == null);
+    return all;
+  }, [list, link]);
+  const unlinkedCount = (list?.rows ?? []).filter((r) => r.default_supplier_id == null).length;
+
   const headerText =
     tab === "cv-mappings" ? "CV Mappings"
     : tab === "stock" ? "Sheet stock on hand"
-    : `${list?.rows.length ?? 0} ${tab} rows`;
+    : `${rows.length} ${tab} rows`;
 
   return (
     <section className="space-y-4">
@@ -133,11 +156,26 @@ export default function CatalogClient(props: Props) {
           searchValue={q ?? ""}
           selectedSupplier={supplier}
           archived={archived}
+          link={link}
           suppliers={suppliers}
           onSearchChange={(s) => updateUrl({ q: s || null })}
           onSupplierChange={(s) => updateUrl({ supplier: s })}
           onArchivedChange={(a) => updateUrl({ archived: a ? "true" : null })}
+          onLinkChange={(l) => updateUrl({ link: l === "all" ? null : l })}
         />
+      )}
+
+      {materialTab && materialTab !== "hire" && list && unlinkedCount > 0 && (
+        <p className="text-sm text-h-muted" data-testid="unlinked-count">
+          {unlinkedCount} of {list.rows.length} rows have no supplier link — Generate Orders
+          cannot order them.
+        </p>
+      )}
+      {materialTab && isWriter && supplierError && (
+        <p className="text-sm text-rose-700" data-testid="suppliers-unreadable">
+          Couldn&apos;t load suppliers, so links can&apos;t be changed here (it needs read access
+          to the Orderbook).
+        </p>
       )}
 
       {loading && <p className="text-sm text-h-muted">Loading…</p>}
@@ -153,8 +191,9 @@ export default function CatalogClient(props: Props) {
         <CatalogGrid
           tab={materialTab}
           slug={slug}
-          rows={list.rows}
+          rows={rows}
           canWrite={isWriter}
+          suppliers={supplierOptions}
           onChanged={() => setReloadTick((n) => n + 1)}
         />
       )}

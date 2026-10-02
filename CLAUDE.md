@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 29 Playwright specs / 108 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 114 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -608,6 +608,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   Guards in `test_catalog_routes.py` fail if the plural namespace returns.
   Removal is soft-archive only: there is no DELETE route on a catalog row.
   (Hard delete remains legal for `cv_material_mapping` alone.)
+- **Supplier link (shipped later):** each row also carries the real `default_supplier_id` FK, editable
+  from the grid's *Supplier link* column — see *Catalog supplier link* at the end of this file.
 - Seed (`make seed`) enriches the existing 2 board_materials + 4
   hardware_materials with synonyms/supplier/lead-time, adds 4 new demo
   boards (BM-101..BM-104), and inserts 2 demo cv_material_mapping rows
@@ -5241,10 +5243,11 @@ since been built.**
   unticking both disabled the button; one run → "1 line not yet ordered"; the second dialog showed the
   pantry "ordered", unticked and disabled and the island ticked at 3; the second run removed the button;
   exactly two POs existed. `estimating`, `item_project_detail`, `material_take` and `smoke` e2e still pass.
-- **No permanent e2e spec, and why.** A converted quote's materials only reach a supplier through
-  `default_supplier_id` (`0029`), which **no API route sets** and no seeded catalog row carries, so a spec
-  cannot build its own orderable quote — the same reason the seed leaves its WON estimate unconverted
-  (*PO Generation from a Won Quote*). The browser pass above set two links with SQL and undid them.
+- **No permanent e2e spec when this shipped, and the reason recorded here was wrong.** It said
+  `default_supplier_id` (`0029`) "no API route sets", so a spec could not build an orderable quote. A route
+  did: `POST /suppliers/{id}/materials` (`suppliers/queries.py::link_material`, Q506). What was missing was any
+  **web surface** for it and any **seeded link** — so in the browser every material read as unassigned.
+  **Closed by *Catalog supplier link* below**, which also added the permanent spec.
 - **Known gaps, recorded.**
   - No way to un-cover a line or to regenerate one (deliberate: the quote is frozen).
   - Two runs for one supplier make two POs; merging them is a manual Orderbook job.
@@ -5254,3 +5257,86 @@ since been built.**
     is refused by the run, not pre-empted.
 - **Out of scope (deferred):** §21's wider Procurement target (unchanged); per-supplier selection; undoing
   a run.
+
+## Catalog supplier link (Plan V1 §21 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next step: let users link catalog materials to a supplier from the web UI. Ask me
+> any questions"), from the gap *Generate Orders: per-line selection* surfaced: Generate Orders groups a
+> won quote's materials by `default_supplier_id`, and nothing in the web could set it, so in the browser
+> every material came back **unassigned**. My first scope ("web and seed only") was wrong on two counts
+> found by reading the code, so four questions were asked before any code was written; the answers are
+> **settled decisions**, not assumptions. No migration, no spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **The picker uses the Catalog PATCH, gated `catalog:write`** — over the existing supplier link route
+     (`orderbook:write`). One gate for the whole grid and one audit trail
+     (`catalog.{type}.update`). Drafter, manager, admin and editor can link; **purchase_officer cannot**
+     (catalog read only) and neither can estimator or viewer. `POST /suppliers/{id}/materials` still exists,
+     unchanged.
+  2. **The free-text `default_supplier` is left untouched** by a pick (Q435). The two columns may disagree.
+  3. **One row at a time, plus a Linked / Not linked indicator and filter.** No "match by name" helper.
+  4. **`default_supplier_id` only.** `supplier_id` (the second FK on each table) is not touched — nothing
+     reads it and it has no defined meaning here.
+- **What the code check found.** `GET /catalog/*` never returned either supplier FK (the select list stopped
+  at the free text), and the existing link route can only *set* a supplier, never clear one. So the change is
+  not web-only: the read side and a clear path needed the API.
+- **Backend — `apps/api/app/catalog/`.**
+  - `PATCH /catalog/{slug}/{mid}` accepts **`default_supplier_id`** on all six tables
+    (`queries.PATCH_ONLY`, so it is writable on PATCH and **not** on create — a `POST` that names it
+    ignores it). **An explicit `null` clears the link**, unlike every other field on this route, where
+    `exclude_none` drops a null; the route reads `model_fields_set` for this one field. Omitting it
+    leaves the link alone.
+  - **The supplier must be in the caller's workspace** (`supplier_in_workspace`): unknown, or another
+    workspace's, is `422 {code: "UNKNOWN_SUPPLIER", supplier_id}` with nothing written or audited and the
+    foreign name never in the response. *A 422 rather than the order routes' 404 `VENDOR_NOT_FOUND`: the
+    catalog route's own validation errors are 422 and the path resource does exist.* A supplier's `status`
+    is **not** checked (an inactive supplier can be linked, as the existing link route allows).
+  - **Reads** (`GET /catalog/{slug}`, `GET /catalog/{slug}/{mid}`, and the PATCH / POST responses) now carry
+    `default_supplier_id` and **`default_supplier_name`**. The name is a correlated sub-select scoped to the
+    row's own workspace, so a stale cross-workspace id (the column is a plain FK) can never surface another
+    workspace's supplier name.
+  - Audit payload is the validated body, so a link carries the id and a clear carries an explicit `null`.
+- **Web — Catalog grid.** A **Supplier link** column beside the (unchanged) free-text Default supplier:
+  a `<select>` for writers (`isWriter`, the web mirror of `catalog:write`) listing the workspace's suppliers
+  from `GET /suppliers`, and plain text (or an amber "Not linked") for readers. A header note reads "N of M
+  rows have no supplier link — Generate Orders cannot order them" (not shown on the Equipment Hire tab, which
+  quotes never use), and a filter (`?link=linked|unlinked`, in the URL, applied client-side) narrows the grid.
+  **`GET /suppliers` needs `orderbook:read`, a different grant from the grid's `catalog:write`** — when it fails
+  the picker is disabled, the page says so, and a linked row still shows its supplier (the current link is
+  kept as an option even when the list did not load). Every default writer role holds both grants; an admin who
+  grants one without the other creates the same pairing gap Comments and the QC dashboard document.
+  Inactive suppliers are listed with "(inactive)".
+- **Seed.** `make seed` creates six suppliers (Laminex Australia, Plyco, Briggs Veneers, Hettich Australia,
+  Blum Australia, House of Brass — the names the catalog's free text already used) and links every board and
+  hardware row whose `default_supplier` names one, by the same exact case-insensitive match `0029` used, so only
+  *unlinked* rows are filled and a hand-made link survives a re-run. The block sits **after every catalog
+  insert** (the legacy boards come later than the #7a ones), so **one** run links everything — verified on a fresh
+  database. **BM-203 "25mm Stainless 304 Sheet" ("CDK Stone") is deliberately left unlinked** as the demo row.
+- **Tests.** `test_catalog_supplier_link.py` (22): unlinked rows read null id and name; link **and clear on each of
+  the six tables**; moving a link; omitting it leaves it; the free text is untouched; create cannot set it;
+  unknown, other-workspace and non-integer ids refused with nothing written or audited and no foreign name;
+  a stale cross-workspace id never leaks a name; another workspace's row is a 404; purchase_officer, viewer and
+  estimator refused, editor allowed; link and clear audited with the id; the supplier side
+  (`linked_material_count`, `/suppliers/{id}/materials`) sees a catalog link. **17 fail against the unfixed
+  source** (5 are controls: 404 and role gates). `tests/e2e/catalog_supplier_link.spec.ts` (6), run twice back to
+  back against a live migrated, seeded stack beside `catalog.spec.ts`: a seeded row shows its supplier, an unlinked
+  one is flagged and counted; picking links it, survives a reload and clearing unlinks it (free text untouched);
+  the filter narrows, lives in the URL and survives a reload; a viewer reads names with no picker; an unreadable
+  supplier list disables the picker and says why; and **a board linked in the grid is ordered from that supplier by
+  Generate Orders** — a quote built through the API (customer → estimate → line → part → ten advances → accept →
+  convert), the dialog naming Plyco with no "No default supplier" card, one draft PO from Plyco afterwards.
+  **All six fail against the unfixed web code.** Every test puts the seed back (BM-203 unlinked; the new board is
+  archived); the last one leaves its quote, project and one draft PO behind, so it is re-runnable but not
+  side-effect free.
+- **Known gaps, recorded.**
+  - **Creating a catalog row cannot set the link** (the New dialog and bulk import), and **CV-import "Create new"
+    rows start unlinked** — link them afterwards in the grid.
+  - **A text edit does not move the link**, and neither the other way: changing the free-text Default supplier
+    leaves `default_supplier_id` alone, so the two can name different suppliers. By decision (2).
+  - **The grid's own free-text clear does not work**: the Default supplier cell sends `null` for an empty value
+    and the route drops nulls (`exclude_none`). Found while building, **not fixed**, unrelated to the link.
+  - A supplier link says nothing about price or lead time; those still come from the catalog row.
+  - `Generate Orders`' "covered once its run completes" rule means linking a supplier *after* a run does not
+    re-open the lines that were returned as unassigned (unchanged, *Generate Orders: per-line selection*).
+- **Out of scope (deferred):** linking at create or bulk import; "match by name" suggestions; a supplier page that
+  lists and edits its materials (the API exists); the second FK `supplier_id`.

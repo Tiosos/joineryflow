@@ -271,9 +271,21 @@ def patch_catalog_row_route(
         "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn,
     }[type_]
     try:
-        validated = schema_cls.model_validate(payload).model_dump(exclude_none=True)
+        model = schema_cls.model_validate(payload)
     except Exception as e:
         raise HTTPException(422, str(e))
+    validated = model.model_dump(exclude_none=True)
+    if "default_supplier_id" in model.model_fields_set:
+        # Everything else drops a null; for the supplier link null clears it.
+        sid = model.default_supplier_id
+        if sid is not None and not q.supplier_in_workspace(
+            db, vendor_id=sid, workspace_id=user.workspace_id
+        ):
+            raise HTTPException(422, {
+                "code": "UNKNOWN_SUPPLIER", "supplier_id": sid,
+                "message": "supplier not found in this workspace",
+            })
+        validated["default_supplier_id"] = sid
     q.patch_catalog_row(
         db, type_=type_, mid=mid, fields=validated, workspace_id=user.workspace_id,
     )

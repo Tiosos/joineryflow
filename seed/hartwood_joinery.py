@@ -2536,6 +2536,41 @@ def main() -> None:
             "(Schiavello + Mitchell Laminates)"
         )
 
+        # Suppliers for the catalog's free-text names, and the real link
+        # (`default_supplier_id`) that Generate Orders groups by. Linked by the
+        # same exact, case-insensitive name match `0029` used, so a re-run leaves
+        # a link someone changed by hand alone (only unlinked rows are filled).
+        # Placed after every catalog insert (the legacy boards come later than the
+        # #7a ones), so a single run links all of them.
+        for _sup_name, _sup_cat in [
+            ("Laminex Australia", "Board"), ("Plyco", "Board"),
+            ("Briggs Veneers", "Board"),
+            ("Hettich Australia", "Hardware"), ("Blum Australia", "Hardware"),
+            ("House of Brass", "Hardware"),
+        ]:
+            if s.execute(
+                text("SELECT 1 FROM vendors WHERE workspace_id = :w AND name = :n"),
+                {"w": workspace_id, "n": _sup_name},
+            ).first() is None:
+                s.execute(
+                    text("INSERT INTO vendors (workspace_id, name, category, status)"
+                         " VALUES (:w, :n, :c, 'Active')"),
+                    {"w": workspace_id, "n": _sup_name, "c": _sup_cat},
+                )
+        for _tbl in ("board_materials", "hardware_materials"):
+            s.execute(text(f"""
+                UPDATE {_tbl} t
+                   SET default_supplier_id = v.vendor_id
+                  FROM vendors v
+                 WHERE t.workspace_id = :w AND v.workspace_id = t.workspace_id
+                   AND t.default_supplier_id IS NULL
+                   AND t.default_supplier IS NOT NULL
+                   AND lower(btrim(t.default_supplier)) = lower(btrim(v.name))
+            """), {"w": workspace_id})
+        s.commit()
+        print("seeded 6 catalog suppliers and linked every board / hardware row whose "
+              "default supplier names one (BM-203 'CDK Stone' stays unlinked on purpose)")
+
         # ── Advance the shared number sequence past the seeded fixtures ────────
         #
         # Every item above is inserted with a FIXED `num` (290001.. and

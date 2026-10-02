@@ -29,10 +29,20 @@ export interface CatalogRow {
   project_id?: number | null;
   synonyms: string[];
   default_supplier: string | null;
+  /** The real supplier link (`vendors`); Generate Orders reads this, not the text. */
+  default_supplier_id: number | null;
+  default_supplier_name: string | null;
   default_lead_time_days: number | null;
   archived_at: string | null;
   archived_by: number | null;
   grain_locked?: boolean; // board + benchtop only (migration 0024)
+}
+
+/** A supplier as the picker needs it (`GET /suppliers`). */
+export interface SupplierOption {
+  vendor_id: number;
+  name: string;
+  status: string;
 }
 
 export interface CatalogListResp {

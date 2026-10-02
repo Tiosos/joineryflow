@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { archiveRow, patchRow } from "@/lib/catalog-fetch";
-import type { CatalogRow as Row, CatalogSlug } from "@/lib/catalog-types";
+import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import type { MaterialTab } from "./CatalogClient";
 
@@ -12,6 +12,8 @@ interface Props {
   slug: CatalogSlug;
   row: Row;
   canWrite: boolean;
+  /** null while loading or when the list could not be read (picker is then disabled). */
+  suppliers: SupplierOption[] | null;
   onChanged: () => void;
 }
 
@@ -51,7 +53,52 @@ function Cell({
   );
 }
 
-export default function CatalogRow({ tab, slug, row, canWrite, onChanged }: Props) {
+/** The real supplier link — what Generate Orders groups by. A row with no link
+ *  is flagged, because its materials come back "unassigned" there. */
+function SupplierLink({
+  row, canWrite, suppliers, busy, onPick,
+}: {
+  row: Row;
+  canWrite: boolean;
+  suppliers: SupplierOption[] | null;
+  busy: boolean;
+  onPick: (id: number | null) => void;
+}) {
+  const linked = row.default_supplier_id != null;
+  if (!canWrite) {
+    return linked
+      ? <span>{row.default_supplier_name ?? "—"}</span>
+      : <span className="text-h-warn" data-testid="supplier-unlinked">Not linked</span>;
+  }
+  const list = suppliers ?? [];
+  // Keep the current link selectable even if the list has not loaded (or failed),
+  // so the select never shows "Not linked" for a row that is linked.
+  const missing = linked && !list.some((s) => s.vendor_id === row.default_supplier_id);
+  return (
+    <select
+      aria-label="Supplier link"
+      value={row.default_supplier_id ?? ""}
+      disabled={busy || suppliers == null}
+      onChange={(e) => onPick(e.target.value === "" ? null : Number(e.target.value))}
+      className={
+        "w-full rounded border border-h-line bg-transparent px-1 py-0.5 text-sm "
+        + (linked ? "" : "text-h-warn")
+      }
+    >
+      <option value="">Not linked</option>
+      {missing && (
+        <option value={row.default_supplier_id!}>{row.default_supplier_name ?? `#${row.default_supplier_id}`}</option>
+      )}
+      {list.map((s) => (
+        <option key={s.vendor_id} value={s.vendor_id}>
+          {s.name}{s.status && s.status !== "Active" ? ` (${s.status.toLowerCase()})` : ""}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChanged }: Props) {
   const mid = row.material_id ?? row.hire_id;
   if (mid == null) {
     // Defensive: shouldn't happen — every catalog row has either material_id (5 tables)
@@ -101,6 +148,10 @@ export default function CatalogRow({ tab, slug, row, canWrite, onChanged }: Prop
       <td className="px-3 py-1">
         <Cell value={row.default_supplier} canWrite={canWrite}
               onSave={(v) => save({ default_supplier: v || null })} />
+      </td>
+      <td className="px-3 py-1" data-testid="supplier-link-cell">
+        <SupplierLink row={row} canWrite={canWrite} suppliers={suppliers} busy={busy}
+                      onPick={(id) => save({ default_supplier_id: id })} />
       </td>
       <td className="px-3 py-1 w-20">
         <Cell value={row.default_lead_time_days} type="number" canWrite={canWrite}

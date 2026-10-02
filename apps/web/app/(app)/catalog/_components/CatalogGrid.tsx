@@ -1,6 +1,6 @@
 "use client";
 
-import type { CatalogRow as Row, CatalogSlug } from "@/lib/catalog-types";
+import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import type { MaterialTab } from "./CatalogClient";
 import CatalogRow from "./CatalogRow";
@@ -10,6 +10,7 @@ interface Props {
   slug: CatalogSlug;
   rows: Row[];
   canWrite: boolean;
+  suppliers: SupplierOption[] | null;
   onChanged: () => void;
 }
 
@@ -25,7 +26,7 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
 export default function CatalogGrid(p: Props) {
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
-  const colCount = hasGrain ? 9 : 8;
+  const colCount = hasGrain ? 10 : 9;
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -36,6 +37,7 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2">SKU</th>
             <th className="px-3 py-2">{legacyLabel}</th>
             <th className="px-3 py-2">Default supplier</th>
+            <th className="px-3 py-2" title="The supplier Generate Orders orders this material from">Supplier link</th>
             <th className="px-3 py-2">Lead (d)</th>
             <th className="px-3 py-2">Synonyms</th>
             {hasGrain && <th className="px-3 py-2">Grain</th>}
@@ -57,6 +59,7 @@ export default function CatalogGrid(p: Props) {
                 slug={p.slug}
                 row={r}
                 canWrite={p.canWrite}
+                suppliers={p.suppliers}
                 onChanged={p.onChanged}
               />
             );
