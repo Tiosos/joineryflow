@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 30 Playwright specs / 120 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 120 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). **A re-seed is not enough**: the seed skips items that already exist, so it does not restore a lock or take an earlier run changed — run the whole suite against a **freshly created, migrated and seeded database** (see *e2e suite repair*).
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -4427,7 +4427,7 @@ since been built.**
   (they surfaced the raw `IntegrityError`); the other three are controls. `cv_import.spec.ts` (+1)
   mocks the API's exact 409 body and asserts the friendly message appears and `commitCvImport: 409`
   does not — **it fails against the unfixed web code** and passes with the fix.
-- **Found while verifying, not fixed: `cv_import.spec.ts`'s existing test is racy in dev mode.**
+- **Found while verifying: `cv_import.spec.ts`'s existing test is racy in dev mode** (*hardened since — see *e2e suite repair*; the race itself was never reproduced*).
   It clicks the row's `/items/…` link the instant the row is visible; against a freshly started
   `next dev` the page is not yet hydrated, the click does nothing, and the test times out on the
   URL assertion (a diagnostic run with a 3 s pause before the click navigates fine). The new test
@@ -5580,3 +5580,65 @@ since been built.**
     with `catalog:write`.
   - A drafter cannot use it (no `estimating:approve`), but a drafter can already link in the Catalog.
   - The picker lists every supplier of the workspace, inactive ones included (as the Catalog grid's does).
+
+## e2e suite repair (no migration, no app code) — shipped
+
+> Chosen by the user ("go with the e2e repair, then the 'ordered by hand' questions"), the first item of
+> the next-step list after PR #67. Every earlier section of this file recorded the same sentence — *e2e is
+> not part of CI, and these specs were red for reasons unrelated to the change* — so the suite was last run
+> **whole** long before this. Nothing here needed a decision, so nothing was asked. Test files only: no
+> application code, schema or seed changed. Method: reproduce each failure on a **fresh** database, find the
+> cause, fix it, and prove the fix by repeating the test (`--repeat-each`) or re-running the sequence it
+> fails in.
+
+- **How to run the whole suite (the baseline that matters).** The seed skips items that already exist, so a
+  database that earlier runs have touched is *not* the seeded state, and half of what looked like regressions
+  on a first whole-suite run (a Controlled Lock gone from `JO-K-103`, a take already approved) were that. Use a
+  database nobody has run anything against: create it, `alembic upgrade head`, `python -m seed.hartwood_joinery`,
+  start the API on it, then `playwright test` with `workers: 1` (the config). **Verified: 118 passed, 2 skipped
+  (the two `search` tests, no Meilisearch here), 0 failed in 7.2 min** on a fresh database with every fix below in
+  — the first whole run of this session was 107 passed / 9 failed.
+- **Red specs, and what each was.**
+  - **`cutlist_related_parts` (collapsed by default)** — counted every `button[aria-expanded]` on the page, and
+    the notification bell (added with Comments) and Next's dev-overlay button carry it too (3 where it expects 1).
+    Now scoped to `[data-testid="tracking-row"] button[aria-expanded]`. *Not* live-database state, as an earlier
+    note here guessed: it failed on a freshly reseeded database.
+  - **`search` (2 tests)** — there is no Postgres fallback, so with no Meilisearch `GET /search` is
+    `503 SEARCH_UNAVAILABLE`. Both now **skip on exactly that response**; a reachable but empty or broken index
+    still fails. **Their bodies are unchanged and were not run past the skip here** — no Meilisearch in the
+    sandbox — so the passing path is unverified in this environment.
+  - **`drafter_editor`** — toggles the lock of the drafter's first My Day item once and leaves it flipped. That
+    item is `K-103`, which the seed leaves Controlled-Locked, so every lock spec after it (hardware, status,
+    module-delete, takes) started with no lock: **five tests failed in a whole run and passed alone**. It now
+    toggles it back. The audit log named the culprit (`item.unlock`, the drafter, at the moment the spec ran).
+  - **`queries_takes_locks` (2 tests)** — need K-102's *draft* take; `material_take.spec.ts`, which runs just
+    before, approves that one draft for good. A spec that only passes when another has not run is a trap, so
+    `ensureDraftTake` starts the next version through the API when no draft exists (what "Start vN" does).
+  - **`comments` (mention picker)** — deterministic on a fresh database. The tab is driven by the URL, so on a
+    cold dev build the click takes a moment, and until it lands the Cutlist tab's *module* thread is on screen
+    with the same `comment-input` test id; the spec typed `@Rin` into that one and the text vanished when the tab
+    swapped. `openCommentsTab` waits for `tab=comments` **and** for `module-comments` to be gone. (Found by
+    logging navigations and requests during the test.)
+  - **`module_delete` (add / comment / delete)** — passed 3 of 8 repeated runs. Once the module has a comment its
+    row's accessible name is **"New module 💬 1"** (the comment-count badge), so `{name: "New module", exact: true}`
+    stopped matching the very module the test had just commented on. It matches the name with or without the badge
+    now: **8 of 8**. `cv_replace_comments.spec.ts` has the same exact-name locator but never comments on that
+    module, so it was left alone.
+  - **`procurement`** — clicks the availability chip as soon as a row is visible; before the page hydrates the
+    click does nothing. Reproduced at **6 of 12**; the click now retries until `drawer=item-availability`
+    appears (`toPass`), which is safe because opening the drawer twice is harmless: **12 of 12**.
+  - **`cv_import` (first test)** — hardened with the `href` + `goto` the sibling test and the lock specs use.
+    **Not reproduced** in this session (it passed warm and on a cold dev server), so this is hardening, not a
+    confirmed fix.
+- **The recurring shape, recorded once.** Four of the eight were *one spec leaving shared state changed* (a
+  lock, a take) and a later spec assuming the seeded state. Specs run alphabetically in one worker, so the
+  failing spec is rarely the guilty one — the audit log (`item.unlock`, `material_take.approve`, …) says who
+  touched what and when. Two were a locator that matched a *different* element with the same role or test id
+  (the bell, a module thread, a badge in a name). Two were a click before hydration.
+- **Known gaps, recorded.**
+  - **e2e is still not run in CI** (CI is pytest + `tsc`), so nothing stops the next red spec. Adding it is a
+    separate task: it needs the compose stack (or this section's recipe) and ~10 minutes per run.
+  - `estimating`, `procurement` and `comments` are still not re-runnable on one database (above).
+  - `search.spec.ts` is unexercised wherever Meilisearch is absent; `cv_import` hardening is unconfirmed.
+  - `drafter_editor` still leaves a part ("Test part") and a hardware line on that item on every run; only the
+    lock is restored.

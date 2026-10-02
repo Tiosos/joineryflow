@@ -8,7 +8,8 @@ import { test, expect, type Page } from "@playwright/test";
  * still offered one shows the server's refusal.
  *
  * Seed facts relied on (ALF-001): K-101 has one open and one answered query and an
- * approved take; K-102 has a draft take; K-103 is Controlled-Locked by the drafter and
+ * approved take; K-102 has a draft take (re-created by `ensureDraftTake` if another spec
+ * approved it); K-103 is Controlled-Locked by the drafter and
  * has an approved take and no queries. Each test puts the item back exactly as seeded
  * (workers: 1). Nothing here writes a query or a take: refusals are the point, and
  * asking is only checked for being *enabled* (clicking it would add a row).
@@ -43,6 +44,20 @@ async function openTake(page: Page, id: number) {
       .or(page.getByRole("button", { name: /Generate material take|Start v\d+/ }))
       .first(),
   ).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Make sure the item has a *draft* take to look at. The seed leaves K-102 with one,
+ * but `material_take.spec.ts` (which runs just before this file) approves it for good,
+ * and a spec that depends on another having not yet run is a trap. Starting the next
+ * version through the API is what the "Start vN" button does, and the controls these
+ * tests check only exist on a draft. A no-op when a draft is already there.
+ */
+async function ensureDraftTake(page: Page, id: number) {
+  const current = await (await page.request.get(`/api/items/${id}/material-take`)).json();
+  if (current.draft) return;
+  const res = await page.request.post(`/api/items/${id}/material-take/generate`);
+  expect(res.ok(), `starting a draft take: ${res.status()}`).toBe(true);
 }
 
 const ask = (page: Page) => page.getByRole("button", { name: "Ask", exact: true });
@@ -80,6 +95,7 @@ test("a Hard Lock stops answering and asking, and says why", async ({ page }) =>
 test("a Hard Lock disables every material-take control, with the reason", async ({ page }) => {
   await login(page, "rin.park@hartwood.test"); // manager
   const id = await itemId(page, "K-102"); // seeded draft take
+  await ensureDraftTake(page, id);
   await openTake(page, id);
   await expect(page.getByTestId("take-locked")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Regenerate" })).toBeEnabled();
@@ -156,6 +172,7 @@ const refusal = {
 test("a stale page shows the lock's reason and reverts a refused take edit, and keeps a refused answer", async ({ page }) => {
   await login(page, "noa.lindqvist@hartwood.test"); // drafter
   const takeItem = await itemId(page, "K-102");
+  await ensureDraftTake(page, takeItem);
   await openTake(page, takeItem);
   await page.route("**/api/material-takes/*/lines/*", (route) =>
     route.request().method() === "PATCH" ? route.fulfill(refusal) : route.continue(),

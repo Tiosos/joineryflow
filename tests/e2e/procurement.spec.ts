@@ -11,8 +11,12 @@ test("Procurement resolution flow", async ({ page }) => {
   await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
 
   // Click availability chip on first row → drawer opens
-  await page.locator('[data-testid="open-availability"]').first().click();
-  await expect(page).toHaveURL(/drawer=item-availability/, { timeout: 10_000 });
+  // Retry the click until the drawer opens: a click before the page hydrates does
+  // nothing (the chip is rendered by the server first), and opening it twice is harmless.
+  await expect(async () => {
+    await page.locator('[data-testid="open-availability"]').first().click();
+    await expect(page).toHaveURL(/drawer=item-availability/, { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await expect(page.locator('[data-testid="availability-drawer"]')).toBeVisible();
   await expect(page.locator('[data-testid="availability-line"]').first()).toBeVisible();
 
