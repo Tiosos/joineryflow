@@ -102,9 +102,12 @@ function summariseGenerateResult(result: GenerateOrdersResult): string {
   const orderWord = result.orders_created === 1 ? "order" : "orders";
   const lineWord = result.lines_created === 1 ? "line" : "lines";
   let msg = `${result.orders_created} ${orderWord} generated (${result.lines_created} ${lineWord}).`;
-  if (result.unassigned.length > 0) {
-    const materialWord = result.unassigned.length === 1 ? "material has" : "materials have";
-    msg += ` ${result.unassigned.length} ${materialWord} no default supplier and need to be ordered by hand.`;
+  const left = result.uncovered_line_ids?.length ?? 0;
+  if (left > 0) {
+    const n = result.unassigned.length;
+    msg += ` ${left} ${left === 1 ? "line was" : "lines were"} held back whole because ${n}`
+      + ` ${n === 1 ? "material on it has" : "materials on them have"} no default supplier`
+      + " — link a supplier in the Catalog and generate again.";
   }
   return msg;
 }
@@ -764,7 +767,7 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
   }
 
   const ready = !busy && !refreshing && !refreshError && selected.size > 0
-    && preview.groups.length > 0;
+    && (preview.groups.length > 0 || preview.unassigned.length === 0);
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
@@ -796,6 +799,14 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
                   data-testid={`order-line-${l.line_id}`}
                 />
                 <span className={`flex-1 ${done ? "text-h-muted" : ""}`}>{l.description}</span>
+                {l.held_back && selected.has(l.line_id) ? (
+                  <span
+                    className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-1.5 text-xs text-amber-900"
+                    data-testid={`order-line-held-${l.line_id}`}
+                  >
+                    held back — no supplier
+                  </span>
+                ) : null}
                 <span className="whitespace-nowrap text-xs text-h-muted">
                   {done
                     ? `ordered ${new Date(l.orders_generated_at as string).toLocaleDateString()}`
@@ -834,6 +845,7 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
                     <li key={`${l.material_type}-${l.material_id}`} className="flex justify-between gap-2">
                       <span className="truncate">
                         {l.description ?? l.sku ?? "material"} × {l.qty} {l.unit}
+                        {l.archived ? " (archived in catalog)" : ""}
                       </span>
                       <span className="font-mono whitespace-nowrap">{fmtMoney(l.unit_cost)}</span>
                     </li>
@@ -845,7 +857,8 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
           {preview.unassigned.length > 0 ? (
             <div className="rounded border border-amber-300 bg-amber-50 p-3">
               <div className="mb-1 text-sm font-medium text-amber-900">
-                No default supplier — order these by hand
+                No default supplier — the lines using these are held back whole. Link a
+                supplier in the Catalog and generate again
               </div>
               <ul className="space-y-0.5 text-xs text-amber-900">
                 {preview.unassigned.map((l) => (
@@ -857,6 +870,14 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
             </div>
           ) : null}
         </div>
+        {!refreshing && !refreshError && selected.size > 0
+          && preview.groups.length === 0 && preview.unassigned.length > 0 ? (
+          <p className="text-sm text-amber-900" data-testid="order-preview-nothing-orderable">
+            Nothing can be generated yet — every ticked line uses a material with no
+            supplier. Link them in the Catalog (Supplier link) and come back; the lines stay
+            orderable.
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -874,7 +895,9 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
           >
             {busy
               ? "Generating…"
-              : `Generate ${preview.groups.length} order${preview.groups.length === 1 ? "" : "s"}`}
+              : preview.groups.length === 0
+                ? "Mark ticked lines done (nothing to order)"
+                : `Generate ${preview.groups.length} order${preview.groups.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>

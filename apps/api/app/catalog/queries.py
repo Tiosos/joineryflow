@@ -19,6 +19,30 @@ ENRICHMENT_SELECT = (
 ENRICHMENT_INSERT = (
     "synonyms", "default_supplier", "default_lead_time_days",
 )
+# Writable on PATCH only: the supplier link (`0029`). Creating a row with a
+# link is not offered, so it is deliberately not in `insert_cols`.
+PATCH_ONLY = ("default_supplier_id",)
+
+
+def _supplier_link_cols(table: str) -> str:
+    """The FK and the linked supplier's name, for a row of `table`.
+
+    The name is scoped to the row's own workspace, so a link written some other
+    way across workspaces (the column is a plain FK) can never surface another
+    workspace's supplier name.
+    """
+    return (
+        "default_supplier_id, "
+        f"(SELECT v.name FROM vendors v WHERE v.vendor_id = {table}.default_supplier_id"
+        f" AND v.workspace_id = {table}.workspace_id) AS default_supplier_name"
+    )
+
+
+def supplier_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
+        {"v": vendor_id, "w": workspace_id},
+    ).first() is not None
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -84,7 +108,7 @@ def list_catalog(
         where.append("default_supplier = :sup")
         params["sup"] = supplier
     sql = (
-        f"SELECT {cols} FROM {table} "
+        f"SELECT {cols}, {_supplier_link_cols(table)} FROM {table} "
         f"WHERE {' AND '.join(where)} "
         f"ORDER BY {id_col} DESC"
     )
@@ -96,7 +120,7 @@ def get_catalog_row(
 ) -> dict | None:
     table, id_col, cols, _ = REGISTRY[type_]
     sql = text(
-        f"SELECT {cols} FROM {table} "
+        f"SELECT {cols}, {_supplier_link_cols(table)} FROM {table} "
         f"WHERE {id_col} = :id AND workspace_id = :w"
     )
     r = db.execute(sql, {"id": mid, "w": workspace_id}).mappings().first()
@@ -126,7 +150,7 @@ def patch_catalog_row(
     if not fields:
         return mid
     table, id_col, _, insert_cols = REGISTRY[type_]
-    use = {k: v for k, v in fields.items() if k in insert_cols}
+    use = {k: v for k, v in fields.items() if k in insert_cols or k in PATCH_ONLY}
     if not use:
         return mid
     sets = ", ".join(f"{c} = :{c}" for c in use.keys())

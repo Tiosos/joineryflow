@@ -64,6 +64,9 @@ class PatchBaseIn(BaseModel):
     not silently zero the existing array when the client omits it."""
     synonyms: list[str] | None = None
     default_supplier: str | None = Field(default=None, max_length=128)
+    # The supplier link (`vendors`). Unlike the fields around it an explicit
+    # null means "clear the link" — the route reads `model_fields_set`.
+    default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)

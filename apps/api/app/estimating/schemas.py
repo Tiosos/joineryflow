@@ -361,6 +361,8 @@ class OrderPreviewLineOut(BaseModel):
     qty: Decimal
     unit: str
     unit_cost: Decimal
+    # The catalog row has since been archived (still orderable if linked).
+    archived: bool = False
 
 
 class OrderPreviewGroupOut(BaseModel):
@@ -381,6 +383,8 @@ class OrderPreviewSourceLineOut(BaseModel):
     orders_generated_at: datetime | None = None
     # In the selection the groups below were computed for.
     selected: bool
+    # Selected, but a material on it has no supplier, so a run holds it back.
+    held_back: bool = False
 
 
 class OrderPreviewOut(BaseModel):
@@ -404,3 +408,6 @@ class GenerateOrdersResultOut(BaseModel):
     lines_created: int
     po_ids: list[int]
     unassigned: list[OrderPreviewLineOut] = []
+    # Selected lines held back because a material on them has no supplier — they
+    # are not ordered at all and can be generated once one is linked in the Catalog.
+    uncovered_line_ids: list[int] = []

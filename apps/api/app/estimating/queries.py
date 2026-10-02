@@ -115,7 +115,12 @@ def _resolve_order_sources_batch(
     order needs a real `vendors.vendor_id` to attach to, not a name string.
     Reads **current** catalog pricing deliberately: Plan V1 §21 requires
     stale project-specific pricing to be caught before PO creation, and
-    generation typically happens well after the quote was priced."""
+    generation typically happens well after the quote was priced.
+
+    **Archived rows are resolved too** (flagged `archived`): a quote that priced
+    a material before it was archived still needs it ordered, and treating the
+    row as missing would send it to "unassigned" with its stale snapshot even
+    when it is linked to a supplier."""
     cfg = _CATALOG_BY_TYPE.get(material_type)
     if cfg is None or not material_ids:
         return {}
@@ -124,12 +129,12 @@ def _resolve_order_sources_batch(
         f"""
         SELECT t.{id_col} AS material_id, t.{sku_col} AS sku, t.description,
                t.{cost_col} AS cost,
-               t.default_supplier_id AS supplier_id, v.name AS supplier_name
+               t.default_supplier_id AS supplier_id, v.name AS supplier_name,
+               (t.archived_at IS NOT NULL) AS archived
           FROM {table} t
           LEFT JOIN vendors v
             ON v.vendor_id = t.default_supplier_id AND v.workspace_id = :w
          WHERE t.{id_col} = ANY(:ids) AND t.workspace_id = :w
-           AND t.archived_at IS NULL
         """
     )
     rows = db.execute(sql, {"ids": material_ids, "w": workspace_id}).mappings().all()
@@ -2199,6 +2204,19 @@ def convert_to_project(
 # the Material Summary (#12): Q585 confirmed "no create-order-from-line in
 # v1" for that surface.
 
+def _material_rows(line: dict):
+    """The parts/hardware breakdown rows of one quote line that name a real
+    catalog material — the only rows that can become a PO line."""
+    for r in line["parts"] + line["hardware"]:
+        if r.get("material_id") is not None:
+            yield r
+
+
+def _line_material_keys(line: dict) -> set[tuple[str, int]]:
+    """The distinct (material_type, material_id) one quote line references."""
+    return {(r["material_type"], int(r["material_id"])) for r in _material_rows(line)}
+
+
 def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
     """Consolidates every parts/hardware breakdown row with a real
     material_id across `lines`, summing qty per distinct (material_type,
@@ -2208,9 +2226,7 @@ def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
     not purchasing information for a PO."""
     materials: dict[tuple[str, int], dict] = {}
     for line in lines:
-        for r in line["parts"] + line["hardware"]:
-            if r.get("material_id") is None:
-                continue
+        for r in _material_rows(line):
             key = (r["material_type"], int(r["material_id"]))
             m = materials.setdefault(key, {
                 "material_type": r["material_type"],
@@ -2226,16 +2242,26 @@ def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
 
 def _build_order_groups(
     db: Session, *, workspace_id: int, lines: list[dict],
-) -> tuple[dict[int, dict], list[dict]]:
-    """Groups every distinct material referenced by `lines` by its live
-    default supplier. Returns (groups keyed by supplier_id, unassigned
-    list) — a material with no default supplier can't become a PO line
-    automatically (`purchase_orders.vendor_id` is NOT NULL) and is
-    surfaced for the PM to order by hand instead of blocking the suppliers
-    that DO have one."""
-    materials = _collect_order_materials(lines)
+) -> tuple[dict[int, dict], list[dict], set[int], set[int]]:
+    """Plans one Generate Orders run over `lines`. Returns (groups keyed by
+    supplier_id, unassigned, covered line ids, held-back line ids).
+
+    **A line is ordered whole or not at all.** A material with no default
+    supplier can't become a PO line automatically (`purchase_orders.vendor_id` is
+    NOT NULL), so a line using one is *held back*: none of its materials are
+    ordered by this run and it stays orderable, to be generated in one go once the
+    missing supplier is linked in the Catalog. Ordering part of a line and leaving
+    the rest would either lose the remainder (if the line counted as covered) or
+    order the first part twice (if it did not). A line is *covered* when every
+    material it references has a supplier — or it references none at all (a
+    labour-only line has nothing to order and must not stay pending forever).
+
+    Groups are built from covered lines only, so a material shared with a held-back
+    line is ordered for the covered lines' quantity alone. `unassigned` lists the
+    supplier-less materials (of every selected line) that are holding lines back."""
+    all_materials = _collect_order_materials(lines)
     ids_by_type: dict[str, list[int]] = {}
-    for mtype, mid in materials:
+    for mtype, mid in all_materials:
         ids_by_type.setdefault(mtype, []).append(mid)
     sources: dict[tuple[str, int], dict] = {}
     for mtype, ids in ids_by_type.items():
@@ -2245,33 +2271,46 @@ def _build_order_groups(
         for mid, src in batch.items():
             sources[(mtype, mid)] = src
 
-    groups: dict[int, dict] = {}
-    unassigned: list[dict] = []
-    for (mtype, mid), m in materials.items():
-        src = sources.get((mtype, mid))
-        entry = {
-            "material_type": mtype,
-            "material_id": mid,
+    def supplier_of(key: tuple[str, int]) -> int | None:
+        src = sources.get(key)
+        return int(src["supplier_id"]) if src and src["supplier_id"] is not None else None
+
+    covered = [
+        l for l in lines
+        if all(supplier_of(k) is not None for k in _line_material_keys(l))
+    ]
+    covered_ids = {int(l["line_id"]) for l in covered}
+    held_ids = {int(l["line_id"]) for l in lines} - covered_ids
+
+    def entry_for(key: tuple[str, int], m: dict) -> dict:
+        src = sources.get(key)
+        return {
+            "material_type": m["material_type"],
+            "material_id": m["material_id"],
             "sku": src["sku"] if src else m["fallback_sku"],
             "description": src["description"] if src else m["fallback_description"],
             "qty": m["qty"],
-            "unit": _ORDER_UNIT_BY_TYPE.get(mtype, "EA"),
+            "unit": _ORDER_UNIT_BY_TYPE.get(m["material_type"], "EA"),
             "unit_cost": (
                 (src["cost"] if src else m["fallback_cost"]) or Decimal("0")
             ),
+            "archived": bool(src["archived"]) if src else False,
         }
-        supplier_id = src["supplier_id"] if src else None
-        if supplier_id is None:
-            unassigned.append(entry)
-            continue
-        group = groups.setdefault(int(supplier_id), {
-            "supplier_id": int(supplier_id),
-            "supplier_name": src["supplier_name"],
+
+    unassigned = [
+        entry_for(k, m) for k, m in all_materials.items() if supplier_of(k) is None
+    ]
+    groups: dict[int, dict] = {}
+    for key, m in _collect_order_materials(covered).items():
+        supplier_id = supplier_of(key)
+        group = groups.setdefault(supplier_id, {
+            "supplier_id": supplier_id,
+            "supplier_name": sources[key]["supplier_name"],
             "lines": [],
             "_type_counts": {},
         })
-        group["lines"].append(entry)
-        group["_type_counts"][mtype] = group["_type_counts"].get(mtype, 0) + 1
+        group["lines"].append(entry_for(key, m))
+        group["_type_counts"][key[0]] = group["_type_counts"].get(key[0], 0) + 1
     for group in groups.values():
         # The PO header's category is the material_type most represented in
         # it — most suppliers specialise, so this is a group's dominant type
@@ -2280,7 +2319,7 @@ def _build_order_groups(
         dominant = max(group["_type_counts"].items(), key=lambda kv: kv[1])[0]
         group["category"] = dominant.capitalize()
         del group["_type_counts"]
-    return groups, unassigned
+    return groups, unassigned, covered_ids, held_ids
 
 
 def _order_selection(
@@ -2338,7 +2377,7 @@ def order_preview(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
     shown, selected = _order_selection(rev, detail["lines"], include_line_ids)
-    groups, unassigned = _build_order_groups(
+    groups, unassigned, _covered, held_ids = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected,
     )
     selected_ids = {int(l["line_id"]) for l in selected}
@@ -2356,6 +2395,7 @@ def order_preview(
                 "description": l["description"], "qty": l["qty"], "unit": l["unit"],
                 "orders_generated_at": l.get("orders_generated_at"),
                 "selected": int(l["line_id"]) in selected_ids,
+                "held_back": int(l["line_id"]) in held_ids,
             }
             for l in shown
         ],
@@ -2388,9 +2428,14 @@ def generate_orders(
     selection is left, `409 NO_LINES_SELECTED` for an empty one. Each run makes
     its own POs, so a supplier used by two runs gets two draft POs.
     `estimate_revision.orders_generated_at` is the time of the most recent run.
-    Materials with no default supplier are returned as `unassigned` rather
-    than blocking the suppliers that DO have orders generated for them; the
-    line they came from still counts as covered, since they are ordered by hand."""
+    **A line is ordered whole or not at all** (see `_build_order_groups`): a line
+    with any material that has no default supplier is *held back* — returned in
+    `uncovered_line_ids`, not stamped, none of its materials ordered — so it can be
+    generated in one go once the supplier is linked in the Catalog. A line is
+    covered when every material on it has a supplier, or it references no catalog
+    material at all. The supplier-less materials holding lines back come back as
+    `unassigned`. A run that would create no order at all but has such materials is
+    `409 NOTHING_ORDERABLE` and writes nothing."""
     rev = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
@@ -2416,11 +2461,19 @@ def generate_orders(
         ):
             raise ValueError("ORDERS_ALREADY_GENERATED")
         raise ValueError("NO_LINES_SELECTED")
-    selected_ids = {int(l["line_id"]) for l in selected_lines}
-
-    groups, unassigned = _build_order_groups(
+    groups, unassigned, covered_ids, held_ids = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected_lines,
     )
+    if not groups and unassigned:
+        # Nothing would be ordered. Marking the lines covered here is what used to
+        # lock a quote out of ever ordering them once a supplier was linked.
+        raise ValueError(
+            json.dumps({
+                "code": "NOTHING_ORDERABLE",
+                "unassigned_count": len(unassigned),
+            })
+        )
+    uncovered_ids = sorted(held_ids)
 
     po_ids: list[int] = []
     lines_created = 0
@@ -2465,13 +2518,14 @@ def generate_orders(
             lines_created += 1
 
     # The lines this run covered can never be ordered again; the revision's own
-    # timestamp is just "the most recent run".
+    # timestamp is just "the most recent run". A line none of whose materials had a
+    # supplier is not stamped, so a later run can still order it.
     db.execute(
         text(
             "UPDATE estimate_line SET orders_generated_at = now()"
             " WHERE line_id = ANY(:ids)"
         ),
-        {"ids": sorted(selected_ids)},
+        {"ids": sorted(covered_ids)},
     )
     db.execute(
         text(
@@ -2490,7 +2544,9 @@ def generate_orders(
             "lines_created": lines_created,
             "po_ids": po_ids,
             "unassigned_count": len(unassigned),
-            "included_line_ids": sorted(selected_ids),
+            # The lines this run covered (what migration 0048's backfill reads).
+            "included_line_ids": sorted(covered_ids),
+            "uncovered_line_ids": uncovered_ids,
         },
     )
     db.flush()
@@ -2499,4 +2555,5 @@ def generate_orders(
         "lines_created": lines_created,
         "po_ids": po_ids,
         "unassigned": unassigned,
+        "uncovered_line_ids": uncovered_ids,
     }

@@ -115,7 +115,7 @@ Layout:
 - `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 29 Playwright specs / 108 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 116 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -196,7 +196,7 @@ IT-defined formulas).
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
 make migrate      # apply Alembic 0001 -> 0048
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (98 test files, ~1470 tests; the `meili`-marked
+make test         # pytest in api container (99 test files, ~1490 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -608,6 +608,8 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   Guards in `test_catalog_routes.py` fail if the plural namespace returns.
   Removal is soft-archive only: there is no DELETE route on a catalog row.
   (Hard delete remains legal for `cv_material_mapping` alone.)
+- **Supplier link (shipped later):** each row also carries the real `default_supplier_id` FK, editable
+  from the grid's *Supplier link* column — see *Catalog supplier link* at the end of this file.
 - Seed (`make seed`) enriches the existing 2 board_materials + 4
   hardware_materials with synonyms/supplier/lead-time, adds 4 new demo
   boards (BM-101..BM-104), and inserts 2 demo cv_material_mapping rows
@@ -5212,9 +5214,9 @@ since been built.**
   - `UNKNOWN_LINE_IDS` unchanged. An explicit id may still name a line excluded at Convert (unchanged
     behaviour; only the default is restricted).
 - **Each run makes its own POs.** A supplier used by two runs gets two draft POs, and quantities are
-  consolidated per run, not across runs. **A line counts as covered once its run completes — including
-  materials returned as `unassigned`** (ordered by hand), so a line whose supplier is assigned later
-  cannot be regenerated; an assumption made while building, not a user decision.
+  consolidated per run, not across runs. ~~A line counts as covered once its run completes, including
+  materials returned as `unassigned`~~ **— superseded by *Generate Orders: a line is covered only if something on it
+  was ordered* below.**
 - **API.** `GET /revisions/{rid}/order-preview` takes repeated `?include_line_ids=` and answers `409`
   with the same codes as the run. The response gained `lines: [{line_id, seq, description, qty, unit,
   orders_generated_at, selected}]` and its groups are computed for exactly the selection; the revision
@@ -5231,7 +5233,7 @@ since been built.**
   later default run takes the rest (its own PO, 3 boards, no hardware) and a third is
   `ORDERS_ALREADY_GENERATED`; a covered line is refused with nothing created and the other line still
   orderable; an empty selection is refused and leaves the quote orderable; a line whose materials were all
-  unassigned still counts as covered; the revision timestamp moves each run and each run is audited with its
+  unassigned still counts as covered *(since reversed — see below)*; the revision timestamp moves each run and each run is audited with its
   own `included_line_ids`; the revision detail carries the per-line flags; the preview lists the lines and
   follows the selection, marks a covered line, and refuses a covered or unknown id like the run does; and
   two real DB sessions on separate threads cannot cover the same line twice. **All ten fail against the
@@ -5241,16 +5243,225 @@ since been built.**
   unticking both disabled the button; one run → "1 line not yet ordered"; the second dialog showed the
   pantry "ordered", unticked and disabled and the island ticked at 3; the second run removed the button;
   exactly two POs existed. `estimating`, `item_project_detail`, `material_take` and `smoke` e2e still pass.
-- **No permanent e2e spec, and why.** A converted quote's materials only reach a supplier through
-  `default_supplier_id` (`0029`), which **no API route sets** and no seeded catalog row carries, so a spec
-  cannot build its own orderable quote — the same reason the seed leaves its WON estimate unconverted
-  (*PO Generation from a Won Quote*). The browser pass above set two links with SQL and undid them.
+- **No permanent e2e spec when this shipped, and the reason recorded here was wrong.** It said
+  `default_supplier_id` (`0029`) "no API route sets", so a spec could not build an orderable quote. A route
+  did: `POST /suppliers/{id}/materials` (`suppliers/queries.py::link_material`, Q506). What was missing was any
+  **web surface** for it and any **seeded link** — so in the browser every material read as unassigned.
+  **Closed by *Catalog supplier link* below**, which also added the permanent spec.
 - **Known gaps, recorded.**
   - No way to un-cover a line or to regenerate one (deliberate: the quote is frozen).
   - Two runs for one supplier make two POs; merging them is a manual Orderbook job.
-  - Covered-with-unassigned lines (above).
+  - ~~Covered-with-unassigned lines (above).~~ **Closed — see *Generate Orders: a line is covered only if something
+    on it was ordered*.**
   - A preview or run with a stale selection (a line another tab just covered) answers `409`; the dialog
     shows "Could not refresh the preview" and the next tick retries, but a confirm with a stale selection
     is refused by the run, not pre-empted.
 - **Out of scope (deferred):** §21's wider Procurement target (unchanged); per-supplier selection; undoing
   a run.
+
+## Catalog supplier link (Plan V1 §21 follow-up, no migration) — shipped
+
+> Chosen by the user ("Next step: let users link catalog materials to a supplier from the web UI. Ask me
+> any questions"), from the gap *Generate Orders: per-line selection* surfaced: Generate Orders groups a
+> won quote's materials by `default_supplier_id`, and nothing in the web could set it, so in the browser
+> every material came back **unassigned**. My first scope ("web and seed only") was wrong on two counts
+> found by reading the code, so four questions were asked before any code was written; the answers are
+> **settled decisions**, not assumptions. No migration, no spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **The picker uses the Catalog PATCH, gated `catalog:write`** — over the existing supplier link route
+     (`orderbook:write`). One gate for the whole grid and one audit trail
+     (`catalog.{type}.update`). Drafter, manager, admin and editor can link; **purchase_officer cannot**
+     (catalog read only) and neither can estimator or viewer. `POST /suppliers/{id}/materials` still exists,
+     unchanged.
+  2. **The free-text `default_supplier` is left untouched** by a pick (Q435). The two columns may disagree.
+  3. **One row at a time, plus a Linked / Not linked indicator and filter.** No "match by name" helper.
+  4. **`default_supplier_id` only.** `supplier_id` (the second FK on each table) is not touched — nothing
+     reads it and it has no defined meaning here.
+- **What the code check found.** `GET /catalog/*` never returned either supplier FK (the select list stopped
+  at the free text), and the existing link route can only *set* a supplier, never clear one. So the change is
+  not web-only: the read side and a clear path needed the API.
+- **Backend — `apps/api/app/catalog/`.**
+  - `PATCH /catalog/{slug}/{mid}` accepts **`default_supplier_id`** on all six tables
+    (`queries.PATCH_ONLY`, so it is writable on PATCH and **not** on create — a `POST` that names it
+    ignores it). **An explicit `null` clears the link**, unlike every other field on this route, where
+    `exclude_none` drops a null; the route reads `model_fields_set` for this one field. Omitting it
+    leaves the link alone.
+  - **The supplier must be in the caller's workspace** (`supplier_in_workspace`): unknown, or another
+    workspace's, is `422 {code: "UNKNOWN_SUPPLIER", supplier_id}` with nothing written or audited and the
+    foreign name never in the response. *A 422 rather than the order routes' 404 `VENDOR_NOT_FOUND`: the
+    catalog route's own validation errors are 422 and the path resource does exist.* A supplier's `status`
+    is **not** checked (an inactive supplier can be linked, as the existing link route allows).
+  - **Reads** (`GET /catalog/{slug}`, `GET /catalog/{slug}/{mid}`, and the PATCH / POST responses) now carry
+    `default_supplier_id` and **`default_supplier_name`**. The name is a correlated sub-select scoped to the
+    row's own workspace, so a stale cross-workspace id (the column is a plain FK) can never surface another
+    workspace's supplier name.
+  - Audit payload is the validated body, so a link carries the id and a clear carries an explicit `null`.
+- **Web — Catalog grid.** A **Supplier link** column beside the (unchanged) free-text Default supplier:
+  a `<select>` for writers (`isWriter`, the web mirror of `catalog:write`) listing the workspace's suppliers
+  from `GET /suppliers`, and plain text (or an amber "Not linked") for readers. A header note reads "N of M
+  rows have no supplier link — Generate Orders cannot order them" (not shown on the Equipment Hire tab, which
+  quotes never use), and a filter (`?link=linked|unlinked`, in the URL, applied client-side) narrows the grid.
+  **`GET /suppliers` needs `orderbook:read`, a different grant from the grid's `catalog:write`** — when it fails
+  the picker is disabled, the page says so, and a linked row still shows its supplier (the current link is
+  kept as an option even when the list did not load). Every default writer role holds both grants; an admin who
+  grants one without the other creates the same pairing gap Comments and the QC dashboard document.
+  Inactive suppliers are listed with "(inactive)".
+- **Seed.** `make seed` creates six suppliers (Laminex Australia, Plyco, Briggs Veneers, Hettich Australia,
+  Blum Australia, House of Brass — the names the catalog's free text already used) and links every board and
+  hardware row whose `default_supplier` names one, by the same exact case-insensitive match `0029` used, so only
+  *unlinked* rows are filled and a hand-made link survives a re-run. The block sits **after every catalog
+  insert** (the legacy boards come later than the #7a ones), so **one** run links everything — verified on a fresh
+  database. **BM-203 "25mm Stainless 304 Sheet" ("CDK Stone") is deliberately left unlinked** as the demo row.
+- **Tests.** `test_catalog_supplier_link.py` (22): unlinked rows read null id and name; link **and clear on each of
+  the six tables**; moving a link; omitting it leaves it; the free text is untouched; create cannot set it;
+  unknown, other-workspace and non-integer ids refused with nothing written or audited and no foreign name;
+  a stale cross-workspace id never leaks a name; another workspace's row is a 404; purchase_officer, viewer and
+  estimator refused, editor allowed; link and clear audited with the id; the supplier side
+  (`linked_material_count`, `/suppliers/{id}/materials`) sees a catalog link. **17 fail against the unfixed
+  source** (5 are controls: 404 and role gates). `tests/e2e/catalog_supplier_link.spec.ts` (6; 7 since *Generate Orders: a line is covered only if something on it was ordered*), run twice back to
+  back against a live migrated, seeded stack beside `catalog.spec.ts`: a seeded row shows its supplier, an unlinked
+  one is flagged and counted; picking links it, survives a reload and clearing unlinks it (free text untouched);
+  the filter narrows, lives in the URL and survives a reload; a viewer reads names with no picker; an unreadable
+  supplier list disables the picker and says why; and **a board linked in the grid is ordered from that supplier by
+  Generate Orders** — a quote built through the API (customer → estimate → line → part → ten advances → accept →
+  convert), the dialog naming Plyco with no "No default supplier" card, one draft PO from Plyco afterwards.
+  **All six fail against the unfixed web code.** Every test puts the seed back (BM-203 unlinked; the new board is
+  archived); the last one leaves its quote, project and one draft PO behind, so it is re-runnable but not
+  side-effect free.
+- **Full suite:** 1482 passed, 10 skipped, 1 failed against a real migrated Postgres 16 (the same local-only
+  `MEILI_URL` gap `test_search_reindex.py::test_real_reindex_swaps_and_drops_temp` has always had here); `tsc --noEmit`
+  is clean. In the e2e run, `search.spec.ts` (two tests, no Meilisearch here) and `cutlist_related_parts.spec.ts`'s
+  collapsed-by-default test (3 toggles where it expects 1, live-database state — it fails identically with this change's
+  web code stashed) were red for reasons unrelated to this work.
+- **Known gaps, recorded.**
+  - **Creating a catalog row cannot set the link** (the New dialog and bulk import), and **CV-import "Create new"
+    rows start unlinked** — link them afterwards in the grid.
+  - **A text edit does not move the link**, and neither the other way: changing the free-text Default supplier
+    leaves `default_supplier_id` alone, so the two can name different suppliers. By decision (2).
+  - **The grid's own free-text clear does not work**: the Default supplier cell sends `null` for an empty value
+    and the route drops nulls (`exclude_none`). Found while building, **not fixed**, unrelated to the link.
+  - A supplier link says nothing about price or lead time; those still come from the catalog row.
+  - ~~Linking a supplier *after* a run did not re-open the lines that were returned as unassigned.~~ **Closed
+    — see *Generate Orders: a line is covered only if something on it was ordered* below** (found reviewing this
+    very change: a run with nothing orderable answered 200 and locked the line out).
+- **Out of scope (deferred):** linking at create or bulk import; "match by name" suggestions; a supplier page that
+  lists and edits its materials (the API exists); the second FK `supplier_id`.
+
+## Generate Orders: a line is covered only if something on it was ordered (no migration) — shipped
+
+> Chosen by the user ("Go with option A") from the fix options I gave after reviewing the *Catalog supplier link*
+> PR. The review found that the Catalog link made a latent *Generate Orders: per-line selection* assumption bite
+> in practice, and the user picked the smallest fix. No migration, no spec or plan doc; this section is its record.
+> It **reverses** the assumption *Generate Orders: per-line selection* recorded ("a line counts as covered once its
+> run completes, including materials returned as `unassigned`").
+
+- **What was wrong (reproduced before fixing).** A run stamped every selected line
+  `estimate_line.orders_generated_at` whether or not any of its materials became a PO line. For a quote whose only
+  material had no supplier, `POST /revisions/{rid}/generate-orders` answered **`200` with `orders_created: 0`** and
+  stamped the line; the next run was then `409 ORDERS_ALREADY_GENERATED` — whatever the Catalog said by then. The
+  Catalog Supplier link made the natural workflow ("no supplier → link it → generate again") reachable and broken.
+- **The rule (`estimating/queries.py::generate_orders`).** A selected line is **covered** when at least one of its
+  materials became a PO line, **or it references no catalog material at all** (`_line_material_keys` is empty — a
+  labour-only line has nothing to order and must not stay pending forever). A line whose every material lacks a
+  supplier is **not stamped** and comes back in the new `GenerateOrdersResultOut.uncovered_line_ids`, so it can be
+  generated once a supplier is linked.
+  - **`409 NOTHING_ORDERABLE`** `{unassigned_count}` when the run would create **no order at all** but has materials
+    with no supplier. It writes nothing: no PO, no line stamp, no revision timestamp, no audit row. (A run over lines
+    with no materials at all still answers `200` with 0 orders and covers them — nothing was left to order.)
+  - The audit row's `included_line_ids` now means **the lines the run covered** (what migration `0048`'s backfill
+    reads for older runs), with `uncovered_line_ids` beside it.
+  - ~~**A line with some materials ordered and some not is covered**, and its unassigned remainder is reported in
+    `unassigned` to order by hand.~~ **Superseded — see *Generate Orders: a line is ordered whole or held back whole*
+    below** (the review found it silently lost the remainder).
+- **Web (`EstimateDetailClient.tsx`).** The confirm button was already disabled when no supplier group exists; the
+  dialog now says why (`data-testid="order-preview-nothing-orderable"`: link them in the Catalog, the lines stay
+  orderable), the amber card reads "order these by hand, or link a supplier in the Catalog and generate again", and the
+  result banner adds "N lines were left unordered because none of their materials has a supplier". The page's "N lines
+  not yet ordered" counter is now accurate for such lines (it counts lines with no stamp).
+- **Tests.** In `test_estimating_generate_orders.py` the test that pinned the old rule
+  (`..._still_counts_as_covered`) was replaced by five: a run with nothing orderable is `409 NOTHING_ORDERABLE` and
+  writes nothing (the explicit selection answers the same; the preview still offers the line); an all-unassigned line
+  stays orderable and **orders in its own PO after the supplier is linked** (and a final run is
+  `ORDERS_ALREADY_GENERATED`); a line with some materials ordered is covered and reports the rest; a line with no catalog
+  material is covered; the audit row names covered and uncovered lines. **All five fail against the previous source**
+  (three of them only on the missing `uncovered_line_ids` key — their behaviour half was already as asserted).
+  `tests/e2e/catalog_supplier_link.spec.ts` gained a 7th test, run against a live migrated stack beside the other six:
+  an unlinked board on a won, converted quote → the dialog says nothing can be generated and the button is disabled →
+  the board is linked to Plyco in the Catalog → the same dialog now offers a Plyco order and generating it makes one draft
+  PO from Plyco. (Its API half — and so the old-code failure — is pinned by the pytest above; the live server ran the new code.)
+- **Known gaps, recorded.**
+  - **A line left uncovered because none of its materials has a supplier keeps the page's "N lines not yet ordered"
+    counter and the Generate Orders button visible** until a supplier is linked (a WON quote's lines are frozen, so
+    they cannot be edited away). That is the intended signal, but there is **no way to mark such a line "ordered by
+    hand" and dismiss it**.
+  - **A partly ordered line loses its unassigned remainder** to the by-hand list (above) — option B (per-material state)
+    is the complete fix and was not chosen.
+  - **The estimator who runs Generate Orders cannot link a supplier** (`catalog:write` is drafter / manager / admin /
+    editor); the dialog's message says to link in the Catalog, not who can.
+- **Out of scope (deferred):** per-material coverage; an "ordered by hand" dismissal; a link-supplier shortcut inside the
+  dialog.
+
+## Generate Orders: a line is ordered whole or held back whole (no migration) — shipped
+
+> Chosen by the user ("Go with your recommendation of fixes to build") after the max-level review of PR #66 listed
+> eight findings. This builds #1–#5, #7 and #8; **#6 (the Catalog grid's free-text clear is a no-op) was
+> deliberately left alone**, and true per-material coverage ("option B", a migration) is still deferred. No
+> migration, no spec or plan doc; this section is its record. It **supersedes** the "partly ordered line is
+> covered" rule of *Generate Orders: a line is covered only if something on it was ordered*.
+
+- **The rule (`estimating/queries.py::_build_order_groups`).** A line is ordered **whole or not at all.** A line
+  using any material with no default supplier is **held back**: none of its materials are ordered by this run, it is
+  not stamped, and it comes back in `uncovered_line_ids`. A line is **covered** when every material it references has
+  a supplier — or it references none at all (labour-only). Groups are built from covered lines **only**, so a material
+  shared with a held-back line is ordered for the covered lines' quantity alone; when the held line is later
+  generated it orders its own share. `unassigned` is the supplier-less materials (of every selected line) that are
+  holding lines back. `409 NOTHING_ORDERABLE` still answers a run that would create no order but has such materials.
+  *Why not order the assigned part of a mixed line and leave the line pending:* the next run would order that part a
+  second time. *Why not count it covered:* the remainder is silently lost (what the review found). Whole-or-nothing is
+  the only one of the three that neither loses nor duplicates, without per-material state. **Its cost: a line whose
+  board has a supplier but whose hinge has none cannot order the board until the hinge is linked** (or the line is
+  left out of the selection). That departs from the "option A" the user chose last round, in the direction of the
+  recommendation made after review; it is flagged here and in the PR rather than assumed.
+- **Archived-but-linked materials order from their supplier (#2).** `_resolve_order_sources_batch` no longer filters
+  `archived_at IS NULL`; it returns an `archived` flag instead. Before, an archived row was treated as missing, so a
+  linked material fell to "unassigned" with its stale quote snapshot. An archived row with **no** supplier is still
+  unassigned, now with its live SKU. The dialog tags such a line "(archived in catalog)" (`OrderPreviewLineOut.archived`).
+  **Consequence for the Catalog grid (#5): archived rows are not disabled in the picker and stay in the "N rows have no
+  supplier link" count**, the opposite of what the review first suggested — an archived row's link now matters for
+  ordering, so disabling it would be wrong. (The grid hides archived rows unless the Archived filter is on.)
+- **Preview and run share the plan.** `order_preview` and `generate_orders` both take
+  `(groups, unassigned, covered_ids, held_ids)` from the one function, so they cannot disagree. The preview's source
+  lines gained `held_back` (`OrderPreviewSourceLineOut`), shown as a "held back — no supplier" tag on a ticked line.
+  `_line_material_keys` and `_collect_order_materials` share `_material_rows` (#8); coverage is derived in the same
+  pass that builds the groups.
+- **A selection with nothing to order can be confirmed (#3).** The dialog's confirm button was disabled whenever there
+  were no supplier groups, so lines that reference no catalog material (labour-only) could never be marked ordered
+  and kept the page's "N lines not yet ordered" counter forever. It is now enabled when there are no groups **and** no
+  unassigned material, labelled "Mark ticked lines done (nothing to order)". With unassigned materials and no groups it
+  stays disabled with the "nothing can be generated yet" note, as before.
+- **Result banner (#4).** The old banner said the unassigned materials "need to be ordered by hand" while the same line
+  stayed orderable — so ordering by hand and then generating again double-ordered. It now says the lines were **held
+  back whole** and to link a supplier and generate again; nothing is "ordered by hand".
+- **Shared supplier fetch (#7).** `CreateOrderDialog.tsx` used a private `Supplier` interface and its own
+  `/api/suppliers` fetch; it now uses `listSupplierOptions` / `SupplierOption` from `lib/catalog-fetch` /
+  `lib/catalog-types` (the Catalog grid's), so the two cannot drift.
+- **Tests.** `test_estimating_generate_orders.py` (29 → 33): the "some materials ordered is covered" test was replaced
+  by six — a mixed line is held back whole (preview flags it, run is `NOTHING_ORDERABLE`, nothing written); it orders once,
+  with all its materials, after the link; a material shared with a held-back line is ordered for the covered line's
+  quantity only (3, not 5) and the held line later orders its own 2; an archived linked material still orders and is
+  flagged; an archived unlinked material is unassigned with its live SKU. **Four fail against the previous source**
+  (the mixed-line, shared-material and two archived tests); the rest are controls. `catalog.spec.ts` passes against a live migrated stack running the new code. `tsc --noEmit` is clean (apart from
+  generated `.next/dev` files). `catalog_supplier_link.spec.ts` gained an 8th test for the #3 confirm path (a won, converted quote whose only
+  line references no catalog material: no groups, the confirm button enabled and reading "Mark ticked lines done
+  (nothing to order)", confirming marks the line covered, the "Orders generated" note shows with no "last", the
+  Generate orders bar is gone and no PO exists) — **it fails with the old `ready` condition** (button disabled) and
+  passes with the fix; all 8 pass against a live migrated stack.
+- **Known gaps, recorded.**
+  - **Whole-or-nothing is coarser than the data**: no per-material state, so a line cannot be ordered "board now, hinge
+    later". That is option B (a migration), still not built.
+  - **There is no "ordered by hand" dismissal** for a held-back line (unchanged from before); the way out is to link the
+    supplier or to leave the line unticked.
+  - The estimator who runs Generate Orders still cannot link a supplier (`catalog:write` excludes estimator).
+  - **#6 left alone:** the Catalog grid's free-text *Default supplier* cell sends `null` to clear and the route drops
+    nulls, so clearing it does nothing. Unrelated to the supplier link.

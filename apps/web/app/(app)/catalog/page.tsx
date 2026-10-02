@@ -13,6 +13,7 @@ interface PageProps {
     q?: string;
     supplier?: string;
     archived?: string;
+    link?: string;
     project?: string;
   }>;
 }
@@ -59,6 +60,7 @@ export default async function Page({ searchParams }: PageProps) {
       initialQ={sp.q ?? null}
       initialSupplier={sp.supplier ?? null}
       initialArchived={sp.archived === "true"}
+      initialLink={sp.link === "linked" || sp.link === "unlinked" ? sp.link : "all"}
       initialProjectId={sp.project ? Number(sp.project) : null}
     />
   );
