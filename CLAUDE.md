@@ -112,10 +112,10 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0047`. Head is `0047_po_attachment_file_blob` (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 28 Playwright specs / 104 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 29 Playwright specs / 108 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -137,13 +137,12 @@ on Modules and shop-drawing revisions*).
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
-  state: 82 rows, **4 shipped · 21 partial · 50 absent · 7 re-architecture** —
-  the 2026-09-18 baseline, **not re-scored** after #10, #11, #12, the RBAC
-  engine, §I, §M or §L (only the §13 search row, the §19 / §20 take and
-  summary rows, and the §12 locking row have been updated in place — the
-  first two moved to `PARTIAL`; the locking row's description was updated
-  but stays `PARTIAL`, since Plan V1's ask for locks *below and above* item
-  scope is still unmet by Q510's own confirmed ceiling).
+  state: 82 rows, **17 shipped · 37 partial · 26 absent**, with 2 rows still
+  labelled re-architecture (SharePoint, bounded; the stage list, deferred) —
+  **re-scored 2026-10-02**. The 37 rows built work moved carry their new verdict
+  and what shipped; the rest keep their 2026-09-18 wording on purpose, and its §3
+  (conflicts) and §6 (sequencing) are history, each with a note saying so.
+  Counts come from a mechanical recount of the verdict column.
 - `docs/plan-v1/OPEN-QUESTIONS.md` — Q432–Q586, continuing Plan V1's own
   numbering. **150 of 154 resolved; every answerable question is answered.**
   Q574–Q580 settle the Search design (sub-project #11); Q581–Q586 the Material
@@ -195,9 +194,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0047
+make migrate      # apply Alembic 0001 -> 0048
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (97 test files, ~1420 tests; the `meili`-marked
+make test         # pytest in api container (98 test files, ~1470 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -348,7 +347,10 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
   Controlled** locks — **not the Approval Lock**, which is cleared by a status
   change and so cannot gate one. **Since *Lock checks on attachments and the
   document register*:** every attachment-slot write and every Document Register
-  write answers to all three (Hard, Approval, Controlled).
+  write answers to all three (Hard, Approval, Controlled). **Since *Lock checks on
+  item queries and material takes*:** answering a query and every material-take
+  write answer to Hard + Controlled (no Approval Lock), and *asking* a query to the
+  Hard Lock only. QC records and comments are deliberately not lock-checked.
 - Lifecycle stage_key (REQ..INST) ≠ items.stage (site location); never use bare "stage" for lifecycle.
 
 ## Procurement Workbench (sub-project #4)
@@ -2496,11 +2498,13 @@ see *PM Workbench* above.
   new column) and lands at the module's own default `status = 'Draft'` —
   Procurement reviews and edits from there like any other order.
 - **Migration `0041`** — one column, `estimate_revision.orders_generated_at
-  timestamptz NULL`. Guards `generate_orders()` to run **at most once per
+  timestamptz NULL`. It guarded `generate_orders()` to run **at most once per
   revision**: the revision is already locked by the time it's WON, so its
   line breakdown is frozen and there is no legitimate reason to
   regenerate from it. Set once, never cleared — the same "quote is
-  frozen" stance `locked_at` already takes.
+  frozen" stance `locked_at` already takes. **Superseded by migration `0048`
+  (see *Generate Orders: per-line selection*): the guard is now per quote *line*,
+  and this column means "the most recent run".**
 - **Backend** — `apps/api/app/estimating/{queries,schemas,routes}.py`
   (no new module; PO generation is estimating's own concern, keyed by
   revision like Convert and the handover preview):
@@ -2512,8 +2516,9 @@ see *PM Workbench* above.
     every line, same shape as `ConvertIn`). Requires the revision already
     **converted** (`409 NOT_CONVERTED` otherwise — a PO needs a real
     project to attach to) and rejects a second call
-    (`409 ORDERS_ALREADY_GENERATED`). `409 UNKNOWN_LINE_IDS` on a foreign
-    line id, mirroring Convert.
+    (`409 ORDERS_ALREADY_GENERATED`) — *since `0048` only once no line is left
+    to order; see *Generate Orders: per-line selection**. `409
+    UNKNOWN_LINE_IDS` on a foreign line id, mirroring Convert.
   - Both gated `estimating:approve`, the same gate Convert and the
     handover preview use (admin/manager/estimator).
   - Audit: `estimate.generate_orders` on the revision, plus the orders
@@ -2541,10 +2546,9 @@ see *PM Workbench* above.
   isn't) opening `OrderPreviewDialog` — styled like the existing
   `ConvertPreviewDialog`: one card per supplier group with its lines and
   live unit cost, an amber unassigned-materials card, and a confirm button
-  that calls `generate-orders` with no line filter (the API supports
-  `include_line_ids`; the v1 UI doesn't expose per-line selection for
-  this action — Simplicity First, and every converted line is normally
-  meant to be ordered). After generating, a result banner names the
+  that calls `generate-orders` with no line filter (**since *Generate Orders:
+  per-line selection*, the dialog lists the quote lines and sends the ticked
+  ones**). After generating, a result banner names the
   order/line counts and any unassigned materials, links to the Orderbook,
   and the button is replaced by a permanent "Orders generated {time}"
   note on reload — read from the same `orders_generated_at` the backend
@@ -2573,16 +2577,15 @@ see *PM Workbench* above.
   orders → Orderbook) against a real browser and a real migrated
   Postgres, per this session's UI-testing requirement — the same
   live-testing pass that surfaced the `convert_to_project` seq bug above.
-- **Out of scope (deferred):** per-line selection in the Generate Orders
-  dialog (the API already supports `include_line_ids`; nothing in this
-  pass builds the UI for it); §21's much larger Procurement target
+- **Out of scope (deferred):** ~~per-line selection in the Generate Orders
+  dialog~~ (**built, see *Generate Orders: per-line selection***); §21's much larger Procurement target
   (supplier comparison, PO → Confirmation → Receipt → Inspection flow,
   procurement exceptions, supplier performance tracking, claims/credits,
   deposits/progress payments) — this ships only "Create PO" (Q505)'s real
   purchase order, not the surrounding workflow Plan V1 describes around
-  it; regenerating orders after a partial run (there is no legitimate way
-  to add more once `orders_generated_at` is set — the revision is
-  frozen); rolling generated-order cost back onto the item or project
+  it; ~~regenerating orders after a partial run~~ (**built — a later run covers
+  the lines an earlier one did not, see *Generate Orders: per-line selection***);
+  rolling generated-order cost back onto the item or project
   (Q543's "item cost does not roll up" stance is unaffected — orders
   carry cost, nothing aggregates it further here either).
 
@@ -4113,8 +4116,9 @@ since been built.**
     {stage_key}` **now consult it too (Hard and Controlled — see *Lock checks on status
     and lifecycle* below)**, and **attachments and the document register now do too
     (see *Lock checks on attachments and the document register* below)**, but the
-    other item-scoped writes — queries, QC records, comments and material takes — do
-    not. None was asked for; whether any of them should follow is a product question
+    other item-scoped writes — QC records and comments — do not (**item queries and
+    material takes now do — see *Lock checks on item queries and material takes***).
+    None was asked for; whether either should follow is a product question
     (a comment on an approved item, for instance, is probably meant to stay possible).
   - No "request a change" flow for a refused write, and the same hand-written
     `auth_role in (manager, admin)` Controlled-Lock exemption — Q472 is still not built.
@@ -4307,10 +4311,11 @@ since been built.**
     module / part / hardware writes already have, now reaching the two things foremen actually do.
   - No "request a change" flow for a refused status or date; the Controlled-Lock exemption is
     still a hand-written `auth_role in (manager, admin)` check (Q472 not built).
-  - Still not lock-checked: item queries, QC records, comments and material takes (none
-    asked for; a comment on an approved item should probably stay possible). Attachments
-    and the document register **are now — see *Lock checks on attachments and the document
-    register* below.**
+  - Still not lock-checked: QC records and comments (none asked for; a comment on an
+    approved item should probably stay possible). Attachments and the document register
+    **are now — see *Lock checks on attachments and the document register* below** — and
+    so are item queries and material takes (*Lock checks on item queries and material
+    takes*).
   - `moduleLock.ts` is named for modules but now serves hardware, status and stage dates.
 - **Out of scope (deferred):** gating Shop Floor's fan-out; the Approval Lock on either route;
   a request flow for a refused write; the other item-scoped writes named above.
@@ -4379,7 +4384,8 @@ since been built.**
   the unfixed web code.** Each puts the item back exactly as seeded. (The stale-page test uploads a
   small PDF through the real `/files` before the mocked bind is refused, leaving one deduplicated blob.)
 - **Known gaps, recorded.**
-  - Still not lock-checked: item queries, QC records, comments and material takes (none asked for).
+  - Still not lock-checked: QC records and comments (none asked for). Item queries and material
+    takes **now are — see *Lock checks on item queries and material takes* below.**
   - No "request a change" flow for a refused write; the Controlled-Lock exemption is still a
     hand-written `auth_role in (manager, admin)` check (Q472 not built).
   - A refused bind leaves an unreferenced blob (above); the Combined PDF and print routes read
@@ -5089,3 +5095,162 @@ since been built.**
 - **Out of scope (deferred):** counts on the Tracking grid or the Cutlist module summary elsewhere; an
   unread / "new since you looked" marker; polling the counts; migrating the Areas & Rooms card onto
   `CommentBadge`.
+
+## Lock checks on item queries and material takes (Plan V1 §12 follow-up, no migration) — shipped
+
+> Chosen by the user ("go with 1 and 2 and 3", the third item of a list I proposed:
+> "lock checks on the remaining item writes: queries, QC records and material takes").
+> Reach and rule were open, so the user was asked before any code was written; the two
+> answers below are **settled decisions**, not assumptions. The UI half — one notice,
+> controls disabled, a 409 fallback — was **carried over from the earlier lock rounds,
+> not re-asked**. No migration, no spec or plan doc; this section is its written record.
+
+- **Settled decisions (user).**
+  1. **Reach: item queries and material takes. QC records stay unlocked** (comments too,
+     as before). QC is production-floor work done by `editor` users (foremen) on items
+     that by then are approved or claimed by a drafter, so a lock check would refuse the
+     people doing it on exactly those items.
+  2. **Hard Lock + someone else's Controlled Lock, not the Approval Lock** — the status /
+     lifecycle rule. Takes are approved and queries answered on approved items, so gating
+     them on `APPROVED` would stop the workflow they belong to. **Asking** a query answers
+     to the Hard Lock only: anyone with `list:read` may ask, and a Controlled Lock must not
+     stop a person putting a question to its owner.
+- **What is gated** — all refused with `409 {detail: {code, …}}` (`HARD_LOCKED`, `ITEM_LOCKED`,
+  the same codes and bodies as the other routes), before anything is written, audited or
+  logged, so a refused write changes and logs nothing:
+  - `POST /queries/{qid}/answer`, `PATCH /queries/{qid}/answer` — Hard + Controlled.
+  - `POST /items/{iid}/queries` (asking) — **Hard only**.
+  - All seven take writes: generate, regenerate, add / edit / remove a line, approve, and
+    record an impact review (`/reviews`, which can open the next version) — Hard + Controlled.
+  - Reads are never gated; unknown ids stay 404 (the lookup runs first).
+  - **Choices made while building, not user decisions:** the Hard Lock *does* refuse asking
+    (the answer only exempted the Controlled Lock); approving a take and recording a review
+    count as writes; the **Material Summary** (build, confirm, line edits) is not gated — it is
+    project-level, not item-scoped, like the project hardware catalog.
+- **Backend.** `items.queries.assert_item_content_unlocked` gained `include_controlled`
+  (`False` for asking). `item_queries.queries.{create_query, answer_query}` and every
+  `material_takes.queries` write take the acting `AuthUser` (`actor=`, was `actor_id=`), as in
+  the earlier rounds. A take write resolves the item first and **locks the item row before the
+  take row** (`_unlocked_take`), the order `generate` takes them in, and checks the lock
+  *before* `TAKE_NOT_DRAFT` / `TAKE_NOT_APPROVED`, so a locked item answers `409` whatever the
+  take's state. `review` → `generate` re-checks, harmlessly. The seed builds an `AuthUser` for the
+  take and query blocks; `test_material_take_generate_race.py` passes one.
+- **Web.** `cutlist/moduleLock.ts` gained the scope `"records"` (Hard + Controlled, wording
+  "queries or material take"). `QueryTab` and `MaterialTakeTab` now take `item` and
+  `currentUserId` (threaded from `EditorTabs`) and show one notice
+  (`data-testid="queries-locked"` / `"take-locked"`, to the roles that can write — and to
+  anyone on the Query tab under a Hard Lock, since asking is refused too) while disabling the
+  answer box, Answer / Edit answer, Ask (Hard Lock only), and on a take Generate / Start vN,
+  Regenerate, Approve, the impact buttons, every line input, Add line and Remove, each with the
+  reason as `title`. **409 fallback:** `lib/item-queries-fetch.ts` errors now carry `status` and
+  `body` (they used to put FastAPI's `detail` *object* into `Error`'s message, so a refusal read
+  "[object Object]"); the take tab words a 409 from its own `ApiError.detail` and **reloads the
+  take on any failed write**, so a refused cell edit snaps back to what the server holds. A
+  refused *answer* keeps the typed text (nothing was saved; losing it would be worse).
+- **Tests.** `test_queries_takes_locks.py` (39): all seven take writes × Hard Lock (refused for
+  a drafter and an admin alike, nothing changed or logged, then the same request succeeds once
+  cleared) and × a non-owner under a Controlled Lock (naming the owner; the owner passes; a manager
+  passes); the Approval Lock does **not** stop any of the seven; answer and edit-answer × Hard and
+  Controlled (a foreman, a non-owner, is refused); asking refused by a Hard Lock and **not** by a
+  Controlled or Approval Lock; an unlocked item and a sticky owner (`cutlist_owner_id` survives
+  Unlock) do not block; reads are never gated; unknown ids stay 404 under a Hard Lock; a refused
+  review opens no next version; QC defects are deliberately not lock-checked. **20 fail against the
+  unfixed source**; the other 19 are controls (the Approval-Lock-does-not-block cases, owner / manager
+  passes, reads, 404s). `tests/e2e/queries_takes_locks.spec.ts` (4), run twice back to back against a
+  live migrated, seeded stack: a Hard Lock stops answering and asking on K-101 and says why; a Hard
+  Lock disables every take control on K-102 (the seeded draft); seeded Controlled-Locked K-103 is open to
+  a manager and, once ownership moves to the manager, the drafter's take controls are disabled while
+  asking stays open; a stale page shows the owner's name for a refused take edit (the cell snaps back)
+  and a refused answer. **All four fail against the unfixed web code.** Each puts the items back as
+  seeded. `item_project_detail`, `material_take`, `estimating` and `smoke` still pass.
+- **Known gaps, recorded.**
+  - **QC records and comments are not lock-checked, by decision** — a foreman raising a defect on an
+    approved or claimed item is the normal case.
+  - No "request a change" flow for a refused write; the Controlled-Lock exemption is still a
+    hand-written `auth_role in (manager, admin)` check (Q472 not built).
+  - Under a Controlled Lock the Query tab's notice speaks of changes and does not say that asking is
+    still open; the Ask form simply stays enabled.
+  - `moduleLock.ts` is named for modules but now serves hardware, status, attachments, queries and takes.
+  - The Tracking modal's `Query` tab is still a "Coming soon." stub (unchanged).
+  Full suite: **1460 passed, 10 skipped, 1 failed** against a real migrated Postgres 16 (the failure is the
+  same local-only `MEILI_URL` gap `test_search_reindex.py::test_real_reindex_swaps_and_drops_temp` has always
+  had here), with this and *Generate Orders: per-line selection* both in. `tsc --noEmit` is clean.
+- **Out of scope (deferred):** a request flow for a refused write; locking QC records or comments; the
+  Material Summary.
+
+## Generate Orders: per-line selection (Plan V1 §21 follow-up, migration `0048`) — shipped
+
+> Chosen by the user ("go with 1 and 2 and 3", the second item: per-line selection in the
+> Generate Orders dialog — *PO Generation from a Won Quote* recorded it as deferred). It
+> collided with a rule that section states: generation ran **once per revision**, so ticking
+> a subset would leave the unticked lines un-generatable for good. The user was asked before
+> any code was written; the answer is a **settled decision**: **allow generating the rest
+> later**, tracked per line with a migration — over keeping the once-only rule with a warning
+> in the dialog, and over dropping per-line selection. No spec or plan doc; this section is its
+> written record. It **supersedes** the once-per-revision rule in *PO Generation from a Won Quote*.
+
+- **Migration `0048`** — `estimate_line.orders_generated_at timestamptz NULL`. A run sets it,
+  once and never cleared, on every line it covered (the quote is frozen, so there is no
+  legitimate way to order a line twice). `estimate_revision.orders_generated_at` stays but now
+  means **the most recent run**; nothing reads it as a guard. **Backfill:** a revision that
+  already ran gets the flag on the lines its latest `estimate.generate_orders` audit row names
+  (`payload.included_line_ids`), or — with no audit row — on the lines included at Convert (what
+  a run with no `include_line_ids` selects); each takes the revision's timestamp. Verified on a
+  scratch database holding three revisions — a partial run named in its audit row (only the named
+  line flagged), a default run with no audit row (the converted lines flagged, the excluded one not),
+  and a revision that never ran (untouched) — then downgrade → upgrade again.
+- **Rules** (`estimating/queries.py::_order_selection`, shared by the preview and the run so they
+  cannot disagree). The lines a dialog shows: once converted, those included at Convert; before that,
+  all of them (what-if). A run with no `include_line_ids` covers every shown line no earlier run
+  covered; with ids, exactly those. Refusals, all `409`:
+  - **`LINES_ALREADY_GENERATED`** `{line_ids}` — an id an earlier run covered (new);
+  - **`ORDERS_ALREADY_GENERATED`** — no `include_line_ids` and every shown line already covered
+    (the old once-per-quote answer, kept);
+  - **`NO_LINES_SELECTED`** (new) — an empty `include_line_ids`. *Found while building, and measured
+    against the old code:* `[]` answered `200` with zero orders, **set the once-only flag**, and the next
+    real run was then refused `ORDERS_ALREADY_GENERATED` — a quote locked out with nothing ordered;
+  - `UNKNOWN_LINE_IDS` unchanged. An explicit id may still name a line excluded at Convert (unchanged
+    behaviour; only the default is restricted).
+- **Each run makes its own POs.** A supplier used by two runs gets two draft POs, and quantities are
+  consolidated per run, not across runs. **A line counts as covered once its run completes — including
+  materials returned as `unassigned`** (ordered by hand), so a line whose supplier is assigned later
+  cannot be regenerated; an assumption made while building, not a user decision.
+- **API.** `GET /revisions/{rid}/order-preview` takes repeated `?include_line_ids=` and answers `409`
+  with the same codes as the run. The response gained `lines: [{line_id, seq, description, qty, unit,
+  orders_generated_at, selected}]` and its groups are computed for exactly the selection; the revision
+  detail's `LineOut` gained `included_at_convert` and `orders_generated_at`. Concurrent runs naming the
+  same line serialize on the revision lock (`lock_revision_for_update`), so the second sees the first's
+  flag instead of making two POs.
+- **Web.** `OrderPreviewDialog` lists the quote lines as checkboxes (lines an earlier run covered are
+  shown "ordered {date}", disabled and unticked); ticking one **re-asks the server** for the supplier
+  groups of that selection — only the newest request may write — and the confirm button sends the ticked
+  ids. Nothing ticked disables it and says so. The page's "Generate orders" bar shows while any converted
+  line is unordered ("N lines not yet ordered from this quote"); the "Orders generated {time}" note reads
+  "last generated" while some remain. `Line` / `OrderPreview` types gained the new fields.
+- **Tests.** Ten new in `test_estimating_generate_orders.py`: a partial run covers only its lines and a
+  later default run takes the rest (its own PO, 3 boards, no hardware) and a third is
+  `ORDERS_ALREADY_GENERATED`; a covered line is refused with nothing created and the other line still
+  orderable; an empty selection is refused and leaves the quote orderable; a line whose materials were all
+  unassigned still counts as covered; the revision timestamp moves each run and each run is audited with its
+  own `included_line_ids`; the revision detail carries the per-line flags; the preview lists the lines and
+  follows the selection, marks a covered line, and refuses a covered or unknown id like the run does; and
+  two real DB sessions on separate threads cannot cover the same line twice. **All ten fail against the
+  unfixed estimating source** (with the migration applied); the 15 existing tests pass as controls.
+  **Verified in a real browser** against a migrated, seeded stack with a throwaway spec (deleted): two
+  quote lines → both ticked and 5 boards consolidated; unticking the island recomputed the groups to 2;
+  unticking both disabled the button; one run → "1 line not yet ordered"; the second dialog showed the
+  pantry "ordered", unticked and disabled and the island ticked at 3; the second run removed the button;
+  exactly two POs existed. `estimating`, `item_project_detail`, `material_take` and `smoke` e2e still pass.
+- **No permanent e2e spec, and why.** A converted quote's materials only reach a supplier through
+  `default_supplier_id` (`0029`), which **no API route sets** and no seeded catalog row carries, so a spec
+  cannot build its own orderable quote — the same reason the seed leaves its WON estimate unconverted
+  (*PO Generation from a Won Quote*). The browser pass above set two links with SQL and undid them.
+- **Known gaps, recorded.**
+  - No way to un-cover a line or to regenerate one (deliberate: the quote is frozen).
+  - Two runs for one supplier make two POs; merging them is a manual Orderbook job.
+  - Covered-with-unassigned lines (above).
+  - A preview or run with a stale selection (a line another tab just covered) answers `409`; the dialog
+    shows "Could not refresh the preview" and the next tick retries, but a confirm with a stale selection
+    is refused by the run, not pre-empted.
+- **Out of scope (deferred):** §21's wider Procurement target (unchanged); per-supplier selection; undoing
+  a run.
