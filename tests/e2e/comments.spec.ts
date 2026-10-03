@@ -23,6 +23,18 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
+/** Switch the item editor to its Comments tab and wait until it has *landed*.
+ *  The tab is driven by the URL, so on a dev server that is still compiling the
+ *  route the click takes a moment — and until then the Cutlist tab's own module
+ *  thread is on screen with the same `comment-input` test id. Typing into that
+ *  one loses the text when the tab swaps. Waiting for the module thread to go
+ *  makes every `comment-input` after this the item's. */
+async function openCommentsTab(page: Page) {
+  await page.getByRole("tab", { name: "Comments" }).click();
+  await expect(page).toHaveURL(/[?&]tab=comments/, { timeout: 30_000 });
+  await expect(page.getByTestId("module-comments")).toHaveCount(0);
+}
+
 async function openFirstAlfredItem(page: Page) {
   await page.goto("/projects");
   await page.getByRole("link", { name: "Alfred Street Renovation", exact: true }).click();
@@ -57,7 +69,7 @@ test("a mention reaches the bell and opens the item's Comments tab", async ({ pa
 test("drafter mentions a manager through the picker; edit and delete work", async ({ page }) => {
   await login(page, "noa.lindqvist@hartwood.test");
   await openFirstAlfredItem(page);
-  await page.getByRole("tab", { name: "Comments" }).click();
+  await openCommentsTab(page);
 
   const input = page.getByTestId("comment-input");
   await input.click();
@@ -98,7 +110,7 @@ test("drafter mentions a manager through the picker; edit and delete work", asyn
 
   // delete: a manager may delete someone else's comment
   await openFirstAlfredItem(page);
-  await page.getByRole("tab", { name: "Comments" }).click();
+  await openCommentsTab(page);
   const target = page
     .getByTestId("comment-item")
     .filter({ hasText: "Plinth height rechecked" });
@@ -110,7 +122,7 @@ test("drafter mentions a manager through the picker; edit and delete work", asyn
 test("a viewer can read a thread but not post to it", async ({ page }) => {
   await login(page, "sam.ito@hartwood.test"); // viewer: tracking:read only
   await openFirstAlfredItem(page);
-  await page.getByRole("tab", { name: "Comments" }).click();
+  await openCommentsTab(page);
   await expect(page.getByText("Client signed off the sample")).toBeVisible();
   await expect(page.getByTestId("comment-input")).toHaveCount(0);
   await expect(page.getByText("You can read this thread but not post to it.")).toBeVisible();

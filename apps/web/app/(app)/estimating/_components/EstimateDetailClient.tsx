@@ -147,8 +147,15 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
   // Lines that became Joinery Items at Convert and no Generate Orders run has
   // covered yet — what "Generate orders" can still order.
+  // A line marked "ordered by hand" is not pending either, but is kept in view (below) so
+  // the dismissal can be undone.
   const pendingOrderLines = currentRev?.converted_project_id
-    ? currentRev.lines.filter((l) => l.included_at_convert && !l.orders_generated_at).length
+    ? currentRev.lines.filter(
+        (l) => l.included_at_convert && !l.orders_generated_at && !l.orders_dismissed_at,
+      ).length
+    : 0;
+  const dismissedOrderLines = currentRev?.converted_project_id
+    ? currentRev.lines.filter((l) => l.included_at_convert && l.orders_dismissed_at).length
     : 0;
 
   const revParam = sp.get("rev");
@@ -573,12 +580,17 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
       ) : null}
 
       {canWrite && isViewingCurrent && currentRev?.converted_project_id
-      && pendingOrderLines > 0 ? (
+      && (pendingOrderLines > 0 || dismissedOrderLines > 0) ? (
         <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 p-3">
-          <span className="text-sm text-blue-900">
-            {currentRev.orders_generated_at
-              ? `${pendingOrderLines} line${pendingOrderLines === 1 ? "" : "s"} not yet ordered from this quote.`
-              : "Converted — materials can now be ordered from this quote."}
+          <span className="text-sm text-blue-900" data-testid="orders-bar-text">
+            {pendingOrderLines === 0
+              ? `${dismissedOrderLines} line${dismissedOrderLines === 1 ? "" : "s"} marked ordered by hand.`
+              : currentRev.orders_generated_at || dismissedOrderLines > 0
+                ? `${pendingOrderLines} line${pendingOrderLines === 1 ? "" : "s"} not yet ordered from this quote.`
+                : "Converted — materials can now be ordered from this quote."}
+            {pendingOrderLines > 0 && dismissedOrderLines > 0
+              ? ` ${dismissedOrderLines} marked ordered by hand.`
+              : ""}
           </span>
           <button
             type="button"
@@ -587,7 +599,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
             className="ml-auto rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow hover:opacity-90 disabled:opacity-50"
             data-testid="generate-orders-btn"
           >
-            Generate orders
+            {pendingOrderLines > 0 ? "Generate orders" : "Review lines"}
           </button>
         </div>
       ) : null}
@@ -620,6 +632,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           busy={busy}
           onConfirm={confirmGenerateOrders}
           onCancel={() => setOrderPreview(null)}
+          onChanged={refresh}
         />
       ) : null}
     </section>
@@ -726,9 +739,11 @@ interface OrderPreviewDialogProps {
   busy: boolean;
   onConfirm: (includeLineIds: number[]) => void;
   onCancel: () => void;
+  /** A line was marked / un-marked "ordered by hand": the page's own counts are stale. */
+  onChanged?: () => void;
 }
 
-function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: OrderPreviewDialogProps) {
+function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onChanged }: OrderPreviewDialogProps) {
   // The quote lines to order now are the PM's choice; the supplier groups below
   // are always the server's answer for exactly that selection, so ticking a line
   // re-asks it. Lines an earlier run covered stay visible but cannot be ticked.
@@ -756,6 +771,77 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
       live = false;
     };
   }, []);
+
+  // "Ordered by hand": a line the PM ordered outside the system leaves the pending set.
+  // One line at a time (`dismissing`), a required reason, and it can be undone.
+  const [dismissing, setDismissing] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const [lineBusy, setLineBusy] = useState(false);
+  const [lineError, setLineError] = useState<string | null>(null);
+
+  // After either change the server decides which lines are pending: re-read them (a
+  // default preview carries every line's current state), keep the PM's own ticks that
+  // are still valid, and re-ask for the groups of that selection.
+  async function afterLineChange(lineId: number, restored: boolean) {
+    const mine = ++refreshSeq.current;
+    try {
+      const r = await fetch(`/api/revisions/${preview.revision_id}/order-preview`);
+      if (mine !== refreshSeq.current) return;
+      if (!r.ok) throw new Error(`order-preview → ${r.status}`);
+      const fresh = (await r.json()) as OrderPreview;
+      const pending = new Set(fresh.lines.filter((l) => l.selected).map((l) => l.line_id));
+      const next = new Set<number>();
+      selected.forEach((id) => pending.has(id) && next.add(id));
+      if (restored && pending.has(lineId)) next.add(lineId);
+      setSelected(next);
+      setPreview({ ...fresh, groups: [], unassigned: [] });
+      setRefreshError(null);
+      if (next.size > 0) await refreshFor(next);
+    } catch (e) {
+      if (mine !== refreshSeq.current) return;
+      setRefreshError(e instanceof Error ? e.message : "Could not refresh the preview");
+    }
+    onChanged?.();
+  }
+
+  async function changeLine(lineId: number, method: "POST" | "DELETE") {
+    setLineBusy(true);
+    setLineError(null);
+    try {
+      const r = await fetch(
+        `/api/revisions/${preview.revision_id}/lines/${lineId}/order-dismissal`,
+        method === "POST"
+          ? {
+              method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            }
+          : { method },
+      );
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        const code = body?.detail?.code;
+        setLineError(
+          code === "ALREADY_GENERATED"
+            ? "A run has already ordered this line — refreshing."
+            : code === "ALREADY_DISMISSED"
+              ? "Someone already marked this line ordered by hand — refreshing."
+              : code === "NOT_DISMISSED"
+                ? "This line is no longer marked ordered by hand — refreshing."
+                : `Could not ${method === "POST" ? "mark" : "undo"} the line (${r.status}).`,
+        );
+      } else {
+        setDismissing(null);
+        setReason("");
+      }
+      // Either way the server's answer is the truth now.
+      await afterLineChange(lineId, method === "DELETE");
+    } catch {
+      setLineError("Could not reach the server — nothing was changed.");
+    } finally {
+      setLineBusy(false);
+    }
+  }
 
   function toggle(lineId: number) {
     const next = new Set(selected);
@@ -848,7 +934,9 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
           data-testid="order-preview-lines"
         >
           {preview.lines.map((l) => {
-            const done = l.orders_generated_at != null;
+            const covered = l.orders_generated_at != null;
+            const byHand = l.orders_dismissed_at != null;
+            const done = covered || byHand;
             return (
               <li key={l.line_id} className="flex items-center gap-2">
                 <input
@@ -867,15 +955,98 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel }: Ord
                     held back — no supplier
                   </span>
                 ) : null}
-                <span className="whitespace-nowrap text-xs text-h-muted">
-                  {done
+                <span
+                  className="whitespace-nowrap text-xs text-h-muted"
+                  data-testid={byHand ? `order-line-byhand-${l.line_id}` : undefined}
+                  title={byHand ? (l.orders_dismissed_reason ?? undefined) : undefined}
+                >
+                  {covered
                     ? `ordered ${new Date(l.orders_generated_at as string).toLocaleDateString()}`
-                    : `× ${l.qty} ${l.unit}`}
+                    : byHand
+                      ? `ordered by hand ${new Date(l.orders_dismissed_at as string).toLocaleDateString()}`
+                        + (l.orders_dismissed_by_name ? ` by ${l.orders_dismissed_by_name}` : "")
+                        + (l.orders_dismissed_reason ? ` — ${l.orders_dismissed_reason}` : "")
+                      : `× ${l.qty} ${l.unit}`}
                 </span>
+                {byHand ? (
+                  <button
+                    type="button"
+                    onClick={() => void changeLine(l.line_id, "DELETE")}
+                    disabled={lineBusy}
+                    className="whitespace-nowrap text-xs text-h-accent underline disabled:opacity-50"
+                    data-testid={`undo-dismiss-${l.line_id}`}
+                  >
+                    Undo
+                  </button>
+                ) : !covered ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDismissing(dismissing === l.line_id ? null : l.line_id);
+                      setReason("");
+                      setLineError(null);
+                    }}
+                    disabled={lineBusy}
+                    className="whitespace-nowrap text-xs text-h-accent underline disabled:opacity-50"
+                    data-testid={`dismiss-line-${l.line_id}`}
+                  >
+                    Ordered by hand…
+                  </button>
+                ) : null}
               </li>
             );
           })}
         </ul>
+        {dismissing !== null ? (
+          <form
+            className="space-y-2 rounded border border-h-line bg-h-bg p-2 text-sm"
+            data-testid="dismiss-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (reason.trim()) void changeLine(dismissing, "POST");
+            }}
+          >
+            <label className="block text-xs text-h-muted" htmlFor="dismiss-reason">
+              How was it ordered? (required — nothing in the system can see this order, so
+              this note is the only record)
+            </label>
+            <input
+              id="dismiss-reason"
+              value={reason}
+              maxLength={500}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. ordered by phone from Plyco, PO 1234"
+              className="w-full rounded border border-h-line bg-white px-2 py-1"
+              data-testid="dismiss-reason"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={lineBusy || !reason.trim()}
+                className="rounded bg-h-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                data-testid="dismiss-save"
+              >
+                {lineBusy ? "Saving…" : "Mark ordered by hand"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissing(null);
+                  setReason("");
+                }}
+                className="rounded border border-h-line px-3 py-1 text-xs text-h-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
+        {lineError ? (
+          <p className="text-sm text-red-800" data-testid="dismiss-error">
+            {lineError}
+          </p>
+        ) : null}
         {refreshError ? (
           <p className="text-sm text-red-800" data-testid="order-preview-error">
             Could not refresh the preview ({refreshError}). Tick a line again to retry.

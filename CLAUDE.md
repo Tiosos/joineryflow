@@ -112,10 +112,10 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0048`. Head is `0048_estimate_line_orders_generated` (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0049`. Head is `0049_estimate_line_order_dismissal` (`estimate_line.orders_dismissed_at/_by/_reason` — a quote line can be marked *ordered by hand*, see *Generate Orders: mark a line ordered by hand* below). `0048_estimate_line_orders_generated` is (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 30 Playwright specs / 120 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). Re-seed between runs.
+- `tests/e2e/` — 30 Playwright specs / 121 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). **A re-seed is not enough**: the seed skips items that already exist, so it does not restore a lock or take an earlier run changed — run the whole suite against a **freshly created, migrated and seeded database** (see *e2e suite repair*).
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -194,9 +194,9 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0048
+make migrate      # apply Alembic 0001 -> 0049
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
-make test         # pytest in api container (99 test files, ~1520 tests; the `meili`-marked
+make test         # pytest in api container (100 test files, ~1541 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
 make reindex      # rebuild the search index from Postgres (swap-index, no downtime)
                   # Runnable WITHOUT Docker too, which is worth knowing when the
@@ -4427,7 +4427,7 @@ since been built.**
   (they surfaced the raw `IntegrityError`); the other three are controls. `cv_import.spec.ts` (+1)
   mocks the API's exact 409 body and asserts the friendly message appears and `commitCvImport: 409`
   does not — **it fails against the unfixed web code** and passes with the fix.
-- **Found while verifying, not fixed: `cv_import.spec.ts`'s existing test is racy in dev mode.**
+- **Found while verifying: `cv_import.spec.ts`'s existing test is racy in dev mode** (*hardened since — see *e2e suite repair*; the race itself was never reproduced*).
   It clicks the row's `/items/…` link the instant the row is visible; against a freshly started
   `next dev` the page is not yet hydrated, the click does nothing, and the test times out on the
   URL assertion (a diagnostic run with a 3 s pause before the click navigates fine). The new test
@@ -5400,8 +5400,8 @@ since been built.**
     is the complete fix and was not chosen.
   - **The estimator who runs Generate Orders cannot link a supplier** (`catalog:write` is drafter / manager / admin /
     editor); the dialog's message says to link in the Catalog, not who can.
-- **Out of scope (deferred):** per-material coverage; an "ordered by hand" dismissal; a link-supplier shortcut inside the
-  dialog.
+- **Out of scope (deferred):** per-material coverage; ~~an "ordered by hand" dismissal~~ (**built, see *Generate Orders: mark
+  a line ordered by hand***); a link-supplier shortcut inside the dialog.
 
 ## Generate Orders: a line is ordered whole or held back whole (no migration) — shipped
 
@@ -5461,8 +5461,8 @@ since been built.**
 - **Known gaps, recorded.**
   - **Whole-or-nothing is coarser than the data**: no per-material state, so a line cannot be ordered "board now, hinge
     later". That is option B (a migration), still not built.
-  - **There is no "ordered by hand" dismissal** for a held-back line (unchanged from before); the way out is to link the
-    supplier or to leave the line unticked.
+  - ~~**There is no "ordered by hand" dismissal** for a held-back line.~~ **Closed — see *Generate Orders: mark a line
+    ordered by hand* below.**
   - The estimator who runs Generate Orders still cannot link a supplier (`catalog:write` excludes estimator).
   - ~~**#6 left alone:** the Catalog grid's free-text *Default supplier* cell sends `null` to clear and the route drops
     nulls, so clearing it does nothing.~~ **Closed — see *Supplier link at create, bulk import and CV Create new*.**
@@ -5580,3 +5580,124 @@ since been built.**
     with `catalog:write`.
   - A drafter cannot use it (no `estimating:approve`), but a drafter can already link in the Catalog.
   - The picker lists every supplier of the workspace, inactive ones included (as the Catalog grid's does).
+
+## e2e suite repair (no migration, no app code) — shipped
+
+> Chosen by the user ("go with the e2e repair, then the 'ordered by hand' questions"), the first item of
+> the next-step list after PR #67. Every earlier section of this file recorded the same sentence — *e2e is
+> not part of CI, and these specs were red for reasons unrelated to the change* — so the suite was last run
+> **whole** long before this. Nothing here needed a decision, so nothing was asked. Test files only: no
+> application code, schema or seed changed. Method: reproduce each failure on a **fresh** database, find the
+> cause, fix it, and prove the fix by repeating the test (`--repeat-each`) or re-running the sequence it
+> fails in.
+
+- **How to run the whole suite (the baseline that matters).** The seed skips items that already exist, so a
+  database that earlier runs have touched is *not* the seeded state, and half of what looked like regressions
+  on a first whole-suite run (a Controlled Lock gone from `JO-K-103`, a take already approved) were that. Use a
+  database nobody has run anything against: create it, `alembic upgrade head`, `python -m seed.hartwood_joinery`,
+  start the API on it, then `playwright test` with `workers: 1` (the config). **Verified: 118 passed, 2 skipped
+  (the two `search` tests, no Meilisearch here), 0 failed in 7.2 min** on a fresh database with every fix below in
+  — the first whole run of this session was 107 passed / 9 failed.
+- **Red specs, and what each was.**
+  - **`cutlist_related_parts` (collapsed by default)** — counted every `button[aria-expanded]` on the page, and
+    the notification bell (added with Comments) and Next's dev-overlay button carry it too (3 where it expects 1).
+    Now scoped to `[data-testid="tracking-row"] button[aria-expanded]`. *Not* live-database state, as an earlier
+    note here guessed: it failed on a freshly reseeded database.
+  - **`search` (2 tests)** — there is no Postgres fallback, so with no Meilisearch `GET /search` is
+    `503 SEARCH_UNAVAILABLE`. Both now **skip on exactly that response**; a reachable but empty or broken index
+    still fails. **Their bodies are unchanged and were not run past the skip here** — no Meilisearch in the
+    sandbox — so the passing path is unverified in this environment.
+  - **`drafter_editor`** — toggles the lock of the drafter's first My Day item once and leaves it flipped. That
+    item is `K-103`, which the seed leaves Controlled-Locked, so every lock spec after it (hardware, status,
+    module-delete, takes) started with no lock: **five tests failed in a whole run and passed alone**. It now
+    toggles it back. The audit log named the culprit (`item.unlock`, the drafter, at the moment the spec ran).
+  - **`queries_takes_locks` (2 tests)** — need K-102's *draft* take; `material_take.spec.ts`, which runs just
+    before, approves that one draft for good. A spec that only passes when another has not run is a trap, so
+    `ensureDraftTake` starts the next version through the API when no draft exists (what "Start vN" does).
+  - **`comments` (mention picker)** — deterministic on a fresh database. The tab is driven by the URL, so on a
+    cold dev build the click takes a moment, and until it lands the Cutlist tab's *module* thread is on screen
+    with the same `comment-input` test id; the spec typed `@Rin` into that one and the text vanished when the tab
+    swapped. `openCommentsTab` waits for `tab=comments` **and** for `module-comments` to be gone. (Found by
+    logging navigations and requests during the test.)
+  - **`module_delete` (add / comment / delete)** — passed 3 of 8 repeated runs. Once the module has a comment its
+    row's accessible name is **"New module 💬 1"** (the comment-count badge), so `{name: "New module", exact: true}`
+    stopped matching the very module the test had just commented on. It matches the name with or without the badge
+    now: **8 of 8**. `cv_replace_comments.spec.ts` has the same exact-name locator but never comments on that
+    module, so it was left alone.
+  - **`procurement`** — clicks the availability chip as soon as a row is visible; before the page hydrates the
+    click does nothing. Reproduced at **6 of 12**; the click now retries until `drawer=item-availability`
+    appears (`toPass`), which is safe because opening the drawer twice is harmless: **12 of 12**.
+  - **`cv_import` (first test)** — hardened with the `href` + `goto` the sibling test and the lock specs use.
+    **Not reproduced** in this session (it passed warm and on a cold dev server), so this is hardening, not a
+    confirmed fix.
+- **The recurring shape, recorded once.** Four of the eight were *one spec leaving shared state changed* (a
+  lock, a take) and a later spec assuming the seeded state. Specs run alphabetically in one worker, so the
+  failing spec is rarely the guilty one — the audit log (`item.unlock`, `material_take.approve`, …) says who
+  touched what and when. Two were a locator that matched a *different* element with the same role or test id
+  (the bell, a module thread, a badge in a name). Two were a click before hydration.
+- **Known gaps, recorded.**
+  - **e2e is still not run in CI** (CI is pytest + `tsc`), so nothing stops the next red spec. Adding it is a
+    separate task: it needs the compose stack (or this section's recipe) and ~10 minutes per run.
+  - `estimating`, `procurement` and `comments` are still not re-runnable on one database (above).
+  - `search.spec.ts` is unexercised wherever Meilisearch is absent; `cv_import` hardening is unconfirmed.
+  - `drafter_editor` still leaves a part ("Test part") and a hardware line on that item on every run; only the
+    lock is restored.
+
+## Generate Orders: mark a line ordered by hand (Plan V1 §21 follow-up, migration `0049`) — shipped
+
+> Chosen by the user ("go with the e2e repair, then the 'ordered by hand' questions") — the gap *Generate Orders: a line is
+> ordered whole or held back whole* recorded as "no way to mark such a line ordered by hand and dismiss it". It needed four
+> decisions the code could not make, so the user was asked before any code was written; the answers are **settled
+> decisions**, not assumptions — each the recommended option: **new columns on the line** (not a reuse of
+> `orders_generated_at`), **the same gate as Generate Orders** (`estimating:approve`), **a required note**, and **an audited
+> undo**. No spec or plan doc; this section is its written record.
+
+- **Why a held-back line needed a way out.** A line holding a supplier-less material is held back whole and stays in the quote's
+  "N lines not yet ordered" count — correct while it is still to be ordered, a dead end once the PM ordered it outside the system.
+  The only coverage flag was `estimate_line.orders_generated_at`, and nothing could say "this one is done".
+- **Migration `0049`** — `estimate_line.orders_dismissed_at`, `orders_dismissed_by` (FK `app_user`, `ON DELETE SET NULL`) and
+  `orders_dismissed_reason`. **`orders_generated_at` is not reused**: it means "a run made POs for this line", and `0048`'s backfill
+  and the `estimate.generate_orders` audit rows read it as exactly that. Three CHECKs make the rules the database's, not
+  the application's: the time and the reason come together (`ck_estimate_line_dismissal_complete`), the reason is 1–500
+  characters once trimmed, and **a line is never both covered and dismissed** (`ck_estimate_line_covered_xor_dismissed`).
+  Up → down → up verified.
+- **The rule.** A line is *pending* when no run covered it **and** it is not dismissed (`queries._line_pending`). Pending lines are the
+  default selection; a dismissed line is **not** selected by default, and naming one by id is `409 LINES_DISMISSED {line_ids}` —
+  the sibling of `LINES_ALREADY_GENERATED`, for the preview and the run alike. With nothing pending, a default run answers
+  `409 ORDERS_ALREADY_GENERATED` (its meaning is now "nothing left to order", covered or dismissed). A dismissed line contributes
+  nothing to the groups, so the material it alone held `unassigned` stops being reported.
+- **Endpoints**, both `estimating:approve`, both lock the revision row (so they serialise with a Generate Orders run):
+  - `POST /revisions/{rid}/lines/{lid}/order-dismissal` `{reason}` → `204`. Allowed for **any pending line handed over at Convert**,
+    held back or not (a PM may order any line by hand). Refusals: `404 NOT_FOUND` (revision), `404 LINE_NOT_FOUND` (not on this
+    revision), `409 NOT_CONVERTED`, `409 LINE_NOT_IN_HANDOVER` (excluded at Convert — no Joinery Item, never shown),
+    `409 ALREADY_GENERATED`, `409 ALREADY_DISMISSED`; an empty, blank or over-500-character reason is `422`. The reason is trimmed.
+  - `DELETE` the same path → `204`; the line is pending again. `409 NOT_DISMISSED` otherwise. Safe against ordering twice because
+    the system never ordered the line.
+  - Audit `estimate.order_dismiss` (`revision_id`, `line_id`, `reason`) and `estimate.order_undismiss` (`previous_reason`).
+  - `LineOut` and the order-preview's source lines gained `orders_dismissed_at`, `orders_dismissed_reason` and
+    `orders_dismissed_by_name` (a join on `app_user`, in the caller's own workspace).
+- **Web (`EstimateDetailClient.tsx`).** In the Generate Orders dialog each pending line has **Ordered by hand…**, which opens a
+  one-line form whose Save is disabled until the note is non-blank; a dismissed line reads "ordered by hand {date} by {name} — {reason}",
+  is unticked and disabled, and has **Undo**. After either change the dialog re-reads the lines, keeps the PM's own ticks that are
+  still valid (an undone line comes back ticked) and re-asks for the groups, and tells the page (`onChanged`). The page's bar counts
+  pending lines only, adds "N marked ordered by hand", and **stays visible when nothing is pending but something is dismissed** —
+  as "N lines marked ordered by hand." with a **Review lines** button — because otherwise the only way to undo would vanish.
+- **Tests.** `test_estimating_order_dismissal.py` (21): a dismissal is recorded (trimmed, who, not a generated order) and a default
+  run orders only the rest; a dismissed line cannot be picked by id (run and preview) and creates nothing; everything dismissed leaves
+  nothing to generate; **a held-back line can be dismissed and stops blocking the quote**; undo makes the line orderable again; both
+  verbs are audited with the reason; a missing / empty / blank / over-long reason is a 422 and writes nothing; not converted, excluded
+  at Convert, unknown line, another revision's line, already covered, already dismissed and not dismissed are each refused with their
+  code; viewer / drafter / purchase officer get 403 on both verbs and another workspace's revision 404; and the database itself
+  refuses covered-and-dismissed and a dismissal with no / a blank / a time-less reason. **19 fail against the previous app code** (the
+  2 that pass are the database CHECKs, which need only the migration). `catalog_supplier_link.spec.ts` (12 → 13): a held-back line is
+  marked ordered by hand (Save disabled until a reason is typed, the line reads as ordered by hand with the reason, nothing left to
+  generate), the page's bar says "1 line marked ordered by hand." with **Review lines**, and **Undo** returns it to pending and
+  held back — **fails without the web change**, passes with it, run against a fresh database with the new API.
+- **Known gaps, recorded.**
+  - **The system cannot verify the order happened** — the note is the only record, which is why it is required. A dismissal says
+    "this line is done" and nothing reconciles it with the Orderbook.
+  - **A dismissal does not link to a PO.** If the order *was* entered in the Orderbook by hand, nothing ties it to the line.
+  - Any `estimating:approve` user can undo anyone's dismissal (the user chose the same gate for both).
+  - A dismissed line is excluded from generation for good *until* undone; there is no expiry and no list of dismissals beyond the
+    dialog and the audit log.
+  - Per-material coverage is still not built: a line is ordered, held back or dismissed whole.

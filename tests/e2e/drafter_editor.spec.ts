@@ -31,11 +31,16 @@ test("Drafter editor happy path", async ({ page }) => {
   await page.locator('[data-testid="pantry-row"] [aria-label="Add"]').first().click();
   await expect(page.locator('[data-testid="cart-line"]')).toHaveCount(cartCountBefore + 1);
 
-  // Lock toggle
+  // Lock toggle. Toggle it back afterwards: this is the drafter's first My Day
+  // item, which the seed leaves Controlled-Locked (K-103), and the lock specs
+  // that run after this one (hardware / status / take / module-delete) start
+  // from that seeded lock. Re-locking as the same user restores it exactly.
   const lockBtn = page.getByRole("button", { name: /lock|unlock/i });
   const isLocked = (await lockBtn.textContent())?.toLowerCase().includes("unlock");
   await lockBtn.click();
   await expect(lockBtn).toHaveText(isLocked ? /^Lock$/i : /^Unlock$/i, { timeout: 10_000 });
+  await lockBtn.click();
+  await expect(lockBtn).toHaveText(isLocked ? /^Unlock$/i : /^Lock$/i, { timeout: 10_000 });
 
   // Close window button
   // window.close() may be blocked by browser; allow either-or.

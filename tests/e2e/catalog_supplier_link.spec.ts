@@ -470,3 +470,77 @@ test("an estimator links a supplier from the Generate Orders dialog and orders",
     await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
   }
 });
+
+test("a held-back line can be marked ordered by hand (reason required), and undone", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const sku = `E2E-BYHAND-${stamp}`;
+  const created = await page.request.post("/api/catalog/board-materials", {
+    data: { code: sku, sku, description: `E2E by-hand board ${stamp}` },
+  });
+  expect(created.status()).toBe(201);
+  const materialId = (await created.json()).material_id as number;
+  try {
+    const post = async (url: string, data?: unknown) => {
+      const r = await page.request.post(`/api${url}`, data === undefined ? {} : { data });
+      expect(r.ok(), `${url} -> ${r.status()} ${await r.text()}`).toBe(true);
+      return r.json();
+    };
+    // A won, converted quote whose only line uses a board with no supplier: held back whole.
+    const cust = await post("/customers", { name: `E2E customer ${stamp}` });
+    const est = await post("/estimates", { customer_id: cust.customer_id, title: `E2E ${stamp}` });
+    const rid = est.current_revision_id as number;
+    const line = await post(`/revisions/${rid}/lines`, { description: "Ordered-by-phone line", qty: 1 });
+    await post(`/lines/${line.line_id}/parts`, { material_type: "BOARD", material_id: materialId, qty: 2 });
+    for (let i = 0; i < 10; i++) await post(`/revisions/${rid}/advance`);
+    await post(`/revisions/${rid}/accept`);
+    await post(`/revisions/${rid}/convert`);
+    const lineId = line.line_id as number;
+
+    await page.goto(`/estimating/${est.estimate_id}`);
+    await page.getByTestId("generate-orders-btn").click();
+    const dialog = page.getByTestId("order-preview-dialog");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId(`order-line-held-${lineId}`)).toBeVisible();
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeDisabled();
+
+    // The reason is required: Save stays disabled until there is one.
+    await dialog.getByTestId(`dismiss-line-${lineId}`).click();
+    await expect(dialog.getByTestId("dismiss-save")).toBeDisabled();
+    await dialog.getByTestId("dismiss-reason").fill("   ");
+    await expect(dialog.getByTestId("dismiss-save")).toBeDisabled();
+    await dialog.getByTestId("dismiss-reason").fill("ordered by phone from CDK");
+    await dialog.getByTestId("dismiss-save").click();
+
+    // It now reads as ordered by hand, with who and why, and nothing is left to generate.
+    const byHand = dialog.getByTestId(`order-line-byhand-${lineId}`);
+    await expect(byHand).toContainText("ordered by hand", { timeout: 15_000 });
+    await expect(byHand).toContainText("ordered by phone from CDK");
+    await expect(dialog.getByTestId(`order-line-${lineId}`)).toBeDisabled();
+    await expect(dialog.getByTestId(`order-line-${lineId}`)).not.toBeChecked();
+    await expect(dialog.getByTestId("order-preview-nothing-orderable")).toHaveCount(0);
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeDisabled();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    // The page's own count follows: nothing pending, one line marked, and the button now reviews.
+    await expect(page.getByTestId("orders-bar-text")).toHaveText("1 line marked ordered by hand.");
+    await expect(page.getByTestId("generate-orders-btn")).toHaveText("Review lines");
+    let flags = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
+    expect(flags.lines[0].orders_dismissed_reason).toBe("ordered by phone from CDK");
+    expect(flags.lines[0].orders_generated_at).toBeNull();
+
+    // Undo: the line is pending (and held back) again, and the bar is back.
+    await page.getByTestId("generate-orders-btn").click();
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await dialog.getByTestId(`undo-dismiss-${lineId}`).click();
+    await expect(dialog.getByTestId(`order-line-${lineId}`)).toBeEnabled({ timeout: 15_000 });
+    await expect(dialog.getByTestId(`order-line-${lineId}`)).toBeChecked();
+    await expect(dialog.getByTestId(`order-line-held-${lineId}`)).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByTestId("generate-orders-btn")).toHaveText("Generate orders");
+    flags = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
+    expect(flags.lines[0].orders_dismissed_at).toBeNull();
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
+  }
+});
