@@ -4432,7 +4432,7 @@ since been built.**
   `next dev` the page is not yet hydrated, the click does nothing, and the test times out on the
   URL assertion (a diagnostic run with a 3 s pause before the click navigates fine). The new test
   reads the `href` and `goto`s it, as the lock specs do; the old one was left alone (it fails
-  before reaching any code this change touches). e2e is not part of CI (which runs pytest + `tsc`).
+  before reaching any code this change touches). e2e was not part of CI when this was written (it is now, advisory — see *e2e in CI*).
 - **Known gaps, recorded.** `PATCH /orders/{id}` still answers a bad `vendor_id` with `404` while an
   unknown `category` is a `422` (unchanged, noted under *Order field validation*).
 
@@ -5636,8 +5636,8 @@ since been built.**
   touched what and when. Two were a locator that matched a *different* element with the same role or test id
   (the bell, a module thread, a badge in a name). Two were a click before hydration.
 - **Known gaps, recorded.**
-  - **e2e is still not run in CI** (CI is pytest + `tsc`), so nothing stops the next red spec. Adding it is a
-    separate task: it needs the compose stack (or this section's recipe) and ~10 minutes per run.
+  - ~~**e2e is still not run in CI** (CI is pytest + `tsc`), so nothing stops the next red spec.~~ **Closed — see
+    *e2e in CI* below** (advisory, not a required check).
   - `estimating`, `procurement` and `comments` are still not re-runnable on one database (above).
   - `search.spec.ts` is unexercised wherever Meilisearch is absent; `cv_import` hardening is unconfirmed.
   - `drafter_editor` still leaves a part ("Test part") and a hardware line on that item on every run; only the
@@ -5701,3 +5701,44 @@ since been built.**
   - A dismissed line is excluded from generation for good *until* undone; there is no expiry and no list of dismissals beyond the
     dialog and the audit log.
   - Per-material coverage is still not built: a line is ordered, held back or dismissed whole.
+
+## e2e in CI (`.github/workflows/ci.yml`, no migration, no app code) — shipped
+
+> Chosen by the user ("agree, go on asking the two questions", after I suggested it as the next task because
+> *e2e suite repair* had just found the suite 9 specs red with nothing to notice). Two things were open, so the user was
+> asked before any code was written; the answers are **settled decisions**: the job is **advisory** (not a required
+> check, "advisory first") and runs on **every PR and every push to `main`** (the same triggers and docs-only
+> `paths-ignore` as the other two jobs). Nothing else in the app changed.
+
+- **The job — `E2E (Playwright)`, third job in `ci.yml`.** On a fresh runner it does what *e2e suite repair* documents as
+  the only valid baseline: `docker compose up db meili api`, `alembic upgrade head`, `python -m seed.hartwood_joinery`, then
+  `docker compose up search-worker` **after** the seed (the seed's writes sit in `search_outbox` and the worker drains them,
+  which is what lets the two search specs find their records — so unlike the pytest job, which must *not* start the worker,
+  this one must). The web app runs **on the runner, not in compose**: `.env` is exported, `API_URL=http://localhost:8000`
+  (the compose name `api` does not resolve there), `pnpm build`, `next start -p 3000`. Then
+  `playwright install --with-deps chromium` and `pnpm exec playwright test` with `PW_BASE_URL=http://localhost:3000`.
+  A fresh database per run is also what makes the non-idempotent specs (`estimating`, `procurement`, `comments`) a non-issue.
+  `timeout-minutes: 40`. On failure it uploads `apps/web/test-results` (traces) and dumps the compose and web logs.
+- **Production build, not `next dev` — a deliberate difference from the dev loop.** Several repaired failures were
+  click-before-hydration races caused by on-demand compilation. `next start` has none. **Measured locally before pushing:
+  the whole suite against a production build on a fresh database is `119 passed, 2 skipped, 0 failed in 4.0 min`** (the two
+  skips are the search specs, no Meilisearch in the sandbox) against ~7 min under `next dev`. `NEXT_PUBLIC_*` values are
+  inlined at build time, which is why `.env` is exported *before* `pnpm build`.
+- **`retries: process.env.CI ? 1 : 0`** in `apps/web/playwright.config.ts`. One retry, CI only: the one known flake is a
+  dev-proxy `ECONNRESET`, and a real failure fails twice. This is a retry, not a skip — **never skip, disable or quarantine
+  a spec to get green.** A retried spec that *passes* is reported by Playwright as "flaky": read those lines, they are the
+  early warning. Caveat: a spec that changes state and then fails (estimating converts once) can fail again on the retry for
+  a different reason; read the first failure.
+- **Advisory means the check can be red and merge anyway.** It is **not** `continue-on-error` (that would show green when
+  the suite is red and hide the signal). It is simply not added to branch protection. **Promote it to required only after a
+  couple of weeks of green runs**; if branch protection ever requires it, note `ci.yml`'s own comment about docs-only PRs
+  leaving required checks pending.
+- **Wait for the index.** A step logs in through the web proxy and polls `GET /api/search?q=297830` until it returns a hit,
+  and is **not fatal** if it never does: the search specs skip on 503, so a slow first index must not fail the job — but it
+  would turn two real tests into skips, so look for "search index not ready" in the log.
+- **Known gaps, recorded.**
+  - **The job's own CI run is the first time the compose path runs end to end**: what was verified locally is the same
+    suite against a production build on a fresh database (no Docker daemon in the sandbox), not the workflow itself.
+  - The search specs have **never** run past their skip until this job runs them (Meilisearch is a compose service here).
+  - ~10 minutes of Actions time per push on top of the other two jobs; the `concurrency` group cancels a superseded run.
+  - Failures show as a red `E2E (Playwright)` row, not a blocked merge. Someone has to look.
