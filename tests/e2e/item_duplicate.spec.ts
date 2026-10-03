@@ -4,8 +4,8 @@ import { test, expect, type Page } from "@playwright/test";
  * Duplicate a Joinery Item (Plan V1 §2): a drafter / manager / admin copies an item from
  * its Actions tab into the same project, with its own Item ID, status CLEAR and a link
  * back to the source. The spec deletes every copy it makes (DELETE /items/{id}) in a
- * `finally`, so the seeded project is left as it was — apart from the copy's cutlist
- * row, which the item delete does not remove.
+ * `finally`; deleting the copy also removes its own, never-used cutlist, so the seeded
+ * project is left as it was.
  */
 async function login(page: Page, email: string) {
   await page.goto("/login");

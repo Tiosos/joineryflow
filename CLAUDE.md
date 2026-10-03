@@ -5822,17 +5822,59 @@ since been built.**
   and another workspace `404`; atomicity. `tests/e2e/item_duplicate.spec.ts` (3), run against a live
   migrated, seeded stack on a production build: a drafter duplicates `JO-K-101` (new Item ID, `CLEAR`,
   the link and its click-through, no link on the original), Cancel makes no copy, a manager sees the
-  button and an editor / viewer do not. The e2e deletes its copy with `DELETE /items/{id}`, which
-  leaves the copy's cutlist row behind.
+  button and an editor / viewer do not. The e2e deletes its copy with `DELETE /items/{id}` (which,
+  since *Item delete removes an unused cutlist*, also removes the copy's own cutlist).
 - **Known gaps, recorded.**
   - **The copy set is fixed** — no per-copy choice of what to bring (ALIGNMENT counts the row
     `PARTIAL` for this reason).
   - **No bulk duplicate and no cross-project copy** (decisions 4 and 6).
-  - **Deleting an item does not delete its cutlist**, so duplicating and deleting leaves a one-time
-    orphan cutlist row (existing behaviour of item delete, not introduced here).
+  - ~~**Deleting an item does not delete its cutlist**, so duplicating and deleting leaves a one-time
+    orphan cutlist row.~~ **Closed — see *Item delete removes an unused cutlist* below.**
   - **The copy's parts are not re-checked against the catalog** — a part referencing an archived
     material is copied as is.
   - **A duplicate is not searchable-linked**: Global Search indexes it like any new item and shows
     nothing about the source.
 - **Out of scope (deferred):** choosing what to copy; copying across projects; making several copies
   at once; copying related parts (Plan V1 does not ask).
+
+## Item delete removes an unused cutlist (no migration) — shipped
+
+> Chosen by the user ("go", after I suggested it as the next task): a gap I found while building
+> *Duplicate a Joinery Item* — `DELETE /items/{id}` left the item's cutlist behind, so every
+> duplicate-then-delete (and the duplicate e2e spec) left an orphan row. The rule was
+> under-specified (Q440 lets an item have no cutlist but says nothing about an emptied one) and the
+> obvious fix was unsafe, so the user was asked before any code was written; the answer is a
+> **settled decision**: **delete the emptied cutlist only if it has no production history.**
+> No migration, no spec or plan doc; this section is its written record.
+
+- **Why "always delete" was refused.** Deleting a cutlist CASCADEs `worker_assignment` and
+  `stage_completion_log` (`0030`), and the Actual Costs labour figure (§I) is priced from
+  `stage_completion_log`. Removing an item would silently erase that production and cost history for
+  the cutlist's work.
+- **The rule (`items.queries._drop_cutlist_if_unused`, called by `delete_item`).** After the item is
+  deleted, the cutlist it belonged to is deleted when **no item still references it, it has no
+  `worker_assignment` row and no `stage_completion_log` row** — *any* row, so a cancelled assignment
+  or an **undone** completion still counts as history and keeps the cutlist as an empty record. A
+  cutlist that still holds another item is never touched; an item with no cutlist, and an unrelated
+  empty cutlist, are unaffected. It is **one `DELETE … WHERE NOT EXISTS …` statement**, so the test and
+  the delete cannot be split by a concurrent link. Audited as `cutlist.delete`
+  (`cutlist_no`, `project_id`, `via: "item.delete"`, `item_id`), the same event the cutlist's own delete
+  route writes. A refused delete (`IN_USE`, hardware allocated) returns before anything is removed.
+- **Not changed.** `DELETE /cutlists/{cid}` still refuses a cutlist holding items (`HAS_ITEMS`) and is
+  how an empty cutlist that *kept* its history can be removed by hand. Unlinking an item from a cutlist
+  (`DELETE /cutlists/{cid}/items/{iid}`) does **not** delete the cutlist — only deleting the item does.
+- **Tests.** `test_item_delete_cutlist.py` (9): the last item leaving takes an unused cutlist; the
+  deletion is audited with its cause; a cutlist still holding another item is kept until its last item
+  goes; a cutlist with a stage completion is kept with its history intact; an **undone** completion still
+  counts; a cutlist with only a **cancelled** assignment is kept; an item with no cutlist deletes as
+  before and an unrelated empty cutlist survives; a refused delete leaves the cutlist; and duplicate-then-
+  delete leaves only the source's cutlist. **Four fail against the unfixed source**; the other five are
+  controls (the kept-cutlist cases). 192 tests across the items, locks, attachments, cutlists, related
+  parts, shop floor, actual-costs, duplication and the new file pass.
+- **Known gaps, recorded.**
+  - **Cutlists that kept history stay as empty records** — by design, but nothing lists or flags them, and
+    removing one is manual.
+  - **Existing orphan cutlists are not cleaned up** — the rule applies to deletes from now on; a cutlist
+    already emptied by an earlier delete stays until someone deletes it.
+  - Deleting a project or item through any path other than `DELETE /items/{id}` (e.g. a cascade) does not
+    run this rule.
