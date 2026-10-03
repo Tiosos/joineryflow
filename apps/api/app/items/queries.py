@@ -1353,9 +1353,62 @@ def delete_item(
         new_value=None,
     )
 
+    cutlist_id = db.execute(
+        text("SELECT cutlist_id FROM items WHERE item_id = :iid"), {"iid": item_id}
+    ).scalar()
+
     db.execute(text("DELETE FROM items WHERE item_id = :iid"), {"iid": item_id})
     db.flush()
+    if cutlist_id is not None:
+        _drop_cutlist_if_unused(
+            db, cutlist_id=cutlist_id, workspace_id=workspace_id,
+            actor_id=actor_id, item_id=item_id,
+        )
     return "OK"
+
+
+def _drop_cutlist_if_unused(
+    db: Session, *, cutlist_id: int, workspace_id: int, actor_id: int, item_id: int
+) -> bool:
+    """Remove a cutlist its last item has just left, but only when it never did
+    any production work.
+
+    Deleting a cutlist CASCADEs `worker_assignment` and `stage_completion_log`
+    (`0030`), and the Actual Costs labour figure is priced from the latter — so a
+    cutlist that carries any assignment or completion, undone or not, is kept as
+    an empty record rather than erasing that history. A cutlist that still holds
+    another item is never touched. One statement, so the "no items, no history"
+    test and the delete cannot be split by a concurrent link.
+    """
+    row = db.execute(
+        text(
+            """
+            DELETE FROM cutlist c
+            WHERE c.cutlist_id = :cid
+              AND NOT EXISTS (SELECT 1 FROM items i WHERE i.cutlist_id = c.cutlist_id)
+              AND NOT EXISTS (SELECT 1 FROM worker_assignment w WHERE w.cutlist_id = c.cutlist_id)
+              AND NOT EXISTS (SELECT 1 FROM stage_completion_log l WHERE l.cutlist_id = c.cutlist_id)
+            RETURNING c.cutlist_no, c.project_id
+            """
+        ),
+        {"cid": cutlist_id},
+    ).mappings().first()
+    if row is None:
+        return False
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="cutlist.delete",
+        target=str(cutlist_id),
+        payload={
+            "cutlist_no": row["cutlist_no"],
+            "project_id": row["project_id"],
+            "via": "item.delete",
+            "item_id": item_id,
+        },
+    )
+    return True
 
 
 # ── T16 write helpers ─────────────────────────────────────────────────────────
