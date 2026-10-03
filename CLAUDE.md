@@ -121,7 +121,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `db/` | Alembic migrations `0001`→`0050` (head `0050_item_duplicated_from`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
-| `tests/e2e/` | Playwright specs (see §3) |
+| `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here) |
+| `tests/e2e/` | Playwright specs (31 spec files; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/superpowers/` | Older specs + plans (read `plans/README.md` first) |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -234,7 +235,7 @@ Three lock types on an item: **Hard** (`hard_locked_at`, manager/admin set it, b
 One entry per sub-project: what it is, the rule you most need, and the migration. Full history is in the named file under `docs/sub-projects/`.
 
 ### Core modules — `01-early-sub-projects.md`
-- **Foundation (`0001`–`0007`, `0014`).** Ported schemas (tracking `0001`, procurement `0002`, cut schedule `0003`), self-built auth (`0004`), procurement user profile and views (`0005`–`0006`), catalog reconciliation (`0007`), and the direct `projects.workspace_id` isolation fix (`0014`).
+- **Foundation (`0001`–`0007`, `0014`).** `0001` tracking port (users, projects, items, modules, parts, hardware lines, item stages / status / edit logs, the six catalog tables, batches and allocations); `0002` procurement port (vendors, cost centres, purchase orders + lines, attachments, approvals, budget transactions; legacy `users`, views and PO-number procedure deliberately skipped); `0003` CutPlan / sheet / part slot / CutSchedule; `0004` auth (`workspace`, `app_user`, `session`, `audit_log`); `0005` procurement user profile side-table; `0006` the four legacy views (`v_po_summary`, `v_budget_utilisation`, `v_inventory_status`, `v_orders_due`); `0007` catalog reconciliation (adds `workspace_id`, `sku`, `unit_cost`); `0014` direct `projects.workspace_id` isolation fix.
 - **PM Workbench (#2/#3, `0008`–`0011`).** `/projects`, `/tracking`, item editor (`/items/[id]` tabs). Item writes need `require_drafter()` (drafter/manager/admin). Every item mutation writes `audit_log` + `item_edit_log` together. Controlled Lock replaced the soft lock (`0032`).
 - **Procurement Workbench (#4, `0012`).** `procurement_v1`: project materials, batches, allocations, `/orderbook` delivery queue. Status pill derived in SQL; allocation over-commit and cancelling a batch with allocations are 409.
 - **Shop Drawings (#5a, `0013`, redesign `0044`).** `/shop-dwgs` register table + details panel + full-screen viewer. Revision flow `draft → pending → approved|rejected`, approver ≠ uploader. Queues (Being drawn, Internal review…) are derived from the latest revision, never stored. `drawing_no` from `workspace_counter`.
