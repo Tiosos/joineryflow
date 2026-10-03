@@ -2,6 +2,7 @@
 
 Full per-sub-project records, moved out of `CLAUDE.md`. Read the relevant file before large changes to that area.
 
+- `00-foundation-and-architecture.md` (repo nature, dev loop, auth/RBAC, web shell, architecture invariants, design system)
 - `01-early-sub-projects.md`
 - `02-cutlist-search-material-take.md`
 - `03-tracking-and-item-detail.md`

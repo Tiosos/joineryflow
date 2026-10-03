@@ -201,6 +201,10 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Search:** the outbox is identity-only; a new searchable table needs a trigger in a migration *and* a loader in `documents.py` (a test enforces this). `codes` have typo tolerance **off**. Never index secrets, money, bank/tax fields.
 - **Files:** `file_blob` is workspace-scoped, sha256-deduped, never deleted (no orphan GC), shared by shop drawings, attachments, register, samples and PO attachments. Allowed: PDF / PNG / JPEG, plus `.skp` / `.cvj` (signature **and** extension must agree). 25 MB cap. Each binder checks the mime it accepts.
 
+- **ProjectHardwareCatalog** is a project-scoped link layer: item hardware lines reference materials *through* it (log-only governance, every add/remove audited). `ProcurementBatch → Allocations → item_hardware_line_id` answers "is this item blocked on a material?" as one join.
+- **Three apps, one database:** Project Information Management (Drafter/PM/CEO; Project → Item → Module → Part + HardwareLine + lifecycle), Shop Floor Ops, Cabinet Vision integration layer. Drafter is the authoritative data-entry point.
+- **Legacy `/procurement/*`** (orders, budget, approvals; ported from `legacy/procurement_api.py`) is workspace-scoped through the project-or-vendor join (`_PO_WORKSPACE_EXISTS`); `create_order` / `submit_for_approval` validate every foreign id.
+
 ## 8. API conventions
 
 - Mutations that can be refused return `409 {detail: {code, …}}` with a stable `code`. Prefer codes-and-409 over bare strings.
@@ -283,4 +287,4 @@ Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; 
 
 ## 11. Reference docs
 
-`docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/superpowers/plans/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.
+`docs/sub-projects/00-foundation-and-architecture.md` (the pre-reorganisation preamble, verbatim), `docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/superpowers/plans/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.
