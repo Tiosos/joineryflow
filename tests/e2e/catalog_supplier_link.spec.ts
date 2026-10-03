@@ -544,3 +544,89 @@ test("a held-back line can be marked ordered by hand (reason required), and undo
     await page.request.post(`/api/catalog/board-materials/${materialId}/archive`);
   }
 });
+
+test("a line's materials are ordered separately: the supplied one orders, the other is marked by hand", async ({ page }) => {
+  await login(page, MANAGER);
+  const stamp = Date.now();
+  const made: number[] = [];
+  try {
+    const suppliers = await (await page.request.get("/api/suppliers")).json();
+    const plyco = (suppliers.suppliers ?? suppliers).find((s: { name: string }) => s.name === "Plyco");
+    const board = async (tag: string, extra: Record<string, unknown>) => {
+      const sku = `E2E-${tag}-${stamp}`;
+      const r = await page.request.post("/api/catalog/board-materials", {
+        data: { code: sku, sku, description: `E2E ${tag} ${stamp}`, ...extra },
+      });
+      expect(r.status()).toBe(201);
+      const id = (await r.json()).material_id as number;
+      made.push(id);
+      return id;
+    };
+    const supplied = await board("SUPPLIED", { default_supplier_id: plyco.vendor_id });
+    const orphan = await board("ORPHAN", {});
+    const post = async (url: string, data?: unknown) => {
+      const r = await page.request.post(`/api${url}`, data === undefined ? {} : { data });
+      expect(r.ok(), `${url} -> ${r.status()} ${await r.text()}`).toBe(true);
+      return r.json();
+    };
+    const cust = await post("/customers", { name: `E2E customer ${stamp}` });
+    const est = await post("/estimates", { customer_id: cust.customer_id, title: `E2E ${stamp}` });
+    const rid = est.current_revision_id as number;
+    const line = await post(`/revisions/${rid}/lines`, { description: "Two-material line", qty: 1 });
+    await post(`/lines/${line.line_id}/parts`, { material_type: "BOARD", material_id: supplied, qty: 2 });
+    await post(`/lines/${line.line_id}/parts`, { material_type: "BOARD", material_id: orphan, qty: 1 });
+    for (let i = 0; i < 10; i++) await post(`/revisions/${rid}/advance`);
+    await post(`/revisions/${rid}/accept`);
+    await post(`/revisions/${rid}/convert`);
+    const lineId = line.line_id as number;
+
+    await page.goto(`/estimating/${est.estimate_id}`);
+    await page.getByTestId("generate-orders-btn").click();
+    const dialog = page.getByTestId("order-preview-dialog");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+    // The supplied material is orderable now; the other is flagged, per material.
+    await expect(dialog.getByTestId("order-preview-group")).toContainText("Plyco");
+    await expect(dialog.getByTestId(`order-line-held-${lineId}`)).toBeVisible();
+    const orphanState = dialog.getByTestId(`order-material-state-${lineId}-BOARD-${orphan}`);
+    await expect(orphanState).toHaveText("no supplier");
+    await expect(dialog.getByTestId(`order-material-state-${lineId}-BOARD-${supplied}`)).toHaveText("to order");
+    await expect(page.getByTestId("generate-orders-confirm-btn")).toBeEnabled();
+
+    // Mark just the unsupplied one ordered by hand (reason required).
+    await dialog.getByTestId(`dismiss-material-${lineId}-BOARD-${orphan}`).click();
+    await expect(dialog.getByTestId("dismiss-save")).toBeDisabled();
+    await dialog.getByTestId("dismiss-reason").fill("phoned the stone yard");
+    await dialog.getByTestId("dismiss-save").click();
+    await expect(orphanState).toContainText("phoned the stone yard", { timeout: 15_000 });
+    await expect(dialog.getByTestId(`order-line-held-${lineId}`)).toHaveCount(0);
+    await expect(dialog.getByTestId(`order-material-state-${lineId}-BOARD-${supplied}`)).toHaveText("to order");
+
+    // Undo puts it back to pending / no supplier; mark it again, then order the rest.
+    await dialog.getByTestId(`undo-dismiss-material-${lineId}-BOARD-${orphan}`).click();
+    await expect(orphanState).toHaveText("no supplier", { timeout: 15_000 });
+    await dialog.getByTestId(`dismiss-material-${lineId}-BOARD-${orphan}`).click();
+    await dialog.getByTestId("dismiss-reason").fill("phoned the stone yard");
+    await dialog.getByTestId("dismiss-save").click();
+    await expect(orphanState).toContainText("phoned the stone yard", { timeout: 15_000 });
+
+    await page.getByTestId("generate-orders-confirm-btn").click();
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+    const { orders } = await (await page.request.get("/api/orders")).json();
+    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
+      (o) => o.attributes?.generated_from_revision_id === rid,
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0].vendor_name).toBe("Plyco");
+    // Nothing is left to order on the quote.
+    const pv = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
+    expect(pv.lines[0].selected).toBe(false);
+    const states = Object.fromEntries(
+      pv.lines[0].materials.map((m: { material_id: number; state: string }) => [m.material_id, m.state]),
+    );
+    expect(states).toEqual({ [supplied]: "generated", [orphan]: "dismissed" });
+  } finally {
+    for (const id of made) await page.request.post(`/api/catalog/board-materials/${id}/archive`);
+  }
+});

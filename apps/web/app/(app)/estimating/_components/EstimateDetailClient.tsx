@@ -108,9 +108,10 @@ function summariseGenerateResult(result: GenerateOrdersResult): string {
   const left = result.uncovered_line_ids?.length ?? 0;
   if (left > 0) {
     const n = result.unassigned.length;
-    msg += ` ${left} ${left === 1 ? "line was" : "lines were"} held back whole because ${n}`
-      + ` ${n === 1 ? "material on it has" : "materials on them have"} no default supplier`
-      + " — link a supplier in the Catalog and generate again.";
+    msg += ` ${n} ${n === 1 ? "material was" : "materials were"} not ordered because`
+      + ` ${n === 1 ? "it has" : "they have"} no default supplier, so ${left}`
+      + ` ${left === 1 ? "line is" : "lines are"} still not fully ordered`
+      + " — link a supplier (or mark the material ordered by hand) and generate again.";
   }
   return msg;
 }
@@ -775,6 +776,10 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
   // "Ordered by hand": a line the PM ordered outside the system leaves the pending set.
   // One line at a time (`dismissing`), a required reason, and it can be undone.
   const [dismissing, setDismissing] = useState<number | null>(null);
+  // The same, for a single material on a line.
+  const [dismissingMat, setDismissingMat] = useState<
+    { lineId: number; type: string; id: number } | null
+  >(null);
   const [reason, setReason] = useState("");
   const [lineBusy, setLineBusy] = useState(false);
   const [lineError, setLineError] = useState<string | null>(null);
@@ -835,6 +840,46 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
         setReason("");
       }
       // Either way the server's answer is the truth now.
+      await afterLineChange(lineId, method === "DELETE");
+    } catch {
+      setLineError("Could not reach the server — nothing was changed.");
+    } finally {
+      setLineBusy(false);
+    }
+  }
+
+  async function changeMaterial(
+    lineId: number, type: string, materialId: number, method: "POST" | "DELETE",
+  ) {
+    setLineBusy(true);
+    setLineError(null);
+    try {
+      const r = await fetch(
+        `/api/revisions/${preview.revision_id}/lines/${lineId}/materials/${type}/${materialId}/order-dismissal`,
+        method === "POST"
+          ? {
+              method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            }
+          : { method },
+      );
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        const code = body?.detail?.code;
+        setLineError(
+          code === "ALREADY_GENERATED"
+            ? "A run has already ordered this material — refreshing."
+            : code === "ALREADY_DISMISSED"
+              ? "Someone already marked this material ordered by hand — refreshing."
+              : code === "NOT_DISMISSED"
+                ? "This material is no longer marked ordered by hand — refreshing."
+                : `Could not ${method === "POST" ? "mark" : "undo"} the material (${r.status}).`,
+        );
+      } else {
+        setDismissingMat(null);
+        setReason("");
+      }
       await afterLineChange(lineId, method === "DELETE");
     } catch {
       setLineError("Could not reach the server — nothing was changed.");
@@ -938,7 +983,8 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
             const byHand = l.orders_dismissed_at != null;
             const done = covered || byHand;
             return (
-              <li key={l.line_id} className="flex items-center gap-2">
+              <li key={l.line_id}>
+               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={selected.has(l.line_id)}
@@ -952,7 +998,7 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
                     className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-1.5 text-xs text-amber-900"
                     data-testid={`order-line-held-${l.line_id}`}
                   >
-                    held back — no supplier
+                    some materials have no supplier
                   </span>
                 ) : null}
                 <span
@@ -983,6 +1029,7 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
                     type="button"
                     onClick={() => {
                       setDismissing(dismissing === l.line_id ? null : l.line_id);
+                      setDismissingMat(null);
                       setReason("");
                       setLineError(null);
                     }}
@@ -990,20 +1037,81 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
                     className="whitespace-nowrap text-xs text-h-accent underline disabled:opacity-50"
                     data-testid={`dismiss-line-${l.line_id}`}
                   >
-                    Ordered by hand…
+                    {l.materials && l.materials.length > 1 ? "All by hand…" : "Ordered by hand…"}
                   </button>
                 ) : null}
+               </div>
+               {l.materials && l.materials.length > 1 && !covered && !byHand ? (
+                <ul className="ml-6 mt-0.5 space-y-0.5" data-testid={`order-line-materials-${l.line_id}`}>
+                  {l.materials.map((m) => {
+                    const mKey = `${m.material_type}-${m.material_id}`;
+                    return (
+                      <li
+                        key={mKey}
+                        className="flex items-center gap-2 text-xs text-h-muted"
+                        data-testid={`order-material-${l.line_id}-${mKey}`}
+                      >
+                        <span className="flex-1">{m.sku ?? m.description ?? mKey} × {m.qty}</span>
+                        <span
+                          data-testid={`order-material-state-${l.line_id}-${mKey}`}
+                          title={m.orders_dismissed_reason ?? undefined}
+                        >
+                          {m.state === "generated"
+                            ? `ordered ${new Date(m.orders_generated_at as string).toLocaleDateString()}`
+                            : m.state === "dismissed"
+                              ? `ordered by hand${m.orders_dismissed_by_name ? ` by ${m.orders_dismissed_by_name}` : ""}`
+                                + (m.orders_dismissed_reason ? ` — ${m.orders_dismissed_reason}` : "")
+                              : m.no_supplier ? "no supplier" : "to order"}
+                        </span>
+                        {m.state === "dismissed" ? (
+                          <button
+                            type="button"
+                            onClick={() => void changeMaterial(l.line_id, m.material_type, m.material_id, "DELETE")}
+                            disabled={lineBusy}
+                            className="whitespace-nowrap text-h-accent underline disabled:opacity-50"
+                            data-testid={`undo-dismiss-material-${l.line_id}-${mKey}`}
+                          >
+                            Undo
+                          </button>
+                        ) : m.state === "pending" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const same = dismissingMat?.lineId === l.line_id
+                                && dismissingMat.type === m.material_type && dismissingMat.id === m.material_id;
+                              setDismissingMat(same ? null : { lineId: l.line_id, type: m.material_type, id: m.material_id });
+                              setDismissing(null);
+                              setReason("");
+                              setLineError(null);
+                            }}
+                            disabled={lineBusy}
+                            className="whitespace-nowrap text-h-accent underline disabled:opacity-50"
+                            data-testid={`dismiss-material-${l.line_id}-${mKey}`}
+                          >
+                            Ordered by hand…
+                          </button>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+               ) : null}
               </li>
             );
           })}
         </ul>
-        {dismissing !== null ? (
+        {dismissing !== null || dismissingMat !== null ? (
           <form
             className="space-y-2 rounded border border-h-line bg-h-bg p-2 text-sm"
             data-testid="dismiss-form"
             onSubmit={(e) => {
               e.preventDefault();
-              if (reason.trim()) void changeLine(dismissing, "POST");
+              if (!reason.trim()) return;
+              if (dismissingMat !== null) {
+                void changeMaterial(dismissingMat.lineId, dismissingMat.type, dismissingMat.id, "POST");
+              } else if (dismissing !== null) {
+                void changeLine(dismissing, "POST");
+              }
             }}
           >
             <label className="block text-xs text-h-muted" htmlFor="dismiss-reason">
@@ -1033,6 +1141,7 @@ function OrderPreviewDialog({ preview: initial, busy, onConfirm, onCancel, onCha
                 type="button"
                 onClick={() => {
                   setDismissing(null);
+                  setDismissingMat(null);
                   setReason("");
                 }}
                 className="rounded border border-h-line px-3 py-1 text-xs text-h-muted"

@@ -633,41 +633,60 @@ def _mixed_quote(ctx, *, shared_line: bool = False):
     return est["estimate_id"], rid, mixed["line_id"], plain["line_id"] if plain else None
 
 
-def test_a_line_with_any_unassigned_material_is_held_back_whole():
-    """Ordering part of a line would either lose the rest (if the line counted as
-    covered) or order that part twice on the next run (if it did not). So the line
-    waits, whole, until every material on it has a supplier."""
+def test_a_line_with_a_supplied_and_an_unsupplied_material_orders_only_the_supplied_one():
+    """Coverage is per material: the board with a supplier is ordered now; the one without
+    stays pending (and so does its line) until a supplier is linked."""
     ctx = _bootstrap()
     c = ctx["client"]
     eid, rid, mixed, _ = _mixed_quote(ctx)
 
     pv = c.get(f"/revisions/{rid}/order-preview").json()
-    assert pv["groups"] == [] and len(pv["unassigned"]) == 1
+    assert len(pv["groups"]) == 1 and len(pv["unassigned"]) == 1
+    assert [l["material_id"] for l in pv["groups"][0]["lines"]] == [ctx["board_id"]]
+    assert pv["unassigned"][0]["material_id"] == ctx["unassigned_board_id"]
     assert [(l["selected"], l["held_back"]) for l in pv["lines"]] == [(True, True)]
+    states = {m["material_id"]: (m["state"], m["no_supplier"]) for m in pv["lines"][0]["materials"]}
+    assert states == {ctx["board_id"]: ("pending", False),
+                      ctx["unassigned_board_id"]: ("pending", True)}
 
     r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orders_created"] == 1 and body["lines_created"] == 1
+    assert body["uncovered_line_ids"] == [mixed] and len(body["unassigned"]) == 1
+    assert _board_qty(c, body["po_ids"][0]) == 2.0
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is None, "line still pending"
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    states = {m["material_id"]: m["state"] for m in pv["lines"][0]["materials"]}
+    assert states == {ctx["board_id"]: "generated", ctx["unassigned_board_id"]: "pending"}
+    # Nothing new can be ordered until the supplier is linked.
+    r = c.post(f"/revisions/{rid}/generate-orders")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
-    assert _po_count(ctx["wid"]) == 0
-    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is None
+    assert _po_count(ctx["wid"]) == 1
 
 
-def test_a_held_back_line_orders_once_with_all_its_materials_after_the_link():
+def test_the_unsupplied_material_orders_alone_after_the_link_and_the_first_is_not_repeated():
     ctx = _bootstrap()
     c = ctx["client"]
     eid, rid, mixed, _ = _mixed_quote(ctx)
+    first = c.post(f"/revisions/{rid}/generate-orders").json()
     _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
 
     r = c.post(f"/revisions/{rid}/generate-orders")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["orders_created"] == 1 and body["lines_created"] == 2
+    assert body["orders_created"] == 1 and body["lines_created"] == 1
     assert body["unassigned"] == [] and body["uncovered_line_ids"] == []
+    po = c.get(f"/orders/{body['po_ids'][0]}").json()
+    assert [l["material_id"] for l in po["lines"]] == [ctx["unassigned_board_id"]]
+    assert body["po_ids"][0] != first["po_ids"][0]
     assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is not None
     r = c.post(f"/revisions/{rid}/generate-orders")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
 
 
-def test_a_material_shared_with_a_held_back_line_is_ordered_for_the_covered_line_only():
+def test_a_material_shared_between_lines_is_ordered_for_each_lines_pending_quantity():
     ctx = _bootstrap()
     c = ctx["client"]
     eid, rid, mixed, plain = _mixed_quote(ctx, shared_line=True)
@@ -680,19 +699,20 @@ def test_a_material_shared_with_a_held_back_line_is_ordered_for_the_covered_line
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["orders_created"] == 1 and body["uncovered_line_ids"] == [mixed]
-    assert _board_qty(c, body["po_ids"][0]) == 3.0  # Plain's 3, not Mixed's 2 as well
+    assert _board_qty(c, body["po_ids"][0]) == 5.0  # Plain's 3 + Mixed's 2
     flags = _line_flags(c, eid, rid)
     assert flags[plain]["orders_generated_at"] is not None
     assert flags[mixed]["orders_generated_at"] is None
 
-    # once linked, the held line orders in full — the shared board for its own 2
+    # once linked, only what is still pending orders: the unsupplied board's 1
     _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
     r = c.post(f"/revisions/{rid}/generate-orders")
     assert r.status_code == 200, r.text
-    assert r.json()["lines_created"] == 2 and r.json()["uncovered_line_ids"] == []
+    assert r.json()["lines_created"] == 1 and r.json()["uncovered_line_ids"] == []
     po = c.get(f"/orders/{r.json()['po_ids'][0]}").json()
     qty = {l["material_id"]: float(l["quantity"]) for l in po["lines"]}
-    assert qty == {ctx["board_id"]: 2.0, ctx["unassigned_board_id"]: 1.0}
+    assert qty == {ctx["unassigned_board_id"]: 1.0}
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is not None
 
 
 def _archive(table: str, id_col: str, material_id: int) -> None:

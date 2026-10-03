@@ -1235,7 +1235,7 @@
 - **Out of scope (deferred):** per-material coverage; ~~an "ordered by hand" dismissal~~ (**built, see *Generate Orders: mark
   a line ordered by hand***); a link-supplier shortcut inside the dialog.
 
-## Generate Orders: a line is ordered whole or held back whole (no migration) — shipped
+## Generate Orders: a line is ordered whole or held back whole (no migration) — shipped, then superseded by *per-material coverage* below
 
 > Chosen by the user ("Go with your recommendation of fixes to build") after the max-level review of PR #66 listed
 > eight findings. This builds #1–#5, #7 and #8; **#6 (the Catalog grid's free-text clear is a no-op) was
@@ -1471,3 +1471,59 @@
   - A dismissed line is excluded from generation for good *until* undone; there is no expiry and no list of dismissals beyond the
     dialog and the audit log.
   - Per-material coverage is still not built: a line is ordered, held back or dismissed whole.
+
+## Generate Orders: per-material coverage (Plan V1 §21 follow-up, migration `0051`) — shipped
+
+> Chosen by the user ("Do item 1 first and then Item 3" from the next-task list) — the "per-material order coverage" gap
+> *Generate Orders: a line is ordered whole or held back whole* recorded as deferred ("option B"). It changed rules the user had
+> settled earlier, so four questions were asked before any code was written; the answers are **settled decisions**, each the
+> recommended option: **a new table per line + material**, **order what has a supplier and track the rest**, **"ordered by hand" per
+> material with its own required note (the whole-line button stays as a shortcut)**, and **back-fill by copying the line's state to
+> each of its materials**. No spec or plan doc; this section is its written record. It **supersedes** the whole-or-nothing rule.
+
+- **Migration `0051`** — `estimate_line_material_order(line_id, material_type, material_id, orders_generated_at,
+  orders_dismissed_at/by/reason)`, PK `(line_id, material_type, material_id)`, `ON DELETE CASCADE` from the line. **A row exists only
+  for a material that is settled**; no row = pending. CHECKs: exactly one of ordered / dismissed, the dismissal columns travel
+  together, reason 1–500 characters. Back-fill: a line already covered gets every distinct material (parts and hardware) marked
+  generated with the line's timestamp; a dismissed line gets each dismissed with the line's time, user and reason. Verified on a
+  database holding a covered line and a dismissed line (3 rows, right states); upgrade → downgrade → upgrade. The downgrade drops the
+  table (the line columns keep the line-level state, so per-material distinctions made afterwards are lost).
+- **The rule (`estimating/queries.py::_build_order_groups`).** Each *pending* material on a selected line is ordered when it has a
+  default supplier and stays pending when it has none. A line that is part-ordered stays pending and is returned in
+  `uncovered_line_ids`; the supplier-less pending materials come back as `unassigned`. A material is never ordered twice: what a run
+  ordered is recorded (`orders_generated_at`) and skipped from then on, and quantities are summed over the *pending* (line, material)
+  pairs only — a material shared by two lines orders for exactly what is still pending. `409 NOTHING_ORDERABLE` still answers a run
+  that would create no order but has supplier-less materials. A line with **no** catalog material (labour only) is covered directly,
+  as before.
+- **Line columns are derived.** For a line that references catalog materials, `estimate_line.orders_generated_at` /
+  `orders_dismissed_*` are re-derived from its material rows after every change (`_refresh_line_state`): both NULL while any material is
+  pending; once none is, *generated* (latest time) if any material was ordered by a run, else *dismissed* (latest dismissal's user and
+  reason). So every earlier consumer — `LINES_ALREADY_GENERATED`, `LINES_DISMISSED`, the page's "N lines not yet ordered" bar, the audit
+  rows — keeps its meaning, and the table is the only thing to write.
+- **Endpoints** (`estimating:approve`; both lock the revision row): `POST` / `DELETE
+  /revisions/{rid}/lines/{lid}/materials/{material_type}/{material_id}/order-dismissal`. Refusals: `404 NOT_FOUND`, `404 LINE_NOT_FOUND`,
+  `404 MATERIAL_NOT_ON_LINE`, `409 NOT_CONVERTED`, `409 LINE_NOT_IN_HANDOVER`, `409 ALREADY_GENERATED`, `409 ALREADY_DISMISSED`,
+  `409 NOT_DISMISSED`; a bad reason or `material_type` is `422`. Audit `estimate.order_material_dismiss` / `…_undismiss`; the run's
+  `estimate.generate_orders` row gained `materials_ordered` (its `included_line_ids` now means lines the run *finished*).
+  The existing **line-level** verbs now act on materials: dismissing a line marks every still-pending material with the one note
+  (what a run ordered is left alone); undoing it reopens only the dismissed ones, never one a run ordered.
+- **API shape.** `OrderPreviewSourceLineOut.materials[]` (sku, description, qty on that line, `state`
+  `pending | generated | dismissed`, who / why / when, `no_supplier`); `held_back` now means "a pending material has no supplier".
+- **Web (`EstimateDetailClient.tsx`).** In the Generate Orders dialog a line with more than one material shows a per-material list
+  (`order-material-state-…`: "to order", "no supplier", "ordered {date}", "ordered by hand — reason") with **Ordered by hand…** and
+  **Undo** per material, reusing the one reason form; the line's own button reads **All by hand…** for such a line. The chip on a
+  ticked line reads "some materials have no supplier"; the result banner says how many materials were not ordered.
+- **Tests.** `test_estimating_material_coverage.py` (new, 16): one material ordered by hand while the rest orders; all dismissed
+  reads as a dismissed line; undo reopens the line; the line button dismisses only what is pending and its undo never reopens a
+  generated material; a generated material cannot be dismissed; double dismissal; reason bounds; unknown material / line / revision /
+  type; audit rows; the run's `materials_ordered`; `estimating:approve` and workspace isolation; the DB refuses ordered-and-dismissed;
+  deleting a line removes its rows. Three tests in `test_estimating_generate_orders.py` that pinned whole-or-nothing were rewritten
+  (supplied material orders alone; the unsupplied one orders alone after the link without repeating the first; a shared material orders
+  for each line's pending quantity). `tests/e2e/catalog_supplier_link.spec.ts` gained a 14th test, run with the other 13 against a fresh
+  migrated, seeded database on a production build: a two-material line shows "no supplier" / "to order", one material is marked by hand
+  (Save disabled until a reason), undone and marked again, and generating makes one Plyco PO with the line done.
+- **Known gaps, recorded.**
+  - **A dismissal still does not link to a PO** and nothing verifies the order happened; the note is the only record (as before).
+  - **Per-material dismissal is allowed only on lines handed over at Convert** and while the revision is converted, like the line verb.
+  - A material that appears in both a part row and a hardware row of one line is one material (same key) with one state.
+  - Any `estimating:approve` user can undo anyone's per-material dismissal.

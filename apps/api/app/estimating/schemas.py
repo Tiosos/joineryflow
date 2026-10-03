@@ -24,6 +24,7 @@ EstimateStatus = Literal[
 ]
 PartMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP"]
 HardwareMaterialType = Literal["HARDWARE", "APPLIANCE"]
+OrderMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
 StageKey = Literal[
     "REQ", "SM", "LISTED", "DOWN", "CNC", "EDGED", "PAINTED",
     "MADE", "DEL", "INST",
@@ -376,6 +377,24 @@ class OrderPreviewGroupOut(BaseModel):
     lines: list[OrderPreviewLineOut] = []
 
 
+class OrderPreviewMaterialOut(BaseModel):
+    """One catalog material on a quote line, with its own order state."""
+    material_type: str
+    material_id: int
+    sku: str | None = None
+    description: str | None = None
+    # Total quantity of it on this line.
+    qty: Decimal
+    # `pending` (still to order), `generated` (a run ordered it) or `dismissed` (ordered by hand).
+    state: Literal["pending", "generated", "dismissed"]
+    orders_generated_at: datetime | None = None
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
+    # Its catalog row has no default supplier, so a run cannot order it.
+    no_supplier: bool = False
+
+
 class OrderPreviewSourceLineOut(BaseModel):
     """A quote line the Generate Orders dialog can tick."""
     line_id: int
@@ -391,8 +410,10 @@ class OrderPreviewSourceLineOut(BaseModel):
     orders_dismissed_by_name: str | None = None
     # In the selection the groups below were computed for.
     selected: bool
-    # Selected, but a material on it has no supplier, so a run holds it back.
+    # Selected, but a pending material on it has no supplier, so a run cannot finish it.
     held_back: bool = False
+    # The line's catalog materials and the state of each (empty for a labour-only line).
+    materials: list[OrderPreviewMaterialOut] = []
 
 
 class OrderPreviewOut(BaseModel):
@@ -408,7 +429,7 @@ class OrderPreviewOut(BaseModel):
 
 class LinkSupplierIn(BaseModel):
     """Give a supplier-less material on this revision its supplier (Generate Orders)."""
-    material_type: Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
+    material_type: OrderMaterialType
     material_id: int
     supplier_id: int
 
@@ -437,6 +458,7 @@ class GenerateOrdersResultOut(BaseModel):
     lines_created: int
     po_ids: list[int]
     unassigned: list[OrderPreviewLineOut] = []
-    # Selected lines held back because a material on them has no supplier — they
-    # are not ordered at all and can be generated once one is linked in the Catalog.
+    # Selected lines not finished because a material on them has no supplier: that
+    # material is not ordered (the rest of the line is) and stays orderable once a
+    # supplier is linked in the Catalog.
     uncovered_line_ids: list[int] = []
