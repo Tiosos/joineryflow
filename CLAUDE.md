@@ -5739,6 +5739,18 @@ since been built.**
 - **Known gaps, recorded.**
   - **The job's own CI run is the first time the compose path runs end to end**: what was verified locally is the same
     suite against a production build on a fresh database (no Docker daemon in the sandbox), not the workflow itself.
-  - The search specs have **never** run past their skip until this job runs them (Meilisearch is a compose service here).
+  - ~~The search specs have **never** run past their skip until this job runs them.~~ **They did, on the job's first run
+    (PR #69): both passed** — 120 passed, 1 failed, 0 skipped. That run is also the first time the workflow itself ran
+    end to end, and every step worked.
+  - **The first run's one failure was a real race in a spec, not the job**: `comments.spec.ts` "a mention on an area's or
+    room's thread deep-links…" typed the note straight after clicking a mention in the picker. `MentionTextarea.choose()`
+    re-places the caret in a `requestAnimationFrame`, so on the slower runner the note's characters landed out of order
+    and the comment (a 201 in the API log) did not read as the note. It failed on both attempts at different steps (area,
+    then room), which is how it was told apart from a one-off. The spec now waits for the picker to close — it closes only
+    after that frame has run — before typing. **Not reproduced locally** (it passed on every local run, before and after),
+    so the fix is reasoned from the code and the API log, not demonstrated by a red-then-green run.
+  - **Reading a failed CI run from here:** the job log is one long line per request; the Playwright summary (`N failed`,
+    the `Locator:` / `Error:` lines) sits above the compose-log dump. `get_job_logs` with a large `tail_lines` saves to a
+    file that can be searched; the signed log URL and `gh api …/logs` are both blocked by the sandbox proxy.
   - ~10 minutes of Actions time per push on top of the other two jobs; the `concurrency` group cancels a superseded run.
   - Failures show as a red `E2E (Playwright)` row, not a blocked merge. Someone has to look.

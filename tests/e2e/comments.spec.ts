@@ -188,6 +188,10 @@ test("a mention on an area's or room's thread deep-links the notification to tha
     await input.click();
     await input.pressSequentially("@Rin");
     await card.getByTestId("mention-suggestions").getByText("Rin Park").click();
+    // Choosing a member re-places the caret in an animation frame; the picker closes only
+    // once that has run. Typing before then lands the note's characters out of order (seen
+    // on the slower CI runner), so wait for the picker to close.
+    await expect(card.getByTestId("mention-suggestions")).toBeHidden();
     await input.pressSequentially(note);
     await card.getByTestId("comment-submit").click();
     await expect(card.getByText(note)).toBeVisible();
