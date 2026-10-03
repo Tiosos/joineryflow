@@ -1729,6 +1729,25 @@ def revision_detail(
             {"ids": line_ids},
         ).mappings():
             lab_by_line[int(r["line_id"])].append(dict(r))
+    mo_by_line: dict[int, dict[tuple[str, int], dict]] = {lid: {} for lid in line_ids}
+    if line_ids:
+        for r in db.execute(
+            text(
+                """
+                SELECT m.line_id, m.material_type, m.material_id,
+                       m.orders_generated_at, m.orders_dismissed_at,
+                       m.orders_dismissed_reason,
+                       u.full_name AS orders_dismissed_by_name
+                  FROM estimate_line_material_order m
+                  LEFT JOIN app_user u ON u.id = m.orders_dismissed_by
+                 WHERE m.line_id = ANY(:ids)
+                """
+            ),
+            {"ids": line_ids},
+        ).mappings():
+            mo_by_line[int(r["line_id"])][
+                (r["material_type"], int(r["material_id"]))
+            ] = dict(r)
 
     markup_pct = rev["markup_pct"] or Decimal("0")
     lines_out = []
@@ -1749,6 +1768,9 @@ def revision_detail(
                 "parts": parts_by_line[lid],
                 "hardware": hw_by_line[lid],
                 "labour": lab_by_line[lid],
+                # Per-material order state (ordered / ordered by hand); a material
+                # with no entry is still pending. Not part of `LineOut`.
+                "material_orders": mo_by_line[lid],
             }
         )
 
@@ -2221,17 +2243,36 @@ def _line_material_keys(line: dict) -> set[tuple[str, int]]:
     return {(r["material_type"], int(r["material_id"])) for r in _material_rows(line)}
 
 
-def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
+def _material_state(line: dict, key: tuple[str, int]) -> str:
+    """`generated` (a run ordered it), `dismissed` (ordered by hand) or `pending`."""
+    row = (line.get("material_orders") or {}).get(key)
+    if row is None:
+        return "pending"
+    return "generated" if row.get("orders_generated_at") is not None else "dismissed"
+
+
+def _pending_keys(line: dict) -> set[tuple[str, int]]:
+    """The materials on one quote line that are still to order."""
+    return {k for k in _line_material_keys(line) if _material_state(line, k) == "pending"}
+
+
+def _collect_order_materials(
+    lines: list[dict], include=None,
+) -> dict[tuple[str, int], dict]:
     """Consolidates every parts/hardware breakdown row with a real
     material_id across `lines`, summing qty per distinct (material_type,
     material_id) — the same SKU quoted on five different lines becomes one
     PO line for the total quantity, not five. Cut dimensions (len_mm/wid_mm)
     are deliberately dropped: they're cutting information for Production,
-    not purchasing information for a PO."""
+    not purchasing information for a PO. `include(line_id, key)`, when given,
+    keeps only the (line, material) pairs it accepts."""
     materials: dict[tuple[str, int], dict] = {}
     for line in lines:
+        lid = int(line["line_id"])
         for r in _material_rows(line):
             key = (r["material_type"], int(r["material_id"]))
+            if include is not None and not include(lid, key):
+                continue
             m = materials.setdefault(key, {
                 "material_type": r["material_type"],
                 "material_id": int(r["material_id"]),
@@ -2244,28 +2285,12 @@ def _collect_order_materials(lines: list[dict]) -> dict[tuple[str, int], dict]:
     return materials
 
 
-def _build_order_groups(
-    db: Session, *, workspace_id: int, lines: list[dict],
-) -> tuple[dict[int, dict], list[dict], set[int], set[int]]:
-    """Plans one Generate Orders run over `lines`. Returns (groups keyed by
-    supplier_id, unassigned, covered line ids, held-back line ids).
-
-    **A line is ordered whole or not at all.** A material with no default
-    supplier can't become a PO line automatically (`purchase_orders.vendor_id` is
-    NOT NULL), so a line using one is *held back*: none of its materials are
-    ordered by this run and it stays orderable, to be generated in one go once the
-    missing supplier is linked in the Catalog. Ordering part of a line and leaving
-    the rest would either lose the remainder (if the line counted as covered) or
-    order the first part twice (if it did not). A line is *covered* when every
-    material it references has a supplier — or it references none at all (a
-    labour-only line has nothing to order and must not stay pending forever).
-
-    Groups are built from covered lines only, so a material shared with a held-back
-    line is ordered for the covered lines' quantity alone. `unassigned` lists the
-    supplier-less materials (of every selected line) that are holding lines back."""
-    all_materials = _collect_order_materials(lines)
+def _load_order_sources(
+    db: Session, *, workspace_id: int, keys,
+) -> dict[tuple[str, int], dict]:
+    """Live catalog source (sku, description, cost, supplier) for each (type, id)."""
     ids_by_type: dict[str, list[int]] = {}
-    for mtype, mid in all_materials:
+    for mtype, mid in keys:
         ids_by_type.setdefault(mtype, []).append(mid)
     sources: dict[tuple[str, int], dict] = {}
     for mtype, ids in ids_by_type.items():
@@ -2274,17 +2299,48 @@ def _build_order_groups(
         )
         for mid, src in batch.items():
             sources[(mtype, mid)] = src
+    return sources
 
-    def supplier_of(key: tuple[str, int]) -> int | None:
-        src = sources.get(key)
-        return int(src["supplier_id"]) if src and src["supplier_id"] is not None else None
 
-    covered = [
-        l for l in lines
-        if all(supplier_of(k) is not None for k in _line_material_keys(l))
-    ]
-    covered_ids = {int(l["line_id"]) for l in covered}
-    held_ids = {int(l["line_id"]) for l in lines} - covered_ids
+def _supplier_of(sources: dict, key: tuple[str, int]) -> int | None:
+    src = sources.get(key)
+    return int(src["supplier_id"]) if src and src["supplier_id"] is not None else None
+
+
+def _build_order_groups(
+    db: Session, *, workspace_id: int, lines: list[dict],
+) -> tuple[dict[int, dict], list[dict], set[tuple[int, tuple[str, int]]], set[int], set[int]]:
+    """Plans one Generate Orders run over `lines`. Returns (groups keyed by
+    supplier_id, unassigned, ordered (line_id, material) pairs, covered line ids,
+    held-back line ids).
+
+    **Coverage is per material.** Each material on a line that is still pending is
+    ordered when it has a default supplier, and stays pending when it has none (a PO
+    needs a vendor — `purchase_orders.vendor_id` is NOT NULL). So a line with a board
+    that has a supplier and a hinge that has none orders the board now and keeps the hinge
+    to order once a supplier is linked (or to mark ordered by hand). Materials a run or a
+    person already settled are never ordered again.
+
+    A line is *covered* by this run when none of its pending materials lacks a supplier
+    (nothing left to order on it) — including a line that references no catalog material at
+    all (labour only: nothing to order, and it must not stay pending forever). A line is
+    *held back* when a pending material has no supplier, i.e. it is only partly ordered, or
+    not at all. `unassigned` lists those supplier-less pending materials (of every selected
+    line)."""
+    pending_by_line = {int(l["line_id"]): _pending_keys(l) for l in lines}
+    pending_sums = _collect_order_materials(
+        lines, include=lambda lid, key: key in pending_by_line[lid],
+    )
+    sources = _load_order_sources(db, workspace_id=workspace_id, keys=pending_sums.keys())
+
+    ordered: set[tuple[int, tuple[str, int]]] = set()
+    covered_ids: set[int] = set()
+    held_ids: set[int] = set()
+    for l in lines:
+        lid = int(l["line_id"])
+        missing = {k for k in pending_by_line[lid] if _supplier_of(sources, k) is None}
+        (held_ids if missing else covered_ids).add(lid)
+        ordered |= {(lid, k) for k in pending_by_line[lid] - missing}
 
     def entry_for(key: tuple[str, int], m: dict) -> dict:
         src = sources.get(key)
@@ -2302,11 +2358,14 @@ def _build_order_groups(
         }
 
     unassigned = [
-        entry_for(k, m) for k, m in all_materials.items() if supplier_of(k) is None
+        entry_for(k, m) for k, m in pending_sums.items()
+        if _supplier_of(sources, k) is None
     ]
     groups: dict[int, dict] = {}
-    for key, m in _collect_order_materials(covered).items():
-        supplier_id = supplier_of(key)
+    for key, m in _collect_order_materials(
+        lines, include=lambda lid, k: (lid, k) in ordered,
+    ).items():
+        supplier_id = _supplier_of(sources, key)
         group = groups.setdefault(supplier_id, {
             "supplier_id": supplier_id,
             "supplier_name": sources[key]["supplier_name"],
@@ -2323,7 +2382,7 @@ def _build_order_groups(
         dominant = max(group["_type_counts"].items(), key=lambda kv: kv[1])[0]
         group["category"] = dominant.capitalize()
         del group["_type_counts"]
-    return groups, unassigned, covered_ids, held_ids
+    return groups, unassigned, ordered, covered_ids, held_ids
 
 
 def _line_pending(l: dict) -> bool:
@@ -2376,6 +2435,71 @@ def _order_selection(
             json.dumps({"code": "LINES_DISMISSED", "line_ids": sorted(dismissed)})
         )
     return shown, [l for l in lines if int(l["line_id"]) in ids]
+
+
+def _line_keys_db(db: Session, line_id: int) -> list[tuple[str, int]]:
+    """The distinct catalog materials one quote line references, from the database."""
+    rows = db.execute(
+        text(
+            """
+            SELECT material_type, material_id FROM estimate_line_part
+             WHERE line_id = :l AND material_id IS NOT NULL
+            UNION
+            SELECT material_type, material_id FROM estimate_line_hardware
+             WHERE line_id = :l AND material_id IS NOT NULL
+            """
+        ),
+        {"l": line_id},
+    ).all()
+    return sorted((r[0], int(r[1])) for r in rows)
+
+
+def _refresh_line_state(db: Session, line_id: int) -> None:
+    """Re-derive `estimate_line.orders_generated_at` / `orders_dismissed_*` from the line's
+    per-material rows (`estimate_line_material_order`), for a line that references catalog
+    materials. While any material is pending the line is pending (both NULL). Once none is:
+    if any was ordered by a run, the line reads *generated* (at the latest such time); if all
+    were ordered by hand, it reads *dismissed* (with the latest dismissal's user and reason).
+    A line with no catalog materials is left alone — its columns are written directly."""
+    keys = _line_keys_db(db, line_id)
+    if not keys:
+        return
+    rows = db.execute(
+        text(
+            """
+            SELECT orders_generated_at, orders_dismissed_at,
+                   orders_dismissed_by, orders_dismissed_reason
+              FROM estimate_line_material_order WHERE line_id = :l
+            """
+        ),
+        {"l": line_id},
+    ).mappings().all()
+    # Rows exist only for keys the line references, but a quote line's materials are
+    # frozen once WON, so `len(rows) == len(keys)` means nothing is pending.
+    settled = [r for r in rows if (r["orders_generated_at"] or r["orders_dismissed_at"])]
+    gens = [r["orders_generated_at"] for r in settled if r["orders_generated_at"]]
+    dis = [r for r in settled if r["orders_dismissed_at"]]
+    if len(settled) < len(keys):
+        values = (None, None, None, None)
+    elif gens:
+        values = (max(gens), None, None, None)
+    else:
+        last = max(dis, key=lambda r: r["orders_dismissed_at"])
+        values = (
+            None, last["orders_dismissed_at"], last["orders_dismissed_by"],
+            last["orders_dismissed_reason"],
+        )
+    db.execute(
+        text(
+            """
+            UPDATE estimate_line
+               SET orders_generated_at = :g, orders_dismissed_at = :da,
+                   orders_dismissed_by = :db, orders_dismissed_reason = :dr
+             WHERE line_id = :l
+            """
+        ),
+        {"g": values[0], "da": values[1], "db": values[2], "dr": values[3], "l": line_id},
+    )
 
 
 # The catalog event name a material type's row writes on an update (`catalog/routes.py`).
@@ -2467,10 +2591,41 @@ def order_preview(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
     shown, selected = _order_selection(rev, detail["lines"], include_line_ids)
-    groups, unassigned, _covered, held_ids = _build_order_groups(
+    groups, unassigned, _ordered, _covered, held_ids = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected,
     )
     selected_ids = {int(l["line_id"]) for l in selected}
+    # Every material the dialog lists, whatever its state, with its live supplier.
+    shown_sums = _collect_order_materials(shown)
+    sources = _load_order_sources(
+        db, workspace_id=workspace_id, keys=shown_sums.keys(),
+    )
+
+    def material_entries(l: dict) -> list[dict]:
+        out = []
+        for key in sorted(_line_material_keys(l)):
+            qty = sum(
+                (Decimal(str(r["qty"])) for r in _material_rows(l)
+                 if (r["material_type"], int(r["material_id"])) == key),
+                Decimal("0"),
+            )
+            row = (l.get("material_orders") or {}).get(key) or {}
+            src = sources.get(key)
+            fb = shown_sums[key]
+            out.append({
+                "material_type": key[0], "material_id": key[1],
+                "sku": src["sku"] if src else fb["fallback_sku"],
+                "description": src["description"] if src else fb["fallback_description"],
+                "qty": qty,
+                "state": _material_state(l, key),
+                "orders_generated_at": row.get("orders_generated_at"),
+                "orders_dismissed_at": row.get("orders_dismissed_at"),
+                "orders_dismissed_reason": row.get("orders_dismissed_reason"),
+                "orders_dismissed_by_name": row.get("orders_dismissed_by_name"),
+                "no_supplier": _supplier_of(sources, key) is None,
+            })
+        return out
+
     return {
         "revision_id": revision_id,
         "status": rev["status"],
@@ -2489,6 +2644,7 @@ def order_preview(
                 "orders_dismissed_by_name": l.get("orders_dismissed_by_name"),
                 "selected": int(l["line_id"]) in selected_ids,
                 "held_back": int(l["line_id"]) in held_ids,
+                "materials": material_entries(l),
             }
             for l in shown
         ],
@@ -2537,17 +2693,36 @@ def dismiss_order_line(
         raise ValueError(json.dumps({"code": "ALREADY_GENERATED"}))
     if row["orders_dismissed_at"] is not None:
         raise ValueError(json.dumps({"code": "ALREADY_DISMISSED"}))
-    db.execute(
-        text(
-            """
-            UPDATE estimate_line
-               SET orders_dismissed_at = now(), orders_dismissed_by = :u,
-                   orders_dismissed_reason = :why
-             WHERE line_id = :lid
-            """
-        ),
-        {"u": actor_id, "why": reason, "lid": line_id},
-    )
+    keys = _line_keys_db(db, line_id)
+    if keys:
+        # Per-material coverage: the one note covers every material still pending on the
+        # line (those a run already ordered, or that were dismissed, are left as they are).
+        for mtype, mid in keys:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO estimate_line_material_order
+                           (line_id, material_type, material_id,
+                            orders_dismissed_at, orders_dismissed_by, orders_dismissed_reason)
+                    VALUES (:lid, :t, :m, now(), :u, :why)
+                    ON CONFLICT (line_id, material_type, material_id) DO NOTHING
+                    """
+                ),
+                {"lid": line_id, "t": mtype, "m": mid, "u": actor_id, "why": reason},
+            )
+        _refresh_line_state(db, line_id)
+    else:
+        db.execute(
+            text(
+                """
+                UPDATE estimate_line
+                   SET orders_dismissed_at = now(), orders_dismissed_by = :u,
+                       orders_dismissed_reason = :why
+                 WHERE line_id = :lid
+                """
+            ),
+            {"u": actor_id, "why": reason, "lid": line_id},
+        )
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="estimate.order_dismiss", target=str(revision_id),
@@ -2559,9 +2734,10 @@ def dismiss_order_line(
 def restore_order_line(
     db: Session, *, revision_id: int, workspace_id: int, actor_id: int, line_id: int,
 ) -> None:
-    """Undo `dismiss_order_line`: the line is orderable again. Safe against ordering a
-    line twice because the system never ordered it. The reason being cleared is kept in
-    the audit row. Raises NOT_FOUND (revision), LINE_NOT_FOUND, NOT_DISMISSED."""
+    """Undo `dismiss_order_line`: every material of the line that was marked ordered by
+    hand is pending again (a material a run ordered is left alone). Safe against ordering
+    twice because the system never ordered what was dismissed. The reason being cleared is
+    kept in the audit row. Raises NOT_FOUND (revision), LINE_NOT_FOUND, NOT_DISMISSED."""
     rev = lock_revision_for_update(db, revision_id=revision_id, workspace_id=workspace_id)
     if rev is None:
         raise ValueError("NOT_FOUND")
@@ -2578,25 +2754,151 @@ def restore_order_line(
     ).mappings().first()
     if row is None:
         raise ValueError(json.dumps({"code": "LINE_NOT_FOUND"}))
-    if row["orders_dismissed_at"] is None:
-        raise ValueError(json.dumps({"code": "NOT_DISMISSED"}))
-    db.execute(
-        text(
-            """
-            UPDATE estimate_line
-               SET orders_dismissed_at = NULL, orders_dismissed_by = NULL,
-                   orders_dismissed_reason = NULL
-             WHERE line_id = :lid
-            """
-        ),
-        {"lid": line_id},
-    )
+    previous_reason = row["orders_dismissed_reason"]
+    if _line_keys_db(db, line_id):
+        removed = db.execute(
+            text(
+                """
+                DELETE FROM estimate_line_material_order
+                 WHERE line_id = :lid AND orders_dismissed_at IS NOT NULL
+             RETURNING orders_dismissed_reason, orders_dismissed_at
+                """
+            ),
+            {"lid": line_id},
+        ).all()
+        if not removed:
+            raise ValueError(json.dumps({"code": "NOT_DISMISSED"}))
+        previous_reason = max(removed, key=lambda r: r[1])[0]
+        _refresh_line_state(db, line_id)
+    else:
+        if row["orders_dismissed_at"] is None:
+            raise ValueError(json.dumps({"code": "NOT_DISMISSED"}))
+        db.execute(
+            text(
+                """
+                UPDATE estimate_line
+                   SET orders_dismissed_at = NULL, orders_dismissed_by = NULL,
+                       orders_dismissed_reason = NULL
+                 WHERE line_id = :lid
+                """
+            ),
+            {"lid": line_id},
+        )
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="estimate.order_undismiss", target=str(revision_id),
         payload={
             "revision_id": revision_id, "line_id": line_id,
-            "previous_reason": row["orders_dismissed_reason"],
+            "previous_reason": previous_reason,
+        },
+    )
+    db.flush()
+
+
+def _locked_handover_line(
+    db: Session, *, revision_id: int, workspace_id: int, line_id: int,
+    material_type: str, material_id: int,
+) -> None:
+    """Shared checks for the per-material verbs: the revision is converted, the line is on it
+    and was handed over, and the material is one the line references. Locks the revision.
+    Raises NOT_FOUND, NOT_CONVERTED, LINE_NOT_FOUND, LINE_NOT_IN_HANDOVER,
+    MATERIAL_NOT_ON_LINE."""
+    rev = lock_revision_for_update(db, revision_id=revision_id, workspace_id=workspace_id)
+    if rev is None:
+        raise ValueError("NOT_FOUND")
+    if rev["converted_project_id"] is None:
+        raise ValueError("NOT_CONVERTED")
+    row = db.execute(
+        text(
+            "SELECT included_at_convert FROM estimate_line"
+            " WHERE line_id = :lid AND revision_id = :rid FOR UPDATE"
+        ),
+        {"lid": line_id, "rid": revision_id},
+    ).mappings().first()
+    if row is None:
+        raise ValueError(json.dumps({"code": "LINE_NOT_FOUND"}))
+    if not row["included_at_convert"]:
+        raise ValueError(json.dumps({"code": "LINE_NOT_IN_HANDOVER"}))
+    if (material_type, material_id) not in _line_keys_db(db, line_id):
+        raise ValueError(json.dumps({"code": "MATERIAL_NOT_ON_LINE"}))
+
+
+def dismiss_order_material(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    line_id: int, material_type: str, material_id: int, reason: str,
+) -> None:
+    """Mark **one material** on a quote line ordered by hand (required note). The line is
+    done once none of its materials is pending. Raises the per-material checks' codes plus
+    ALREADY_GENERATED (a run ordered it) and ALREADY_DISMISSED."""
+    _locked_handover_line(
+        db, revision_id=revision_id, workspace_id=workspace_id, line_id=line_id,
+        material_type=material_type, material_id=material_id,
+    )
+    existing = db.execute(
+        text(
+            "SELECT orders_generated_at FROM estimate_line_material_order"
+            " WHERE line_id = :l AND material_type = :t AND material_id = :m FOR UPDATE"
+        ),
+        {"l": line_id, "t": material_type, "m": material_id},
+    ).first()
+    if existing is not None:
+        raise ValueError(json.dumps({
+            "code": "ALREADY_GENERATED" if existing[0] is not None else "ALREADY_DISMISSED",
+        }))
+    db.execute(
+        text(
+            """
+            INSERT INTO estimate_line_material_order
+                   (line_id, material_type, material_id,
+                    orders_dismissed_at, orders_dismissed_by, orders_dismissed_reason)
+            VALUES (:l, :t, :m, now(), :u, :why)
+            """
+        ),
+        {"l": line_id, "t": material_type, "m": material_id, "u": actor_id, "why": reason},
+    )
+    _refresh_line_state(db, line_id)
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="estimate.order_material_dismiss", target=str(revision_id),
+        payload={
+            "revision_id": revision_id, "line_id": line_id,
+            "material_type": material_type, "material_id": material_id, "reason": reason,
+        },
+    )
+    db.flush()
+
+
+def restore_order_material(
+    db: Session, *, revision_id: int, workspace_id: int, actor_id: int,
+    line_id: int, material_type: str, material_id: int,
+) -> None:
+    """Undo `dismiss_order_material`: the material is pending again. Raises the per-material
+    checks' codes plus NOT_DISMISSED (it is pending, or a run ordered it)."""
+    _locked_handover_line(
+        db, revision_id=revision_id, workspace_id=workspace_id, line_id=line_id,
+        material_type=material_type, material_id=material_id,
+    )
+    removed = db.execute(
+        text(
+            """
+            DELETE FROM estimate_line_material_order
+             WHERE line_id = :l AND material_type = :t AND material_id = :m
+               AND orders_dismissed_at IS NOT NULL
+         RETURNING orders_dismissed_reason
+            """
+        ),
+        {"l": line_id, "t": material_type, "m": material_id},
+    ).first()
+    if removed is None:
+        raise ValueError(json.dumps({"code": "NOT_DISMISSED"}))
+    _refresh_line_state(db, line_id)
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="estimate.order_material_undismiss", target=str(revision_id),
+        payload={
+            "revision_id": revision_id, "line_id": line_id,
+            "material_type": material_type, "material_id": material_id,
+            "previous_reason": removed[0],
         },
     )
     db.flush()
@@ -2624,13 +2926,13 @@ def generate_orders(
     selection is left, `409 NO_LINES_SELECTED` for an empty one. Each run makes
     its own POs, so a supplier used by two runs gets two draft POs.
     `estimate_revision.orders_generated_at` is the time of the most recent run.
-    **A line is ordered whole or not at all** (see `_build_order_groups`): a line
-    with any material that has no default supplier is *held back* — returned in
-    `uncovered_line_ids`, not stamped, none of its materials ordered — so it can be
-    generated in one go once the supplier is linked in the Catalog. A line is
-    covered when every material on it has a supplier, or it references no catalog
-    material at all. The supplier-less materials holding lines back come back as
-    `unassigned`. A run that would create no order at all but has such materials is
+    **Coverage is per material** (see `_build_order_groups`): every pending material
+    that has a default supplier is ordered; one with none stays pending (returned in
+    `unassigned`) and its line in `uncovered_line_ids`, to be ordered by a later run once a
+    supplier is linked, or marked ordered by hand. Each ordered (line, material) is recorded
+    in `estimate_line_material_order` and never ordered again; a line's own stamp is set once
+    nothing on it is pending (or directly, for a line with no catalog material). A run that
+    would create no order at all but has supplier-less materials is
     `409 NOTHING_ORDERABLE` and writes nothing."""
     rev = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
@@ -2655,7 +2957,7 @@ def generate_orders(
         if include_line_ids is None and any(not _line_pending(l) for l in shown):
             raise ValueError("ORDERS_ALREADY_GENERATED")
         raise ValueError("NO_LINES_SELECTED")
-    groups, unassigned, covered_ids, held_ids = _build_order_groups(
+    groups, unassigned, ordered, covered_ids, held_ids = _build_order_groups(
         db, workspace_id=workspace_id, lines=selected_lines,
     )
     if not groups and unassigned:
@@ -2711,16 +3013,36 @@ def generate_orders(
             )
             lines_created += 1
 
-    # The lines this run covered can never be ordered again; the revision's own
-    # timestamp is just "the most recent run". A line none of whose materials had a
-    # supplier is not stamped, so a later run can still order it.
-    db.execute(
-        text(
-            "UPDATE estimate_line SET orders_generated_at = now()"
-            " WHERE line_id = ANY(:ids)"
-        ),
-        {"ids": sorted(covered_ids)},
+    # What this run ordered can never be ordered again: each (line, material) it made a PO
+    # line for is recorded, and the line's own stamp is re-derived (set once no material on
+    # it is pending). A line that references no catalog material is stamped directly. A
+    # material with no supplier is not recorded, so a later run can still order it. The
+    # revision's own timestamp is just "the most recent run".
+    for lid, (mtype, mid) in sorted(ordered):
+        db.execute(
+            text(
+                """
+                INSERT INTO estimate_line_material_order
+                       (line_id, material_type, material_id, orders_generated_at)
+                VALUES (:l, :t, :m, now())
+                """
+            ),
+            {"l": lid, "t": mtype, "m": mid},
+        )
+    no_material_ids = sorted(
+        int(l["line_id"]) for l in selected_lines
+        if int(l["line_id"]) in covered_ids and not _line_material_keys(l)
     )
+    if no_material_ids:
+        db.execute(
+            text(
+                "UPDATE estimate_line SET orders_generated_at = now()"
+                " WHERE line_id = ANY(:ids)"
+            ),
+            {"ids": no_material_ids},
+        )
+    for lid in sorted({lid for lid, _k in ordered}):
+        _refresh_line_state(db, lid)
     db.execute(
         text(
             "UPDATE estimate_revision SET orders_generated_at = now()"
@@ -2741,6 +3063,10 @@ def generate_orders(
             # The lines this run covered (what migration 0048's backfill reads).
             "included_line_ids": sorted(covered_ids),
             "uncovered_line_ids": uncovered_ids,
+            "materials_ordered": [
+                {"line_id": lid, "material_type": k[0], "material_id": k[1]}
+                for lid, k in sorted(ordered)
+            ],
         },
     )
     db.flush()

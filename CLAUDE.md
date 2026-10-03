@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0050` (head `0050_item_duplicated_from`) |
+| `db/` | Alembic migrations `0001`→`0051` (head `0051_estimate_line_material_order`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here) |
@@ -196,6 +196,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Area / Room** are real project-scoped tables, Room nested under Area; composite FK `items (area_id, room_id)`.
 - **CutPlan ≠ CutSchedule** (two entities). `/optimise` is a pure function (no writes); sheet stock is read, never consumed.
 - **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace is not used by the v1 UI.
+- **Order coverage is per (quote line, material)** in `estimate_line_material_order` (row = ordered or ordered by hand; no row = pending). `estimate_line.orders_generated_at` / `orders_dismissed_*` are **derived** from it (`_refresh_line_state`) for a line that references catalog materials, and written directly only for a line with none. Never write the line columns for a materials line by hand.
 - **Estimating:** `locked_at` (set once at `MGMT_APPROVAL → SUBMITTED`) is the "frozen" gate; the 12-stage tender lifecycle replaced the old six states; `advance()` is the only forward action (`/send` is retired). Cost columns are snapshotted. `current_value` of contracts is computed on read.
 - **Material Take:** generated, then person-owned; approved takes are immutable (new version = n+1); boards are fractional sheets per item, rounded up once over the project (Q586).
 - **Workspace isolation everywhere**: scope through `projects.workspace_id` (or the entity's own `workspace_id`); cross-workspace is **404**. Any FK to `app_user` / `vendors` / `projects` taken from a request body must be validated against the caller's workspace (it would otherwise leak names).
@@ -270,7 +271,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **QC Dashboard.** `/qc`, read-only: open defects/rework for cutlists started but not packed; records outside that scope are counted, not dropped.
 
 ### Orders and procurement — `06-orders-procurement.md`
-- **PO generation from a won quote (`0041`, `0048`, `0049`).** Groups materials by live default supplier, one draft PO per supplier per run. A line is ordered whole or held back whole; can be marked "ordered by hand" with a required note; estimators can link a missing supplier from the dialog.
+- **PO generation from a won quote (`0041`, `0048`, `0049`, `0051`).** Groups materials by live default supplier, one draft PO per supplier per run. Coverage is **per material** (`estimate_line_material_order`): a material with a supplier orders now, one without stays pending; each can be marked "ordered by hand" with a required note (whole-line button covers all pending ones); a line is done when none is pending. Estimators can link a missing supplier from the dialog.
 - **Catalog supplier link.** `default_supplier_id` editable in the grid, at create, via bulk import (exact-name match) and CV Create-new.
 - **Orderbook editing + guards.** Header and line editing with field versions; `Cancelled`/`Delivered` orders are read-only except `status`; `OrderOut.locked` is server-computed; status/priority/category/vendor/project validated.
 - **Legacy `/procurement/*` (`0045`–`0047`).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.

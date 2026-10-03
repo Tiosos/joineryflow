@@ -21,6 +21,7 @@ from ..db import get_db
 from . import pdf as pdf_engine
 from . import queries as q
 from .schemas import (
+    OrderMaterialType,
     AddHardwareIn,
     AddPartIn,
     ConvertResultOut,
@@ -59,6 +60,9 @@ from .schemas import (
 
 
 router = APIRouter(tags=["estimating"])
+
+
+_NOT_FOUND_CODES = ("NOT_FOUND", "LINE_NOT_FOUND", "MATERIAL_NOT_ON_LINE")
 
 
 def _decode_value_error(exc: ValueError) -> dict:
@@ -561,6 +565,62 @@ def restore_order_line_route(
         decoded = _decode_value_error(exc)
         raise HTTPException(
             404 if decoded.get("code") in ("NOT_FOUND", "LINE_NOT_FOUND") else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.post(
+    "/revisions/{rid}/lines/{lid}/materials/{material_type}/{material_id}/order-dismissal",
+    status_code=204,
+)
+def dismiss_order_material_route(
+    rid: int,
+    lid: int,
+    material_type: OrderMaterialType,
+    material_id: int,
+    body: DismissOrderLineIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Mark one material on a quote line "ordered by hand" (reason required)."""
+    try:
+        q.dismiss_order_material(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, material_type=material_type, material_id=material_id,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in _NOT_FOUND_CODES else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.delete(
+    "/revisions/{rid}/lines/{lid}/materials/{material_type}/{material_id}/order-dismissal",
+    status_code=204,
+)
+def restore_order_material_route(
+    rid: int,
+    lid: int,
+    material_type: OrderMaterialType,
+    material_id: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Undo "ordered by hand" for one material: it is orderable again."""
+    try:
+        q.restore_order_material(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, material_type=material_type, material_id=material_id,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in _NOT_FOUND_CODES else 409, decoded
         )
     db.commit()
     return None

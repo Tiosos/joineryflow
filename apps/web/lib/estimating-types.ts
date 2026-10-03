@@ -220,6 +220,23 @@ export interface OrderPreviewGroup {
   lines: OrderPreviewLine[];
 }
 
+/** One catalog material on a quote line, with its own order state. */
+export interface OrderPreviewMaterial {
+  material_type: PartMaterialType | HardwareMaterialType;
+  material_id: number;
+  sku?: string | null;
+  description?: string | null;
+  qty: string;
+  /** `pending` (still to order), `generated` (a run ordered it) or `dismissed` (ordered by hand). */
+  state: "pending" | "generated" | "dismissed";
+  orders_generated_at?: string | null;
+  orders_dismissed_at?: string | null;
+  orders_dismissed_reason?: string | null;
+  orders_dismissed_by_name?: string | null;
+  /** Its catalog row has no default supplier, so a run cannot order it. */
+  no_supplier?: boolean;
+}
+
 /** A quote line the Generate Orders dialog can tick. */
 export interface OrderPreviewSourceLine {
   line_id: number;
@@ -235,8 +252,10 @@ export interface OrderPreviewSourceLine {
   orders_dismissed_by_name?: string | null;
   /** In the selection the groups below were computed for. */
   selected: boolean;
-  /** Selected, but a material on it has no supplier: a run holds the line back whole. */
+  /** Selected, but a pending material on it has no supplier, so a run cannot finish the line. */
   held_back?: boolean;
+  /** The line's catalog materials and the state of each (empty for a labour-only line). */
+  materials?: OrderPreviewMaterial[];
 }
 
 export interface OrderPreview {
@@ -254,6 +273,6 @@ export interface GenerateOrdersResult {
   lines_created: number;
   po_ids: number[];
   unassigned: OrderPreviewLine[];
-  /** Selected lines held back whole (a material on them has no supplier); still orderable. */
+  /** Selected lines not finished: a material on them has no supplier (it stays orderable). */
   uncovered_line_ids: number[];
 }
