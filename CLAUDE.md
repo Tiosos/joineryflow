@@ -112,10 +112,10 @@ Layout:
 
 - `apps/api/` — FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2. Auth, RBAC, audit, procurement port.
 - `apps/web/` — Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript. Auth shell, tab chrome, server-side proxy.
-- `db/` — Alembic migrations `0001` → `0049`. Head is `0049_estimate_line_order_dismissal` (`estimate_line.orders_dismissed_at/_by/_reason` — a quote line can be marked *ordered by hand*, see *Generate Orders: mark a line ordered by hand* below). `0048_estimate_line_orders_generated` is (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
+- `db/` — Alembic migrations `0001` → `0050`. Head is `0050_item_duplicated_from` (`items.duplicated_from_item_id` — a copy made by *Duplicate a Joinery Item* below links to its source). `0049_estimate_line_order_dismissal` is (`estimate_line.orders_dismissed_at/_by/_reason` — a quote line can be marked *ordered by hand*, see *Generate Orders: mark a line ordered by hand* below). `0048_estimate_line_orders_generated` is (`estimate_line.orders_generated_at` — Generate Orders can cover part of a won quote and a later run the rest, see *Generate Orders: per-line selection* below). `0047_po_attachment_file_blob` is (`po_attachments.file_blob_id` — legacy PO attachments move to the shared file store, see *Legacy PO attachments in the shared file store* below). `0046_budget_release_and_po_totals` is (`v_budget_utilisation` counts `Release` rows, legacy PO totals back-filled, `po_number_seq` advanced — see *Legacy procurement audit* below). `0045_po_summary_left_join_cost_centre` is (`v_po_summary` LEFT JOINs `cost_centers` — see *Legacy order views with no cost centre* below). `0044_shop_drawing_register` is (register columns on `shop_drawing` for the Shop Dwgs redesign — see *Shop Drawings register redesign* below). `0043_comment_module_revision` is comment threads on Modules and shop-drawing revisions (Plan V1 §29 — see *Comment threads on Modules and shop-drawing revisions* below). `0042_comments_notifications` is Comments + mentions + in-app notifications, Plan V1 §29 — see *Comments, mentions and notifications* below. `0041_estimate_orders_generated` is PO Generation from a Won Quote (Plan V1 §21 Q505 — one column, `estimate_revision.orders_generated_at`). `0040_lock_types_concurrency` is Plan V1 §L; `0039_qc_rework_packing` is Plan V1 §M; `0038_tender_lifecycle_financials` is Plan V1 §I; `0037_rbac_groups` is the Dynamic RBAC engine; `0036_item_project_detail` is Item & Project Detail 2.0 (`0035_tracking_2_0` is Tracking 2.0 — both authored in May, merged after `0034_material_take` (Material Take, #12)); `0033_search_outbox` is Global Search, #11. Each sub-project section below names the migration(s) it introduced. `0026`–`0032` all belong to the Cutlist + related parts + Orderbook sub-project (#10); `0030`–`0032` were not reserved up front — the Shop Floor re-key, the order schema and the Controlled Lock each needed one.
 - `seed/` — `seed.hartwood_joinery` dev seed (workspace + 13 staff users).
 - `legacy/` — Read-only quarantine of the original FileMaker-era prototypes (`procurement_api.py`, `*.jsx`, `*.html`, `*_schema.sql`, `product_spec.md`, `trackingv2.md`). Reference only. `REFINEMENT_BACKLOG.md` there tracks 7 open follow-ups from the 2026-05-10 alignment pass.
-- `tests/e2e/` — 30 Playwright specs / 121 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). **A re-seed is not enough**: the seed skips items that already exist, so it does not restore a lock or take an earlier run changed — run the whole suite against a **freshly created, migrated and seeded database** (see *e2e suite repair*).
+- `tests/e2e/` — 31 Playwright specs / 124 tests, incl. `smoke.spec.ts` (login + tabs), `pm_workbench.spec.ts`, `drafter_editor.spec.ts`, `procurement.spec.ts`, `shop_drawings.spec.ts`, `isample.spec.ts`, `pdf_generation.spec.ts`, `catalog.spec.ts`, `cv_import.spec.ts`, `estimating.spec.ts`, `cutlist_related_parts.spec.ts` (#10), `search.spec.ts` (#11), `material_take.spec.ts` (#12), `comments.spec.ts` (§29), `comments_module_revision.spec.ts` (§29, module + revision threads), `comment_counts.spec.ts` (§29, module + revision badges), `cv_replace_comments.spec.ts` (CV replace warning), `module_delete.spec.ts` (delete-module warning + lock checks), `cutlist_locks.spec.ts` (locks on every module / part write), `hardware_locks.spec.ts` (locks on hardware lines), `status_locks.spec.ts` (locks on status + stage dates), `attachments_locks.spec.ts` (locks on attachment slots), `queries_takes_locks.spec.ts` (locks on item queries + material takes), `catalog_supplier_link.spec.ts` (Catalog supplier link + Generate Orders from it), `document_register.spec.ts` (Document Register UI), `tracking_modal_files.spec.ts` (Tracking modal files), `qc_dashboard.spec.ts` (§4.2), `item_duplicate.spec.ts` (Plan V1 §2). **The suite is not idempotent**: `estimating.spec.ts`, `procurement.spec.ts` and `comments.spec.ts` fail on a second run against the same database (an estimate cannot convert twice; a duplicate "Test Supplier" batch trips Playwright strict mode; the comments spec reads a seeded notification, so the bell starts at 0 on a second run). **A re-seed is not enough**: the seed skips items that already exist, so it does not restore a lock or take an earlier run changed — run the whole suite against a **freshly created, migrated and seeded database** (see *e2e suite repair*).
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design specs and implementation plans.
 - `docs/plan-v1/` — **Plan V1**: the customer's target specification, the gap analysis against this tree, and 154 open questions (Q432–Q586, 150 resolved). Mostly still a target; the sub-projects that are built are listed in *Plan V1 — target architecture* below, which is the record of what is true.
 
@@ -137,7 +137,7 @@ on Modules and shop-drawing revisions*).
 
 - `docs/plan-v1/plan_v1.md` — the spec, verbatim and canonical.
 - `docs/plan-v1/ALIGNMENT.md` — every Plan V1 section mapped onto current
-  state: 82 rows, **17 shipped · 37 partial · 26 absent**, with 2 rows still
+  state: 82 rows, **17 shipped · 38 partial · 25 absent**, with 2 rows still
   labelled re-architecture (SharePoint, bounded; the stage list, deferred) —
   **re-scored 2026-10-02**. The 37 rows built work moved carry their new verdict
   and what shipped; the rest keep their 2026-09-18 wording on purpose, and its §3
@@ -194,7 +194,7 @@ IT-defined formulas).
 
 ```
 make up           # build + start db, meili, api, search-worker, web (Postgres 16, Meilisearch, FastAPI, Next.js 16)
-make migrate      # apply Alembic 0001 -> 0049
+make migrate      # apply Alembic 0001 -> 0050
 make seed         # create hartwood-joinery workspace + 13 users + 2 projects + demo data for every shipped sub-project (dev password: hartwood-dev)
 make test         # pytest in api container (100 test files, ~1541 tests; the `meili`-marked
                   # ones skip unless MEILI_URL is set — compose sets it)
@@ -5754,3 +5754,85 @@ since been built.**
     file that can be searched; the signed log URL and `gh api …/logs` are both blocked by the sandbox proxy.
   - ~10 minutes of Actions time per push on top of the other two jobs; the `concurrency` group cancels a superseded run.
   - Failures show as a red `E2E (Playwright)` row, not a blocked merge. Someone has to look.
+
+## Duplicate a Joinery Item (Plan V1 §2, migration `0050`) — shipped
+
+> Chosen by the user ("Start the list of questions", after I suggested it as the next task:
+> ALIGNMENT's row "Item duplication with selective copy…" was `ABSENT`, the largest
+> small-and-self-contained gap). Plan V1 says what *may* be copied and what must *not*, but
+> not what happens to the cutlist, the status, the number or the lock, so the user was asked
+> before any code was written; the answers below are **settled decisions**, not assumptions.
+> No spec or plan doc; this section is its written record.
+
+- **Settled decisions (user, 2026-10-03).**
+  1. **The copy gets its own new cutlist** (named for the item, numbered from
+     `joinery_number_seq`), never the source's — the Shop Floor workflow belongs to the cutlist
+     (Q412), so sharing one would share its progress.
+  2. **Joinery Items only.** A related part, an unknown id, another workspace's item and a
+     soft-deleted item are all `404`.
+  3. **Status resets to `CLEAR`.** Copying `APPROVED` would produce an Approval-Locked copy
+     nobody could edit.
+  4. **One copy per action.** No "make N copies".
+  5. **Copied:** the item's own fields (description, qty, code, level, zone, painting /
+     solid-surface requirements, notes, size, assembler / lister, item code, Group ID, floor-plan / RLS / joinery-detail references, JID code + colour, `total_amount`, VAR/BOQ, contractor,
+     area / room and the legacy `stage` / `rm_no` / `rm_desc` text), **modules + parts**,
+     **hardware lines**, the **five attachment slots**, the **Document Register**, and the
+     **QC checklist, unticked** (labels and order kept; `is_checked`, `checked_by`,
+     `checked_at` cleared). Plan V1 §2 lists the checklist as copyable and the *results* as not.
+  6. **Same project only.**
+  7. **Drafter, manager, admin** — `require_drafter()` plus `tracking:write`. Editor and viewer are `403`.
+  8. **The source is linked by a new column**, `items.duplicated_from_item_id` (nullable self-FK,
+     `ON DELETE SET NULL`, partial index): deleting the source leaves its copies intact, unlinked.
+- **Not copied** (Plan V1 §2's exclusion list, kept): stage dates (`item_stages`), locks and the
+  cutlist owner, `field_versions`, QC defects and rework, comments, item queries, material takes,
+  orders and the edit history. The copy's own history starts with one `item_edit_log` row,
+  `_duplicate` ("from #N").
+- **Assumptions made while building — not user decisions.**
+  - **A locked source can still be duplicated** (Hard, Approval or Controlled). Duplicating only
+    *reads* the source, and every lock guards a change to that item. If a Hard Lock is meant to
+    forbid copying too, that is a rule to decide, not one to assume.
+  - **Attachments and register documents share the same `file_blob`** rather than copying bytes
+    (blobs are content-addressed and never deleted, so sharing is safe). A relabel on the copy
+    does not touch the source.
+  - **`cutlist_printed` takes the column default** rather than the source's value — a copy has
+    printed nothing.
+  - The source's own cutlist **number and name are not reused**; the copy's cutlist is named for
+    the item.
+- **Backend — `apps/api/app/item_duplicates/`** (`queries.py`, `routes.py`), mounted at a top-level
+  path. `POST /items/{iid}/duplicate` → `201 ItemOut`. The Item ID is allocated **inside** the
+  INSERT with `nextval('joinery_number_seq')` (never `MAX+1`). Everything — the item, its children,
+  the cutlist and its link, the audit and edit-log rows — happens in **one transaction**: a failure
+  part-way (pinned by monkeypatching the cutlist step) leaves no half-made copy. Audit
+  `item.duplicate` carries the source id and the number of modules, parts, hardware lines,
+  attachments, documents and checklist items copied.
+  `ItemOut` (the `GET` / `PATCH /items/{id}` payload) gained `duplicated_from_item_id` and
+  `duplicated_from_item_number` (a join on the source's `num`).
+- **Web.** The item editor's **Actions** tab gets a **Duplicate item** card (drafter / manager /
+  admin; the web mirrors the role set, the API decides) opening `DuplicateItemDialog`: it says what
+  is and is not copied, and on confirm opens the new item's editor. A copy's Actions tab shows
+  **Duplicated from #N**, linking to the source.
+- **Tests.** `test_item_duplicate.py` (20): the item's fields and the link back; a unique Item ID
+  from the shared sequence per copy; modules, parts, hardware lines, attachments, documents and the
+  unticked checklist copied; the copy's own cutlist and the source's untouched; status `CLEAR` and
+  the copy editable although the source is `APPROVED`; stage dates, locks and owner not copied; QC
+  defects, rework, comments and queries not copied and no `_create` edit-log row; the source
+  unchanged; a locked source can be duplicated; a copy of a copy links to its immediate source;
+  deleting the source leaves the copy (link cleared); audit and edit-log rows; drafter / manager /
+  admin allowed, editor / viewer `403` with nothing created; related part, unknown id, deleted item
+  and another workspace `404`; atomicity. `tests/e2e/item_duplicate.spec.ts` (3), run against a live
+  migrated, seeded stack on a production build: a drafter duplicates `JO-K-101` (new Item ID, `CLEAR`,
+  the link and its click-through, no link on the original), Cancel makes no copy, a manager sees the
+  button and an editor / viewer do not. The e2e deletes its copy with `DELETE /items/{id}`, which
+  leaves the copy's cutlist row behind.
+- **Known gaps, recorded.**
+  - **The copy set is fixed** — no per-copy choice of what to bring (ALIGNMENT counts the row
+    `PARTIAL` for this reason).
+  - **No bulk duplicate and no cross-project copy** (decisions 4 and 6).
+  - **Deleting an item does not delete its cutlist**, so duplicating and deleting leaves a one-time
+    orphan cutlist row (existing behaviour of item delete, not introduced here).
+  - **The copy's parts are not re-checked against the catalog** — a part referencing an archived
+    material is copied as is.
+  - **A duplicate is not searchable-linked**: Global Search indexes it like any new item and shows
+    nothing about the source.
+- **Out of scope (deferred):** choosing what to copy; copying across projects; making several copies
+  at once; copying related parts (Plan V1 does not ask).

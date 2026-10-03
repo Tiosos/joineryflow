@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
 import { PM, ApiError } from "@/lib/pm-fetch";
 import { StatusPopup } from "@/app/(app)/tracking/_components/StatusPopup";
+import { DuplicateItemDialog } from "./DuplicateItemDialog";
 import { lockFromError, moduleLockReason } from "./cutlist/moduleLock";
 
 // PATCH /items/{id}/status and /items/{id}/lifecycle/{stage_key} both gate on
 // tracking:write, which per the RBAC matrix is {editor, drafter, manager, admin}.
 const CAN_ACT = new Set(["editor", "drafter", "manager", "admin"]);
+
+// POST /items/{id}/duplicate is require_drafter() + tracking:write — the web mirrors
+// it, the API decides.
+const CAN_DUPLICATE = new Set(["drafter", "manager", "admin"]);
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -32,6 +37,8 @@ export function ActionsTab({
     ? moduleLockReason(item, currentUserId, currentUserRole, "status")
     : null;
   const [statusOpen, setStatusOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const canDuplicate = CAN_DUPLICATE.has(currentUserRole ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +96,29 @@ export function ActionsTab({
         onClick={markReqDone}
       />
 
+      {canDuplicate && (
+        <ActionCard
+          label="Duplicate item"
+          description="Make a copy of this item in the same project, with its own new Item ID and cutlist."
+          disabled={false}
+          onClick={() => setDuplicateOpen(true)}
+          testId="duplicate-item"
+        />
+      )}
+
+      {item.duplicated_from_item_id != null && (
+        <a
+          href={`/items/${item.duplicated_from_item_id}`}
+          data-testid="duplicated-from"
+          className="rounded-lg border border-h-line bg-h-surface p-4 text-left hover:bg-h-line/20"
+        >
+          <p className="text-sm font-medium text-h-ink">
+            Duplicated from #{item.duplicated_from_item_number}
+          </p>
+          <p className="mt-1 text-xs text-h-muted">Open the item this was copied from.</p>
+        </a>
+      )}
+
       <ActionLinkCard
         label="Jump to Orderbook"
         description="Open this item's project in the Orderbook."
@@ -97,6 +127,10 @@ export function ActionsTab({
 
       {/* Print Cutlist / Hardware / Combined PDF already live in the footer
           below, on every tab — not duplicated here. */}
+
+      {duplicateOpen && (
+        <DuplicateItemDialog item={item} onClose={() => setDuplicateOpen(false)} />
+      )}
 
       {statusOpen && (
         <StatusPopup
@@ -116,15 +150,18 @@ function ActionCard({
   description,
   disabled,
   onClick,
+  testId,
 }: {
   label: string;
   description: string;
   disabled: boolean;
   onClick: () => void;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       disabled={disabled}
       onClick={onClick}
       className="rounded-lg border border-h-line bg-h-surface p-4 text-left hover:bg-h-line/20 disabled:cursor-not-allowed disabled:opacity-50"
