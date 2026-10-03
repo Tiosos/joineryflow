@@ -225,22 +225,60 @@ Three lock types on an item: **Hard** (`hard_locked_at`, manager/admin set it, b
 
 **Deliberately not locked:** QC records, comments, Material Summary, project hardware catalog, `POST /files`, Shop Floor's `item_stages` fan-out, reads and print routes. `cutlist_owner_id` is sticky — only `item_locked` matters. Web mirror: `cutlist/moduleLock.ts` (`moduleLockReason`, `lockFromError`, scopes `content | status | records`); one notice per tab, controls disabled with the reason, 409 fallback reverts the edit.
 
-## 10. What is built (and where its history lives)
+## 10. What is built
 
-Each row's detail is in `docs/sub-projects/`. Migrations are named in the file.
+One entry per sub-project: what it is, the rule you most need, and the migration. Full history is in the named file under `docs/sub-projects/`.
 
-| Area | Migrations | Detail file |
-| --- | --- | --- |
-| Foundation, PM Workbench, Procurement Workbench, Shop Drawings (+ register redesign), PDF + attachments, iSample, Catalog + CV mappings, CV import, Cut Floor, Shop Floor, Estimating #9a, CutPlan optimiser, board inventory | `0001`–`0025`, `0044` | `01-early-sub-projects.md` |
-| Cutlist + related parts + Orderbook (#10), Global Search (#11), Material Take (#12) | `0026`–`0034` | `02-…` |
-| Tracking 2.0, Item & Project Detail 2.0, Tracking modal, Document Register UI, Item duplicate, item-delete cutlist cleanup | `0035`, `0036`, `0050` | `03-…` |
-| Dynamic RBAC, `/auth/me`, Search RBAC sync, Locking + Concurrency, all lock-check rounds, FIELD_CONFLICT | `0037`, `0040` | `04-…` |
-| Tender lifecycle + financials, QC / Rework / Packing, QC Dashboard | `0038`, `0039` | `05-…` |
-| PO generation (per-line, ordered-by-hand, supplier link), Orderbook PO editing + status guard, order validation, legacy `/procurement` audit + PO attachments | `0041`, `0045`–`0049` | `06-…` |
-| Comments, mentions, notifications (6 object types), counts, delete-module warning | `0042`, `0043` | `07-…` |
-| Null-write / POST audits, e2e repair, e2e in CI | — | `08-…` |
+### Core modules — `01-early-sub-projects.md`
+- **PM Workbench (#2/#3, `0008`–`0009`).** `/projects`, `/tracking`, item editor (`/items/[id]` tabs). Item writes need `require_drafter()` (drafter/manager/admin). Every item mutation writes `audit_log` + `item_edit_log` together. Controlled Lock replaced the soft lock (`0032`).
+- **Procurement Workbench (#4, `0012`).** `procurement_v1`: project materials, batches, allocations, `/orderbook` delivery queue. Status pill derived in SQL; allocation over-commit and cancelling a batch with allocations are 409.
+- **Shop Drawings (#5a, `0013`, redesign `0044`).** `/shop-dwgs` register table + details panel + full-screen viewer. Revision flow `draft → pending → approved|rejected`, approver ≠ uploader. Queues (Being drawn, Internal review…) are derived from the latest revision, never stored. `drawing_no` from `workspace_counter`.
+- **PDF + attachments (#5b, `0015`, `0036`).** WeasyPrint cutlist / hardware / combined PDFs. Five attachment slots (`cv_drawing`, `sketchup`, `cabvision`, `floor_plan`, `site_measure`), one format each; Combined PDF uses only the original three.
+- **iSample (#5c, `0016`).** Sample wall: `pending → approved|rejected`, reject needs a note, reviewer ≠ creator, approval ledger = filtered `audit_log`.
+- **Catalog + CV mappings (#7a, `0017`).** `/catalog/*` over the six catalog tables; soft-archive only; bulk import all-or-nothing; `cv_material_mapping` is the only hard-delete.
+- **CV import (#7b, `0018`).** 3-phase wizard (paste → resolve unknown codes → confirm). Resolver order: mapping → synonyms → SKU → unknown. Re-import 409s unless `replace`, which warns about comments it deletes.
+- **Cut Floor (#7c, `0019`).** CutPlan + CutSchedule + Board tab. Status `planned → running → done`, cancel from planned/running; a plan with any non-cancelled schedule cannot be deleted.
+- **Shop Floor (#8, `0020`, re-keyed `0030`).** Kanban + kiosk, keyed on `(cutlist_id, stage_key)`. Mark-done enforces stage order; undo within 5 min for workers. Packing is the 6th stage (`0039`).
+- **Estimating (#9a, `0021`–`0023`).** Customers, estimates, revisioned quotes with snapshotted costs, quote PDF, Convert-to-Project. Status workflow superseded by the tender lifecycle (see below).
+- **CutPlan optimiser (#9, `0024`) + board inventory (`0025`).** MaxRects multi-sheet nesting; `/optimise` is a pure function that reads sheet stock but never writes or consumes it.
 
-**Still open (customer inputs / deliberate gaps):** Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; per-material order coverage; E3 pilot-data migration. `apps/web/components/pm/TrackingGrid.tsx` is **dead code** (replaced by `ItemsTable`) — mention, don't delete.
+### Cutlist, search, material take — `02-cutlist-search-material-take.md`
+- **Cutlist + related parts + Orderbook (#10, `0026`–`0032`).** Area/Room entities, first-class Cutlist, related-part rows, orders on `purchase_orders`, one shared number sequence. Related parts never carry a cutlist number.
+- **Global Search (#11, `0033`).** Meilisearch fed by a trigger-written outbox and a worker. `GET /search` is `current_user` only and drops unreadable types silently; 503 on outage.
+- **Material Take → Summary (#12, `0034`).** Per-item takes (draft → approved → superseded) generated from parts/hardware, then owned by a person; project summary computed on read; confirmation is advisory.
+
+### Tracking and item detail — `03-tracking-and-item-detail.md`
+- **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items).
+- **Item & Project Detail 2.0 (`0036`).** `/projects/[id]` page, contacts, lift access, item queries, Document Register, close-out (the only way to close; PATCH to Current/Hold reopens).
+- **Tracking modal, Document Register UI.** Modal shows register, five slots and reference fields read-only; editing stays on the item editor.
+- **Duplicate item (`0050`).** Same-project copy with its own new cutlist, status reset to `CLEAR`, QC checklist unticked; links to source via `duplicated_from_item_id`. Deleting an item removes its cutlist only if it has no production history.
+
+### RBAC and locks — `04-rbac-and-locks.md`
+- **Dynamic RBAC (`0037`).** Groups + memberships + grants in the DB, project scope only; `MATRIX` is the zero-membership fallback. Admin CRUD at `/permission-groups`, panel on `/it`.
+- **RBAC sync.** `/auth/me` and Global Search read the engine, not the static matrix (workspace-wide grants only).
+- **Locking + concurrency (`0040`).** Hard Lock, derived Approval Lock, field-level `expected_versions` on items, cutlists and order headers. Follow-up rounds extended lock checks to every route in the §9 table.
+
+### Tender and QC — `05-tender-and-qc.md`
+- **Tender lifecycle + financials (`0038`).** 12-stage lifecycle with `WON/LOST/WITHDRAWN`; Convert takes selected lines and creates a `project_contract`; variations append-only; actual costs derived from batches and labour.
+- **QC / Rework / Packing (`0039`).** Defects, checklist, rework (one entity, `kind` internal/full; never reopens a stage), new `qc` module, Packing as an assignable stage with in-browser QR scanning.
+- **QC Dashboard.** `/qc`, read-only: open defects/rework for cutlists started but not packed; records outside that scope are counted, not dropped.
+
+### Orders and procurement — `06-orders-procurement.md`
+- **PO generation from a won quote (`0041`, `0048`, `0049`).** Groups materials by live default supplier, one draft PO per supplier per run. A line is ordered whole or held back whole; can be marked "ordered by hand" with a required note; estimators can link a missing supplier from the dialog.
+- **Catalog supplier link.** `default_supplier_id` editable in the grid, at create, via bulk import (exact-name match) and CV Create-new.
+- **Orderbook editing + guards.** Header and line editing with field versions; `Cancelled`/`Delivered` orders are read-only except `status`; `OrderOut.locked` is server-computed; status/priority/category/vendor/project validated.
+- **Legacy `/procurement/*` (`0045`–`0047`).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.
+
+### Comments — `07-comments.md`
+- **Comments, mentions, notifications (`0042`, `0043`).** Threads on project, area, room, item, module and shop-drawing revision (Task/Change have no entities). One-level replies, @mentions by id, in-app bell only. Each type is gated by its own module.
+- **Counts and warnings.** `comment_count` rides existing payloads; deleting a module or CV-replace warns first (advisory, API unchanged).
+
+### Audits and CI — `08-audits-and-ci.md`
+- **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.
+- **e2e repair and CI.** Whole suite verified on a fresh database; advisory Playwright job in `ci.yml`.
+
+### Still open
+Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; per-material order coverage; E3 pilot-data migration. `apps/web/components/pm/TrackingGrid.tsx` is **dead code** (replaced by `ItemsTable`) — mention, don't delete.
 
 ## 11. Reference docs
 
