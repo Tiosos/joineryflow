@@ -230,7 +230,8 @@ Three lock types on an item: **Hard** (`hard_locked_at`, manager/admin set it, b
 One entry per sub-project: what it is, the rule you most need, and the migration. Full history is in the named file under `docs/sub-projects/`.
 
 ### Core modules — `01-early-sub-projects.md`
-- **PM Workbench (#2/#3, `0008`–`0009`).** `/projects`, `/tracking`, item editor (`/items/[id]` tabs). Item writes need `require_drafter()` (drafter/manager/admin). Every item mutation writes `audit_log` + `item_edit_log` together. Controlled Lock replaced the soft lock (`0032`).
+- **Foundation (`0001`–`0007`, `0014`).** Ported schemas (tracking `0001`, procurement `0002`, cut schedule `0003`), self-built auth (`0004`), procurement user profile and views (`0005`–`0006`), catalog reconciliation (`0007`), and the direct `projects.workspace_id` isolation fix (`0014`).
+- **PM Workbench (#2/#3, `0008`–`0011`).** `/projects`, `/tracking`, item editor (`/items/[id]` tabs). Item writes need `require_drafter()` (drafter/manager/admin). Every item mutation writes `audit_log` + `item_edit_log` together. Controlled Lock replaced the soft lock (`0032`).
 - **Procurement Workbench (#4, `0012`).** `procurement_v1`: project materials, batches, allocations, `/orderbook` delivery queue. Status pill derived in SQL; allocation over-commit and cancelling a batch with allocations are 409.
 - **Shop Drawings (#5a, `0013`, redesign `0044`).** `/shop-dwgs` register table + details panel + full-screen viewer. Revision flow `draft → pending → approved|rejected`, approver ≠ uploader. Queues (Being drawn, Internal review…) are derived from the latest revision, never stored. `drawing_no` from `workspace_counter`.
 - **PDF + attachments (#5b, `0015`, `0036`).** WeasyPrint cutlist / hardware / combined PDFs. Five attachment slots (`cv_drawing`, `sketchup`, `cabvision`, `floor_plan`, `site_measure`), one format each; Combined PDF uses only the original three.
@@ -239,7 +240,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **CV import (#7b, `0018`).** 3-phase wizard (paste → resolve unknown codes → confirm). Resolver order: mapping → synonyms → SKU → unknown. Re-import 409s unless `replace`, which warns about comments it deletes.
 - **Cut Floor (#7c, `0019`).** CutPlan + CutSchedule + Board tab. Status `planned → running → done`, cancel from planned/running; a plan with any non-cancelled schedule cannot be deleted.
 - **Shop Floor (#8, `0020`, re-keyed `0030`).** Kanban + kiosk, keyed on `(cutlist_id, stage_key)`. Mark-done enforces stage order; undo within 5 min for workers. Packing is the 6th stage (`0039`).
-- **Estimating (#9a, `0021`–`0023`).** Customers, estimates, revisioned quotes with snapshotted costs, quote PDF, Convert-to-Project. Status workflow superseded by the tender lifecycle (see below).
+- **Estimating (#9a, `0021`–`0023`; `0023` is team status for the dashboard).** Customers, estimates, revisioned quotes with snapshotted costs, quote PDF, Convert-to-Project. Status workflow superseded by the tender lifecycle (see below).
 - **CutPlan optimiser (#9, `0024`) + board inventory (`0025`).** MaxRects multi-sheet nesting; `/optimise` is a pure function that reads sheet stock but never writes or consumes it.
 
 ### Cutlist, search, material take — `02-cutlist-search-material-take.md`
