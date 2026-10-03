@@ -106,6 +106,10 @@ export const PM = {
   transferLock: (id: number, body: LockTransferIn) =>
     call<ItemOut>(`/api/items/${id}/lock`, { ...jsonInit("POST", body), cache: "no-store" }),
 
+  // ===== Plan V1 §2 — duplicate a Joinery Item (drafter / manager / admin) =====
+  duplicateItem: (id: number) =>
+    call<ItemOut>(`/api/items/${id}/duplicate`, { method: "POST", cache: "no-store" }),
+
   // ===== §L Hard Lock (Q508) — manager/admin only =====
   hardLockItem: (id: number) =>
     call<ItemOut>(`/api/items/${id}/hard-lock`, { method: "POST", cache: "no-store" }),

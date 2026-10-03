@@ -548,11 +548,14 @@ def get_item_detail(
                 i.hard_locked_at,
                 i.hard_locked_by,
                 hl.full_name                AS hard_locked_by_name,
-                i.field_versions
+                i.field_versions,
+                i.duplicated_from_item_id,
+                src.num                     AS duplicated_from_item_number
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN app_user c ON c.id = i.contractor_id
             LEFT JOIN app_user hl ON hl.id = i.hard_locked_by
+            LEFT JOIN items src ON src.item_id = i.duplicated_from_item_id
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
               AND {_JOINERY_I}
@@ -809,6 +812,8 @@ def get_item_detail(
         "hard_locked_by": row["hard_locked_by"],
         "hard_locked_by_name": row["hard_locked_by_name"],
         "field_versions": row["field_versions"] or {},
+        "duplicated_from_item_id": row["duplicated_from_item_id"],
+        "duplicated_from_item_number": row["duplicated_from_item_number"],
     }
 
 

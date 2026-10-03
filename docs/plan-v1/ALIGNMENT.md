@@ -1,6 +1,6 @@
 # Plan V1 vs. shipped JoineryFlow — alignment record
 
-> **Status: re-scored 2026-10-02 against the tree at Alembic `0047`.** This file
+> **Status: re-scored 2026-10-02 against the tree at Alembic `0047` (one row since moved — see §5).** This file
 > began as analysis only (2026-09-18, "no code has been written against Plan V1").
 > That is no longer true: Plan V1 is the roadmap for this codebase (Q433) and a
 > large part of it is now built — Cutlist + related parts + Orderbook (#10), Global
@@ -252,7 +252,7 @@ strip against Plan V1's stated arrangement.
 | Joinery Item is the central operational unit, not a cabinet | Matches — `items` is the unit; `modules`/`parts` sit beneath it. | `SHIPPED` |
 | Item carries workflow, docs, 3D + cutlist, materials, costs, variations, revisions, tasks, comms, approvals, production, QC, delivery, install, audit, rework | Has: workflow (`item_stages`, now a projection of the cutlist's stages), docs (five `item_attachment` slots + the Document Register + shop drawings), cutlist (`modules`/`parts`), materials (hardware lines, the versioned Material Take), QC (defects, checklist, rework — `0039`), comms (comment threads, `0042`/`0043`), a Q&A log (`item_query`), audit (`audit_log` + `item_edit_log`) and the three locks. **Missing: costs at item level (Q543 — orders carry cost, nothing rolls up onto an item), revisions, tasks, approvals-as-records, delivery/install records.** Variations exist at project level only. | `PARTIAL` |
 | Component-level access limited to authorised roles | `require_drafter()` gates module/part mutation to `{drafter, manager, admin}`. | `SHIPPED` |
-| Item duplication with selective copy, and a hard exclusion list for execution history | Nothing. No duplicate endpoint anywhere. | `ABSENT` |
+| Item duplication with selective copy, and a hard exclusion list for execution history | **Built (`0050`):** `POST /items/{id}/duplicate` (drafter / manager / admin, same project, Joinery Items only) makes one copy with its own Item ID, its own new cutlist and status `CLEAR`, and copies the item's details, modules + parts, hardware lines, the five attachment slots, the Document Register and the QC checklist (unticked); `items.duplicated_from_item_id` links it back. **The exclusion list holds** — stage dates, locks, QC defects / rework, comments, queries, material takes and orders are never copied. **What is `PARTIAL`: the copy set is fixed**, not chosen per duplication — Plan V1's *selective* copy is a settled single selection (user, 2026-10-03), with no per-copy options dialog. | `PARTIAL` |
 
 ### Plan V1 §3 — Roles, departments, permissions
 
@@ -418,7 +418,7 @@ The lists are not a relabelling of each other:
 > **Re-scored 2026-10-02.** The counts below are recounted mechanically from §4's
 > verdict column, not carried over from the 2026-09-18 baseline.
 
-Counting the 82 mapped rows in §4: **17 `SHIPPED`, 37 `PARTIAL`, 26 `ABSENT`**,
+Counting the 82 mapped rows in §4: **17 `SHIPPED`, 38 `PARTIAL`, 25 `ABSENT`**,
 plus **2 rows still labelled re-architecture** — *Project files in SharePoint*
 (bounded, §3.3) and the stage-list row (deferred, Q459), whose verdict cell
 carries the label inline, so a mechanical count of the verdict column sees only
@@ -431,7 +431,9 @@ pass changed **26 verdicts**: **13 rows to `SHIPPED`** (12 from `ABSENT` or
 `REARCH`, one from `PARTIAL` — among them the contract, handover, QC, cutlist,
 related-part and module-workspace rows) and **13 to `PARTIAL`** (11 from `ABSENT`,
 2 from `REARCH`), which took `REARCH` from 6 to 1. Another 11 rows kept their
-verdict but have new text.
+verdict but have new text. *Item duplication* (§2) moved `ABSENT` → `PARTIAL` after this
+pass (migration `0050`), which is why the counts above read 38 / 25 and not the 37 / 26
+the pass itself produced.
 
 What the seven conflicts became:
 

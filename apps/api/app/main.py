@@ -16,6 +16,7 @@ from .permission_groups.routes import router as permission_groups_router
 from .home.routes import router as home_router
 from .item_attachments.routes import router as item_attachments_router
 from .item_documents.routes import router as item_documents_router
+from .item_duplicates.routes import router as item_duplicates_router
 from .item_queries.routes import router as item_queries_router
 from .items.routes import router as items_router
 from .material_summaries.routes import router as material_summaries_router
@@ -60,6 +61,7 @@ app.include_router(cv_router)
 app.include_router(files_router)
 app.include_router(item_attachments_router)
 app.include_router(item_documents_router)
+app.include_router(item_duplicates_router)
 app.include_router(printing_router)
 app.include_router(samples_router)
 app.include_router(search_router)
