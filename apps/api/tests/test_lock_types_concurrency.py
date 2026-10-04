@@ -23,19 +23,6 @@ from app.main import app
 
 from .conftest import truncate_fixture
 
-_STATUS_KEYS = [("CLEAR", 1), ("HOLD", 2), ("LIVE", 3), ("VOID", 4), ("APPROVED", 5)]
-_STAGE_KEYS = [
-    ("REQ", "Required", 1),
-    ("SM", "Shop Material", 2),
-    ("LISTED", "Listed", 3),
-    ("DOWN", "Down", 4),
-    ("CNC", "CNC", 5),
-    ("EDGED", "Edged", 6),
-    ("PAINTED", "Painted", 7),
-    ("MADE", "Made", 8),
-    ("DEL", "Delivered", 9),
-    ("INST", "Installed", 10),
-]
 
 
 _cleanup = truncate_fixture(
@@ -58,24 +45,6 @@ _cleanup = truncate_fixture(
 )
 
 
-def _seed_refs(db) -> None:
-    for key, order in _STATUS_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO status_options(status_key, sort_order)"
-                " VALUES(:k, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "o": order},
-        )
-    for key, label, order in _STAGE_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO stages(stage_key, label, sort_order)"
-                " VALUES(:k, :l, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "l": label, "o": order},
-        )
-    db.commit()
 
 
 def _make_user(db, *, workspace_id: int, role: str, name: str = "Test User"):
@@ -111,7 +80,6 @@ def _setup_workspace_and_project(role_a: str = "manager") -> dict:
     slug = f"ws-{suffix}"
     db = SessionLocal()
     try:
-        _seed_refs(db)
         wid = db.execute(
             text("INSERT INTO workspace(slug, name) VALUES(:s, 'L WS') RETURNING id"),
             {"s": slug},
