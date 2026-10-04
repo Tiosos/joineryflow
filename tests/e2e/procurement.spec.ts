@@ -1,11 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 test("Procurement resolution flow", async ({ page }) => {
-  await page.goto("/login");
-  await page.fill('input[type="email"]',    "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
+  await login(page);
 
   await page.goto("/tracking?project_id=1");
   await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();

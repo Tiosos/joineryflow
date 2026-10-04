@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Item & Project Detail 2.0 (#11, migration 0036) — frontend built in
@@ -13,14 +14,6 @@ import { test, expect, type Page } from "@playwright/test";
  * so a second run without `make seed` in between won't find an "Answer"
  * button on it.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function openFirstAlfredItem(page: Page) {
   await page.goto("/projects");
   await page.getByRole("link", { name: "Alfred Street Renovation", exact: true }).click();

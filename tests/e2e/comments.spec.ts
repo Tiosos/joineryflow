@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Comments + @mentions + in-app notifications (Plan V1 §29, migration 0042),
@@ -15,14 +16,6 @@ import { test, expect, type Page } from "@playwright/test";
  * idempotent against a second run without re-seeding: the first test reads
  * Juno's seeded notification, so his bell starts at 0 the next time.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /** Switch the item editor to its Comments tab and wait until it has *landed*.
  *  The tab is driven by the URL, so on a dev server that is still compiling the
  *  route the click takes a moment — and until then the Cutlist tab's own module

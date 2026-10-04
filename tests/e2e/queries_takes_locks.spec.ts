@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Locks on the item refuse item-query answers and every material-take write
@@ -14,14 +15,6 @@ import { test, expect, type Page } from "@playwright/test";
  * (workers: 1). Nothing here writes a query or a take: refusals are the point, and
  * asking is only checked for being *enabled* (clicking it would add a row).
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /** The item's id, found through the Tracking row for its code (as the other lock specs do). */
 async function itemId(page: Page, code: string): Promise<number> {
   await page.goto("/tracking?project_id=1");

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Sub-project #11 (E4) — Global Search, end to end against `make seed` with
@@ -9,14 +10,6 @@ import { test, expect } from "@playwright/test";
  *  - A misspelt word still finds its record (typo tolerance on titles), and
  *    the results page groups hits into type chips.
  */
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /**
  * Search has no Postgres fallback: with Meilisearch down `GET /search` answers
  * `503 SEARCH_UNAVAILABLE`. That is an environment without the `meili` /

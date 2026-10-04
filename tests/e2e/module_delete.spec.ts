@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Deleting a module asks first (Plan V1 §29 module threads, migration 0043): a
@@ -9,14 +10,6 @@ import { test, expect, type Page } from "@playwright/test";
  * cv_replace_comments.spec.ts also use it) on a module this spec adds, so nothing
  * seeded elsewhere is touched; the other tests only open the dialog and cancel.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /** Go to an item's Cutlist tab by its tracking-row code, by href rather than a
  *  click (a row-link click intermittently did not navigate). */
 async function openCutlist(page: Page, code: string) {

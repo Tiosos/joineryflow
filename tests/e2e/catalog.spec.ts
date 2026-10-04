@@ -1,20 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 // Seeded users (see seed/hartwood_joinery.py):
 //   rin.park@hartwood.test       — manager (PM, owner of ALF-001)
 //   noa.lindqvist@hartwood.test  — drafter
 // Catalog write actions are gated on `("catalog","write")` which both
 // manager and drafter have. We use rin.park for parity with isample.spec.ts.
-const EMAIL = "rin.park@hartwood.test";
-const PASSWORD = "hartwood-dev";
-
-async function login(page: Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', EMAIL);
-  await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
 
 test.describe("catalog (#7a)", () => {
   test.beforeEach(async ({ page }) => {

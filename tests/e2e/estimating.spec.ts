@@ -7,15 +7,12 @@
 // user instruction: "add an estimating system into the current project, fully integrate with joinery items."
 
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
 test("estimator can view + convert seeded estimate to project", async ({ page }) => {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "kai.ngata@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
+  await login(page, "kai.ngata@hartwood.test");
 
   await page.getByRole("link", { name: "Estimating", exact: true }).click();
   await expect(page).toHaveURL(/\/estimating/, { timeout: 30_000 });
@@ -36,11 +33,7 @@ test("estimator can view + convert seeded estimate to project", async ({ page })
 });
 
 test("quote PDF renders for the submitted demo estimate", async ({ page, context }) => {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "kai.ngata@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/);
+  await login(page, "kai.ngata@hartwood.test");
 
   await page.goto("/estimating");
   await page.getByText("EST-2026-0002").click();
@@ -57,11 +50,7 @@ test("quote PDF renders for the submitted demo estimate", async ({ page, context
 });
 
 test("PM (manager) sees the New estimate button", async ({ page }) => {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/);
+  await login(page);
 
   await page.goto("/estimating");
   await expect(page.locator('[data-testid="new-estimate-btn"]')).toBeVisible();

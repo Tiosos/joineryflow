@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * The CV wizard's "Replace existing modules" step warns about the comments it
@@ -12,14 +13,6 @@ import { test, expect, type Page } from "@playwright/test";
  * module only when the item has none, and ends with the item's comments deleted
  * by the replace it performs.
  */
-async function login(page: Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test"); // manager
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function openTeaPointCutlist(page: Page) {
   await page.goto("/tracking?project_id=1");
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: "JO-TP01" });

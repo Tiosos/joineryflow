@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Duplicate a Joinery Item (Plan V1 §2): a drafter / manager / admin copies an item from
@@ -7,14 +8,6 @@ import { test, expect, type Page } from "@playwright/test";
  * `finally`; deleting the copy also removes its own, never-used cutlist, so the seeded
  * project is left as it was.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function itemId(page: Page, code: string): Promise<number> {
   await page.goto("/tracking?project_id=1");
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: code });

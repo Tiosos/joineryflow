@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Sub-project #12 (D3) — Material Take → Material Summary against `make seed`.
@@ -7,14 +8,6 @@ import { test, expect } from "@playwright/test";
  * except one (a draft), a built summary, and one item at take v2 — so the
  * summary opens with a stale line and one missing take.
  */
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 test("a drafted take can be adjusted and approved, then summarised", async ({ page }) => {
   await login(page);
 
