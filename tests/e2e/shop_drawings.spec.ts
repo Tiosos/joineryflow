@@ -8,6 +8,29 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
+/** A small but valid N-page PDF (correct xref), so pdf.js can really open it. */
+function pdfWithPages(n: number): Buffer {
+  const objs: string[] = [];
+  const kids = Array.from({ length: n }, (_, i) => `${3 + i * 2} 0 R`).join(" ");
+  objs.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
+  for (let i = 0; i < n; i++) {
+    // A thick outline as well as text: vector drawing is what CAD output is, and
+    // it needs no fonts, so it proves the thumbnail really painted something.
+    const content = `4 w 30 30 240 440 re S BT /F1 40 Tf 60 400 Td (Page ${i + 1}) Tj ET`;
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 500] /Contents ${4 + i * 2} 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>`);
+    objs.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  }
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  offsets.forEach((o) => { out += `${String(o).padStart(10, "0")} 00000 n \n`; });
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
 test("shop drawings: drafter uploads + manager approves", async ({ page }) => {
   // Drafter uploads + submits.
   await login(page, "noa.lindqvist@hartwood.test");
@@ -158,4 +181,41 @@ test("register: a viewer sees the details read-only", async ({ page }) => {
   await expect(panel).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText(/Only the drawing's creator or a manager can edit/)).toBeVisible();
   await expect(panel.locator("select").first()).toBeDisabled();
+});
+
+// Creates a drawing (as the upload tests above do); a re-run just adds another.
+test("viewer: thumbnail strip shows every page and pages the drawing", async ({ page }) => {
+  await login(page, "noa.lindqvist@hartwood.test");
+  await page.goto("/shop-dwgs");
+  await page.getByRole("button", { name: "Upload drawing" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "three-pages.pdf",
+    mimeType: "application/pdf",
+    buffer: pdfWithPages(3),
+  });
+  await page.locator('input[placeholder^="Title"]').fill("Thumbnail test drawing");
+  await page.getByRole("button", { name: "Create drawing" }).click();
+  await expect(page).toHaveURL(/drawing=\d+/, { timeout: 30_000 });
+
+  // A re-run leaves earlier copies behind; the register sorts by number, so the
+  // one just created is the last.
+  await page.getByTestId("register-row").filter({ hasText: "Thumbnail test drawing" })
+    .last().getByTestId("view-drawing").click();
+  const strip = page.getByTestId("thumbnail-strip");
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect(strip.getByTestId("page-count")).toHaveText("3 pages", { timeout: 30_000 });
+  await expect(strip.getByTestId("thumbnail")).toHaveCount(3);
+  // Painted, not blank: every thumbnail has dark (non-white) pixels from the outline.
+  for (let i = 0; i < 3; i++) {
+    await expect.poll(() => strip.locator("canvas").nth(i).evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+      for (let p = 0; p < d.length; p += 4) if (d[p]! < 100 && d[p + 3]! > 200) return true;
+      return false;
+    }), { timeout: 30_000 }).toBe(true);
+  }
+
+  await expect(strip.getByRole("button", { name: "Go to page 1" })).toHaveAttribute("aria-current", "page");
+  await strip.getByRole("button", { name: "Go to page 3" }).click();
+  await expect(strip.getByRole("button", { name: "Go to page 3" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('[data-testid="drawing-viewer"] iframe')).toHaveAttribute("src", /#page=3&/);
 });

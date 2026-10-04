@@ -15,6 +15,7 @@ import QueueChip from "./QueueChip";
 import { fmtDate } from "./RegisterTable";
 import ReviewActions from "./ReviewActions";
 import StatusPill from "./StatusPill";
+import ThumbnailStrip from "./ThumbnailStrip";
 
 interface Props {
   drawingId: number;
@@ -31,10 +32,9 @@ const ZOOMS = [50, 75, 100, 125, 150, 200, 300];
 /** Full-screen drawing viewer: the drawing on the left, and everything about
  *  it — versions, communication, key facts, review actions — on the right.
  *
- *  Zoom uses the browser's own PDF viewer (`#zoom=`) and CSS scaling for
- *  images. There is no in-app page counter or thumbnail strip — that needs a PDF
- *  renderer (pdf.js) the app does not ship; Chrome's embedded viewer supplies
- *  its own. */
+ *  The drawing is the browser's own PDF viewer (zoom via `#zoom=`, paging via
+ *  `#page=`) or, for images, CSS scaling. The thumbnail strip is rendered by
+ *  pdf.js (`ThumbnailStrip`) and only drives that embedded viewer. */
 export default function DrawingViewer(props: Props) {
   const { me, onClose } = props;
   const [detail, setDetail] = useState<DrawingDetail | null>(null);
@@ -42,6 +42,9 @@ export default function DrawingViewer(props: Props) {
   const [selectedRevId, setSelectedRevId] = useState<number>(props.initialRevId ?? 0);
   // null = fit to page
   const [zoom, setZoom] = useState<number | null>(null);
+  // Page last chosen from the thumbnail strip; a different revision starts at 1.
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [selectedRevId]);
 
   const refresh = useCallback(async () => {
     try { setDetail(await getDrawing(props.drawingId)); setError(null); }
@@ -105,12 +108,14 @@ export default function DrawingViewer(props: Props) {
       {error && <p className="p-4 text-sm text-h-bad">{error}</p>}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {rev && isPdf && <ThumbnailStrip url={fileUrl} page={page} onPage={setPage} />}
         <main className="min-h-0 flex-1 overflow-auto bg-h-line/20">
           {rev && isPdf && (
             <iframe
-              key={`${rev.revision_id}-${zoom ?? "fit"}`}
+              key={`${rev.revision_id}-${zoom ?? "fit"}-${page}`}
               title={`drawing ${props.drawingId} v${rev.rev_no}`}
-              src={`${fileUrl}#zoom=${zoom ?? "page-fit"}`}
+              // navpanes=0: Chrome's own thumbnail panel would sit beside ours.
+              src={`${fileUrl}#page=${page}&zoom=${zoom ?? "page-fit"}&navpanes=0`}
               className="h-full w-full"
             />
           )}
