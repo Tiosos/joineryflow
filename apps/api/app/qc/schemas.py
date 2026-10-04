@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 
 class CreateDefectIn(BaseModel):
@@ -11,6 +12,8 @@ class CreateDefectIn(BaseModel):
 
 
 class PatchDefectIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("description")
     stage_key: str | None = None
     description: str | None = Field(default=None, min_length=1)
 
@@ -41,6 +44,8 @@ class CreateChecklistItemIn(BaseModel):
 
 
 class PatchChecklistItemIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("label", "is_checked", "sort_order")
     label: str | None = Field(default=None, min_length=1)
     is_checked: bool | None = None
     sort_order: int | None = None
@@ -68,6 +73,8 @@ class CreateReworkIn(BaseModel):
 
 
 class PatchReworkIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("cause", "scope")
     cause: str | None = Field(default=None, min_length=1)
     scope: str | None = Field(default=None, min_length=1)
     responsibility: str | None = None

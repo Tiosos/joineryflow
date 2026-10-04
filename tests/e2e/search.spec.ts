@@ -17,8 +17,20 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
+/**
+ * Search has no Postgres fallback: with Meilisearch down `GET /search` answers
+ * `503 SEARCH_UNAVAILABLE`. That is an environment without the `meili` /
+ * `search-worker` services (a bare dev stack, the sandbox), not a defect, so
+ * skip then — and only then: a reachable but empty or broken index still fails.
+ */
+async function skipWithoutSearch(page: import("@playwright/test").Page) {
+  const res = await page.request.get("/api/search?q=297830");
+  test.skip(res.status() === 503, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
+}
+
 test("a cutlist number in the top bar opens that cutlist", async ({ page }) => {
   await login(page);
+  await skipWithoutSearch(page);
   // The "/" shortcut is attached on hydration; pressing earlier is a no-op.
   await page.waitForLoadState("networkidle");
   await page.keyboard.press("/");
@@ -37,6 +49,7 @@ test("a cutlist number in the top bar opens that cutlist", async ({ page }) => {
 
 test("a misspelt word still finds its record on the results page", async ({ page }) => {
   await login(page);
+  await skipWithoutSearch(page);
   const box = page.getByRole("searchbox", { name: "Search", exact: true });
   await box.fill("stonewroks"); // Corian Stoneworks
   await box.press("Enter");

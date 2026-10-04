@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { createRow } from "@/lib/catalog-fetch";
-import type { CatalogSlug } from "@/lib/catalog-types";
+import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import type { MaterialTab } from "./CatalogClient";
 
@@ -13,6 +13,8 @@ interface Props {
   tab: MaterialTab;
   slug: CatalogSlug;
   projects: Project[];
+  /** null while loading or when the list could not be read (the picker is then disabled). */
+  suppliers: SupplierOption[] | null;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -34,6 +36,7 @@ export default function NewCatalogRowDialog(p: Props) {
   const [sku, setSku] = useState("");
   const [legacyVal, setLegacyVal] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [supplierId, setSupplierId] = useState("");
   const [leadTime, setLeadTime] = useState("");
   const [synonyms, setSynonyms] = useState("");
   const [projectId, setProjectId] = useState<number | "">(p.tab === "hire" ? (p.projects[0]?.id ?? "") : "");
@@ -48,6 +51,7 @@ export default function NewCatalogRowDialog(p: Props) {
     };
     if (legacy) body[legacy.key] = legacyVal;
     if (supplier) body.default_supplier = supplier;
+    if (supplierId) body.default_supplier_id = Number(supplierId);
     if (leadTime !== "") body.default_lead_time_days = Number(leadTime);
     if (p.tab === "hire") {
       if (projectId === "") { setErr("Project is required"); setBusy(false); return; }
@@ -85,6 +89,27 @@ export default function NewCatalogRowDialog(p: Props) {
           <Field label="Default supplier">
             <input value={supplier} onChange={(e) => setSupplier(e.target.value)}
                    className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+          </Field>
+          <Field label="Supplier link">
+            <select
+              aria-label="Supplier link"
+              value={supplierId}
+              disabled={p.suppliers == null}
+              onChange={(e) => setSupplierId(e.target.value)}
+              className="w-full rounded border border-h-line px-2 py-1 text-sm"
+            >
+              <option value="">Not linked</option>
+              {(p.suppliers ?? []).map((s) => (
+                <option key={s.vendor_id} value={s.vendor_id}>
+                  {s.name}{s.status && s.status !== "Active" ? ` (${s.status.toLowerCase()})` : ""}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-h-muted">
+              {p.suppliers == null
+                ? "The supplier list couldn't be read, so this row will start unlinked."
+                : "Generate Orders orders from the linked supplier; an unlinked row holds its quote lines back."}
+            </span>
           </Field>
           <Field label="Default lead time (days)">
             <input type="number" value={leadTime} onChange={(e) => setLeadTime(e.target.value)}

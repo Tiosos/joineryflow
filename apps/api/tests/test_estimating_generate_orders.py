@@ -420,3 +420,636 @@ def test_generate_orders_audit_and_revision_flag():
         assert event == "estimate.generate_orders"
     finally:
         s.close()
+
+
+# ----------------------------------------------------------------------------
+# Per-line selection — a run can cover part of a quote and a later run the rest
+# (migration 0048: `estimate_line.orders_generated_at` is the guard, not the
+# revision's flag)
+# ----------------------------------------------------------------------------
+
+def _sql_scalar(sql: str, **params):
+    s = SessionLocal()
+    try:
+        return s.execute(text(sql), params).scalar()
+    finally:
+        s.close()
+
+
+def _line_flags(c: TestClient, estimate_id: int, rid: int) -> dict[int, dict]:
+    est = c.get(f"/estimates/{estimate_id}").json()
+    rev = next(r for r in est["revisions"] if r["revision_id"] == rid)
+    return {l["line_id"]: l for l in rev["lines"]}
+
+
+def _board_qty(c: TestClient, po_id: int) -> float:
+    po = c.get(f"/orders/{po_id}").json()
+    return float(next(l for l in po["lines"] if l["material_table"] == "board_materials")["quantity"])
+
+
+def _po_count(wid: int) -> int:
+    return _sql_scalar(
+        "SELECT count(*) FROM purchase_orders po JOIN vendors v ON v.vendor_id = po.vendor_id"
+        " WHERE v.workspace_id = :w", w=wid)
+
+
+def _two_line_quote():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, second_board_line=True)
+    _convert(c, quote["revision_id"])
+    return ctx, c, quote, quote["line_ids"][0], quote["line_ids"][1]
+
+
+def test_a_partial_run_covers_only_its_lines_and_a_later_run_takes_the_rest():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    assert r.status_code == 200, r.text
+    first_po = r.json()["po_ids"][0]
+    assert _board_qty(c, first_po) == 2.0
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["orders_generated_at"] is not None
+    assert flags[l2]["orders_generated_at"] is None
+
+    # No ids: every line still to order — just line 2, its own PO, not line 1 again.
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1
+    second_po = r.json()["po_ids"][0]
+    assert second_po != first_po
+    assert _board_qty(c, second_po) == 3.0
+    assert len(c.get(f"/orders/{second_po}").json()["lines"]) == 1   # no hardware: that was line 1's
+    assert _po_count(ctx["wid"]) == 2
+
+    # Everything is covered now: the old once-per-quote answer.
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
+    assert _po_count(ctx["wid"]) == 2
+
+
+def test_a_line_an_earlier_run_covered_cannot_be_ordered_again():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    assert c.post(f"/revisions/{rid}/generate-orders",
+                  json={"include_line_ids": [l1]}).status_code == 200
+    before = _po_count(ctx["wid"])
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1, l2]})
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"code": "LINES_ALREADY_GENERATED", "line_ids": [l1]}
+    assert _po_count(ctx["wid"]) == before, "a refused run creates nothing"
+    assert _line_flags(c, quote["estimate_id"], rid)[l2]["orders_generated_at"] is None
+    # ...and line 2 is still there to order.
+    assert c.post(f"/revisions/{rid}/generate-orders",
+                  json={"include_line_ids": [l2]}).status_code == 200
+
+
+def test_an_empty_selection_is_refused_and_leaves_the_quote_orderable():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": []})
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "NO_LINES_SELECTED"
+    assert _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r",
+                       r=rid) is None
+    assert _po_count(ctx["wid"]) == 0
+    assert c.post(f"/revisions/{rid}/generate-orders").status_code == 200
+
+
+def _link_supplier(table: str, id_col: str, material_id: int, vendor_id: int) -> None:
+    """What the Catalog's Supplier link does, by SQL — the estimator these tests log
+    in as cannot write the catalog."""
+    s = SessionLocal()
+    try:
+        s.execute(
+            text(f"UPDATE {table} SET default_supplier_id = :v WHERE {id_col} = :m"),
+            {"v": vendor_id, "m": material_id},
+        )
+        s.commit()
+    finally:
+        s.close()
+
+
+def _orphan_only_quote():
+    """A converted quote whose single line uses only a material with no supplier."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    cust = c.post("/customers", json={"name": f"C-{uuid.uuid4().hex[:6]}"}).json()
+    est = c.post("/estimates", json={"customer_id": cust["customer_id"], "title": "Orphans"}).json()
+    rid = est["current_revision_id"]
+    line = c.post(f"/revisions/{rid}/lines", json={"description": "Orphan", "qty": 1}).json()
+    c.post(f"/lines/{line['line_id']}/parts",
+           json={"material_type": "BOARD", "material_id": ctx["unassigned_board_id"], "qty": 2})
+    _advance_to_won(c, rid)
+    _convert(c, rid)
+    return ctx, c, est["estimate_id"], rid, line["line_id"]
+
+
+def test_a_run_with_nothing_orderable_is_refused_and_writes_nothing():
+    """It used to answer 200 with no orders and stamp the line covered, so linking a
+    supplier afterwards could never be acted on."""
+    ctx, c, eid, rid, line = _orphan_only_quote()
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
+    assert r.json()["detail"]["unassigned_count"] == 1
+
+    assert _po_count(ctx["wid"]) == 0
+    assert _line_flags(c, eid, rid)[line]["orders_generated_at"] is None
+    assert _sql_scalar(
+        "SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r", r=rid
+    ) is None
+    assert _sql_scalar(
+        "SELECT count(*) FROM audit_log WHERE event = 'estimate.generate_orders'"
+        " AND target = :t", t=str(rid)) == 0
+    # the explicit selection answers the same way
+    r = c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [line]})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
+    # and the preview still offers the line, with nothing grouped
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["groups"] == [] and len(pv["unassigned"]) == 1
+    assert [l["selected"] for l in pv["lines"]] == [True]
+
+
+def test_a_line_with_only_unassigned_materials_can_be_ordered_once_a_supplier_is_linked():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    _convert(c, quote["revision_id"])
+    rid = quote["revision_id"]
+    pantry, orphan = quote["line_ids"]
+    eid = quote["estimate_id"]
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1
+    assert r.json()["uncovered_line_ids"] == [orphan]
+    flags = _line_flags(c, eid, rid)
+    assert flags[pantry]["orders_generated_at"] is not None
+    assert flags[orphan]["orders_generated_at"] is None
+
+    # nothing more can be ordered until the supplier is linked ...
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
+
+    # ... and then the same line orders, in its own PO
+    _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1 and r.json()["uncovered_line_ids"] == []
+    assert _line_flags(c, eid, rid)[orphan]["orders_generated_at"] is not None
+    assert _po_count(ctx["wid"]) == 2
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
+
+
+def _mixed_quote(ctx, *, shared_line: bool = False):
+    """A converted quote whose line 'Mixed' uses a supplied board AND a board with no
+    supplier. With `shared_line`, a second line 'Plain' uses the supplied board alone."""
+    c = ctx["client"]
+    cust = c.post("/customers", json={"name": "Mixed"}).json()
+    est = c.post("/estimates", json={"customer_id": cust["customer_id"], "title": "Mixed"}).json()
+    rid = est["current_revision_id"]
+    mixed = c.post(f"/revisions/{rid}/lines", json={"description": "Mixed", "qty": 1}).json()
+    c.post(f"/lines/{mixed['line_id']}/parts",
+           json={"material_type": "BOARD", "material_id": ctx["board_id"], "qty": 2})
+    c.post(f"/lines/{mixed['line_id']}/parts",
+           json={"material_type": "BOARD", "material_id": ctx["unassigned_board_id"], "qty": 1})
+    plain = None
+    if shared_line:
+        plain = c.post(f"/revisions/{rid}/lines", json={"description": "Plain", "qty": 1}).json()
+        c.post(f"/lines/{plain['line_id']}/parts",
+               json={"material_type": "BOARD", "material_id": ctx["board_id"], "qty": 3})
+    _advance_to_won(c, rid)
+    _convert(c, rid)
+    return est["estimate_id"], rid, mixed["line_id"], plain["line_id"] if plain else None
+
+
+def test_a_line_with_a_supplied_and_an_unsupplied_material_orders_only_the_supplied_one():
+    """Coverage is per material: the board with a supplier is ordered now; the one without
+    stays pending (and so does its line) until a supplier is linked."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, _ = _mixed_quote(ctx)
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert len(pv["groups"]) == 1 and len(pv["unassigned"]) == 1
+    assert [l["material_id"] for l in pv["groups"][0]["lines"]] == [ctx["board_id"]]
+    assert pv["unassigned"][0]["material_id"] == ctx["unassigned_board_id"]
+    assert [(l["selected"], l["held_back"]) for l in pv["lines"]] == [(True, True)]
+    states = {m["material_id"]: (m["state"], m["no_supplier"]) for m in pv["lines"][0]["materials"]}
+    assert states == {ctx["board_id"]: ("pending", False),
+                      ctx["unassigned_board_id"]: ("pending", True)}
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orders_created"] == 1 and body["lines_created"] == 1
+    assert body["uncovered_line_ids"] == [mixed] and len(body["unassigned"]) == 1
+    assert _board_qty(c, body["po_ids"][0]) == 2.0
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is None, "line still pending"
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    states = {m["material_id"]: m["state"] for m in pv["lines"][0]["materials"]}
+    assert states == {ctx["board_id"]: "generated", ctx["unassigned_board_id"]: "pending"}
+    # Nothing new can be ordered until the supplier is linked.
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_ORDERABLE"
+    assert _po_count(ctx["wid"]) == 1
+
+
+def test_the_unsupplied_material_orders_alone_after_the_link_and_the_first_is_not_repeated():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, _ = _mixed_quote(ctx)
+    first = c.post(f"/revisions/{rid}/generate-orders").json()
+    _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orders_created"] == 1 and body["lines_created"] == 1
+    assert body["unassigned"] == [] and body["uncovered_line_ids"] == []
+    po = c.get(f"/orders/{body['po_ids'][0]}").json()
+    assert [l["material_id"] for l in po["lines"]] == [ctx["unassigned_board_id"]]
+    assert body["po_ids"][0] != first["po_ids"][0]
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is not None
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "ORDERS_ALREADY_GENERATED"
+
+
+def test_a_material_shared_between_lines_is_ordered_for_each_lines_pending_quantity():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    eid, rid, mixed, plain = _mixed_quote(ctx, shared_line=True)
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    held = {l["line_id"]: l["held_back"] for l in pv["lines"]}
+    assert held == {mixed: True, plain: False}
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orders_created"] == 1 and body["uncovered_line_ids"] == [mixed]
+    assert _board_qty(c, body["po_ids"][0]) == 5.0  # Plain's 3 + Mixed's 2
+    flags = _line_flags(c, eid, rid)
+    assert flags[plain]["orders_generated_at"] is not None
+    assert flags[mixed]["orders_generated_at"] is None
+
+    # once linked, only what is still pending orders: the unsupplied board's 1
+    _link_supplier("board_materials", "material_id", ctx["unassigned_board_id"], ctx["vendor_a"])
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["lines_created"] == 1 and r.json()["uncovered_line_ids"] == []
+    po = c.get(f"/orders/{r.json()['po_ids'][0]}").json()
+    qty = {l["material_id"]: float(l["quantity"]) for l in po["lines"]}
+    assert qty == {ctx["unassigned_board_id"]: 1.0}
+    assert _line_flags(c, eid, rid)[mixed]["orders_generated_at"] is not None
+
+
+def _archive(table: str, id_col: str, material_id: int) -> None:
+    s = SessionLocal()
+    try:
+        s.execute(
+            text(f"UPDATE {table} SET archived_at = now() WHERE {id_col} = :m"),
+            {"m": material_id},
+        )
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_an_archived_material_that_is_linked_still_orders_from_its_supplier():
+    """The quote priced it before it was archived; treating the row as missing sent it
+    to 'unassigned' with a stale snapshot even though it has a supplier."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    _convert(c, quote["revision_id"])
+    _archive("board_materials", "material_id", ctx["board_id"])
+    rid = quote["revision_id"]
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["unassigned"] == [] and len(pv["groups"]) == 1
+    flags = {l["material_id"]: l["archived"] for l in pv["groups"][0]["lines"]}
+    assert flags == {ctx["board_id"]: True, ctx["hw_id"]: False}
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1 and r.json()["lines_created"] == 2
+
+
+def test_an_archived_material_with_no_supplier_is_still_unassigned_with_its_live_sku():
+    ctx, c, eid, rid, line = _orphan_only_quote()
+    _archive("board_materials", "material_id", ctx["unassigned_board_id"])
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["groups"] == [] and len(pv["unassigned"]) == 1
+    assert pv["unassigned"][0]["archived"] is True
+    assert pv["unassigned"][0]["sku"].startswith("TORPHAN-")
+
+
+def test_a_line_that_references_no_catalog_material_is_covered_by_a_run():
+    """Nothing on it can ever be ordered, so it must not stay pending forever."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    cust = c.post("/customers", json={"name": "Labour"}).json()
+    est = c.post("/estimates", json={"customer_id": cust["customer_id"], "title": "Labour"}).json()
+    rid = est["current_revision_id"]
+    plain = c.post(f"/revisions/{rid}/lines", json={"description": "Labour only", "qty": 1}).json()
+    stocked = c.post(f"/revisions/{rid}/lines", json={"description": "Stocked", "qty": 1}).json()
+    c.post(f"/lines/{stocked['line_id']}/parts",
+           json={"material_type": "BOARD", "material_id": ctx["board_id"], "qty": 1})
+    _advance_to_won(c, rid)
+    _convert(c, rid)
+
+    r = c.post(f"/revisions/{rid}/generate-orders")
+    assert r.status_code == 200, r.text
+    assert r.json()["orders_created"] == 1 and r.json()["uncovered_line_ids"] == []
+    flags = _line_flags(c, est["estimate_id"], rid)
+    assert flags[plain["line_id"]]["orders_generated_at"] is not None
+    assert flags[stocked["line_id"]]["orders_generated_at"] is not None
+
+
+def test_the_audit_row_names_the_lines_a_run_covered_and_the_ones_it_left():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    _convert(c, quote["revision_id"])
+    rid = quote["revision_id"]
+    pantry, orphan = quote["line_ids"]
+    assert c.post(f"/revisions/{rid}/generate-orders").status_code == 200
+    payload = _sql_scalar(
+        "SELECT payload FROM audit_log WHERE event = 'estimate.generate_orders'"
+        " AND target = :t ORDER BY id DESC LIMIT 1", t=str(rid))
+    assert payload["included_line_ids"] == [pantry]
+    assert payload["uncovered_line_ids"] == [orphan]
+
+
+def test_the_revision_timestamp_is_the_latest_run_and_each_run_is_audited():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    first = _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r", r=rid)
+    c.post(f"/revisions/{rid}/generate-orders")
+    second = _sql_scalar("SELECT orders_generated_at FROM estimate_revision WHERE revision_id = :r", r=rid)
+    assert first is not None and second > first
+
+    s = SessionLocal()
+    try:
+        rows = s.execute(
+            text("SELECT payload FROM audit_log WHERE event = 'estimate.generate_orders'"
+                 " AND target = :t ORDER BY id"), {"t": str(rid)}).scalars().all()
+    finally:
+        s.close()
+    assert [p["included_line_ids"] for p in rows] == [[l1], [l2]]
+
+
+def test_revision_detail_lines_carry_the_per_line_flags():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["included_at_convert"] is True
+    assert flags[l1]["orders_generated_at"] is None
+
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+    flags = _line_flags(c, quote["estimate_id"], rid)
+    assert flags[l1]["orders_generated_at"] is not None
+    assert flags[l2]["orders_generated_at"] is None
+
+
+def test_preview_lists_the_lines_and_follows_the_selection():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+
+    r = c.get(f"/revisions/{rid}/order-preview")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [(l["line_id"], l["selected"]) for l in body["lines"]] == [(l1, True), (l2, True)]
+    board = next(x for x in body["groups"][0]["lines"] if x["material_type"] == "BOARD")
+    assert float(board["qty"]) == 5.0
+
+    # Narrowed to line 2: the groups are for exactly that selection.
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [l2]})
+    body = r.json()
+    assert [(l["line_id"], l["selected"]) for l in body["lines"]] == [(l1, False), (l2, True)]
+    assert [x["material_type"] for x in body["groups"][0]["lines"]] == ["BOARD"]
+    assert float(body["groups"][0]["lines"][0]["qty"]) == 3.0
+
+
+def test_preview_after_a_partial_run_marks_the_covered_line_and_selects_the_rest():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+
+    body = c.get(f"/revisions/{rid}/order-preview").json()
+
+    by_id = {l["line_id"]: l for l in body["lines"]}
+    assert by_id[l1]["orders_generated_at"] is not None and by_id[l1]["selected"] is False
+    assert by_id[l2]["orders_generated_at"] is None and by_id[l2]["selected"] is True
+    assert float(next(x for x in body["groups"][0]["lines"]
+                      if x["material_type"] == "BOARD")["qty"]) == 3.0
+
+
+def test_preview_refuses_a_covered_or_unknown_line_like_generate_does():
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid = quote["revision_id"]
+    c.post(f"/revisions/{rid}/generate-orders", json={"include_line_ids": [l1]})
+
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [l1]})
+    assert r.status_code == 409
+    assert r.json()["detail"] == {"code": "LINES_ALREADY_GENERATED", "line_ids": [l1]}
+
+    r = c.get(f"/revisions/{rid}/order-preview", params={"include_line_ids": [999999]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "UNKNOWN_LINE_IDS"
+
+
+def test_concurrent_runs_cannot_order_the_same_line_twice():
+    """Two runs naming the same line serialize on the revision lock, so the second
+    sees the first's flag instead of both passing the check and making two POs."""
+    import threading
+    import time
+
+    from app.estimating import queries as q
+
+    ctx, c, quote, l1, l2 = _two_line_quote()
+    rid, wid, uid = quote["revision_id"], ctx["wid"], ctx["uid"]
+    holding = threading.Event()
+
+    def worker_a():
+        s = SessionLocal()
+        try:
+            q.generate_orders(s, revision_id=rid, workspace_id=wid, actor_id=uid,
+                              include_line_ids=[l1])
+            holding.set()
+            time.sleep(0.4)     # hold the revision lock so B is forced to wait
+            s.commit()
+        finally:
+            s.close()
+
+    t = threading.Thread(target=worker_a)
+    t.start()
+    assert holding.wait(timeout=5), "run A never finished generating"
+
+    s2 = SessionLocal()
+    try:
+        start = time.monotonic()
+        with pytest.raises(ValueError) as exc:
+            q.generate_orders(s2, revision_id=rid, workspace_id=wid, actor_id=uid,
+                              include_line_ids=[l1])
+        elapsed = time.monotonic() - start
+        s2.rollback()
+    finally:
+        s2.close()
+    t.join(timeout=5)
+
+    assert elapsed >= 0.3, f"run B did not wait for run A's lock ({elapsed:.3f}s)"
+    assert "LINES_ALREADY_GENERATED" in str(exc.value)
+    assert _po_count(wid) == 1
+
+
+# ----------------------------------------------------------------------------
+# link-supplier — the narrow shortcut for a material that has no supplier
+# ----------------------------------------------------------------------------
+
+def _link(c: TestClient, rid: int, material_id: int, supplier_id: int, material_type: str = "BOARD"):
+    return c.post(f"/revisions/{rid}/link-supplier", json={
+        "material_type": material_type, "material_id": material_id, "supplier_id": supplier_id,
+    })
+
+
+def _board_link(material_id: int):
+    return _sql_scalar(
+        "SELECT default_supplier_id FROM board_materials WHERE material_id = :m", m=material_id)
+
+
+def test_an_estimator_can_give_an_unassigned_material_its_supplier_and_then_order_it():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    _convert(c, rid)
+    assert c.get(f"/revisions/{rid}/order-preview").json()["groups"][0]["lines"]  # the pantry only
+    assert len(c.get(f"/revisions/{rid}/order-preview").json()["unassigned"]) == 1
+
+    r = _link(c, rid, ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 204, r.text
+    assert _board_link(ctx["unassigned_board_id"]) == ctx["vendor_a"]
+
+    pv = c.get(f"/revisions/{rid}/order-preview").json()
+    assert pv["unassigned"] == []
+    assert not any(l["held_back"] for l in pv["lines"])
+    out = c.post(f"/revisions/{rid}/generate-orders")
+    assert out.status_code == 200, out.text
+    assert out.json()["orders_created"] == 1 and out.json()["uncovered_line_ids"] == []
+
+
+def test_a_link_is_recorded_as_a_catalog_update_naming_the_revision():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    assert _link(c, rid, ctx["unassigned_board_id"], ctx["vendor_a"]).status_code == 204
+    payload = _sql_scalar(
+        "SELECT payload FROM audit_log WHERE event = 'catalog.board.update' AND target = :t"
+        " ORDER BY id DESC LIMIT 1", t=f"catalog.board:{ctx['unassigned_board_id']}")
+    assert payload == {
+        "default_supplier_id": ctx["vendor_a"], "via": "estimate.link_supplier", "revision_id": rid,
+    }
+
+
+def test_the_shortcut_cannot_touch_a_material_the_revision_does_not_use():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)  # uses board + hardware, NOT the unassigned board
+    r = _link(c, quote["revision_id"], ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "MATERIAL_NOT_IN_REVISION"
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_never_re_points_an_existing_link():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    db = SessionLocal()
+    try:
+        other = db.execute(
+            text("INSERT INTO vendors(name, category, workspace_id) VALUES ('Vendor B', 'Board', :w)"
+                 " RETURNING vendor_id"), {"w": ctx["wid"]},
+        ).scalar()
+        db.commit()
+    finally:
+        db.close()
+    r = _link(c, quote["revision_id"], ctx["board_id"], other)  # the board already has Vendor A
+    assert r.status_code == 409
+    assert r.json()["detail"] == {"code": "ALREADY_LINKED", "supplier_id": ctx["vendor_a"]}
+    assert _board_link(ctx["board_id"]) == ctx["vendor_a"]
+
+
+def test_the_shortcut_refuses_an_unknown_or_foreign_supplier_and_writes_nothing():
+    ctx, other = _bootstrap(), _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx, include_unassigned=True)
+    rid = quote["revision_id"]
+    before = _sql_scalar(
+        "SELECT count(*) FROM audit_log WHERE event = 'catalog.board.update'")
+    for sid in (999999, other["vendor_a"]):
+        r = _link(c, rid, ctx["unassigned_board_id"], sid)
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "UNKNOWN_SUPPLIER"
+        assert "Vendor A" not in r.text
+    assert _board_link(ctx["unassigned_board_id"]) is None
+    assert _sql_scalar("SELECT count(*) FROM audit_log WHERE event = 'catalog.board.update'") == before
+
+
+def test_another_workspaces_revision_is_a_404():
+    ctx, other = _bootstrap(), _bootstrap()
+    quote = _make_quote(ctx, include_unassigned=True)
+    r = _link(other["client"], quote["revision_id"], ctx["unassigned_board_id"], other["vendor_a"])
+    assert r.status_code == 404
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+@pytest.mark.parametrize("role", ["viewer", "drafter", "purchase_officer"])
+def test_a_role_without_estimating_approve_cannot_use_the_shortcut(role):
+    ctx = _bootstrap()
+    quote = _make_quote(ctx, include_unassigned=True)
+    other = _login_as(ctx["slug"], role)
+    r = _link(other, quote["revision_id"], ctx["unassigned_board_id"], ctx["vendor_a"])
+    assert r.status_code == 403
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_does_not_give_an_estimator_catalog_write():
+    """The point of the narrow route: the estimator still cannot edit the catalog itself."""
+    ctx = _bootstrap()
+    c = ctx["client"]
+    r = c.patch(f"/catalog/board-materials/{ctx['unassigned_board_id']}",
+                json={"default_supplier_id": ctx["vendor_a"]})
+    assert r.status_code == 403
+    assert _board_link(ctx["unassigned_board_id"]) is None
+
+
+def test_the_shortcut_covers_hardware_too():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    quote = _make_quote(ctx)
+    s = SessionLocal()
+    try:
+        s.execute(text("UPDATE hardware_materials SET default_supplier_id = NULL WHERE material_id = :m"),
+                  {"m": ctx["hw_id"]})
+        s.commit()
+    finally:
+        s.close()
+    r = _link(c, quote["revision_id"], ctx["hw_id"], ctx["vendor_a"], material_type="HARDWARE")
+    assert r.status_code == 204, r.text
+    assert _sql_scalar(
+        "SELECT default_supplier_id FROM hardware_materials WHERE material_id = :m",
+        m=ctx["hw_id"]) == ctx["vendor_a"]

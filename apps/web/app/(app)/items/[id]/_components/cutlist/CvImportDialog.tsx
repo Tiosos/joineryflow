@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { listSupplierOptions } from "@/lib/catalog-fetch";
+import type { SupplierOption } from "@/lib/catalog-types";
 import { commitCvImport, getReplaceImpact, previewCvImport } from "@/lib/cv-fetch";
 import { lockFromError } from "./moduleLock";
 import type {
@@ -38,6 +40,20 @@ export function CvImportDialog({
   // Read when the confirm step opens, not from the preview: the preview can be
   // minutes old. "error" means the check failed — say so rather than stay silent.
   const [impact, setImpact] = useState<CvReplaceImpact | "error" | null>(null);
+  // For the optional supplier link on a "Create new" row. null = not loaded or
+  // unreadable (it needs orderbook:read): the picker is disabled, the import still works.
+  const [suppliers, setSuppliers] = useState<SupplierOption[] | null>(null);
+
+  useEffect(() => {
+    if (phase !== "resolve") return;
+    let live = true;
+    listSupplierOptions()
+      .then((l) => live && setSuppliers(l))
+      .catch(() => live && setSuppliers(null));
+    return () => {
+      live = false;
+    };
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== "commit" || !itemHasModules) return;
@@ -114,7 +130,9 @@ export function CvImportDialog({
       setPhase("done");
       setTimeout(() => onClose(), 1500);
     } catch (e: unknown) {
-      const detail = (e as { detail?: { code?: string } })?.detail;
+      // cv-fetch keeps the whole parsed body on `e.detail`, and FastAPI wraps an
+      // HTTPException's payload as `{ detail: { code } }`, so the code sits one level down.
+      const detail = (e as { detail?: { detail?: { code?: string } } })?.detail?.detail;
       const status = (e as { status?: number })?.status;
       const locked = lockFromError(e);
       if (locked) {
@@ -221,6 +239,7 @@ export function CvImportDialog({
                   key={u.cv_code}
                   unknown={u}
                   resolution={resolutions[u.cv_code]}
+                  suppliers={suppliers}
                   onChange={(r) => setResolution(u.cv_code, r)}
                 />
               ))}

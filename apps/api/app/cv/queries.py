@@ -209,6 +209,7 @@ def insert_catalog_row_from_create_new(
     description: str,
     default_supplier: str | None,
     default_lead_time_days: int | None,
+    default_supplier_id: int | None = None,
 ) -> int:
     """INSERT a new catalog row from a Phase B `create_new` resolution.
 
@@ -225,7 +226,8 @@ def insert_catalog_row_from_create_new(
 
     legacy_col = _TABLE_REGISTRY[target_table][1]
     cols = ["sku", "description", "workspace_id",
-            "synonyms", "default_supplier", "default_lead_time_days"]
+            "synonyms", "default_supplier", "default_lead_time_days",
+            "default_supplier_id"]
     params: dict[str, Any] = {
         "sku": sku,
         "description": description,
@@ -233,6 +235,7 @@ def insert_catalog_row_from_create_new(
         "synonyms": [],
         "default_supplier": default_supplier,
         "default_lead_time_days": default_lead_time_days,
+        "default_supplier_id": default_supplier_id,
     }
     if legacy_col is not None:
         cols.insert(0, legacy_col)
@@ -404,6 +407,7 @@ def commit_import(
                 sku=body["sku"], description=body["description"],
                 default_supplier=body.get("default_supplier"),
                 default_lead_time_days=body.get("default_lead_time_days"),
+                default_supplier_id=body.get("default_supplier_id"),
             )
             catalog_rows_created += 1
             final_target[code] = (body["target_table"], new_mid)

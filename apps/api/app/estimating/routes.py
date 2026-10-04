@@ -21,6 +21,7 @@ from ..db import get_db
 from . import pdf as pdf_engine
 from . import queries as q
 from .schemas import (
+    OrderMaterialType,
     AddHardwareIn,
     AddPartIn,
     ConvertResultOut,
@@ -34,6 +35,8 @@ from .schemas import (
     EstimateSummaryOut,
     ExpireIn,
     GenerateOrdersIn,
+    LinkSupplierIn,
+    DismissOrderLineIn,
     GenerateOrdersResultOut,
     HandoverPreviewOut,
     LabourRateOut,
@@ -57,6 +60,9 @@ from .schemas import (
 
 
 router = APIRouter(tags=["estimating"])
+
+
+_NOT_FOUND_CODES = ("NOT_FOUND", "LINE_NOT_FOUND", "MATERIAL_NOT_ON_LINE")
 
 
 def _decode_value_error(exc: ValueError) -> dict:
@@ -475,13 +481,149 @@ def convert_revision_route(
 @router.get("/revisions/{rid}/order-preview")
 def order_preview_route(
     rid: int,
+    include_line_ids: list[int] | None = Query(None),
     user: AuthUser = Depends(require_permission("estimating", "approve")),
     db: Session = Depends(get_db),
 ) -> OrderPreviewOut:
-    row = q.order_preview(db, revision_id=rid, workspace_id=user.workspace_id)
+    try:
+        row = q.order_preview(
+            db, revision_id=rid, workspace_id=user.workspace_id,
+            include_line_ids=include_line_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, _decode_value_error(exc))
     if row is None:
         raise HTTPException(404, "revision not found")
     return OrderPreviewOut(**row)
+
+
+@router.post("/revisions/{rid}/link-supplier", status_code=204)
+def link_supplier_route(
+    rid: int,
+    body: LinkSupplierIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Narrow shortcut for the Generate Orders dialog: link a supplier to a material on
+    this revision that has none. Gated like the dialog itself (`estimating:approve`), not
+    `catalog:write` — see `queries.link_material_supplier` for what it can and cannot touch."""
+    try:
+        q.link_material_supplier(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            material_type=body.material_type, material_id=body.material_id,
+            supplier_id=body.supplier_id,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        code = decoded.get("code")
+        if code == "NOT_FOUND":
+            raise HTTPException(404, decoded)
+        if code == "ALREADY_LINKED":
+            raise HTTPException(409, decoded)
+        raise HTTPException(404 if code in ("MATERIAL_NOT_IN_REVISION", "MATERIAL_NOT_FOUND") else 422, decoded)
+    db.commit()
+    return None
+
+
+@router.post("/revisions/{rid}/lines/{lid}/order-dismissal", status_code=204)
+def dismiss_order_line_route(
+    rid: int,
+    lid: int,
+    body: DismissOrderLineIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Mark a quote line "ordered by hand" (reason required) so it leaves the quote's
+    "not yet ordered" count. Gated like Generate Orders itself (`estimating:approve`)."""
+    try:
+        q.dismiss_order_line(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, reason=body.reason,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in ("NOT_FOUND", "LINE_NOT_FOUND") else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.delete("/revisions/{rid}/lines/{lid}/order-dismissal", status_code=204)
+def restore_order_line_route(
+    rid: int,
+    lid: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Undo "ordered by hand": the line is orderable again (the old reason stays in the audit row)."""
+    try:
+        q.restore_order_line(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id, line_id=lid,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in ("NOT_FOUND", "LINE_NOT_FOUND") else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.post(
+    "/revisions/{rid}/lines/{lid}/materials/{material_type}/{material_id}/order-dismissal",
+    status_code=204,
+)
+def dismiss_order_material_route(
+    rid: int,
+    lid: int,
+    material_type: OrderMaterialType,
+    material_id: int,
+    body: DismissOrderLineIn,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Mark one material on a quote line "ordered by hand" (reason required)."""
+    try:
+        q.dismiss_order_material(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, material_type=material_type, material_id=material_id,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in _NOT_FOUND_CODES else 409, decoded
+        )
+    db.commit()
+    return None
+
+
+@router.delete(
+    "/revisions/{rid}/lines/{lid}/materials/{material_type}/{material_id}/order-dismissal",
+    status_code=204,
+)
+def restore_order_material_route(
+    rid: int,
+    lid: int,
+    material_type: OrderMaterialType,
+    material_id: int,
+    user: AuthUser = Depends(require_permission("estimating", "approve")),
+    db: Session = Depends(get_db),
+):
+    """Undo "ordered by hand" for one material: it is orderable again."""
+    try:
+        q.restore_order_material(
+            db, revision_id=rid, workspace_id=user.workspace_id, actor_id=user.id,
+            line_id=lid, material_type=material_type, material_id=material_id,
+        )
+    except ValueError as exc:
+        decoded = _decode_value_error(exc)
+        raise HTTPException(
+            404 if decoded.get("code") in _NOT_FOUND_CODES else 409, decoded
+        )
+    db.commit()
+    return None
 
 
 @router.post("/revisions/{rid}/generate-orders")

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..items.queries import ItemContentLocked
 from . import queries as q
 from .schemas import AnswerQueryIn, CreateQueryIn, ItemQueryOut
 
@@ -31,10 +32,13 @@ def create_query_route(
     db: Session = Depends(get_db),
 ):
     """Asking a question only needs read on `list`.  Drafter+ answers."""
-    row = q.create_query(
-        db, item_id=iid, workspace_id=user.workspace_id,
-        question=body.question, actor_id=user.id,
-    )
+    try:
+        row = q.create_query(
+            db, item_id=iid, workspace_id=user.workspace_id,
+            question=body.question, actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if row is None:
         raise HTTPException(status_code=404, detail="item not found")
     db.commit()
@@ -48,10 +52,13 @@ def answer_query_route(
     user: AuthUser = Depends(require_permission("list", "write")),
     db: Session = Depends(get_db),
 ):
-    result = q.answer_query(
-        db, query_id=qid, workspace_id=user.workspace_id,
-        answer=body.answer, actor_id=user.id,
-    )
+    try:
+        result = q.answer_query(
+            db, query_id=qid, workspace_id=user.workspace_id,
+            answer=body.answer, actor=user,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="query not found")
     if result == "ALREADY_ANSWERED":
@@ -70,10 +77,13 @@ def edit_answer_route(
     user: AuthUser = Depends(require_permission("list", "write")),
     db: Session = Depends(get_db),
 ):
-    result = q.answer_query(
-        db, query_id=qid, workspace_id=user.workspace_id,
-        answer=body.answer, actor_id=user.id, allow_overwrite=True,
-    )
+    try:
+        result = q.answer_query(
+            db, query_id=qid, workspace_id=user.workspace_id,
+            answer=body.answer, actor=user, allow_overwrite=True,
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="query not found")
     db.commit()

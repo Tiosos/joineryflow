@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ItemOut, TrackingItemRow } from "@/lib/pm-types";
+import { getAttachments } from "@/lib/attachments-fetch";
+import type { AttachmentSlot } from "@/lib/attachments-types";
+import { listDocuments } from "@/lib/item-documents-fetch";
+import type { ItemDocumentOut, ItemOut, TrackingItemRow } from "@/lib/pm-types";
 
 interface Props {
   itemId: number | null;
@@ -86,6 +89,21 @@ export function ItemDetailModal({ itemId, items, onClose, onNavigate }: Props) {
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">
                   JID
                 </div>
+                {item.jid_code || item.jid_color ? (
+                  <div className="mt-0.5 inline-flex items-center gap-1.5" data-testid="modal-jid">
+                    {item.jid_color ? (
+                      <span
+                        className="inline-block h-3 w-3 rounded-sm border border-h-line"
+                        style={{ backgroundColor: item.jid_color }}
+                        aria-hidden="true"
+                        title={`JID color ${item.jid_color}`}
+                      />
+                    ) : null}
+                    <span className="font-mono text-sm font-semibold text-h-ink">
+                      {item.jid_code ?? "—"}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="rounded border border-h-line bg-h-surface px-3 py-1 text-center">
                 <div className="font-mono text-sm font-semibold text-h-ink">
@@ -166,13 +184,13 @@ function DetailsPanel({ item }: { item: ItemOut }) {
         <Field label="Level" value={item.level} />
         <Field label="Room Number" value={item.room_no} />
         <Field label="Rm Description" value={item.room_desc} />
-        <Field label="Floor Plan" value={null} disabled />
-        <Field label="RLS" value={null} disabled />
-        <Field label="Joiery Details" value={null} disabled />
+        <Field label="Floor Plan" value={item.floor_plan} />
+        <Field label="RLS" value={item.rls} />
+        <Field label="Joiery Details" value={item.joiery_details} />
 
         <CheckRow label="Painting Required?" checked={item.painting_required} />
         <CheckRow label="Solid Surface Req?" checked={item.solid_surface_required} />
-        <CheckRow label="Cutlist Printed?" checked={null} disabled />
+        <CheckRow label="Cutlist Printed?" checked={item.cutlist_printed} />
 
         <Field label="Group ID" value={item.group_id} mono />
         <Field label="Item ID" value={String(item.id)} mono />
@@ -186,18 +204,126 @@ function DetailsPanel({ item }: { item: ItemOut }) {
 
       {/* Right column */}
       <div className="grid gap-1">
-        <Field label="SketchUp File" value={null} disabled rightPlaceholder="—" />
-        <Field label="CabVision File" value={null} disabled rightPlaceholder="—" />
+        <ItemFiles itemId={item.id} />
+      </div>
+    </div>
+  );
+}
 
-        <div className="mt-2 rounded border border-h-line bg-h-bg p-3">
+type Loaded<T> = { state: "loading" } | { state: "error" } | { state: "ok"; value: T };
+
+/** SketchUp / CabVision slots and the Document Register, read-only. Editing lives on the
+ *  item editor's Attachments tab. Both reads are `list:read`, the gate `GET /items/{id}`
+ *  above already needs. A failed read says so rather than looking like "nothing attached". */
+function ItemFiles({ itemId }: { itemId: number }) {
+  const [slots, setSlots] = useState<Loaded<AttachmentSlot[]>>({ state: "loading" });
+  const [docs, setDocs] = useState<Loaded<ItemDocumentOut[]>>({ state: "loading" });
+
+  useEffect(() => {
+    let stale = false; // Previous / Next changes the item: only the newest request may write
+    setSlots({ state: "loading" });
+    setDocs({ state: "loading" });
+    getAttachments(itemId)
+      .then((b) => !stale && setSlots({ state: "ok", value: b.slots }))
+      .catch(() => !stale && setSlots({ state: "error" }));
+    listDocuments(itemId)
+      .then((d) => !stale && setDocs({ state: "ok", value: d }))
+      .catch(() => !stale && setDocs({ state: "error" }));
+    return () => {
+      stale = true;
+    };
+  }, [itemId]);
+
+  const slot = (kind: "sketchup" | "cabvision") =>
+    slots.state === "ok" ? slots.value.find((s) => s.kind === kind) : undefined;
+
+  return (
+    <>
+      <SlotRow label="SketchUp File" slot={slot("sketchup")} status={slots.state} />
+      <SlotRow label="CabVision File" slot={slot("cabvision")} status={slots.state} />
+
+      <div className="mt-2 rounded border border-h-line bg-h-bg p-3" data-testid="modal-register">
+        <div className="flex items-baseline justify-between">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">
             Document Register{" "}
             <span className="text-h-ink/40">(for current item)</span>
           </div>
-          <div className="mt-2 grid h-48 place-items-center rounded border border-dashed border-h-line text-xs text-h-muted">
-            No documents attached for v1.
-          </div>
+          <a
+            href={`/items/${itemId}?tab=attachments`}
+            className="text-[11px] text-h-accent hover:underline"
+          >
+            Manage on Attachments tab →
+          </a>
         </div>
+        <div className="mt-2 max-h-48 overflow-y-auto rounded border border-h-line bg-h-surface">
+          {docs.state === "loading" ? (
+            <div className="p-4 text-center text-xs text-h-muted">Loading…</div>
+          ) : docs.state === "error" ? (
+            <div className="p-4 text-center text-xs text-[#b4443d]">
+              Couldn&apos;t load the document register.
+            </div>
+          ) : docs.value.length === 0 ? (
+            <div className="p-4 text-center text-xs text-h-muted">No documents in the register.</div>
+          ) : (
+            <ul className="divide-y divide-h-line">
+              {docs.value.map((d) => (
+                <li key={d.document_id} data-testid="modal-register-row" className="flex items-center gap-2 px-2 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-h-ink" title={d.original_filename ?? undefined}>
+                    {d.label || d.original_filename || "—"}
+                  </span>
+                  <a
+                    href={`/api/files/${d.file_blob_id}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="shrink-0 rounded border border-h-line px-2 py-0.5 text-h-ink hover:bg-h-bg"
+                  >
+                    Open
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SlotRow({
+  label,
+  slot,
+  status,
+}: {
+  label: string;
+  slot: AttachmentSlot | undefined;
+  status: Loaded<unknown>["state"];
+}) {
+  const file = slot?.file_blob_id != null ? slot : null;
+  return (
+    <div className="grid grid-cols-[140px_1fr] items-start gap-2">
+      <label className="rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink">
+        {label}
+      </label>
+      <div className="flex min-w-0 items-center gap-2 rounded border border-h-line bg-h-bg px-2 py-1 text-sm">
+        {file ? (
+          <>
+            <span className="min-w-0 flex-1 truncate text-h-ink" title={file.original_filename ?? undefined}>
+              {file.original_filename}
+            </span>
+            <a
+              href={`/api/files/${file.file_blob_id}`}
+              target="_blank"
+              rel="noopener"
+              className="shrink-0 rounded border border-h-line px-2 py-0.5 text-xs text-h-ink hover:bg-h-surface"
+            >
+              Open
+            </a>
+          </>
+        ) : status === "error" ? (
+          <span className="text-xs text-[#b4443d]">Couldn&apos;t load</span>
+        ) : (
+          <span className="text-h-muted/60">{status === "loading" ? "…" : "—"}</span>
+        )}
       </div>
     </div>
   );
@@ -244,25 +370,23 @@ function StubPanel({ label }: { label: string }) {
 function Field({
   label,
   value,
-  disabled,
   mono,
   textarea,
   rightPlaceholder,
 }: {
   label: string;
   value: string | number | null;
-  disabled?: boolean;
   mono?: boolean;
   textarea?: boolean;
   rightPlaceholder?: string;
 }) {
   const display = value == null || value === "" ? (rightPlaceholder ?? "—") : String(value);
-  const valueClass = `flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-sm ${
-    disabled ? "text-h-muted/60" : "text-h-ink"
-  } ${mono ? "font-mono tabular-nums" : ""}`;
+  const valueClass = `flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-sm text-h-ink ${
+    mono ? "font-mono tabular-nums" : ""
+  }`;
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-2">
-      <label className={`rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink ${disabled ? "opacity-60" : ""}`}>
+      <label className="rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink">
         {label}
       </label>
       {textarea ? (
@@ -287,15 +411,13 @@ function Field({
 function CheckRow({
   label,
   checked,
-  disabled,
 }: {
   label: string;
   checked: boolean | null | undefined;
-  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-2">
-      <label className={`rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink ${disabled ? "opacity-60" : ""}`}>
+      <label className="rounded bg-[#e6efe5] px-2 py-1 text-right text-xs font-medium text-h-ink">
         {label}
       </label>
       <div className="px-2">

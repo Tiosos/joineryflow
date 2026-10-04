@@ -18,7 +18,56 @@ ENRICHMENT_SELECT = (
 )
 ENRICHMENT_INSERT = (
     "synonyms", "default_supplier", "default_lead_time_days",
+    # The supplier link (`0029`): settable at create as well as on PATCH.
+    "default_supplier_id",
 )
+
+
+def _supplier_link_cols(table: str) -> str:
+    """The FK and the linked supplier's name, for a row of `table`.
+
+    The name is scoped to the row's own workspace, so a link written some other
+    way across workspaces (the column is a plain FK) can never surface another
+    workspace's supplier name.
+    """
+    return (
+        "default_supplier_id, "
+        f"(SELECT v.name FROM vendors v WHERE v.vendor_id = {table}.default_supplier_id"
+        f" AND v.workspace_id = {table}.workspace_id) AS default_supplier_name"
+    )
+
+
+def supplier_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
+        {"v": vendor_id, "w": workspace_id},
+    ).first() is not None
+
+
+def unknown_supplier_detail(supplier_id: int) -> dict:
+    """The 422 body for a supplier that is unknown or in another workspace."""
+    return {
+        "code": "UNKNOWN_SUPPLIER", "supplier_id": supplier_id,
+        "message": "supplier not found in this workspace",
+    }
+
+
+def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | None]:
+    """Lower-cased supplier name -> vendor_id, for matching a free-text name.
+
+    The same exact, case-insensitive rule the seed and migration `0029` used. A
+    name two suppliers share maps to None: ambiguous, so never linked by guess.
+    """
+    out: dict[str, int | None] = {}
+    for vid, name in db.execute(
+        text("SELECT vendor_id, name FROM vendors WHERE workspace_id = :w"),
+        {"w": workspace_id},
+    ).all():
+        key = (name or "").strip().lower()
+        if not key:
+            continue
+        out[key] = None if key in out else vid
+    return out
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -84,7 +133,7 @@ def list_catalog(
         where.append("default_supplier = :sup")
         params["sup"] = supplier
     sql = (
-        f"SELECT {cols} FROM {table} "
+        f"SELECT {cols}, {_supplier_link_cols(table)} FROM {table} "
         f"WHERE {' AND '.join(where)} "
         f"ORDER BY {id_col} DESC"
     )
@@ -96,7 +145,7 @@ def get_catalog_row(
 ) -> dict | None:
     table, id_col, cols, _ = REGISTRY[type_]
     sql = text(
-        f"SELECT {cols} FROM {table} "
+        f"SELECT {cols}, {_supplier_link_cols(table)} FROM {table} "
         f"WHERE {id_col} = :id AND workspace_id = :w"
     )
     r = db.execute(sql, {"id": mid, "w": workspace_id}).mappings().first()

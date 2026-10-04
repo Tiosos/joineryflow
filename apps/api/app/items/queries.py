@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
-from ..concurrency import bump_field_versions, check_field_conflicts
+from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..row_types import joinery_items_only
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
@@ -548,11 +548,14 @@ def get_item_detail(
                 i.hard_locked_at,
                 i.hard_locked_by,
                 hl.full_name                AS hard_locked_by_name,
-                i.field_versions
+                i.field_versions,
+                i.duplicated_from_item_id,
+                src.num                     AS duplicated_from_item_number
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN app_user c ON c.id = i.contractor_id
             LEFT JOIN app_user hl ON hl.id = i.hard_locked_by
+            LEFT JOIN items src ON src.item_id = i.duplicated_from_item_id
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
               AND {_JOINERY_I}
@@ -593,6 +596,9 @@ def get_item_detail(
             SELECT
                 m.module_id     AS module_id,
                 m.name          AS module_name,
+                (SELECT count(*) FROM comment c
+                  WHERE c.module_id = m.module_id
+                    AND c.deleted_at IS NULL) AS comment_count,
                 p.part_id,
                 p.qty,
                 p.part_name,
@@ -622,6 +628,7 @@ def get_item_detail(
                 "id": mid,
                 "name": mp["module_name"],
                 "parts": [],
+                "comment_count": mp["comment_count"],
             }
         # part_id is None when module has no parts (LEFT JOIN)
         if mp["part_id"] is not None:
@@ -805,6 +812,8 @@ def get_item_detail(
         "hard_locked_by": row["hard_locked_by"],
         "hard_locked_by_name": row["hard_locked_by_name"],
         "field_versions": row["field_versions"] or {},
+        "duplicated_from_item_id": row["duplicated_from_item_id"],
+        "duplicated_from_item_number": row["duplicated_from_item_number"],
     }
 
 
@@ -1267,7 +1276,9 @@ def patch_item(
     if conflicts:
         row_key_by_attr = {attr: rk for attr, _col, rk in _PATCH_FIELD_MAP}
         for field, info in conflicts.items():
-            info["current_value"] = current.get(row_key_by_attr.get(field, field))
+            info["current_value"] = conflict_safe_value(
+                current.get(row_key_by_attr.get(field, field))
+            )
         return {"outcome": "FIELD_CONFLICT", "conflicts": conflicts}
 
     extra: dict[str, object] = {}
@@ -1342,9 +1353,62 @@ def delete_item(
         new_value=None,
     )
 
+    cutlist_id = db.execute(
+        text("SELECT cutlist_id FROM items WHERE item_id = :iid"), {"iid": item_id}
+    ).scalar()
+
     db.execute(text("DELETE FROM items WHERE item_id = :iid"), {"iid": item_id})
     db.flush()
+    if cutlist_id is not None:
+        _drop_cutlist_if_unused(
+            db, cutlist_id=cutlist_id, workspace_id=workspace_id,
+            actor_id=actor_id, item_id=item_id,
+        )
     return "OK"
+
+
+def _drop_cutlist_if_unused(
+    db: Session, *, cutlist_id: int, workspace_id: int, actor_id: int, item_id: int
+) -> bool:
+    """Remove a cutlist its last item has just left, but only when it never did
+    any production work.
+
+    Deleting a cutlist CASCADEs `worker_assignment` and `stage_completion_log`
+    (`0030`), and the Actual Costs labour figure is priced from the latter — so a
+    cutlist that carries any assignment or completion, undone or not, is kept as
+    an empty record rather than erasing that history. A cutlist that still holds
+    another item is never touched. One statement, so the "no items, no history"
+    test and the delete cannot be split by a concurrent link.
+    """
+    row = db.execute(
+        text(
+            """
+            DELETE FROM cutlist c
+            WHERE c.cutlist_id = :cid
+              AND NOT EXISTS (SELECT 1 FROM items i WHERE i.cutlist_id = c.cutlist_id)
+              AND NOT EXISTS (SELECT 1 FROM worker_assignment w WHERE w.cutlist_id = c.cutlist_id)
+              AND NOT EXISTS (SELECT 1 FROM stage_completion_log l WHERE l.cutlist_id = c.cutlist_id)
+            RETURNING c.cutlist_no, c.project_id
+            """
+        ),
+        {"cid": cutlist_id},
+    ).mappings().first()
+    if row is None:
+        return False
+    write_audit(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        event="cutlist.delete",
+        target=str(cutlist_id),
+        payload={
+            "cutlist_no": row["cutlist_no"],
+            "project_id": row["project_id"],
+            "via": "item.delete",
+            "item_id": item_id,
+        },
+    )
+    return True
 
 
 # ── T16 write helpers ─────────────────────────────────────────────────────────
@@ -1698,6 +1762,7 @@ def assert_item_content_unlocked(
     workspace_id: int,
     actor: AuthUser,
     include_approval: bool = True,
+    include_controlled: bool = True,
 ) -> None:
     """Refuse a change to an item's modules while a lock on the item forbids it.
 
@@ -1714,6 +1779,10 @@ def assert_item_content_unlocked(
     dates are the one place it must not apply, because changing status is how an
     approved item is unlocked and approval is when production dates start.
 
+    `include_controlled=False` leaves the Controlled Lock out: for *asking* an item
+    query, which anyone with `list:read` may do — a lock must not stop a person
+    putting a question to the lock's owner.
+
     Locks the item row `FOR UPDATE`, so a lock set concurrently is either seen
     here or waits for the caller's transaction. Raises `ItemContentLocked`.
     """
@@ -1728,7 +1797,8 @@ def assert_item_content_unlocked(
         raise ItemContentLocked({"code": "APPROVAL_LOCKED"})
     owner_id = current["cutlist_owner_id"]
     if (
-        current["item_locked"]
+        include_controlled
+        and current["item_locked"]
         and owner_id is not None
         and owner_id != actor.id
         and actor.auth_role not in ("manager", "admin")

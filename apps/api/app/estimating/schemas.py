@@ -9,7 +9,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from ..schema_guards import no_null
 
 # ----------------------------------------------------------------------------
 # Type literals — kept in sync with the SQL CHECK constraints in 0021
@@ -23,6 +24,7 @@ EstimateStatus = Literal[
 ]
 PartMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP"]
 HardwareMaterialType = Literal["HARDWARE", "APPLIANCE"]
+OrderMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
 StageKey = Literal[
     "REQ", "SM", "LISTED", "DOWN", "CNC", "EDGED", "PAINTED",
     "MADE", "DEL", "INST",
@@ -76,6 +78,8 @@ class CreateEstimateIn(BaseModel):
 
 
 class PatchEstimateIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("title")
     customer_id: int | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)
     site_address: str | None = None
@@ -106,6 +110,8 @@ class EstimateListOut(BaseModel):
 # ----------------------------------------------------------------------------
 
 class PatchRevisionIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("markup_pct", "gst_pct")
     markup_pct: Decimal | None = Field(default=None, ge=0)
     gst_pct: Decimal | None = Field(default=None, ge=0)
     terms_text: str | None = None
@@ -175,6 +181,14 @@ class LineOut(BaseModel):
     unit_sell: Decimal
     total_sell: Decimal
     notes: str | None = None
+    # Became a Joinery Item at Convert (Q490).
+    included_at_convert: bool = False
+    # A Generate Orders run covered this line; it can never be ordered again.
+    orders_generated_at: datetime | None = None
+    # Marked "ordered by hand" instead: when, why, and by whom (reversible).
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
     parts: list[LinePartOut] = []
     hardware: list[LineHardwareOut] = []
     labour: list[LineLabourOut] = []
@@ -229,6 +243,8 @@ class CreateLineIn(BaseModel):
 
 
 class PatchLineIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("description", "qty", "unit")
     description: str | None = Field(default=None, min_length=1, max_length=255)
     qty: Decimal | None = Field(default=None, gt=0)
     unit: str | None = Field(default=None, max_length=16)
@@ -259,6 +275,8 @@ class AddHardwareIn(BaseModel):
 
 
 class PatchPartIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty", "paint_instruction")
     qty: Decimal | None = Field(default=None, gt=0)
     len_mm: int | None = Field(default=None, ge=0)
     wid_mm: int | None = Field(default=None, ge=0)
@@ -267,6 +285,8 @@ class PatchPartIn(BaseModel):
 
 
 class PatchHardwareIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty")
     qty: Decimal | None = Field(default=None, gt=0)
     comment: str | None = None
 
@@ -346,6 +366,8 @@ class OrderPreviewLineOut(BaseModel):
     qty: Decimal
     unit: str
     unit_cost: Decimal
+    # The catalog row has since been archived (still orderable if linked).
+    archived: bool = False
 
 
 class OrderPreviewGroupOut(BaseModel):
@@ -355,13 +377,75 @@ class OrderPreviewGroupOut(BaseModel):
     lines: list[OrderPreviewLineOut] = []
 
 
+class OrderPreviewMaterialOut(BaseModel):
+    """One catalog material on a quote line, with its own order state."""
+    material_type: str
+    material_id: int
+    sku: str | None = None
+    description: str | None = None
+    # Total quantity of it on this line.
+    qty: Decimal
+    # `pending` (still to order), `generated` (a run ordered it) or `dismissed` (ordered by hand).
+    state: Literal["pending", "generated", "dismissed"]
+    orders_generated_at: datetime | None = None
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
+    # Its catalog row has no default supplier, so a run cannot order it.
+    no_supplier: bool = False
+
+
+class OrderPreviewSourceLineOut(BaseModel):
+    """A quote line the Generate Orders dialog can tick."""
+    line_id: int
+    seq: int
+    description: str
+    qty: Decimal
+    unit: str
+    # Covered by an earlier run: listed, never selected.
+    orders_generated_at: datetime | None = None
+    # Marked "ordered by hand": listed, never selected, until the dismissal is undone.
+    orders_dismissed_at: datetime | None = None
+    orders_dismissed_reason: str | None = None
+    orders_dismissed_by_name: str | None = None
+    # In the selection the groups below were computed for.
+    selected: bool
+    # Selected, but a pending material on it has no supplier, so a run cannot finish it.
+    held_back: bool = False
+    # The line's catalog materials and the state of each (empty for a labour-only line).
+    materials: list[OrderPreviewMaterialOut] = []
+
+
 class OrderPreviewOut(BaseModel):
     revision_id: int
     status: EstimateStatus
     converted_project_id: int | None = None
+    # The most recent Generate Orders run (per-line state is on `lines`).
     orders_generated_at: datetime | None = None
+    lines: list[OrderPreviewSourceLineOut] = []
     groups: list[OrderPreviewGroupOut] = []
     unassigned: list[OrderPreviewLineOut] = []
+
+
+class LinkSupplierIn(BaseModel):
+    """Give a supplier-less material on this revision its supplier (Generate Orders)."""
+    material_type: OrderMaterialType
+    material_id: int
+    supplier_id: int
+
+
+class DismissOrderLineIn(BaseModel):
+    """Mark a quote line "ordered by hand". The reason is required: the system cannot see
+    the order, so the note is the only trail."""
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_required(cls, v: str) -> str:
+        v = v.strip()
+        if not 1 <= len(v) <= 500:
+            raise ValueError("reason must be 1-500 characters")
+        return v
 
 
 class GenerateOrdersIn(BaseModel):
@@ -374,3 +458,7 @@ class GenerateOrdersResultOut(BaseModel):
     lines_created: int
     po_ids: list[int]
     unassigned: list[OrderPreviewLineOut] = []
+    # Selected lines not finished because a material on them has no supplier: that
+    # material is not ordered (the rest of the line is) and stays orderable once a
+    # supplier is linked in the Catalog.
+    uncovered_line_ids: list[int] = []

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+from ..schema_guards import no_null
 
 SampleStatus = Literal["pending", "approved", "rejected"]
 HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -25,6 +26,8 @@ class CreateSampleIn(BaseModel):
 
 
 class PatchSampleIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("title", "hex_swatch")
     title: str | None = Field(default=None, min_length=1, max_length=200)
     room: str | None = Field(default=None, max_length=64)
     hex_swatch: str | None = None

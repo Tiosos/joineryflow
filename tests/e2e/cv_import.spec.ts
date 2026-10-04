@@ -32,7 +32,10 @@ test.describe("CV Import wizard (#7b)", () => {
     await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
     const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: "JO-TP01" });
     await expect(row).toHaveCount(1);
-    await row.locator('a[href^="/items/"]').first().click();
+    // goto the link's href rather than click it: a click before the dev build hydrates
+    // does nothing (the test below and the lock specs do the same).
+    const href = await row.locator('a[href^="/items/"]').first().getAttribute("href");
+    await page.goto(href!);
     await expect(page).toHaveURL(/\/items\/\d+/, { timeout: 15_000 });
     // Switch to the cutlist tab.
     await page.getByRole("tab", { name: /cutlist/i }).click();
@@ -66,5 +69,38 @@ test.describe("CV Import wizard (#7b)", () => {
 
     // Done — wizard closes after a short delay; success message visible.
     await expect(page.getByText(/imported/i)).toBeVisible({ timeout: 10_000 });
+  });
+  test("an ITEM_NOT_EMPTY refusal tells the person to tick Replace, not 'commitCvImport: 409'", async ({ page }) => {
+    // The API's answer is mocked (the body is exactly what routes.py raises), so
+    // nothing is written; a stale page — modules added by someone else after the
+    // wizard opened — is the real-world way to reach it, because the Replace
+    // checkbox is only offered when the item already has modules.
+    await page.route("**/api/items/*/cv-imports/*/commit*", (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: { code: "ITEM_NOT_EMPTY" } }),
+      }),
+    );
+    await page.goto("/tracking?project_id=1");
+    const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: "JO-TP01" });
+    await expect(row).toHaveCount(1, { timeout: 30_000 });
+    // goto the link's href rather than click it: a click before the dev build hydrates
+    // does nothing (the other lock specs do the same).
+    const href = await row.locator('a[href^="/items/"]').first().getAttribute("href");
+    await page.goto(href!);
+    await expect(page).toHaveURL(/\/items\/\d+/, { timeout: 15_000 });
+    await page.getByRole("tab", { name: /cutlist/i }).click();
+    await page.getByRole("button", { name: /Import from CV/i }).click();
+    await page.getByPlaceholder(/Module,Part Name/).fill(
+      "Module,Part Name,Qty,Length,Width,Material\n1,Side L,1,720,580,18-PB\n",
+    );
+    await page.getByRole("button", { name: /^Preview$/ }).click();
+    await expect(page.getByText(/Import 1 parts/i)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: /^Import$/ }).click();
+    await expect(
+      page.getByText('Item already has modules. Tick "Replace existing modules" and try again.'),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/commitCvImport: 409/)).toHaveCount(0);
   });
 });

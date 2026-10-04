@@ -7,7 +7,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
+from ..items.queries import assert_item_content_unlocked
 from ..row_types import joinery_items_only
 
 # Like the named attachment slots, the register belongs to Joinery Items only.
@@ -104,10 +106,15 @@ def bind_document(
     label: str | None,
     sort_order: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict:
+    """Raises `ItemContentLocked` when a lock on the item refuses it."""
+    actor_id = actor.id
     if not _item_in_workspace(db, item_id=item_id, workspace_id=workspace_id):
         raise NotFound("item not found")
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+    )
     blob = db.execute(
         text("SELECT mime, original_filename FROM file_blob"
              " WHERE file_blob_id = :b AND workspace_id = :w"),
@@ -142,9 +149,15 @@ def patch_document(
     document_id: int,
     changes: dict,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> dict:
+    """Raises `ItemContentLocked` when a lock on the document's item refuses it
+    (relabelling and reordering are changes too)."""
+    actor_id = actor.id
     current = _document(db, document_id=document_id, workspace_id=workspace_id)
+    assert_item_content_unlocked(
+        db, item_id=current["item_id"], workspace_id=workspace_id, actor=actor,
+    )
     diff = {k: v for k, v in changes.items() if current[k] != v}
     if not diff:
         return current
@@ -169,10 +182,16 @@ def patch_document(
 
 
 def unbind_document(
-    db: Session, *, document_id: int, workspace_id: int, actor_id: int
+    db: Session, *, document_id: int, workspace_id: int, actor: AuthUser
 ) -> None:
-    """Removes the register row. The file_blob itself stays (no orphan GC)."""
+    """Removes the register row. The file_blob itself stays (no orphan GC).
+
+    Raises `ItemContentLocked` when a lock on the document's item refuses it."""
+    actor_id = actor.id
     current = _document(db, document_id=document_id, workspace_id=workspace_id)
+    assert_item_content_unlocked(
+        db, item_id=current["item_id"], workspace_id=workspace_id, actor=actor,
+    )
     db.execute(text("DELETE FROM item_document WHERE document_id = :d"),
                {"d": document_id})
     _log(db, workspace_id=workspace_id, actor_id=actor_id, item_id=current["item_id"],

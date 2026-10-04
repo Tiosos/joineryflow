@@ -13,7 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
+from ..items.queries import assert_item_content_unlocked
 from .generation import generate_lines, generated_signature
 
 _CENT = Decimal("0.01")
@@ -59,8 +61,22 @@ def _take(db: Session, take_id: int, workspace_id: int, *, lock: bool = False) -
     return dict(r)
 
 
-def _draft(db: Session, take_id: int, workspace_id: int) -> dict:
-    t = _take(db, take_id, workspace_id, lock=True)
+def _unlocked_take(db: Session, take_id: int, workspace_id: int, actor: AuthUser) -> dict:
+    """The take, locked for update, once its item's locks allow a change.
+
+    Hard Lock and someone else's Controlled Lock refuse (`ItemContentLocked`); the
+    Approval Lock does not — a take is approved on an approved item, so gating it
+    would stop the workflow it belongs to. The item row is locked first and the
+    take second, the same order `generate` takes them in."""
+    item_id = _take(db, take_id, workspace_id)["item_id"]
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor, include_approval=False,
+    )
+    return _take(db, take_id, workspace_id, lock=True)
+
+
+def _draft(db: Session, take_id: int, workspace_id: int, actor: AuthUser) -> dict:
+    t = _unlocked_take(db, take_id, workspace_id, actor)
     if t["status"] != "draft":
         raise Conflict("TAKE_NOT_DRAFT", status=t["status"])
     return t
@@ -121,8 +137,12 @@ def history(db: Session, item_id: int, workspace_id: int) -> list[dict]:
 
 # --- writes -----------------------------------------------------------------
 
-def generate(db: Session, item_id: int, workspace_id: int, actor_id: int) -> int:
+def generate(db: Session, item_id: int, workspace_id: int, actor: AuthUser) -> int:
     _item(db, item_id, workspace_id)
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor, include_approval=False,
+    )
+    actor_id = actor.id
     # Locks the item row for the rest of this transaction, so a concurrent
     # generate() on the same item serializes instead of both passing the
     # draft-exists check below and racing on uniq_take_draft / (item_id,
@@ -149,9 +169,10 @@ def generate(db: Session, item_id: int, workspace_id: int, actor_id: int) -> int
     return tid
 
 
-def regenerate(db: Session, take_id: int, workspace_id: int, actor_id: int) -> None:
+def regenerate(db: Session, take_id: int, workspace_id: int, actor: AuthUser) -> None:
     """Replace a draft's generated lines with fresh ones; manual lines stay."""
-    t = _draft(db, take_id, workspace_id)
+    t = _draft(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     db.execute(text("DELETE FROM material_take_line WHERE take_id = :t AND source = 'generated'"),
                {"t": take_id})
     lines = generate_lines(db, t["item_id"], workspace_id)
@@ -162,8 +183,9 @@ def regenerate(db: Session, take_id: int, workspace_id: int, actor_id: int) -> N
          new=f"v{t['version']}", payload={"take_id": take_id, "lines": len(lines)})
 
 
-def add_line(db: Session, take_id: int, workspace_id: int, actor_id: int, line: dict) -> int:
-    t = _draft(db, take_id, workspace_id)
+def add_line(db: Session, take_id: int, workspace_id: int, actor: AuthUser, line: dict) -> int:
+    t = _draft(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     lid = db.execute(text("""
         INSERT INTO material_take_line(take_id, material_type, material_id, description,
             unit, qty_generated, wastage_pct, qty, source, note)
@@ -185,9 +207,10 @@ def _line(db: Session, take_id: int, line_id: int) -> dict:
     return dict(r)
 
 
-def patch_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor_id: int,
+def patch_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor: AuthUser,
                changes: dict) -> None:
-    t = _draft(db, take_id, workspace_id)
+    t = _draft(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     old = _line(db, take_id, line_id)
     if old["source"] == "generated":
         # A generated line's material and unit are the generator's answer.
@@ -215,8 +238,9 @@ def patch_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor
                        new_value=None if v is None else str(v))
 
 
-def delete_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor_id: int) -> None:
-    t = _draft(db, take_id, workspace_id)
+def delete_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor: AuthUser) -> None:
+    t = _draft(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     old = _line(db, take_id, line_id)
     db.execute(text("DELETE FROM material_take_line WHERE line_id = :l"), {"l": line_id})
     _log(db, workspace_id=workspace_id, actor_id=actor_id, item_id=t["item_id"],
@@ -225,8 +249,9 @@ def delete_line(db: Session, take_id: int, line_id: int, workspace_id: int, acto
          payload={"take_id": take_id, "line_id": line_id})
 
 
-def approve(db: Session, take_id: int, workspace_id: int, actor_id: int) -> None:
-    t = _draft(db, take_id, workspace_id)
+def approve(db: Session, take_id: int, workspace_id: int, actor: AuthUser) -> None:
+    t = _draft(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     superseded = db.execute(text("""
         UPDATE material_take SET status = 'superseded'
          WHERE item_id = :i AND status = 'approved' RETURNING version"""),
@@ -240,11 +265,12 @@ def approve(db: Session, take_id: int, workspace_id: int, actor_id: int) -> None
          payload={"take_id": take_id, "version": t["version"], "superseded_version": superseded})
 
 
-def review(db: Session, take_id: int, workspace_id: int, actor_id: int,
+def review(db: Session, take_id: int, workspace_id: int, actor: AuthUser,
            outcome: str, note: str | None) -> int | None:
     """§19 impact review on an Outdated approved take. Partial / Full opens
     the next version as a draft, pre-generated from the live lines."""
-    t = _take(db, take_id, workspace_id, lock=True)
+    t = _unlocked_take(db, take_id, workspace_id, actor)
+    actor_id = actor.id
     if t["status"] != "approved":
         raise Conflict("TAKE_NOT_APPROVED", status=t["status"])
     db.execute(text("""
@@ -256,4 +282,4 @@ def review(db: Session, take_id: int, workspace_id: int, actor_id: int,
          payload={"take_id": take_id, "outcome": outcome, "note": note})
     if outcome == "no_impact":
         return None
-    return generate(db, t["item_id"], workspace_id, actor_id)
+    return generate(db, t["item_id"], workspace_id, actor)

@@ -9,7 +9,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 
 # The values `purchase_orders_status_check` / `purchase_orders_priority_check`
@@ -37,6 +44,19 @@ class OrderLineOut(BaseModel):
     material_table: str | None
     material_id: int | None
     attributes: dict
+
+
+# End-of-life statuses: a cancelled order is dead, and a delivered one has been
+# reconciled against goods received and invoices, so neither should change
+# silently after the fact. Lines and every header field except `status` are
+# read-only on these — `status` stays writable as the audited way to reopen.
+# Scope is this module's own routes: the legacy `/procurement/*` namespace
+# writes `Delivered`/`Cancelled` itself and is untouched, and
+# `sync_orders_for_item` still rewrites CUTLIST NO. on a frozen order because
+# that is the system keeping a reference true, not a person editing the order.
+# Defined here (not in queries.py) so `OrderOut.locked` can read it without a
+# circular import; `queries.py` re-imports it under the same name.
+FROZEN_STATUSES = frozenset({"Cancelled", "Delivered"})
 
 
 class OrderOut(BaseModel):
@@ -83,6 +103,14 @@ class OrderOut(BaseModel):
     updated_at: datetime
     # §L Q511/Q512 — field-level optimistic concurrency.
     field_versions: dict[str, int] = {}
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def locked(self) -> bool:
+        """True when the order is in a frozen status (`FROZEN_STATUSES`): read-only
+        except for `status`. The server is the source of truth for this, so the web
+        decides what to render from this flag instead of keeping its own copy."""
+        return self.status in FROZEN_STATUSES
 
 
 class OrderDetailOut(OrderOut):

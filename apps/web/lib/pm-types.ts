@@ -255,6 +255,8 @@ export interface ModuleOut {
   id: number;
   name: string | null;
   parts: PartOut[];
+  /** Live comments on the module's thread, replies included. */
+  comment_count: number;
 }
 
 /** What deleting a module would take with it (besides the module): its parts and
@@ -294,6 +296,10 @@ export interface ItemOut {
   id: number;
   project_id: number;
   item_number: number | null;
+  // Plan V1 §2 — set on a copy made by POST /items/{id}/duplicate; both are null
+  // for an original, or once the source item has been deleted.
+  duplicated_from_item_id?: number | null;
+  duplicated_from_item_number?: number | null;
   status: string | null;
   stage: string | null;
   zone: string | null; // legacy varchar(16)

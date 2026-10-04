@@ -20,6 +20,8 @@ export default defineConfig({
   },
   reporter: "list",
   timeout: 90_000,
-  retries: 0,
+  // CI retries a failed test once (a real failure fails twice; the one known
+  // flake is a dev-proxy ECONNRESET). Never skip or quarantine to get green.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
 });

@@ -29,10 +29,16 @@ cost_centers.workspace_id (added by migration 0029). This module was ported
 from a single-tenant app and had none of this at all until now.
 """
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+# One definition of "frozen" (Cancelled / Delivered) and one total rollup, shared with the
+# v1 orders module: both routers write the same `purchase_orders` table.
+from ..orders.queries import FROZEN_STATUSES  # noqa: F401  (re-exported for routes.py)
+from ..orders.queries import _recompute_total_amount as recompute_total_amount
 
 
 # ── Workspace isolation ───────────────────────────────────────────────────────
@@ -108,20 +114,14 @@ def user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> bool:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def generate_po_number(db: Session, year: int) -> str:
-    """Generate the next PO number for a given calendar year (PO-YYYY-NNNN)."""
-    row = db.execute(
-        text(
-            """
-            SELECT COALESCE(
-              MAX(CAST(regexp_replace(po_number, '^.*-', '') AS INTEGER)), 0
-            ) + 1 AS seq
-            FROM purchase_orders
-            WHERE EXTRACT(YEAR FROM created_at) = :yr
-            """
-        ),
-        {"yr": year},
-    ).mappings().first()
-    seq = row["seq"] if row else 1
+    """The next PO number (PO-YYYY-NNNN), from `po_number_seq` (migration 0031, Q564).
+
+    This used to be `MAX(seq) + 1` over the year's orders. The v1 orders module draws from
+    the sequence into the same table, so the two generators handed out the same number:
+    after a legacy create the next `POST /orders` failed with a unique violation (and each
+    failure burned a sequence value, so it took several retries to get past). Two
+    concurrent legacy creates could also read the same MAX."""
+    seq = db.execute(text("SELECT nextval('po_number_seq')")).scalar()
     return f"PO-{year}-{str(seq).zfill(4)}"
 
 
@@ -129,7 +129,7 @@ def commit_budget(
     db: Session,
     po_id: int,
     cost_center_id: int,
-    amount: float,
+    amount: "Decimal | float",
     tx_type: str = "Commitment",
 ) -> None:
     """Record a budget transaction (Commitment or Expenditure)."""
@@ -142,6 +142,54 @@ def commit_budget(
             """
         ),
         {"cc": cost_center_id, "po": po_id, "amt": amount, "type": tx_type},
+    )
+
+
+def release_commitment(db: Session, po_id: int, cost_center_id: int) -> None:
+    """Cancel the order's outstanding Commitment with a negative `Release` row.
+
+    `v_budget_utilisation` counts Commitment and Expenditure together, so delivering an
+    order (which posts an Expenditure) without releasing its Commitment counted the same
+    money twice. A `Release` is the ledger's own way to say "this commitment became an
+    expenditure" (migration 0046 makes the view count it). What is released is what is
+    outstanding for this order (commitments less earlier releases), not `grand_total` — the
+    total may have moved since approval — and nothing is posted when that is not positive
+    (an order approved while its total was still $0, or with no commitment at all)."""
+    outstanding = db.execute(
+        text(
+            """
+            SELECT COALESCE(SUM(amount), 0)
+              FROM budget_transactions
+             WHERE po_id = :po AND transaction_type IN ('Commitment', 'Release')
+            """
+        ),
+        {"po": po_id},
+    ).scalar()
+    if outstanding and outstanding > 0:
+        commit_budget(db, po_id, cost_center_id, -Decimal(outstanding), "Release")
+
+
+def get_order_status_for_update(db: Session, po_id: int) -> Optional[str]:
+    """The order's current status, read under a row lock so that a status change racing
+    the check (a deliver, a decision) cannot slip past it."""
+    return db.execute(
+        text("SELECT status FROM purchase_orders WHERE po_id = :id FOR UPDATE"),
+        {"id": po_id},
+    ).scalar()
+
+
+def attachment_file_is_shared(db: Session, file_path: str, attachment_id: int) -> bool:
+    """Older uploads were written to `<po>/<original name>`, so two rows could point at one
+    file. Deleting one must not remove the file under the other."""
+    return (
+        db.execute(
+            text(
+                "SELECT 1 FROM po_attachments"
+                " WHERE file_path = :fp AND attachment_id <> :a LIMIT 1"
+            ),
+            {"fp": file_path, "a": attachment_id},
+        ).first()
+        is not None
     )
 
 
@@ -240,18 +288,27 @@ def get_order_lines(db: Session, po_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_order_attachments(db: Session, po_id: int) -> list[dict]:
+# `file_path` is the server's filesystem path and is deliberately not selected. The uploader's
+# name is joined only inside the caller's workspace: `uploaded_by` was never validated on
+# upload, so an older row can name a user of another workspace.
+_ATTACHMENT_COLUMNS = """
+    a.attachment_id, a.po_id, a.attachment_type, a.file_name, a.file_size_bytes,
+    a.uploaded_by, a.uploaded_at, u.full_name AS uploaded_by_name
+"""
+
+
+def get_order_attachments(db: Session, po_id: int, *, workspace_id: int) -> list[dict]:
     rows = db.execute(
         text(
-            """
-            SELECT a.*, u.full_name AS uploaded_by_name
+            f"""
+            SELECT {_ATTACHMENT_COLUMNS}
               FROM po_attachments a
-              LEFT JOIN app_user u ON a.uploaded_by = u.id
+              LEFT JOIN app_user u ON a.uploaded_by = u.id AND u.workspace_id = :wid
              WHERE a.po_id = :id
              ORDER BY a.uploaded_at DESC
             """
         ),
-        {"id": po_id},
+        {"id": po_id, "wid": workspace_id},
     ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -366,7 +423,8 @@ def submit_for_approval(db: Session, po_id: int, approver_id: int) -> int:
 def mark_delivered(
     db: Session, po_id: int, arrived_date: Optional[date]
 ) -> Optional[dict]:
-    db.execute(
+    """Returns the order's budget fields, or None when it was not Approved (nothing changed)."""
+    result = db.execute(
         text(
             """
             UPDATE purchase_orders
@@ -378,6 +436,8 @@ def mark_delivered(
         ),
         {"id": po_id, "arr": arrived_date},
     )
+    if not result.rowcount:
+        return None
     row = db.execute(
         text(
             "SELECT cost_center_id, grand_total FROM purchase_orders"
@@ -388,14 +448,17 @@ def mark_delivered(
     return dict(row) if row else None
 
 
-def cancel_order(db: Session, po_id: int) -> None:
-    db.execute(
+def cancel_order(db: Session, po_id: int) -> int:
+    """Returns rowcount affected (0 means the order was not Draft / Rejected / Hold, so
+    nothing changed — the route used to answer "Cancelled" and log it regardless)."""
+    result = db.execute(
         text(
             "UPDATE purchase_orders SET status='Cancelled'"
             " WHERE po_id = :id AND status IN ('Draft','Rejected','Hold')"
         ),
         {"id": po_id},
     )
+    return result.rowcount or 0
 
 
 def get_order_raw(db: Session, po_id: int) -> Optional[dict]:
@@ -407,27 +470,31 @@ def get_order_raw(db: Session, po_id: int) -> Optional[dict]:
 
 
 def duplicate_order(db: Session, po_id: int, new_po_number: str) -> int:
+    # `project_id`, `item_id`, `attributes` and `total_amount` are copied too: they used to
+    # be dropped, so a copy of a v1 order lost its project / item link (and, reaching its
+    # workspace through the vendor instead, its project scope), its key/value attributes
+    # and — for a header-only order — its total.
     row = db.execute(
         text(
             """
             INSERT INTO purchase_orders
                 (po_number, order_number, cutlist_no, supplier_ref_no,
-                 vendor_id, requester_id, cost_center_id,
+                 vendor_id, requester_id, cost_center_id, project_id, item_id,
                  description, category, priority, order_type, project_name, location,
                  required_date,
                  product_code, product_website, product_description, product_image_path, stock_tracked,
-                 quantity, unit_of_measure, unit_cost,
+                 quantity, unit_of_measure, unit_cost, total_amount,
                  gst_applicable, gst_included_in_price, currency,
-                 notes, line_item_comments, internal_comments, status)
+                 notes, line_item_comments, internal_comments, attributes, status)
             SELECT
                  :new_po, order_number, cutlist_no, supplier_ref_no,
-                 vendor_id, requester_id, cost_center_id,
+                 vendor_id, requester_id, cost_center_id, project_id, item_id,
                  description, category, priority, order_type, project_name, location,
                  required_date,
                  product_code, product_website, product_description, product_image_path, stock_tracked,
-                 quantity, unit_of_measure, unit_cost,
+                 quantity, unit_of_measure, unit_cost, total_amount,
                  gst_applicable, gst_included_in_price, currency,
-                 notes, line_item_comments, internal_comments, 'Draft'
+                 notes, line_item_comments, internal_comments, attributes, 'Draft'
               FROM purchase_orders WHERE po_id = :id
             RETURNING po_id
             """
@@ -439,13 +506,16 @@ def duplicate_order(db: Session, po_id: int, new_po_number: str) -> int:
         text(
             """
             INSERT INTO po_line_items
-                (po_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate)
-            SELECT :new_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate
+                (po_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate,
+                 attributes, material_table, material_id)
+            SELECT :new_id, line_number, item_description, sku, quantity, unit, unit_price, tax_rate,
+                   attributes, material_table, material_id
               FROM po_line_items WHERE po_id = :id
             """
         ),
         {"new_id": new_id, "id": po_id},
     )
+    recompute_total_amount(db, po_id=new_id)
     return new_id
 
 
@@ -545,20 +615,8 @@ def filter_clear(db: Session, *, workspace_id: int) -> list[dict]:
 
 
 # ── Attachments ───────────────────────────────────────────────────────────────
-def list_attachments(db: Session, po_id: int) -> list[dict]:
-    rows = db.execute(
-        text(
-            """
-            SELECT a.*, u.full_name AS uploaded_by_name
-              FROM po_attachments a
-              LEFT JOIN app_user u ON a.uploaded_by = u.id
-             WHERE a.po_id = :id
-             ORDER BY a.uploaded_at DESC
-            """
-        ),
-        {"id": po_id},
-    ).mappings().all()
-    return [dict(r) for r in rows]
+def list_attachments(db: Session, po_id: int, *, workspace_id: int) -> list[dict]:
+    return get_order_attachments(db, po_id, workspace_id=workspace_id)
 
 
 def insert_attachment(
@@ -568,16 +626,18 @@ def insert_attachment(
     attachment_type: str,
     file_name: str,
     file_size_bytes: int,
-    file_path: str,
+    file_blob_id: int,
     uploaded_by: Optional[int],
 ) -> int:
+    """New rows always point at a `file_blob`; `file_path` is left NULL (it is only read for
+    rows written before migration 0047)."""
     row = db.execute(
         text(
             """
             INSERT INTO po_attachments
-                (po_id, attachment_type, file_name, file_size_bytes, file_path, uploaded_by)
+                (po_id, attachment_type, file_name, file_size_bytes, file_blob_id, uploaded_by)
             VALUES
-                (:po_id, :atype, :fn, :sz, :fp, :uid)
+                (:po_id, :atype, :fn, :sz, :bid, :uid)
             RETURNING attachment_id
             """
         ),
@@ -586,20 +646,75 @@ def insert_attachment(
             "atype": attachment_type,
             "fn": file_name,
             "sz": file_size_bytes,
-            "fp": file_path,
+            "bid": file_blob_id,
             "uid": uploaded_by,
         },
     ).mappings().first()
     return int(row["attachment_id"])
 
 
-def get_attachment(db: Session, po_id: int, attachment_id: int) -> Optional[dict]:
+def find_blob(db: Session, *, workspace_id: int, sha256: str) -> Optional[int]:
+    row = db.execute(
+        text("SELECT file_blob_id FROM file_blob WHERE workspace_id = :w AND sha256 = :s"),
+        {"w": workspace_id, "s": sha256},
+    ).first()
+    return int(row[0]) if row else None
+
+
+def insert_blob(
+    db: Session,
+    *,
+    workspace_id: int,
+    sha256: str,
+    mime: str,
+    byte_size: int,
+    original_filename: str,
+    storage_key: str,
+    uploaded_by: int,
+) -> int:
+    return int(
+        db.execute(
+            text(
+                """
+                INSERT INTO file_blob(workspace_id, sha256, mime, byte_size,
+                                      original_filename, storage_key, uploaded_by)
+                VALUES (:w, :s, :m, :sz, :n, :k, :u)
+                RETURNING file_blob_id
+                """
+            ),
+            {
+                "w": workspace_id, "s": sha256, "m": mime, "sz": byte_size,
+                "n": original_filename, "k": storage_key, "u": uploaded_by,
+            },
+        ).scalar()
+    )
+
+
+def workspace_slug(db: Session, workspace_id: int) -> str:
+    return db.execute(
+        text("SELECT slug FROM workspace WHERE id = :w"), {"w": workspace_id}
+    ).scalar_one()
+
+
+def get_attachment(
+    db: Session, po_id: int, attachment_id: int, *, workspace_id: int
+) -> Optional[dict]:
+    """The attachment's file reference. `blob_*` come from the `file_blob` row and are NULL for
+    a row written before migration 0047 (which has only `file_path`). The blob join is also
+    scoped to the caller's workspace, so a blob id pointing across workspaces serves nothing."""
     row = db.execute(
         text(
-            "SELECT file_path, file_name FROM po_attachments"
-            " WHERE attachment_id = :a AND po_id = :p"
+            """
+            SELECT a.file_path, a.file_name, a.file_blob_id,
+                   b.mime AS blob_mime, b.byte_size AS blob_size,
+                   b.storage_key AS blob_storage_key
+              FROM po_attachments a
+              LEFT JOIN file_blob b
+                     ON b.file_blob_id = a.file_blob_id AND b.workspace_id = :w
+             WHERE a.attachment_id = :a AND a.po_id = :p
+            """
         ),
-        {"a": attachment_id, "p": po_id},
+        {"a": attachment_id, "p": po_id, "w": workspace_id},
     ).mappings().first()
     return dict(row) if row else None
 
@@ -623,6 +738,7 @@ def list_pending_approvals(db: Session, approver_id: int, *, workspace_id: int) 
               FROM approval_workflows aw
               JOIN v_po_summary ps ON aw.po_id = ps.po_id
              WHERE aw.approver_id = :approver_id AND aw.status = 'Pending'
+               AND ps.status = 'Pending'
                AND {_po_id_in_workspace('aw.po_id')}
              ORDER BY aw.created_at ASC
             """
@@ -655,11 +771,17 @@ def update_workflow_decision(
     )
 
 
-def update_po_status(db: Session, po_id: int, status: str) -> None:
-    db.execute(
-        text("UPDATE purchase_orders SET status = :s WHERE po_id = :po_id"),
-        {"s": status, "po_id": po_id},
+def update_po_status(db: Session, po_id: int, status: str, *, from_status: str) -> int:
+    """Move the order to `status` only if it is currently `from_status`. Returns rowcount
+    (0 means it was not — approving a Cancelled order used to make it Approved again)."""
+    result = db.execute(
+        text(
+            "UPDATE purchase_orders SET status = :s"
+            " WHERE po_id = :po_id AND status = :from_status"
+        ),
+        {"s": status, "po_id": po_id, "from_status": from_status},
     )
+    return result.rowcount or 0
 
 
 def get_po_budget_fields(db: Session, po_id: int) -> Optional[dict]:

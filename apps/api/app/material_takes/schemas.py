@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from ..schema_guards import no_null
 
 MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "OTHER"]
 Unit = Literal["sheet", "each", "m", "m2"]
@@ -64,6 +65,8 @@ class AddLineIn(BaseModel):
 
 
 class PatchLineIn(BaseModel):
+    # An explicit null on a NOT NULL column is a raw 500 (schema_guards.py).
+    reject_null = no_null("qty", "wastage_pct")
     material_type: MaterialType | None = None
     material_id: int | None = None
     description: str | None = Field(default=None, min_length=1, max_length=300)

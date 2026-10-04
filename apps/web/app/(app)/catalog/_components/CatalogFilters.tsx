@@ -7,9 +7,11 @@ interface Props {
   selectedSupplier: string | null;
   archived: boolean;
   suppliers: string[];
+  link: "all" | "linked" | "unlinked";
   onSearchChange: (s: string) => void;
   onSupplierChange: (s: string | null) => void;
   onArchivedChange: (a: boolean) => void;
+  onLinkChange: (l: "all" | "linked" | "unlinked") => void;
 }
 
 export default function CatalogFilters(p: Props) {
@@ -42,6 +44,16 @@ export default function CatalogFilters(p: Props) {
       >
         <option value="">All suppliers</option>
         {p.suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select
+        aria-label="Supplier link filter"
+        value={p.link}
+        onChange={(e) => p.onLinkChange(e.target.value as "all" | "linked" | "unlinked")}
+        className="rounded border border-h-line px-2 py-1 text-sm"
+      >
+        <option value="all">Any supplier link</option>
+        <option value="unlinked">Not linked</option>
+        <option value="linked">Linked</option>
       </select>
       <label className="flex items-center gap-1 text-sm text-h-muted">
         <input

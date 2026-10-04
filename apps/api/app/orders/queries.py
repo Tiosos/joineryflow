@@ -21,16 +21,20 @@ cutlist link/unlink paths. It is deliberately in this module rather than in
 `cutlists/`: the orders own the column being written.
 """
 import json
-from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..concurrency import bump_field_versions, check_field_conflicts
-from .schemas import CreateOrderIn, CreateOrderLineIn, PatchOrderIn, PatchOrderLineIn
+from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
+from .schemas import (
+    FROZEN_STATUSES,
+    CreateOrderIn,
+    CreateOrderLineIn,
+    PatchOrderIn,
+    PatchOrderLineIn,
+)
 
 # An order reaches its workspace through its project, or, when it has none,
 # through its vendor (Q554/Q555).
@@ -67,15 +71,9 @@ _ORDER_FROM = """
     LEFT JOIN items   i ON i.item_id   = po.item_id
 """
 
-# End-of-life statuses: a cancelled order is dead, and a delivered one has been
-# reconciled against goods received and invoices, so neither should change
-# silently after the fact. Lines and every header field except `status` are
-# read-only on these — `status` stays writable as the audited way to reopen.
-# Scope is this module's own routes: the legacy `/procurement/*` namespace
-# writes `Delivered`/`Cancelled` itself and is untouched, and
-# `sync_orders_for_item` still rewrites CUTLIST NO. on a frozen order because
-# that is the system keeping a reference true, not a person editing the order.
-FROZEN_STATUSES = frozenset({"Cancelled", "Delivered"})
+# `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
+# `OrderOut.locked`, which reads it; it is imported above so `orders.queries.
+# FROZEN_STATUSES` keeps working for the routes, the legacy namespace and tests.
 
 
 class OrderLocked(Exception):
@@ -255,6 +253,13 @@ def _vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> b
     ).first() is not None
 
 
+def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
+        {"p": project_id, "w": workspace_id},
+    ).first() is not None
+
+
 def _category_exists(db: Session, category_key: str) -> bool:
     """Any row of the `order_category` lookup (0031), archived or not: the FK the
     column carries accepts an archived key, and this only turns what would be a
@@ -273,11 +278,17 @@ def create_order(
     actor_id: int,
 ) -> tuple[str, dict | None]:
     """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None) |
-    ('UNKNOWN_CATEGORY', None)."""
+    ('UNKNOWN_CATEGORY', None) | ('PROJECT_NOT_FOUND', None)."""
     if not _vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
         return "VENDOR_NOT_FOUND", None
     if not _category_exists(db, payload.category):
         return "UNKNOWN_CATEGORY", None
+    # An explicit project must be this workspace's; the item-derived one already is
+    # (it is resolved through the item's own workspace join below).
+    if payload.project_id is not None and not _project_in_workspace(
+        db, project_id=payload.project_id, workspace_id=workspace_id
+    ):
+        return "PROJECT_NOT_FOUND", None
 
     project_id = payload.project_id
     project_name = payload.project_name
@@ -352,22 +363,6 @@ def create_order(
     return "OK", order
 
 
-def _conflict_safe_value(v: Any) -> Any:
-    """A `FIELD_CONFLICT`'s `current_value` reuses whatever type the column
-    holds — but `orders-types.ts`'s own documented invariant (and every
-    money/quantity field elsewhere in this API) is that Decimal serializes
-    as a **string**, never a JSON number (`toFixed is not a function`
-    otherwise). `jsonable_encoder` alone would encode a Decimal as a float,
-    breaking that; stringify Decimal/date/datetime here so the conflict
-    payload matches the rest of the API regardless of which encoder wraps
-    the final response."""
-    if isinstance(v, Decimal):
-        return str(v)
-    if isinstance(v, (date, datetime)):
-        return v.isoformat()
-    return v
-
-
 def patch_order(
     db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
 ) -> tuple[str, dict | None]:
@@ -440,7 +435,7 @@ def patch_order(
     )
     if conflicts:
         for field, info in conflicts.items():
-            info["current_value"] = _conflict_safe_value(current.get(field))
+            info["current_value"] = conflict_safe_value(current.get(field))
         return "FIELD_CONFLICT", conflicts
 
     new_versions = bump_field_versions(current.get("field_versions"), list(fields))

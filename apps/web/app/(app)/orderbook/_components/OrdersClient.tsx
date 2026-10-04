@@ -36,12 +36,6 @@ const STATUSES = [
 
 const PRIORITIES = ["High", "Medium", "Low", "Next", "Hold", "Quote"] as const;
 
-// Mirrors `FROZEN_STATUSES` in apps/api/app/orders/queries.py, which is the
-// source of truth and enforces it (409 ORDER_LOCKED). Here it only decides
-// which controls to render: a Cancelled or Delivered order is read-only
-// except for its status, the deliberate way to reopen it.
-const FROZEN_STATUSES: readonly string[] = ["Cancelled", "Delivered"];
-
 function statusClasses(status: string): string {
   switch (status) {
     case "Approved":
@@ -459,7 +453,9 @@ function OrderDetailPanel({
     );
   }
 
-  const frozen = FROZEN_STATUSES.includes(order.status);
+  // `locked` is the server's answer (Cancelled / Delivered); the API enforces it
+  // with 409 ORDER_LOCKED and this only decides which controls to render.
+  const frozen = order.locked;
   // Status stays editable on a frozen order (canEdit); everything else follows
   // canEditFields.
   const canEditFields = canEdit && !frozen;

@@ -610,6 +610,10 @@ def main() -> None:
                     if idx == 0
                     else None
                 )
+                # Reference fields (0036) on the first item only, so the Tracking modal
+                # shows real values there and dashes everywhere else. Direct SQL: a PATCH
+                # through the API would claim the item's Controlled Lock.
+                first = idx == 0
                 db.execute(
                     text(
                         """
@@ -619,7 +623,11 @@ def main() -> None:
                                var_boq            = :vb,
                                contractor_id      = :cid,
                                total_amount       = :amt,
-                               site_measure_notes = COALESCE(:notes, site_measure_notes)
+                               site_measure_notes = COALESCE(:notes, site_measure_notes),
+                               floor_plan         = COALESCE(:fp, floor_plan),
+                               rls                = COALESCE(:rls, rls),
+                               joiery_details     = COALESCE(:jd, joiery_details),
+                               cutlist_printed    = COALESCE(:cp, cutlist_printed)
                          WHERE item_id = :iid
                         """
                     ),
@@ -630,6 +638,11 @@ def main() -> None:
                         "cid":   contractor_id,
                         "amt":   total_amount,
                         "notes": site_measure_notes,
+                        "fp":    "FP-L2-A" if first else None,
+                        "rls":   "RLS-0042" if first else None,
+                        "jd":    "JD-KIT-01" if first else None,
+                        # the column defaults to TRUE, so FALSE is the only way to show both states
+                        "cp":    False if first else None,
                         "iid":   row["item_id"],
                     },
                 )
@@ -2523,6 +2536,41 @@ def main() -> None:
             "(Schiavello + Mitchell Laminates)"
         )
 
+        # Suppliers for the catalog's free-text names, and the real link
+        # (`default_supplier_id`) that Generate Orders groups by. Linked by the
+        # same exact, case-insensitive name match `0029` used, so a re-run leaves
+        # a link someone changed by hand alone (only unlinked rows are filled).
+        # Placed after every catalog insert (the legacy boards come later than the
+        # #7a ones), so a single run links all of them.
+        for _sup_name, _sup_cat in [
+            ("Laminex Australia", "Board"), ("Plyco", "Board"),
+            ("Briggs Veneers", "Board"),
+            ("Hettich Australia", "Hardware"), ("Blum Australia", "Hardware"),
+            ("House of Brass", "Hardware"),
+        ]:
+            if s.execute(
+                text("SELECT 1 FROM vendors WHERE workspace_id = :w AND name = :n"),
+                {"w": workspace_id, "n": _sup_name},
+            ).first() is None:
+                s.execute(
+                    text("INSERT INTO vendors (workspace_id, name, category, status)"
+                         " VALUES (:w, :n, :c, 'Active')"),
+                    {"w": workspace_id, "n": _sup_name, "c": _sup_cat},
+                )
+        for _tbl in ("board_materials", "hardware_materials"):
+            s.execute(text(f"""
+                UPDATE {_tbl} t
+                   SET default_supplier_id = v.vendor_id
+                  FROM vendors v
+                 WHERE t.workspace_id = :w AND v.workspace_id = t.workspace_id
+                   AND t.default_supplier_id IS NULL
+                   AND t.default_supplier IS NOT NULL
+                   AND lower(btrim(t.default_supplier)) = lower(btrim(v.name))
+            """), {"w": workspace_id})
+        s.commit()
+        print("seeded 6 catalog suppliers and linked every board / hardware row whose "
+              "default supplier names one (BM-203 'CDK Stone' stays unlinked on purpose)")
+
         # ── Advance the shared number sequence past the seeded fixtures ────────
         #
         # Every item above is inserted with a FIXED `num` (290001.. and
@@ -2871,6 +2919,7 @@ def main() -> None:
         # approves a v2, so that summary shows a stale line. Idempotent: the
         # project's takes and summaries are dropped first.
         # ------------------------------------------------------------------
+        from app.auth.sessions import AuthUser as _TakeAuthUser
         from app.material_summaries import queries as _summaries
         from app.material_takes import queries as _takes
 
@@ -2889,13 +2938,21 @@ def main() -> None:
                    AND EXISTS (SELECT 1 FROM modules m WHERE m.item_id = i.item_id)
                  ORDER BY i.num"""), {"p": _alf})]
             if len(_take_items) >= 2:
+                # The take functions check the item's locks as the acting user.
+                _take_actor = _TakeAuthUser(
+                    **db.execute(
+                        text("SELECT id, workspace_id, email, full_name, auth_role"
+                             " FROM app_user WHERE id = :u"),
+                        {"u": _drafter},
+                    ).mappings().one()
+                )
                 _draft_only, _revised = _take_items[1], _take_items[0]
                 for _iid in _take_items:
-                    _tid = _takes.generate(db, _iid, wid, _drafter)
+                    _tid = _takes.generate(db, _iid, wid, _take_actor)
                     if _iid != _draft_only:
-                        _takes.approve(db, _tid, wid, _drafter)
+                        _takes.approve(db, _tid, wid, _take_actor)
                 _summaries.build(db, _alf, wid, _drafter)
-                _takes.approve(db, _takes.generate(db, _revised, wid, _drafter), wid, _drafter)
+                _takes.approve(db, _takes.generate(db, _revised, wid, _take_actor), wid, _take_actor)
                 db.commit()
                 print(f"seeded #12 material take: {len(_take_items) - 1} approved takes "
                       f"(1 at v2), 1 draft, 1 project summary whose lines for that item read stale")
@@ -2911,6 +2968,7 @@ def main() -> None:
         # access is upserted instead — it's one row per project already).
         # ------------------------------------------------------------------
         from app.item_documents import queries as _idocs
+        from app.auth.sessions import AuthUser as _SeedAuthUser
         from app.item_queries import queries as _iqueries
         from app.project_contacts import queries as _contacts
         from app.project_contacts.schemas import CreateContactIn as _CreateContactIn
@@ -2979,20 +3037,30 @@ def main() -> None:
             """), {"p": _alf}).scalar()
 
             if _item1:
+                # Asking and answering check the item's locks as the acting user.
+                def _seed_actor(_uid):
+                    return _SeedAuthUser(
+                        **db.execute(
+                            text("SELECT id, workspace_id, email, full_name, auth_role"
+                                 " FROM app_user WHERE id = :u"),
+                            {"u": _uid},
+                        ).mappings().one()
+                    )
+
                 db.execute(text("DELETE FROM item_query WHERE item_id = :i"), {"i": _item1})
                 _iqueries.create_query(
-                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    db, item_id=_item1, workspace_id=wid, actor=_seed_actor(_manager),
                     question="Client wants to confirm handle finish — brushed "
                              "nickel or matte black?",
                 )
                 _answered = _iqueries.create_query(
-                    db, item_id=_item1, workspace_id=wid, actor_id=_manager,
+                    db, item_id=_item1, workspace_id=wid, actor=_seed_actor(_manager),
                     question="Can the island bench overhang be increased to "
                              "400mm for stool clearance?",
                 )
                 _iqueries.answer_query(
                     db, query_id=_answered["query_id"], workspace_id=wid,
-                    actor_id=_drafter,
+                    actor=_seed_actor(_drafter),
                     answer="Confirmed with engineering — 400mm overhang is "
                            "within tolerance, cutlist updated.",
                 )
@@ -3006,15 +3074,23 @@ def main() -> None:
                     db, workspace_id=wid, workspace_slug="hartwood-joinery",
                     app_user_id=_drafter, path=_bath_pdf,
                 )
+                # bind_document checks the item's locks as the acting user.
+                _doc_actor = _SeedAuthUser(
+                    **db.execute(
+                        text("SELECT id, workspace_id, email, full_name, auth_role"
+                             " FROM app_user WHERE id = :u"),
+                        {"u": _drafter},
+                    ).mappings().one()
+                )
                 _idocs.bind_document(
                     db, item_id=_item1, file_blob_id=_doc_blob_a,
                     label="Site photos", sort_order=0,
-                    workspace_id=wid, actor_id=_drafter,
+                    workspace_id=wid, actor=_doc_actor,
                 )
                 _idocs.bind_document(
                     db, item_id=_item1, file_blob_id=_doc_blob_b,
                     label="Client correspondence", sort_order=1,
-                    workspace_id=wid, actor_id=_drafter,
+                    workspace_id=wid, actor=_doc_actor,
                 )
 
             db.commit()

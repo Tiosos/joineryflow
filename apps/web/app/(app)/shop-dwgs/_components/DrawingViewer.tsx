@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CommentBadge } from "@/components/comments/CommentBadge";
 import { CommentThread } from "@/components/comments/CommentThread";
 import type { Mentionable } from "@/lib/comments-types";
 import { can } from "@/lib/permissions";
@@ -158,7 +159,10 @@ export default function DrawingViewer(props: Props) {
                           <span className="h-mono font-medium text-h-ink">v{r.rev_no}</span>
                           <StatusPill status={r.status} />
                           {i === 0 && <span className="rounded bg-h-good/15 px-1.5 text-[10px] font-semibold uppercase text-h-good">Latest</span>}
-                          {active && <span className="ml-auto text-[11px] text-h-muted">Viewing</span>}
+                          <span className="ml-auto flex items-center gap-2">
+                            <CommentBadge n={r.comment_count} />
+                            {active && <span className="text-[11px] text-h-muted">Viewing</span>}
+                          </span>
                         </button>
                       </li>
                     );
@@ -178,7 +182,7 @@ export default function DrawingViewer(props: Props) {
                   currentUserId={me.id}
                   currentUserRole={me.auth_role}
                   canComment={can(me, "shop_dwgs", "comment")}
-                  onMutated={props.onChanged}
+                  onMutated={() => { void refresh(); props.onChanged(); }}
                   roster={props.roster}
                 />
               </section>

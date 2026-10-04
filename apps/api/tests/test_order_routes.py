@@ -759,6 +759,50 @@ def test_status_is_the_way_back_in_from_a_frozen_order(ctx):
     assert float(r.json()["total_amount"]) == 180.0
 
 
+# `locked` on OrderOut — the server's answer to "is this order read-only?", so the
+# web does not keep its own copy of the frozen set. The expected set is written out
+# here rather than read from FROZEN_STATUSES, or the test could not disagree with it.
+_ALL_STATUSES = [
+    "Draft", "Pending", "Approved", "Rejected", "Delivered",
+    "Cancelled", "Hold", "Quote", "Next",
+]
+
+
+@pytest.mark.parametrize("status", _ALL_STATUSES)
+def test_locked_flag_is_true_exactly_for_cancelled_and_delivered(ctx, status):
+    c = ctx["client"]
+    po = c.post("/orders", json={
+        "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
+    }).json()
+    po_id = po["po_id"]
+    assert c.patch(f"/orders/{po_id}", json={"status": status}).status_code == 200
+
+    expected = status in {"Cancelled", "Delivered"}
+    detail = c.get(f"/orders/{po_id}").json()
+    assert detail["locked"] is expected
+    listed = next(o for o in c.get("/orders").json()["orders"] if o["po_id"] == po_id)
+    assert listed["locked"] is expected
+
+
+def test_locked_flag_follows_a_reopen(ctx):
+    ids = _make_order_with_line(ctx)
+    c = ctx["client"]
+    assert c.get(f"/orders/{ids['po_id']}").json()["locked"] is False
+
+    _freeze(ctx, ids["po_id"], "Cancelled")
+    assert c.get(f"/orders/{ids['po_id']}").json()["locked"] is True
+
+    # the response of the reopening PATCH itself already says so
+    r = c.patch(f"/orders/{ids['po_id']}", json={"status": "Draft"})
+    assert r.status_code == 200, r.text
+    assert r.json()["locked"] is False
+
+    # and so do the line mutations, which return the whole order
+    r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "4"})
+    assert r.status_code == 200, r.text
+    assert r.json()["locked"] is False
+
+
 def test_frozen_orders_may_move_between_frozen_statuses(ctx):
     """Status-only PATCH is allowed whatever the target, including another
     frozen status (a Delivered order later found to be cancelled)."""
@@ -1164,3 +1208,80 @@ def test_create_refuses_unknown_priority_and_category_cleanly(ctx):
     # nothing was created by either, and the valid form still works
     assert c.post("/orders", json={**base, "category": "Other", "priority": "High"}).status_code == 201
     assert len(c.get("/orders").json()["orders"]) == 1
+
+
+# ── create_order validates an explicit project_id ────────────────────────────
+
+
+def _foreign_project() -> int:
+    """A project belonging to some *other* workspace."""
+    s = SessionLocal()
+    try:
+        wid = s.execute(
+            text("INSERT INTO workspace(slug, name) VALUES (:s, 'Foreign') RETURNING id"),
+            {"s": f"foreign-{uuid.uuid4().hex[:8]}"},
+        ).scalar()
+        pid = s.execute(
+            text("INSERT INTO projects(project_code, name, workspace_id)"
+                 " VALUES (:c, 'SECRET-FOREIGN-PROJECT', :w) RETURNING project_id"),
+            {"c": f"FOR-{uuid.uuid4().hex[:6]}", "w": wid},
+        ).scalar()
+        s.commit()
+        return pid
+    finally:
+        s.close()
+
+
+def _order_count() -> int:
+    s = SessionLocal()
+    try:
+        return s.execute(text("SELECT count(*) FROM purchase_orders")).scalar()
+    finally:
+        s.close()
+
+
+def test_create_refuses_another_workspaces_project_cleanly(ctx):
+    """Was a raw 500 (nothing persisted, nothing leaked): the project FK is real but
+    nothing checked the id belonged to the caller's workspace first."""
+    c = ctx["client"]
+    foreign = _foreign_project()
+    before = _order_count()
+    r = c.post("/orders", json={"vendor_id": ctx["vendor"], "description": "x",
+                                "category": "Other", "project_id": foreign})
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"] == {"code": "PROJECT_NOT_FOUND", "project_id": foreign}
+    assert "SECRET-FOREIGN-PROJECT" not in r.text
+    assert _order_count() == before                          # nothing created
+    assert c.get("/orders").json()["orders"] == []
+
+
+def test_create_refuses_an_unknown_project_cleanly(ctx):
+    r = ctx["client"].post("/orders", json={"vendor_id": ctx["vendor"], "description": "x",
+                                            "category": "Other", "project_id": 987654321})
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
+
+
+def test_create_with_this_workspaces_project_still_works(ctx):
+    r = ctx["client"].post("/orders", json={"vendor_id": ctx["vendor"], "description": "x",
+                                            "category": "Other", "project_id": ctx["pid"]})
+    assert r.status_code == 201, r.text
+    assert r.json()["project_id"] == ctx["pid"]
+
+
+def test_create_without_a_project_and_from_an_item_still_works(ctx):
+    """Controls: no project at all (Q554's project-less order) and the item-derived
+    project (already workspace-checked through the item) are unaffected."""
+    c = ctx["client"]
+    base = {"vendor_id": ctx["vendor"], "description": "x", "category": "Other"}
+    assert c.post("/orders", json=base).status_code == 201
+    r = c.post("/orders", json={**base, "item_id": ctx["parent"]})
+    assert r.status_code == 201, r.text
+    assert r.json()["project_id"] == ctx["pid"]
+
+
+def test_vendor_is_checked_before_project(ctx):
+    """One check order to reason about: an unknown vendor still answers first."""
+    r = ctx["client"].post("/orders", json={"vendor_id": 999999, "description": "x",
+                                            "category": "Other", "project_id": 987654321})
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "VENDOR_NOT_FOUND"

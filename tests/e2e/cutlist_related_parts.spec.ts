@@ -30,10 +30,14 @@ test("related parts are nested and collapsed by default (Q420-Q422)", async ({ p
   const collapsed = await rows.count();
   // The aria-label flips to "Hide related parts" once open, so match on the
   // expanded state instead of the label.
-  const toggle = page.locator('button[aria-expanded]').first();
+  //
+  // Scoped to the grid's rows: the top bar's notification bell and Next's dev
+  // overlay button also carry aria-expanded, so an unscoped locator counts them.
+  const toggles = page.locator('[data-testid="tracking-row"] button[aria-expanded]');
+  const toggle = toggles.first();
   // The seed puts both related parts under one parent, so exactly one row
   // offers a toggle.
-  await expect(page.locator('button[aria-expanded]')).toHaveCount(1);
+  await expect(toggles).toHaveCount(1);
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
   await toggle.click();

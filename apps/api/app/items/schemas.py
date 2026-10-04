@@ -124,6 +124,8 @@ class ModuleOut(BaseModel):
     id: int
     name: str | None
     parts: list[PartOut]
+    # Live comments on the module's thread, replies included, deleted ones not.
+    comment_count: int = 0
 
 
 class HardwareLineOut(BaseModel):
@@ -223,6 +225,10 @@ class ItemOut(BaseModel):
     hard_locked_by: int | None = None
     hard_locked_by_name: str | None = None
     field_versions: dict[str, int] = {}
+    # Plan V1 §2 — the source-item link of a duplicate (migration 0050). Both None
+    # for an item nobody duplicated; the number is the source's Item ID (`num`).
+    duplicated_from_item_id: int | None = None
+    duplicated_from_item_number: int | None = None
 
 
 # ── Write input models (T15) ───────────────────────────────────────────────────

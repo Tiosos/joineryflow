@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy import text
 
+from app.auth.sessions import AuthUser
 from app.item_attachments.queries import (
     bind_attachment,
     clear_attachment,
@@ -37,14 +38,16 @@ def _seed(db, workspace_id: int) -> dict:
         VALUES (:w, 'iaaa', 'application/pdf', 200, 'cv.pdf', 'k/ia/iaaa', :u) RETURNING file_blob_id
     """), {"w": workspace_id, "u": uid}).scalar()
     db.flush()
-    return {"uid": uid, "pid": pid, "iid": iid, "bid": bid}
+    actor = AuthUser(id=uid, workspace_id=workspace_id, email="ia@test",
+                     full_name="IA", auth_role="drafter")
+    return {"uid": uid, "pid": pid, "iid": iid, "bid": bid, "actor": actor}
 
 
 def test_bind_inserts_slot_and_returns_metadata(db, workspace_id):
     seed = _seed(db, workspace_id)
     result = bind_attachment(
         db, item_id=seed["iid"], kind="cv_drawing",
-        file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"],
+        file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"],
     )
     assert result["kind"] == "cv_drawing"
     assert result["file_blob_id"] == seed["bid"]
@@ -57,13 +60,13 @@ def test_bind_inserts_slot_and_returns_metadata(db, workspace_id):
 def test_bind_replaces_existing_slot_with_upsert(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     new_bid = db.execute(text("""
         INSERT INTO file_blob(workspace_id, sha256, mime, byte_size, original_filename, storage_key, uploaded_by)
         VALUES (:w, 'iabb', 'application/pdf', 300, 'cv2.pdf', 'k/ia/iabb', :u) RETURNING file_blob_id
     """), {"w": workspace_id, "u": seed["uid"]}).scalar()
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=new_bid, workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=new_bid, workspace_id=workspace_id, actor=seed["actor"])
     row = db.execute(text(
         "SELECT file_blob_id FROM item_attachment WHERE item_id = :i AND kind = 'cv_drawing'"
     ), {"i": seed["iid"]}).scalar()
@@ -83,7 +86,7 @@ def test_bind_rejects_non_pdf_mime(db, workspace_id):
     db.flush()
     with pytest.raises(ValueError, match="application/pdf"):
         bind_attachment(db, item_id=seed["iid"], kind="floor_plan",
-                        file_blob_id=png_bid, workspace_id=workspace_id, actor_id=seed["uid"])
+                        file_blob_id=png_bid, workspace_id=workspace_id, actor=seed["actor"])
 
 
 def test_bind_rejects_cross_workspace_blob(db, workspace_id):
@@ -100,15 +103,15 @@ def test_bind_rejects_cross_workspace_blob(db, workspace_id):
     db.flush()
     with pytest.raises(ValueError, match="workspace"):
         bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                        file_blob_id=foreign_bid, workspace_id=workspace_id, actor_id=seed["uid"])
+                        file_blob_id=foreign_bid, workspace_id=workspace_id, actor=seed["actor"])
 
 
 def test_clear_removes_slot(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     deleted = clear_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                               workspace_id=workspace_id, actor_id=seed["uid"])
+                               workspace_id=workspace_id, actor=seed["actor"])
     assert deleted is True
     count = db.execute(text(
         "SELECT count(*) FROM item_attachment WHERE item_id = :i AND kind = 'cv_drawing'"
@@ -119,14 +122,14 @@ def test_clear_removes_slot(db, workspace_id):
 def test_clear_returns_false_if_no_slot(db, workspace_id):
     seed = _seed(db, workspace_id)
     deleted = clear_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                               workspace_id=workspace_id, actor_id=seed["uid"])
+                               workspace_id=workspace_id, actor=seed["actor"])
     assert deleted is False
 
 
 def test_get_bundle_returns_five_slots_with_populated_and_null(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     bundle = get_bundle(db, item_id=seed["iid"], workspace_id=workspace_id)
     assert bundle["item_id"] == seed["iid"]
     assert [sl["kind"] for sl in bundle["slots"]] == [
@@ -141,7 +144,7 @@ def test_get_bundle_returns_five_slots_with_populated_and_null(db, workspace_id)
 def test_item_delete_cascades_attachments(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     db.execute(text("DELETE FROM items WHERE item_id = :i"), {"i": seed["iid"]})
     count = db.execute(text(
         "SELECT count(*) FROM item_attachment WHERE item_id = :i"
@@ -154,7 +157,7 @@ def test_bind_writes_item_edit_log(db, workspace_id):
     (CLAUDE.md's PM Workbench invariant) — attachments used to skip this."""
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     row = db.execute(text(
         "SELECT field, old_value, new_value FROM item_edit_log WHERE item_id = :i"
     ), {"i": seed["iid"]}).mappings().one()
@@ -166,9 +169,9 @@ def test_bind_writes_item_edit_log(db, workspace_id):
 def test_clear_writes_item_edit_log(db, workspace_id):
     seed = _seed(db, workspace_id)
     bind_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor_id=seed["uid"])
+                    file_blob_id=seed["bid"], workspace_id=workspace_id, actor=seed["actor"])
     clear_attachment(db, item_id=seed["iid"], kind="cv_drawing",
-                     workspace_id=workspace_id, actor_id=seed["uid"])
+                     workspace_id=workspace_id, actor=seed["actor"])
     rows = db.execute(text(
         "SELECT field, old_value, new_value FROM item_edit_log"
         " WHERE item_id = :i ORDER BY log_id"

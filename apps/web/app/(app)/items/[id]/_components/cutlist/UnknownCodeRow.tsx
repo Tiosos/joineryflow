@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { SupplierOption } from "@/lib/catalog-types";
 import type {
   CatalogTable,
   CvCommitResolution,
@@ -30,16 +31,30 @@ const TABLE_LABEL: Record<CatalogTable, string> = {
 interface Props {
   unknown: CvUnknownCode;
   resolution: CvCommitResolution | undefined;
+  /** null while loading or when the list could not be read (the picker is then disabled). */
+  suppliers: SupplierOption[] | null;
   onChange: (r: CvCommitResolution) => void;
 }
 
-export function UnknownCodeRow({ unknown, resolution, onChange }: Props) {
+export function UnknownCodeRow({ unknown, resolution, suppliers, onChange }: Props) {
   const [mode, setMode] = useState<Mode>(resolution?.action ?? null);
   const [targetTable, setTargetTable] = useState<SimpleCatalogTable>(
     (unknown.suggested_table as SimpleCatalogTable) || "board_materials",
   );
   const [sku, setSku] = useState("");
   const [description, setDescription] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+
+  function createNew(supplier: string = supplierId): CvCommitResolution {
+    return {
+      action: "create_new",
+      cv_code: unknown.cv_code,
+      target_table: targetTable,
+      sku: sku.trim(),
+      description: description.trim(),
+      ...(supplier ? { default_supplier_id: Number(supplier) } : {}),
+    };
+  }
 
   function pickSkip() {
     setMode("skip");
@@ -48,15 +63,7 @@ export function UnknownCodeRow({ unknown, resolution, onChange }: Props) {
 
   function pickCreateNew() {
     setMode("create_new");
-    if (sku.trim() && description.trim()) {
-      onChange({
-        action: "create_new",
-        cv_code: unknown.cv_code,
-        target_table: targetTable,
-        sku: sku.trim(),
-        description: description.trim(),
-      });
-    }
+    if (sku.trim() && description.trim()) onChange(createNew());
   }
 
   function pickUseExisting() {
@@ -65,13 +72,7 @@ export function UnknownCodeRow({ unknown, resolution, onChange }: Props) {
 
   function commitCreateNew() {
     if (!sku.trim() || !description.trim()) return;
-    onChange({
-      action: "create_new",
-      cv_code: unknown.cv_code,
-      target_table: targetTable,
-      sku: sku.trim(),
-      description: description.trim(),
-    });
+    onChange(createNew());
   }
 
   return (
@@ -159,6 +160,31 @@ export function UnknownCodeRow({ unknown, resolution, onChange }: Props) {
                 placeholder="e.g. 18mm Particleboard White"
                 className="mt-1 block w-full rounded-md border border-h-line bg-h-bg px-2 py-1 text-sm"
               />
+            </label>
+            <label className="block">
+              <span className="text-xs text-h-muted">Supplier link (optional)</span>
+              <select
+                aria-label="Supplier link"
+                value={supplierId}
+                disabled={suppliers == null}
+                onChange={(e) => {
+                  setSupplierId(e.target.value);
+                  if (sku.trim() && description.trim()) onChange(createNew(e.target.value));
+                }}
+                className="mt-1 block w-full rounded-md border border-h-line bg-h-bg px-2 py-1 text-sm"
+              >
+                <option value="">Not linked</option>
+                {(suppliers ?? []).map((s) => (
+                  <option key={s.vendor_id} value={s.vendor_id}>
+                    {s.name}{s.status && s.status !== "Active" ? ` (${s.status.toLowerCase()})` : ""}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs text-h-muted">
+                {suppliers == null
+                  ? "The supplier list couldn't be read, so this row will start unlinked."
+                  : "Without one, quote lines using this material can't be ordered until it is linked in the Catalog."}
+              </span>
             </label>
           </div>
         )}

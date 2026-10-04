@@ -34,7 +34,10 @@ test("Delete module names its parts and comments, Cancel keeps it, Delete remove
   await openCutlist(page, "JO-TP01");
 
   // A module of our own, with one comment on it.
-  const added = page.getByRole("button", { name: "New module", exact: true });
+  // The module row's accessible name gains a "💬 N" suffix once its thread has a
+  // comment (the comment-count badge), so an exact "New module" stops matching the
+  // very module this test just commented on. Match the name with or without it.
+  const added = page.getByRole("button", { name: /^New module(?: 💬 \d+)?$/ });
   await expect(page.getByRole("button", { name: /\+ Add module/ })).toBeVisible({ timeout: 30_000 });
   const before = await added.count();
   await page.getByRole("button", { name: /\+ Add module/ }).click();

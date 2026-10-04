@@ -121,6 +121,15 @@ class POCreate(BaseModel):
 
     line_items: List[LineItemCreate] = []
 
+    @field_validator("line_items")
+    @classmethod
+    def line_numbers_are_unique(cls, v: List[LineItemCreate]) -> List[LineItemCreate]:
+        # UNIQUE (po_id, line_number): a repeat used to surface as a raw 500.
+        numbers = [line.line_number for line in v]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("line_number must be unique within an order")
+        return v
+
 
 class POUpdate(BaseModel):
     description: Optional[str] = None
@@ -156,6 +165,15 @@ class POUpdate(BaseModel):
     line_item_comments: Optional[str] = None
     internal_comments: Optional[str] = None
     changelog: Optional[str] = None
+
+    @field_validator("changelog")
+    @classmethod
+    def changelog_is_read_only(cls, v: Optional[str]) -> Optional[str]:
+        # The changelog is the order's audit trail; the routes append to it. PATCH used
+        # to overwrite it wholesale.
+        if v is not None:
+            raise ValueError("changelog is read-only; it is written by the system")
+        return v
 
 
 class VendorCreate(BaseModel):
