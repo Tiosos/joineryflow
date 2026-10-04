@@ -15,13 +15,7 @@ from sqlalchemy import text
 from app.db import SessionLocal
 
 from .conftest import TRUNCATE_TABLES
-from .test_hardware_lines_routes import (
-    _create_project,
-    _login,
-    _login_same_workspace,
-    _seed_status,
-    _set_item,
-)
+from .helpers import create_project, login, login_same_workspace, set_item
 
 _EXTRA_TABLES = (
     "status_options",
@@ -47,14 +41,10 @@ def _cleanup():
 
 def _fixture():
     """A drafter, their workspace, a project."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code=f"SL-{uuid.uuid4().hex[:6]}")
-        _seed_status(db)
-        db.execute(text("INSERT INTO status_options(status_key, sort_order)"
-                        " VALUES ('APPROVED', 5) ON CONFLICT DO NOTHING"))
-        db.commit()
+        pid = create_project(db, uid=uid, code=f"SL-{uuid.uuid4().hex[:6]}")
     finally:
         db.close()
     return c, wid, uid, pid
@@ -105,7 +95,7 @@ _NAMES = ["status", "lifecycle"]
 
 
 def _hard_lock(iid: int, uid: int) -> None:
-    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
 
 
 @pytest.mark.parametrize("name", _NAMES)
@@ -113,7 +103,7 @@ def test_a_hard_lock_refuses_everyone(name):
     c, wid, uid, pid = _fixture()
     iid = _item(pid, 1)
     _hard_lock(iid, uid)
-    admin, _ = _login_same_workspace(wid, "admin")
+    admin, _ = login_same_workspace(wid, "admin")
 
     before = _state(iid, wid)
     for client in (c, admin):
@@ -122,7 +112,7 @@ def test_a_hard_lock_refuses_everyone(name):
         assert r.json()["detail"] == {"code": "HARD_LOCKED", "locked_by": uid}
     assert _state(iid, wid) == before, "a refused write must change and log nothing"
 
-    _set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL")
+    set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL")
     assert _ROUTES[name](c, iid).status_code == 200      # the same request goes through once cleared
 
 
@@ -130,10 +120,10 @@ def test_a_hard_lock_refuses_everyone(name):
 def test_a_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager(name):
     c, wid, uid, pid = _fixture()
     iid = _item(pid, 1)
-    owner, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
-    foreman, _ = _login_same_workspace(wid, "editor")
-    manager, _ = _login_same_workspace(wid, "manager")
-    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    owner, owner_id = login_same_workspace(wid, "drafter", name="Olive Owner")
+    foreman, _ = login_same_workspace(wid, "editor")
+    manager, _ = login_same_workspace(wid, "manager")
+    set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
 
     before = _state(iid, wid)
     for client in (c, foreman):
@@ -152,9 +142,9 @@ def test_a_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager(na
 def test_an_unlocked_item_and_a_sticky_owner_do_not_block(name):
     c, wid, uid, pid = _fixture()
     iid = _item(pid, 1)
-    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _other, owner_id = login_same_workspace(wid, "drafter")
     # cutlist_owner_id survives an Unlock; only an active item_locked counts
-    _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
+    set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
     assert _ROUTES[name](c, iid).status_code == 200
 
 
@@ -211,9 +201,9 @@ def test_bulk_status_skips_locked_items_and_lists_them():
     hard = _item(pid, 3)
     controlled = _item(pid, 4)
     _hard_lock(hard, uid)
-    _other, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
-    _set_item(controlled, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
-    foreman, _ = _login_same_workspace(wid, "editor")
+    _other, owner_id = login_same_workspace(wid, "drafter", name="Olive Owner")
+    set_item(controlled, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    foreman, _ = login_same_workspace(wid, "editor")
 
     before = {i: _state(i, wid) for i in (hard, controlled)}
     r = foreman.post(
@@ -235,9 +225,9 @@ def test_bulk_status_skips_locked_items_and_lists_them():
 def test_bulk_status_a_manager_and_the_owner_pass_a_controlled_lock():
     c, wid, uid, pid = _fixture()
     iid = _item(pid, 1)
-    owner, owner_id = _login_same_workspace(wid, "drafter")
-    manager, _ = _login_same_workspace(wid, "manager")
-    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    owner, owner_id = login_same_workspace(wid, "drafter")
+    manager, _ = login_same_workspace(wid, "manager")
+    set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
     for client, status in ((owner, "LIVE"), (manager, "HOLD")):
         r = client.post("/items/bulk-status", json={"item_ids": [iid], "status": status, "note": "n"})
         assert r.status_code == 200, r.text

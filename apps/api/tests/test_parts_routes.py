@@ -21,6 +21,7 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
+from .helpers import login
 from .conftest import TRUNCATE_TABLES
 
 # ── Cleanup fixture ────────────────────────────────────────────────────────────
@@ -55,52 +56,12 @@ def _cleanup():
 # ── Seed helpers ───────────────────────────────────────────────────────────────
 
 
-def _seed_refs(db) -> None:
-    """Insert status_options reference rows required for items.status FK."""
-    for key, order in [("CLEAR", 1), ("HOLD", 2), ("LIVE", 3), ("VOID", 4)]:
-        db.execute(
-            text(
-                "INSERT INTO status_options(status_key, sort_order)"
-                " VALUES(:k, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "o": order},
-        )
-    db.commit()
 
 
-def _login(role: str = "drafter") -> tuple:
-    """Create a fresh workspace + user, return (client, workspace_id, user_id)."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"h-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        _seed_refs(db)
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
+def _login(role: str = "drafter"):
+    return login(role, prefix="h")
 
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+
 
 
 def _create_project(db, *, wid: int, uid: int) -> int:

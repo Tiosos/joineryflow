@@ -1,14 +1,12 @@
 """Tests for POST /items/bulk-status (Tracking 2.0 #10 T04)."""
-import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
+from .helpers import login
 from .conftest import TRUNCATE_TABLES
 
 _STATUS_KEYS = [
@@ -53,36 +51,9 @@ def _seed_status_options(db):
 
 
 def _login(role: str = "manager"):
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"bs-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        _seed_status_options(db)
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'BS') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'BS User', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="bs")
+
+
 
 
 def _create_project(db, *, wid: int, uid: int, code: str = "BS-001") -> int:

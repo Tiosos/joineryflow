@@ -4,16 +4,13 @@ The cv_material_mapping register translates freeform CV codes (e.g. '18-PB',
 '700.0KC2.054.00') to (target_material_table, target_material_id). UNIQUE
 on (workspace_id, cv_code). 10 cases per the plan.
 """
-import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
+from .helpers import login
 from .conftest import TRUNCATE_TABLES
 
 
@@ -40,29 +37,9 @@ def _cleanup():
 
 
 def _login(role: str = "drafter"):
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"m-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'M') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text("""
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r) RETURNING id
-            """),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="m")
+
+
 
 
 def _seed_board(wid: int, *, code: str, sku: str, description: str = "Board") -> int:

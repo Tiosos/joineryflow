@@ -1,12 +1,10 @@
-import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
+
+from .helpers import login
 
 
 @pytest.fixture(autouse=True)
@@ -25,36 +23,9 @@ def _cleanup():
 
 
 def _login(role: str):
-    """Create a fresh workspace + user with the given role, return (client, workspace_id, user_id)."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"h-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="h")
+
+
 
 
 def test_list_empty_returns_empty():
