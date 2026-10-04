@@ -7,30 +7,19 @@ Covers:
   - POST /batches with unknown project_id -> 404.
 """
 
-import pytest
 from sqlalchemy import text
 
 from app.db import SessionLocal
 
 from .helpers import login
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "hardware_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "hardware_materials",
+)
 
 
 # Reference data for FK constraints on items and item_stages

@@ -9,7 +9,6 @@ Two layers:
 """
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -23,20 +22,15 @@ from app.cut_floor.optimiser import (
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = ("cut_schedule", "part_slot", "cut_sheet", "cut_plan")
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "cut_schedule",
+    "part_slot",
+    "cut_sheet",
+    "cut_plan",
+)
 
 
 # ---------------------------------------------------------------------------

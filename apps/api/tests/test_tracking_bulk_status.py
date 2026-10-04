@@ -1,13 +1,12 @@
 """Tests for POST /items/bulk-status (Tracking 2.0 #10 T04)."""
 
-import pytest
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 
 from .helpers import login
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 _STATUS_KEYS = [
     ("CLEAR", 1),
@@ -19,23 +18,13 @@ _STATUS_KEYS = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "item_status_log",
-            "item_edit_log",
-            "item_stages",
-            "items",
-            "status_options",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "item_status_log",
+    "item_edit_log",
+    "item_stages",
+    "items",
+    "status_options",
+)
 
 
 def _seed_status_options(db):

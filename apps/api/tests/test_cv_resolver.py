@@ -4,36 +4,25 @@ Resolution order: cv_material_mapping > catalog synonyms[] > catalog sku exact >
 """
 import uuid
 
-import pytest
 from sqlalchemy import text
 
 from app.cv.parser import ParsedPart
 from app.cv.resolver import resolve_codes, suggest_table
 from app.db import SessionLocal
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "equipment_hire",
-            "appliances",
-            "benchtop_materials",
-            "custom_made",
-            "hardware_materials",
-            "board_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "equipment_hire",
+    "appliances",
+    "benchtop_materials",
+    "custom_made",
+    "hardware_materials",
+    "board_materials",
+)
 
 
 def _new_workspace_and_user() -> tuple[int, int]:

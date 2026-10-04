@@ -17,58 +17,21 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.db import SessionLocal
 
-from .test_comments import (  # noqa: F401  (`ws`-style fixtures are built here)
-    _client, _inbox, _restrict, _set_grants, _sql, _workspace,
+from .helpers_comments import (  # noqa: F401
+    _ID, _client, _extend, _inbox, _restrict, _set_grants, _sql, _t, _workspace, module_revision_ws,
+    post_module as _post,
 )
 
 
-def _extend(ws: dict) -> dict:
-    """Add a module (and one on the related part), and a drawing with one draft
-    revision, to a `_workspace()`."""
-    s = SessionLocal()
-    try:
-        ws["mid"] = s.execute(text("""INSERT INTO modules(item_id, module_no, name)
-                                      VALUES (:i, 'M01', 'Base') RETURNING module_id"""),
-                              {"i": ws["iid"]}).scalar()
-        ws["rp_mid"] = s.execute(text("""INSERT INTO modules(item_id, module_no, name)
-                                         VALUES (:i, 'M01', 'Top') RETURNING module_id"""),
-                                 {"i": ws["rp"]}).scalar()
-        blob = s.execute(text("""INSERT INTO file_blob(workspace_id, sha256, mime, byte_size,
-                                                       original_filename, storage_key, uploaded_by)
-                                 VALUES (:w, :h, 'application/pdf', 10, 'a.pdf', 'k', :u)
-                                 RETURNING file_blob_id"""),
-                         {"w": ws["wid"], "h": ws["slug"], "u": ws["uid"]["drafter"]}).scalar()
-        ws["did"] = s.execute(text("""INSERT INTO shop_drawing(project_id, title, created_by)
-                                      VALUES (:p, 'Vanity plan', :u) RETURNING drawing_id"""),
-                              {"p": ws["pid"], "u": ws["uid"]["drafter"]}).scalar()
-        ws["vid"] = s.execute(text("""INSERT INTO shop_drawing_revision(
-                                          drawing_id, rev_no, file_blob_id, status, uploaded_by)
-                                      VALUES (:d, 1, :b, 'draft', :u) RETURNING revision_id"""),
-                              {"d": ws["did"], "b": blob, "u": ws["uid"]["drafter"]}).scalar()
-        ws["num"] = s.execute(text("SELECT num FROM items WHERE item_id = :i"),
-                              {"i": ws["iid"]}).scalar()
-        s.commit()
-    finally:
-        s.close()
-    return ws
 
 
-@pytest.fixture
-def ws(truncate_all):
-    truncate_all()
-    return _extend(_workspace())
 
 
 KINDS = ("module", "revision")
-_ID = {"module": "mid", "revision": "vid", "item": "iid", "project": "pid"}
 
 
-def _t(ws, kind):
-    return {"object_type": kind, "object_id": ws[_ID[kind]]}
 
 
-def _post(c, ws, body="Hello", kind="module", **extra):
-    return c.post("/comments", json={**_t(ws, kind), "body": body, **extra})
 
 
 def _thread(c, ws, kind):

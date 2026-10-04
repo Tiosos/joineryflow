@@ -9,39 +9,28 @@ Schema context:
 - status_options table has FK on items.status — must be seeded before inserting items.
 """
 
-import pytest
 from sqlalchemy import text
 
 from app.db import SessionLocal
 
 from .helpers import login
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 # Reference data — must match what stages/status_options FK constraints accept.
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "item_stages",
-            "item_hardware_lines",
-            "project_hardware_catalog",
-            "items",
-            "hardware_materials",
-            "board_materials",
-            "status_options",
-            "stages",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "item_stages",
+    "item_hardware_lines",
+    "project_hardware_catalog",
+    "items",
+    "hardware_materials",
+    "board_materials",
+    "status_options",
+    "stages",
+)
 
 
 

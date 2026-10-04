@@ -143,22 +143,41 @@ TRUNCATE_TABLES = (
 )
 
 
-@pytest.fixture
-def truncate_after():
-    """Opt-in per-module cleanup: TRUNCATE the full TRUNCATE_TABLES set after each test.
-
-    Use as ``pytestmark = pytest.mark.usefixtures("truncate_after")``. Files that
-    need extra tables truncated keep their own fixture.
-    """
-    yield
+def _truncate(*extra: str) -> None:
     from app.db import SessionLocal
 
     s = SessionLocal()
     try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
+        tables = ", ".join([*extra, *TRUNCATE_TABLES])
+        s.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
         s.commit()
     finally:
         s.close()
+
+
+@pytest.fixture
+def truncate_after():
+    """Opt-in per-module cleanup: TRUNCATE the full TRUNCATE_TABLES set after each test.
+
+    Use as ``pytestmark = pytest.mark.usefixtures("truncate_after")``. A file that
+    also needs other tables truncated builds its own with ``truncate_fixture(...)``.
+    """
+    yield
+    _truncate()
+
+
+def truncate_fixture(*extra: str):
+    """An autouse cleanup fixture that also truncates `extra` tables (before TRUNCATE_TABLES).
+
+    Usage: ``_cleanup = truncate_fixture("items", "item_stages")``.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cleanup():
+        yield
+        _truncate(*extra)
+
+    return _cleanup
 
 
 @pytest.fixture

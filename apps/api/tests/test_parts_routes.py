@@ -22,7 +22,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .helpers import login
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 # ── Cleanup fixture ────────────────────────────────────────────────────────────
 
@@ -41,16 +41,7 @@ _EXTRA_TABLES = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        all_tables = ", ".join(list(_EXTRA_TABLES) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 # ── Seed helpers ───────────────────────────────────────────────────────────────

@@ -13,8 +13,7 @@ from sqlalchemy import text
 
 from app.db import SessionLocal
 
-from .test_comments import _client
-from .test_comments_module_revision import _post, ws  # noqa: F401
+from .helpers_comments import _client, module_revision_ws, post_module as _post  # noqa: F401
 
 
 def _item_modules(c, ws) -> dict[int, dict]:

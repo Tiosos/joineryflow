@@ -23,23 +23,14 @@ from app.db import SessionLocal
 from app.main import app
 from app.procurement import routes as proc_routes
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 # Nothing in TRUNCATE_TABLES cascades into cost_centers/budget_transactions
 # (they're referenced BY purchase_orders, not the other way around).
 _EXTRA_TABLES = ("budget_transactions", "cost_centers")
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        all_tables = ", ".join(list(_EXTRA_TABLES) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 def _login(role: str = "purchase_officer") -> dict:

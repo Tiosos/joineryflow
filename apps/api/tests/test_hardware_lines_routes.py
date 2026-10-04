@@ -16,7 +16,7 @@ from sqlalchemy import text
 from app.db import SessionLocal
 
 from .helpers import create_project, login, login_same_workspace, set_item
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 # Source tables beyond the base TRUNCATE_TABLES list that we insert into
 _EXTRA_TABLES = (
@@ -37,18 +37,7 @@ _EXTRA_TABLES = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        all_tables = ", ".join(list(_EXTRA_TABLES) + list(TRUNCATE_TABLES))
-        s.execute(
-            text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE")
-        )
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
