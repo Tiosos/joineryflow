@@ -28,18 +28,9 @@ from app.main import app
 from app.orders import queries as q
 from app.orders.schemas import CreateOrderLineIn
 
-from .conftest import TRUNCATE_TABLES
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 def _bootstrap() -> dict:

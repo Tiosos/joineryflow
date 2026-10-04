@@ -11,21 +11,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db import SessionLocal
 
-from .conftest import TRUNCATE_TABLES
 from .test_estimating_generate_orders import (
     _bootstrap, _line_flags, _link_supplier, _login_as, _mixed_quote, _po_count, _sql_scalar,
 )
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 def _path(rid: int, lid: int, mtype: str, mid: int) -> str:

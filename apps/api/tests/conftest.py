@@ -4,6 +4,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
+def pytest_runtest_setup(item):
+    """`meili`-marked tests need a live Meilisearch; skip them when MEILI_URL is unset."""
+    if item.get_closest_marker("meili") and not os.environ.get("MEILI_URL"):
+        pytest.skip("MEILI_URL not set")
+
+
 # Reference/lookup rows that many tables FK against (items.status ->
 # status_options, item_stages.stage_key -> stages). Several test files seed
 # these per-test AND truncate them in teardown, which leaves them empty for any
@@ -135,6 +141,24 @@ TRUNCATE_TABLES = (
     # No FK to anything, so no CASCADE reaches it; fed by 0033's triggers.
     "search_outbox",
 )
+
+
+@pytest.fixture
+def truncate_after():
+    """Opt-in per-module cleanup: TRUNCATE the full TRUNCATE_TABLES set after each test.
+
+    Use as ``pytestmark = pytest.mark.usefixtures("truncate_after")``. Files that
+    need extra tables truncated keep their own fixture.
+    """
+    yield
+    from app.db import SessionLocal
+
+    s = SessionLocal()
+    try:
+        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
+        s.commit()
+    finally:
+        s.close()
 
 
 @pytest.fixture

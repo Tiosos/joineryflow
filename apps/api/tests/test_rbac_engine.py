@@ -25,18 +25,9 @@ from app.auth.sessions import AuthUser, create_session
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 def _workspace_and_user(db, role: str = "viewer") -> tuple[int, int]:

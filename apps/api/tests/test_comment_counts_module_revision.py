@@ -99,7 +99,7 @@ def test_a_deleted_comment_is_not_counted(ws):
     _post(d, ws, "kept", "module")
     assert _item_modules(d, ws)[ws["mid"]]["comment_count"] == 2
 
-    assert d.delete(f"/comments/{gone}").status_code in (200, 204)
+    assert d.delete(f"/comments/{gone}").status_code == 204
 
     assert _item_modules(d, ws)[ws["mid"]]["comment_count"] == 1
 
@@ -109,7 +109,7 @@ def test_a_deleted_parent_with_a_live_reply_counts_only_the_reply(ws):
     d = _client(ws, "drafter")
     parent = _post(d, ws, "parent", "module").json()["comment_id"]
     d.post("/comments", json={"parent_id": parent, "body": "reply"})
-    assert d.delete(f"/comments/{parent}").status_code in (200, 204)
+    assert d.delete(f"/comments/{parent}").status_code == 204
 
     assert _item_modules(d, ws)[ws["mid"]]["comment_count"] == 1
 
@@ -172,7 +172,7 @@ def test_a_deleted_revision_comment_is_not_counted(ws):
     _post(m, ws, "kept", "revision")
     assert _revisions(m, ws)[ws["vid"]]["comment_count"] == 2
 
-    assert m.delete(f"/comments/{gone}").status_code in (200, 204)
+    assert m.delete(f"/comments/{gone}").status_code == 204
 
     assert _revisions(m, ws)[ws["vid"]]["comment_count"] == 1
 
