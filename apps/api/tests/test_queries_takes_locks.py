@@ -26,20 +26,9 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
-from .test_material_take_routes import _item, _sql, _workspace
+from .helpers_material_take import _cleanup, _item, _sql, _workspace  # noqa: F401
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text("TRUNCATE board_inventory, board_materials, "
-                       + ", ".join(TRUNCATE_TABLES) + " RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
 
 
 def _rows(sql, **p):

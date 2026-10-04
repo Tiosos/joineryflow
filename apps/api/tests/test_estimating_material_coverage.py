@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db import SessionLocal
 
-from .test_estimating_generate_orders import (
+from .helpers_estimating_orders import (
     _bootstrap, _line_flags, _link_supplier, _login_as, _mixed_quote, _po_count, _sql_scalar,
 )
 

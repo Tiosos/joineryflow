@@ -19,7 +19,7 @@ from sqlalchemy import text
 from app.db import SessionLocal
 from app.estimating import queries as q
 
-from .test_estimating_routes import _bootstrap, _make_estimate
+from .helpers_estimating import _bootstrap, _make_estimate
 
 
 def test_concurrent_create_line_serializes_instead_of_duplicating_seq():

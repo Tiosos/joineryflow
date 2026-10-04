@@ -1,7 +1,7 @@
 """Material Summary routes (plan tasks C1–C3; spec §5, §7; Q582, Q585, Q586)."""
 import pytest
 
-from .test_material_take_routes import _client, _cleanup, _item, _sql, _workspace  # noqa: F401
+from .helpers_material_take import _cleanup, _client, _item, _sql, _workspace  # noqa: F401
 
 
 @pytest.fixture
