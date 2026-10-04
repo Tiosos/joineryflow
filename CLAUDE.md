@@ -285,7 +285,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; advisory Playwright job in `ci.yml`.
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; per-material order coverage; E3 pilot-data migration. `apps/web/components/pm/TrackingGrid.tsx` is **dead code** (replaced by `ItemsTable`) — mention, don't delete.
+Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration. `apps/web/components/pm/TrackingGrid.tsx` is **dead code** (replaced by `ItemsTable`) — mention, don't delete.
 
 ## 11. Reference docs
 
