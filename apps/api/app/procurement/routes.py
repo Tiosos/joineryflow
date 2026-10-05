@@ -42,14 +42,11 @@ from . import queries as q
 from .schemas import (
     ApprovalDecision,
     AttachmentType,
-    InventoryMovementCreate,
     POCategory,
     POCreate,
     POPriority,
     POStatus,
     POUpdate,
-    VendorCreate,
-    VendorStatus,
 )
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
