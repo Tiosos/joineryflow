@@ -22,8 +22,9 @@ test("Procurement resolution flow", async ({ page }) => {
   await expect(page).toHaveURL(/\/projects\/1\/procurement\?.*action=order/, { timeout: 30_000 });
   await expect(page.locator('[data-testid="batch-drawer"]')).toBeVisible();
 
-  // Fill the batch form and save
-  await page.locator('[data-testid="batch-supplier"]').fill("Test Supplier");
+  // Fill the batch form and save (a supplier name unique to this run, so a re-run finds only its own row)
+  const supplier = `Test Supplier ${Date.now()}`;
+  await page.locator('[data-testid="batch-supplier"]').fill(supplier);
   await page.locator('[data-testid="batch-qty_ordered"]').fill("10");
   await page.locator('[data-testid="batch-eta_date"]').fill("2026-06-01");
   await page.locator('[data-testid="save-batch"]').click();
@@ -32,5 +33,5 @@ test("Procurement resolution flow", async ({ page }) => {
 
   // Confirm the new row exists
   await page.goto("/projects/1/procurement?tab=batches");
-  await expect(page.getByText("Test Supplier")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(supplier)).toBeVisible({ timeout: 10_000 });
 });

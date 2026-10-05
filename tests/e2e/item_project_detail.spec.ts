@@ -41,19 +41,13 @@ test("item editor: Query tab ask+answer, reference fields, Attachments widened t
     page.getByText("Can the island bench overhang be increased"),
   ).toBeVisible();
 
-  // Ask a new question.
-  await page
-    .getByLabel("Ask a question")
-    .fill("Does the pantry need a second adjustable shelf?");
+  // Ask a new question (unique per run, so a re-run finds only its own) and answer it.
+  const question = `Does the pantry need a second adjustable shelf? ${Date.now()}`;
+  await page.getByLabel("Ask a question").fill(question);
   await page.getByRole("button", { name: "Ask" }).click();
-  await expect(
-    page.getByText("Does the pantry need a second adjustable shelf?"),
-  ).toBeVisible();
+  await expect(page.getByText(question)).toBeVisible();
 
-  // Answer the still-open seeded question.
-  const openQuestion = page.locator("li", {
-    hasText: "Client wants to confirm handle finish",
-  });
+  const openQuestion = page.locator("li", { hasText: question });
   await openQuestion
     .getByPlaceholder("Write an answer…")
     .fill("Brushed nickel, per the client's email.");
