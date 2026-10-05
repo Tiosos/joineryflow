@@ -1,7 +1,6 @@
 """Helpers shared by the Material Take route, summary and lock tests."""
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -9,19 +8,10 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text("TRUNCATE board_inventory, board_materials, "
-                       + ", ".join(TRUNCATE_TABLES) + " RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture("board_inventory", "board_materials")
 
 
 def _sql(sql, **p):
