@@ -70,6 +70,13 @@ test("+ New item creates the item in the project and opens the editor", async ({
   await expect(page.locator('[data-testid="tracking-row"]').filter({ hasText: description })).toHaveCount(1);
 });
 
+test("Shop Dwgs has no project sidebar either", async ({ page }) => {
+  await login(page);
+  await page.goto("/shop-dwgs");
+  await expect(page.getByRole("heading").first()).toBeVisible();
+  await expect(page.locator('[data-testid="project-sidebar"]')).toHaveCount(0);
+});
+
 test("the items table scrolls both ways and keeps its header in view", async ({ page }) => {
   await login(page);
   await page.goto("/tracking?project_id=1");
