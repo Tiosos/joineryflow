@@ -45,7 +45,6 @@ test("a drafted take can be adjusted and approved, then summarised", async ({ pa
   await expect(page.getByText(/may be outdated/)).toBeVisible();
   await page.getByText(/without an approved take/).click();
   const draftLink = page.locator(`details a[href^="/items/${itemB}"]`);
-  const draftHref = await draftLink.getAttribute("href");
   await draftLink.click();
   await expect(page).toHaveURL(/\/items\/\d+\?tab=take/);
 
@@ -61,12 +60,11 @@ test("a drafted take can be adjusted and approved, then summarised", async ({ pa
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText(/Take v1 · approved/)).toBeVisible();
 
-  // Rebuild: that item leaves the missing list (items with no parts stay on
-  // it — they have no take either) and its edging line appears.
+  // Rebuild: that item leaves the missing list and its edging line appears.
   await page.goto(`/projects/${pid}/procurement?tab=summary`);
   await page.getByRole("button", { name: "Rebuild from approved takes" }).click();
   await expect(page.getByRole("button", { name: new RegExp(edging) })).toBeVisible();
-  await page.getByText(/without an approved take/).click();
-  await expect(page.locator(`details a[href="${draftHref}"]`)).toHaveCount(0);
+  // Both items of this project now have an approved take, so nothing is left missing.
+  await expect(page.getByText(/without an approved take/)).toHaveCount(0);
   await expect(page.getByText(/may be outdated/)).toHaveCount(0);
 });

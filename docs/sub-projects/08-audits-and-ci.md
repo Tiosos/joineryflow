@@ -182,7 +182,7 @@
 - **Known gaps, recorded.**
   - ~~**e2e is still not run in CI** (CI is pytest + `tsc`), so nothing stops the next red spec.~~ **Closed — see
     *e2e in CI* below** (advisory, not a required check).
-  - `estimating`, `procurement` and `comments` are still not re-runnable on one database (above).
+  - ~~`estimating`, `procurement` and `comments` are still not re-runnable on one database~~ **Closed — see *e2e re-runnable* below.**
   - `search.spec.ts` is unexercised wherever Meilisearch is absent; `cv_import` hardening is unconfirmed.
   - `drafter_editor` still leaves a part ("Test part") and a hardware line on that item on every run; only the
     lock is restored.
@@ -316,4 +316,25 @@
   wrappers, and setups that build more than a login (`test_actual_costs`, `test_cut_floor_routes`, `test_cv_routes`,
   `test_procurement_routes`).
 - **Dead code:** `TrackingGrid.tsx` and `StatusChip.tsx` (used only by it) were deleted. Older plan docs still mention them.
+
+### e2e re-runnable on one database (after PR #77)
+- **Measured, not guessed:** the whole suite was run twice on one database without re-seeding. Run 1 passed (bar the two
+  `search` specs, which need Meilisearch); run 2 failed **six** more, for six different reasons:
+  - `procurement`: two "Test Supplier" rows from the first run broke a strict locator -> a supplier name unique per run.
+  - `item_project_detail`: it answered the seeded open question, so the second run found it already answered -> it asks
+    and answers a question of its own (unique text).
+  - `comments` (Areas & Rooms card): "the first row with a badge" was no longer the seeded area, because other specs and
+    earlier runs comment on others -> the rows are found by the seeded comment's text.
+  - `comments` (bell): reads Juno's seeded notification, which the first run marks read -> Noa mentions Juno through the
+    API first, and the test asserts "one fewer unread" instead of a fixed count.
+  - `estimating`: converts the seeded WON estimate, after which there is nothing to convert -> it takes its own estimate
+    to WON through the API and converts that (the seeded one stays untouched).
+  - `material_take`: approved the seeded draft take and rebuilt the summary, which is the state the second run needs
+    to find stale -> it builds a project of its own (a stale summary line and a draft take) through the API.
+- **A trap found on the way:** a first version of `material_take` added its items to ALF-001. They became "the first
+  item" and "the first tracking row" that `comments`, `comment_counts`, `comments_module_revision`,
+  `item_project_detail` and `procurement` open, and have none of the seeded comments, questions or hardware, so seven
+  specs failed. Fixtures belong in a project of their own (projects list in id order, so ALF-001 stays first).
+- **Result:** two consecutive runs on one database give the same result (only the `search` specs differ, without
+  Meilisearch). The seed and the app are unchanged. `drafter_editor` still leaves a part and a hardware line per run.
 
