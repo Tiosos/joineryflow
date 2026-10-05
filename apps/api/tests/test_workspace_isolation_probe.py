@@ -27,7 +27,7 @@ from app.db import SessionLocal
 
 from .conftest import truncate_fixture
 from .helpers_probe import (
-    CLEANUP_TABLES, REAL_ID_QUERIES, answer, ids_for, operations, prepare_workspace_a, request,
+    CLEANUP_TABLES, REAL_ID_QUERIES, answer, crash, ids_for, operations, prepare_workspace_a, request,
 )
 from .helpers import login
 
@@ -49,15 +49,16 @@ NOT_PROBED: dict[tuple[str, str], str] = {
 
 
 def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, tmp_path):
-    admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path)
-    admin_b, _, _ = login("admin", prefix="probe-b")
+    # A route that crashes on a bad id must be reported below, not abort the run.
+    admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path, raise_server_exceptions=False)
+    admin_b, _, _ = login("admin", prefix="probe-b", raise_server_exceptions=False)
 
     with SessionLocal() as db:
         real_ids = {key: db.execute(text(sql)).scalar() for key, sql in REAL_ID_QUERIES.items()}
     assert all(real_ids.values()), f"the seed no longer has the rows REAL_ID_QUERIES picks: {real_ids}"
 
     all_ops = operations()
-    leaks, unbuildable = [], set()
+    leaks, crashes, unbuildable = [], [], set()
 
     for method, path, op in all_ops:
         real_ids_for, ghost_ids = ids_for(path, True, real_ids), ids_for(path, False, real_ids)
@@ -66,6 +67,8 @@ def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, t
         if real is None or ghost is None:
             unbuildable.add((method, path))
             continue
+        crashes += filter(None, [crash(f"{method} {path} (foreign id, as B)", real),
+                                 crash(f"{method} {path} (nonexistent id, as B)", ghost)])
         if answer(real, real_ids_for) != answer(ghost, ghost_ids):
             leaks.append(f"{method} {path}: foreign id -> {real.status_code} {real.text[:100]}, "
                          f"nonexistent id -> {ghost.status_code}")
@@ -84,8 +87,12 @@ def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, t
         real_ids_for, ghost_ids = ids_for(path, True, real_ids), ids_for(path, False, real_ids)
         real = request(admin_a, method, path, op, real_ids_for)
         ghost = request(admin_a, method, path, op, ghost_ids)
+        crashes += filter(None, [crash(f"{method} {path} (real id, as A)", real),
+                                 crash(f"{method} {path} (nonexistent id, as A)", ghost)])
         if answer(real, real_ids_for) == answer(ghost, ghost_ids):
             no_signal.add((method, path))
+
+    assert not crashes, "No probe request may crash the server (5xx):\n  " + "\n  ".join(crashes)
 
     unlisted = sorted(no_signal - set(NOT_PROBED))
     stale = sorted(set(NOT_PROBED) - no_signal)

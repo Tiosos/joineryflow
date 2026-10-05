@@ -29,6 +29,14 @@ from ..items.queries import assert_item_content_unlocked
 from .schemas import AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn
 from ..row_types import joinery_items_only
 
+
+class AlreadyInCatalog(Exception):
+    """The material is already in the project's hardware catalog (one row per project,
+    material type and material id)."""
+
+    def __init__(self, catalog_id: int):
+        self.detail = {"code": "ALREADY_IN_CATALOG", "catalog_id": catalog_id}
+
 # Hardware lines belong to Joinery Items. A related part is procured through an
 # order of its own (Q417/Q424), never through a hardware line.
 _JOINERY_ITEM = joinery_items_only("i")
@@ -279,7 +287,8 @@ def add_to_catalog(
     """INSERT project_hardware_catalog + log row + audit.
 
     Returns new catalog_id, or None if project not in workspace or source row
-    not found in caller's workspace.
+    not found in caller's workspace. Raises `AlreadyInCatalog` for a material the
+    project's catalog already holds.
 
     Log drift note: project_hardware_catalog_log has no catalog_id column;
     log stores (project_id, material_type, material_id) directly.
@@ -306,6 +315,7 @@ def add_to_catalog(
             INSERT INTO project_hardware_catalog
                 (project_id, material_type, material_id, added_by)
             VALUES (:pid, :mtype, :mid, :by)
+            ON CONFLICT (project_id, material_type, material_id) DO NOTHING
             RETURNING catalog_id
             """
         ),
@@ -316,6 +326,15 @@ def add_to_catalog(
             "by": actor_id,
         },
     ).scalar()
+    if catalog_id is None:
+        existing = db.execute(
+            text(
+                "SELECT catalog_id FROM project_hardware_catalog"
+                " WHERE project_id = :pid AND material_type = :mtype AND material_id = :mid"
+            ),
+            {"pid": project_id, "mtype": material_type, "mid": payload.source_id},
+        ).scalar()
+        raise AlreadyInCatalog(existing)
     db.flush()
 
     # Log row: project_hardware_catalog_log stores (project_id, material_type, material_id)

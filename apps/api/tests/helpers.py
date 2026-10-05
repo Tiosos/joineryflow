@@ -34,7 +34,8 @@ def log_in(slug: str, email: str, password: str = "pw", *, raise_server_exceptio
     return c
 
 
-def login(role: str = "manager", *, wid: int | None = None, prefix: str = "h"):
+def login(role: str = "manager", *, wid: int | None = None, prefix: str = "h",
+          raise_server_exceptions: bool = True):
     """A user with `role`, logged in -> (client, workspace_id, user_id).
 
     Creates a fresh workspace unless `wid` names an existing one.
@@ -53,7 +54,7 @@ def login(role: str = "manager", *, wid: int | None = None, prefix: str = "h"):
         db.commit()
     finally:
         db.close()
-    return log_in(slug, email), wid, uid
+    return log_in(slug, email, raise_server_exceptions=raise_server_exceptions), wid, uid
 
 
 def login_same_workspace(wid: int, role: str, name: str = "U2"):

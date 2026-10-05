@@ -211,3 +211,12 @@ def prepare_workspace_a(truncate_all, monkeypatch, tmp_path, *, raise_server_exc
     seed_workspace_a()
     return log_in("hartwood-joinery", ADMIN_A_EMAIL, "hartwood-dev",
                   raise_server_exceptions=raise_server_exceptions)
+
+
+def crash(label: str, response) -> str | None:
+    """A note if `response` is a server error (5xx), else None. A route that crashes on a
+    bad id answers the real and the ghost id alike, so the foreign-vs-ghost comparison
+    alone would pass it."""
+    if response is not None and response.status_code >= 500:
+        return f"{label} -> {response.status_code} {response.text[:100]}"
+    return None

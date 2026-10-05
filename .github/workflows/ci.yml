@@ -62,10 +62,11 @@ jobs:
         if: failure()
         run: docker compose logs --no-color
 
-  # Unused imports/variables in the tests: an unused result is often a dropped
-  # assertion, and a fixture imported from another module must carry a noqa.
+  # Unused imports/variables in the API and its tests: an unused result in a test
+  # is often a dropped assertion, and a fixture imported from a helper module must
+  # carry a noqa.
   tests-lint:
-    name: Test lint (ruff)
+    name: API lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +78,7 @@ jobs:
       - name: ruff (unused imports, unused variables, redefinitions)
         run: |
           pip install ruff==0.15.20
-          ruff check --select F401,F841,F811 apps/api/tests
+          ruff check --select F401,F841,F811 apps/api/app apps/api/tests
 
   web-typecheck:
     name: Web typecheck (tsc)

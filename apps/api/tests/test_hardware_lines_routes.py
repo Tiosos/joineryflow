@@ -339,6 +339,37 @@ def _add_hardware_line(db, *, item_id: int, catalog_id: int, qty: int = 1) -> in
     return lid
 
 
+def test_adding_a_material_already_in_the_catalog_is_a_409():
+    """The catalog holds a material once per project. A second add is refused with a
+    stable code (it used to hit the unique constraint and answer a raw 500), and writes
+    neither a second row nor a second ADD log entry."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = create_project(db, uid=uid, code="T18-DUP")
+        board_mid = _insert_board(db, wid=wid, code="BRD-DUP", sku="SKU-DUP", description="Oak DUP")
+    finally:
+        db.close()
+    body = {"source_table": "board_materials", "source_id": board_mid}
+
+    first = c.post(f"/projects/{pid}/hardware_catalog", json=body)
+    assert first.status_code == 201, first.text
+    second = c.post(f"/projects/{pid}/hardware_catalog", json=body)
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"] == {
+        "code": "ALREADY_IN_CATALOG", "catalog_id": first.json()["catalog_id"]}
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(text("SELECT COUNT(*) FROM project_hardware_catalog WHERE project_id = :p"),
+                          {"p": pid}).scalar()
+        adds = db.execute(text("SELECT COUNT(*) FROM project_hardware_catalog_log"
+                               " WHERE project_id = :p AND action = 'ADD'"), {"p": pid}).scalar()
+    finally:
+        db.close()
+    assert (rows, adds) == (1, 1)
+
+
 def test_add_catalog_writes_log_in_same_txn():
     """POST hardware_catalog inserts both catalog row and log row."""
     c, wid, uid = _login()

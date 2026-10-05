@@ -9,6 +9,7 @@ from ..items.schemas import HardwareLineOut
 from ..projects.queries import get_project
 from .queries import (
     _ALLOWED_SOURCE_TABLES,
+    AlreadyInCatalog,
     add_to_catalog,
     create_hardware_line,
     delete_hardware_line,
@@ -52,13 +53,16 @@ def post_catalog(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    cid = add_to_catalog(
-        db,
-        project_id=pid,
-        workspace_id=user.workspace_id,
-        payload=payload,
-        actor_id=user.id,
-    )
+    try:
+        cid = add_to_catalog(
+            db,
+            project_id=pid,
+            workspace_id=user.workspace_id,
+            payload=payload,
+            actor_id=user.id,
+        )
+    except AlreadyInCatalog as e:
+        raise HTTPException(409, e.detail)
     if cid is None:
         raise HTTPException(404, "project or source row not found")
     db.commit()

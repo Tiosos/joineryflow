@@ -29,7 +29,7 @@ from app.db import SessionLocal
 from .conftest import truncate_fixture
 from .helpers import login
 from .helpers_probe import (
-    CLEANUP_TABLES, GHOST_ID, REAL_ID_QUERIES, answer, ids_for, operations,
+    CLEANUP_TABLES, GHOST_ID, REAL_ID_QUERIES, answer, crash, ids_for, operations,
     prepare_workspace_a, request, resolve,
 )
 
@@ -265,7 +265,7 @@ def test_foreign_ids_in_a_body_look_like_nonexistent_ones(truncate_all, monkeypa
         response = request(admin_a, method, path, op, path_ids, body_patch=patch)
         return response, {**path_ids, "fk": value}
 
-    leaks, answers, unbuildable = {}, {}, set()
+    leaks, answers, unbuildable, crashes = {}, {}, set(), []
     for method, path, field, op, fields, required, props in pairs:
         kind = _kind(method, path, field)
         foreign, foreign_ids = call(method, path, op, fields, required, props, field, b_rows[kind])
@@ -273,6 +273,8 @@ def test_foreign_ids_in_a_body_look_like_nonexistent_ones(truncate_all, monkeypa
         if foreign is None or ghost is None:
             unbuildable.add((method, path, field))
             continue
+        crashes += filter(None, [crash(f"{method} {path} [{field}] (foreign {kind})", foreign),
+                                 crash(f"{method} {path} [{field}] (nonexistent)", ghost)])
         answers[(method, path, field)] = answer(ghost, ghost_ids)
         if answer(foreign, foreign_ids) != answer(ghost, ghost_ids):
             leaks[(method, path, field)] = (
@@ -295,8 +297,11 @@ def test_foreign_ids_in_a_body_look_like_nonexistent_ones(truncate_all, monkeypa
             continue
         control, control_ids = call(method, path, op, fields, required, props, field,
                                     a_rows[_kind(method, path, field)])
+        crashes += filter(None, [crash(f"{method} {path} [{field}] (own row)", control)])
         if answer(control, control_ids) == answers[(method, path, field)]:
             no_signal.add((method, path, field))
+
+    assert not crashes, "No probe request may crash the server (5xx):\n  " + "\n  ".join(crashes)
 
     unlisted = sorted(no_signal - set(NOT_PROBED))
     stale = sorted(set(NOT_PROBED) - no_signal)
