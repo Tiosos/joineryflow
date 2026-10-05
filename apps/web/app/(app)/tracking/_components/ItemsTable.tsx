@@ -275,7 +275,8 @@ export function ItemsTable({
           <tr>
             <td colSpan={17} />
             <th
-              colSpan={(isDateLike ? 10 : subCols!.length) + 1}
+              // 17 fixed columns before this + the stage/sub-tab columns + Item ID + Avail.
+              colSpan={(isDateLike ? 10 : subCols!.length) + 2}
               className="px-2 py-1 text-right"
             >
               {SUB_TABS.map((st) => (
