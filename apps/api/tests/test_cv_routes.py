@@ -154,21 +154,27 @@ def test_preview_missing_required_column_returns_422():
     assert r.status_code == 422
 
 
-def test_preview_file_too_large_is_rejected():
+_BIG_CSV = "Module,Part Name,Qty,Length,Width,Material\n" + (
+    "1,A,1,720,580,18-PB\n" * 60_000  # ~1.2 MB, over MAX_CSV_BYTES (1 MiB)
+)
+
+
+def test_preview_uploaded_file_too_large_is_415_file_too_large():
     c, wid, uid, pid, iid = _login("drafter")
-    big_body = "Module,Part Name,Qty,Length,Width,Material\n" + (
-        "1,A,1,720,580,18-PB\n" * 60_000  # ~1.2 MB, over MAX_CSV_BYTES (1 MiB)
-    )
-    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": big_body})
-    # The app's own guard returns 415 FILE_TOO_LARGE, but Starlette's form
-    # size limit (also ~1 MiB) can reject an oversized form field with a
-    # generic 400 *before* the handler runs — which layer wins depends on the
-    # installed starlette/python-multipart version. Either way the contract
-    # holds: oversized input is rejected. Assert the structured code when the
-    # app guard is the one that fired.
-    assert r.status_code in (400, 415)
-    if r.status_code == 415:
-        assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+    r = c.post(f"/items/{iid}/cv-imports/preview",
+               files={"file": ("big.csv", _BIG_CSV.encode(), "text/csv")})
+    assert r.status_code == 415
+    assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+
+
+def test_preview_pasted_body_too_large_is_a_plain_400():
+    """Known gap, pinned on purpose: Starlette's own ~1 MiB form-field limit rejects
+    an oversized *pasted* body before the handler runs, so the structured
+    FILE_TOO_LARGE guard is only reachable by file upload (see the test above)."""
+    c, wid, uid, pid, iid = _login("drafter")
+    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _BIG_CSV})
+    assert r.status_code == 400
+    assert "exceeded maximum size" in r.json()["detail"]
 
 
 def test_drafter_can_commit_simple():

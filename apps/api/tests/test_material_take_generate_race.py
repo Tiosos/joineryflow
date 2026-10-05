@@ -20,13 +20,11 @@ import time
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.auth.sessions import AuthUser
 from app.db import SessionLocal
-from app.main import app
 from app.material_takes import queries as q
 
 from .helpers_material_take import _cleanup  # noqa: F401

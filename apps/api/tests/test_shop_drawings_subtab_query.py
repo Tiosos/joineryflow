@@ -1,7 +1,5 @@
 """Subtab membership SQL — fixture-driven, no HTTP."""
-from datetime import datetime
 
-import pytest
 from sqlalchemy import text
 
 from app.shop_drawings.queries import list_drawings_by_subtab

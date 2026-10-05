@@ -676,5 +676,5 @@ def test_project_catalog_writes_are_not_governed_by_an_items_lock():
     finally:
         db.close()
     r = c.post(f"/projects/{pid}/hardware_catalog", json={"source_table": "hardware_materials", "source_id": new_mid})
-    assert r.status_code in (200, 201), r.text
+    assert r.status_code == 201, r.text
     assert c.delete(f"/projects/{pid}/hardware_catalog/{cid}").status_code == 409   # still in use, not locked

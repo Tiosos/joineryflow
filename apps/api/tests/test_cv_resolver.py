@@ -107,7 +107,7 @@ def _make_parts(*codes: str) -> list[ParsedPart]:
 
 def test_mapping_hit_beats_synonym():
     wid, uid = _new_workspace_and_user()
-    bmid_with_synonym = _insert_board(wid, code="18-PB", sku="18-PB-SKU", synonyms=["18-PB"])
+    _insert_board(wid, code="18-PB", sku="18-PB-SKU", synonyms=["18-PB"])  # the synonym match mapping must beat
     bmid_alt = _insert_board(wid, code="ALT", sku="ALT-SKU")
     _insert_mapping(wid, cv_code="18-PB", target_table="board_materials",
                     target_id=bmid_alt, uid=uid)
@@ -118,7 +118,7 @@ def test_mapping_hit_beats_synonym():
     finally:
         s.close()
     assert res["18-PB"].kind == "mapped"
-    # Mapping points at bmid_alt, not bmid_with_synonym.
+    # Mapping points at bmid_alt, not at the synonym-matching board.
     assert res["18-PB"].target_material_id == bmid_alt
 
 

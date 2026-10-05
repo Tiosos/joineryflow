@@ -1,6 +1,5 @@
 """Tests for project_contract + variations (Q491) and the actual-costs
 rollup (Q493/Q549)."""
-from decimal import Decimal
 
 import pytest
 from sqlalchemy import text

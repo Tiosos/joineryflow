@@ -29,6 +29,22 @@ _REF_STAGES = [
 ]
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _cheap_password_hashing():
+    """Hash with minimal argon2 cost in tests.
+
+    Every test login hashes and verifies a password (~175 ms at the production
+    cost); at the suite's scale that is a third of the run time. The hash is
+    still argon2id, so nothing that inspects it changes.
+    """
+    from argon2 import PasswordHasher
+
+    from app.auth import passwords
+
+    passwords._ph = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _ensure_reference_data():
     from app.db import SessionLocal

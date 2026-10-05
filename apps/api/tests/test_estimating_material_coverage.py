@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db import SessionLocal
 
 from .helpers_estimating_orders import (
-    _bootstrap, _line_flags, _link_supplier, _login_as, _mixed_quote, _po_count, _sql_scalar,
+    _bootstrap, _line_flags, _login_as, _mixed_quote, _po_count, _sql_scalar,
 )
 
 
@@ -185,7 +185,6 @@ def test_the_generate_audit_row_lists_the_materials_it_ordered():
 
 def test_the_material_verbs_need_estimating_approve():
     ctx = _bootstrap()
-    c = ctx["client"]
     eid, rid, mixed, _ = _mixed_quote(ctx)
     viewer = _login_as(ctx["slug"], "viewer")
     p = _path(rid, mixed, "BOARD", ctx["board_id"])
@@ -195,7 +194,6 @@ def test_the_material_verbs_need_estimating_approve():
 
 def test_another_workspaces_revision_is_a_404_for_the_material_verbs():
     ctx = _bootstrap()
-    c = ctx["client"]
     eid, rid, mixed, _ = _mixed_quote(ctx)
     other = _bootstrap()["client"]
     p = _path(rid, mixed, "BOARD", ctx["board_id"])
@@ -205,7 +203,6 @@ def test_another_workspaces_revision_is_a_404_for_the_material_verbs():
 
 def test_the_database_refuses_a_row_that_is_both_ordered_and_dismissed():
     ctx = _bootstrap()
-    c = ctx["client"]
     eid, rid, mixed, _ = _mixed_quote(ctx)
     s = SessionLocal()
     try:

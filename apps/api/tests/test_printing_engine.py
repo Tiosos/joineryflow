@@ -5,7 +5,6 @@ Pure engine tests; no DB, no HTTP, no templates from disk (use inline strings).
 import io
 
 import pypdf
-import pytest
 
 from app.printing.engine import merge_pdfs, render_html_string_to_pdf
 

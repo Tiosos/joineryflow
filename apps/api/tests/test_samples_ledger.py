@@ -85,11 +85,11 @@ def test_ledger_cross_project_isolation(client, truncate_all):
         s.commit()
     finally:
         s.close()
-    client.post(f"/projects/{ids['pid']}/samples", json={"title": "A", "hex_swatch": "#aabbcc"})
-    client.post(f"/projects/{pid_b}/samples", json={"title": "B", "hex_swatch": "#aabbcc"})
+    a = client.post(f"/projects/{ids['pid']}/samples", json={"title": "A", "hex_swatch": "#aabbcc"}).json()
+    b = client.post(f"/projects/{pid_b}/samples", json={"title": "B", "hex_swatch": "#aabbcc"}).json()
     r = client.get(f"/projects/{ids['pid']}/samples/ledger")
-    sample_ids = {e["sample_id"] for e in r.json()["entries"]}
-    # Only project A's samples should appear; the project B sample id is excluded.
-    # We can't trivially get the exact id, but we know there should be exactly 1 sample.create event.
+    # Only project A's sample appears; project B's is excluded.
+    assert {e["sample_id"] for e in r.json()["entries"]} == {a["sample_id"]}
+    assert b["sample_id"] not in {e["sample_id"] for e in r.json()["entries"]}
     create_events = [e for e in r.json()["entries"] if e["event"] == "sample.create"]
     assert len(create_events) == 1
