@@ -176,9 +176,19 @@ def _transition(
     review_note: str | None = None,
 ):
     """Shared transition handler. Approve/reject have the not-uploader rule."""
+    # Scoped to the caller's workspace: the 403 checks below must never answer for
+    # a revision another workspace owns (cross-workspace is 404, never a leak).
     rev = db.execute(
-        text("SELECT uploaded_by FROM shop_drawing_revision WHERE revision_id = :r AND drawing_id = :d"),
-        {"r": rid, "d": did},
+        text(
+            """
+            SELECT r.uploaded_by
+              FROM shop_drawing_revision r
+              JOIN shop_drawing d ON d.drawing_id = r.drawing_id
+              JOIN projects p ON p.project_id = d.project_id
+             WHERE r.revision_id = :r AND r.drawing_id = :d AND p.workspace_id = :w
+            """
+        ),
+        {"r": rid, "d": did, "w": user.workspace_id},
     ).first()
     if not rev:
         raise HTTPException(status_code=404, detail="revision not found")
