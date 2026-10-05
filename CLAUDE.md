@@ -181,7 +181,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 ## 6. Web shell
 
 - Browser → Next.js Route Handler (`app/api/[...proxy]/route.ts`) → FastAPI. **The browser never calls FastAPI directly.** `proxy.ts` enforces login redirect.
-- `(app)/layout.tsx` does server-side `fetchMe()` and renders chrome. Editor mode (`/items/[id]`) hides TabStrip + SideBar.
+- `(app)/layout.tsx` does server-side `fetchMe()` and renders chrome. Editor mode (`/items/[id]`) hides TabStrip + SideBar. The project SideBar shows on Dashboard and Shop Dwgs only (`HAppChrome.SIDEBAR_ROUTES`); Tracking has its own project switcher in the header bar and needs the width.
 - **IA is fixed: 6 primary tabs** `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook` (the `List` tab *is* the Cutlist module, Q474) plus admin-only `/it`. New top-level surfaces go on the **secondary strip**: `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`. The strip hides a tab when `can(me, module, "read")` is false; the API's 403 is the real control.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand.**
 - Design tokens live once in `globals.css` (`@theme inline`) and `lib/tokens.ts`. **Do not invent colours** — use `bg-h-*`, `text-h-*`, `border-h-line`. Inter for UI, JetBrains Mono (`.h-mono`) for part #, PO #, ETAs, money. No `tailwind.config.ts`.

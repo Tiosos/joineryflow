@@ -489,3 +489,21 @@
     already emptied by an earlier delete stays until someone deletes it.
   - Deleting a project or item through any path other than `DELETE /items/{id}` (e.g. a cascade) does not
     run this rule.
+
+## Tracking layout: no sidebar, working header buttons, scrolling table (after PR #83)
+Asked for by the user while reviewing a screenshot of the Tracking tab.
+- **No project sidebar on `/tracking`.** `HAppChrome.SIDEBAR_ROUTES` is now `/dashboard` and `/shop-dwgs`. The header bar's project
+  switcher does the same job and the items table gets the width (it now shows the DEL / INST columns without scrolling).
+  `pm_workbench.spec.ts` still starts from the Dashboard sidebar.
+- **Edit item / + New item were never wired.** Both buttons had no `onClick` (the New item tooltip said "needs API hookup"); it
+  was not a sync problem. Now: **Edit item** opens the editor of the one ticked row (off, with a hint, for none or several);
+  **+ New item** opens `NewItemDialog` (description required, code, qty), creates the item with `POST /projects/{pid}/items`
+  and opens it in the editor. Cancelling creates nothing.
+- **The items table scrolls both ways** inside its card (`max-h-[calc(100vh-10rem)]`, `overflow-auto`) with a sticky header.
+  `.h-scrollbars` (in `globals.css`, palette tokens only) draws always-visible scrollbars: macOS and many laptops show overlay
+  scrollbars only while scrolling, which made the scrollable table look cut off. Also fixed an old off-by-one: the header's top
+  row spanned one cell too few, leaving the Avail. column without a header cell (invisible until the header became sticky).
+- **Tests:** `tracking_layout.spec.ts` (no sidebar on Tracking but still on Dashboard; Edit item states; New item flow in a
+  project of its own; table scrolls both ways and the header stays pinned). Screenshotting scrollbars in Playwright needs
+  `ignoreDefaultArgs: ["--hide-scrollbars"]`, or headless Chromium hides them.
+
