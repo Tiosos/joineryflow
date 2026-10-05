@@ -39,9 +39,6 @@ NOT_PROBED: dict[tuple[str, str], str] = {
     # caller's own workspace, so there is no foreign row to find.
     ("POST", "/catalog/{slug}"): "slug is a catalog type, not a row id",
     ("POST", "/catalog/{slug}/bulk"): "slug is a catalog type, not a row id",
-    # Covered by a dedicated test: test_lock_semantics.test_lock_request_is_workspace_isolated.
-    ("POST", "/lock-requests/{rid}/approve"): "seed has no lock requests; dedicated test exists",
-    ("POST", "/lock-requests/{rid}/reject"): "seed has no lock requests; dedicated test exists",
 }
 
 

@@ -52,6 +52,10 @@ REAL_ID_QUERIES = {
     ("/notifications/{nid}/read", "nid"):
         "SELECT n.notification_id FROM notification n JOIN app_user u ON u.id = n.recipient_id"
         f" WHERE u.email = '{ADMIN_A_EMAIL}' ORDER BY 1 LIMIT 1",
+    ("/lock-requests/{rid}/approve", "rid"):
+        "SELECT request_id FROM item_lock_request WHERE status = 'pending' ORDER BY request_id LIMIT 1",
+    ("/lock-requests/{rid}/reject", "rid"):
+        "SELECT request_id FROM item_lock_request WHERE status = 'pending' ORDER BY request_id LIMIT 1",
     ("/workers/{wid}/queue", "wid"):
         "SELECT id FROM app_user WHERE is_shop_worker ORDER BY id LIMIT 1",
     ("/workers/{wid}/recent-completions", "wid"):

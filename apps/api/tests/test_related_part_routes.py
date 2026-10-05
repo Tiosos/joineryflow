@@ -14,23 +14,16 @@ What these pin down:
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
+
+from .helpers import log_in
 
 
 
 pytestmark = pytest.mark.usefixtures("truncate_after")
-
-
-def _login(slug, email, pw):
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": pw})
-    assert r.status_code == 200, r.text
-    return c
 
 
 @pytest.fixture
@@ -78,8 +71,8 @@ def ctx():
     return {
         "slug": slug, "wid": wid, "pid": pid,
         "parent_a": parents[0], "parent_b": parents[1], "vendor": vendor,
-        "drafter": _login(slug, users["drafter"], "pw"),
-        "editor": _login(slug, users["editor"], "pw"),
+        "drafter": log_in(slug, users["drafter"], "pw"),
+        "editor": log_in(slug, users["editor"], "pw"),
     }
 
 

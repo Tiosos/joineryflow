@@ -18,14 +18,13 @@ Uses the same truncate/seed patterns as test_items_routes.py.
 """
 import uuid
 
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
 from .conftest import truncate_fixture
+from .helpers import log_in
 
 
 
@@ -71,16 +70,6 @@ def _make_user(
     return uid, email, pw
 
 
-def _login_user(*, workspace_slug: str, email: str, password: str) -> TestClient:
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": workspace_slug, "email": email, "password": password},
-    )
-    assert r.status_code == 200, r.text
-    return c
-
-
 def _setup_workspace_and_project(
     role_a: str = "drafter", project_name: str = "Lock Project"
 ) -> dict:
@@ -107,7 +96,7 @@ def _setup_workspace_and_project(
     finally:
         db.close()
 
-    c_a = _login_user(workspace_slug=slug, email=email_a, password=pw_a)
+    c_a = log_in(slug, email_a, pw_a)
     return {"wid": wid, "slug": slug, "uid_a": uid_a, "pid": pid, "c_a": c_a}
 
 
@@ -184,7 +173,7 @@ def test_second_save_by_other_becomes_a_lock_request():
     finally:
         db.close()
 
-    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+    c_b = log_in(ctx["slug"], email_b, pw_b)
 
     # A patches first → claims lock
     r = ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"})
@@ -323,7 +312,7 @@ def test_transfer_lock_by_non_owner_403():
     ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's item"})
 
     # C (not owner) tries to transfer to B → should be 403
-    c_c = _login_user(workspace_slug=ctx["slug"], email=email_c, password=pw_c)
+    c_c = log_in(ctx["slug"], email_c, pw_c)
     r = c_c.post(f"/items/{iid}/lock", json={"owner_id": uid_b})
     assert r.status_code == 403, f"Expected 403, got {r.status_code}: {r.text}"
 
@@ -353,7 +342,7 @@ def test_manager_can_force_transfer():
     assert state_after_claim["cutlist_owner_id"] == ctx["uid_a"]
 
     # Manager transfers to B
-    c_mgr = _login_user(workspace_slug=ctx["slug"], email=email_mgr, password=pw_mgr)
+    c_mgr = log_in(ctx["slug"], email_mgr, pw_mgr)
     r = c_mgr.post(f"/items/{iid}/lock", json={"owner_id": uid_b})
     assert r.status_code == 200, (
         f"Manager should be able to force-transfer: {r.status_code}: {r.text}"
@@ -384,7 +373,7 @@ def test_lock_warning_in_get_item_response():
         db.close()
 
     # B logs in and claims lock via POST /items/{id}/lock
-    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+    c_b = log_in(ctx["slug"], email_b, pw_b)
     r = c_b.post(f"/items/{iid}/lock")
     assert r.status_code == 200, r.text
 
@@ -419,7 +408,7 @@ def _locked_item_with_request(role_b: str = "drafter") -> dict:
     finally:
         db.close()
 
-    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+    c_b = log_in(ctx["slug"], email_b, pw_b)
     assert ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"}).status_code == 200
 
     r = c_b.patch(f"/items/{iid}", json={"description": "B's proposal", "qty": 7})
@@ -518,11 +507,11 @@ def test_manager_may_decide_but_an_unrelated_drafter_may_not():
     finally:
         db.close()
 
-    c_c = _login_user(workspace_slug=ctx["slug"], email=email_c, password=pw_c)
+    c_c = log_in(ctx["slug"], email_c, pw_c)
     r = c_c.post(f"/lock-requests/{ctx['rid']}/approve")
     assert r.status_code == 403, f"a bystander must not decide: {r.text}"
 
-    c_m = _login_user(workspace_slug=ctx["slug"], email=email_m, password=pw_m)
+    c_m = log_in(ctx["slug"], email_m, pw_m)
     r2 = c_m.post(f"/lock-requests/{ctx['rid']}/approve")
     assert r2.status_code == 200, r2.text
     assert _item_field(ctx["iid"], "description") == "B's proposal"

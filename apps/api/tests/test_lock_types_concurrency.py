@@ -19,9 +19,9 @@ from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
 from .conftest import truncate_fixture
+from .helpers import log_in
 
 
 
@@ -65,16 +65,6 @@ def _make_user(db, *, workspace_id: int, role: str, name: str = "Test User"):
     return uid, email, pw
 
 
-def _login_user(*, workspace_slug: str, email: str, password: str) -> TestClient:
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": workspace_slug, "email": email, "password": password},
-    )
-    assert r.status_code == 200, r.text
-    return c
-
-
 def _setup_workspace_and_project(role_a: str = "manager") -> dict:
     suffix = uuid.uuid4().hex[:8]
     slug = f"ws-{suffix}"
@@ -96,7 +86,7 @@ def _setup_workspace_and_project(role_a: str = "manager") -> dict:
     finally:
         db.close()
 
-    c_a = _login_user(workspace_slug=slug, email=email_a, password=pw_a)
+    c_a = log_in(slug, email_a, pw_a)
     return {"wid": wid, "slug": slug, "uid_a": uid_a, "pid": pid, "c_a": c_a}
 
 
@@ -179,7 +169,7 @@ def test_drafter_cannot_hard_lock():
     finally:
         db.close()
 
-    c_d = _login_user(workspace_slug=ctx["slug"], email=email_d, password=pw_d)
+    c_d = log_in(ctx["slug"], email_d, pw_d)
     r = c_d.post(f"/items/{iid}/hard-lock")
     assert r.status_code == 403, r.text
 
@@ -556,7 +546,7 @@ def _held_request(ctx: dict, *, iid: int) -> dict:
         )
     finally:
         db.close()
-    c_b = _login_user(workspace_slug=ctx["slug"], email=email_b, password=pw_b)
+    c_b = log_in(ctx["slug"], email_b, pw_b)
 
     assert ctx["c_a"].patch(f"/items/{iid}", json={"description": "A's edit"}).status_code == 200
     r = c_b.patch(f"/items/{iid}", json={"description": "B's proposal"})

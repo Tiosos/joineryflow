@@ -296,12 +296,24 @@
   comment, so no comment or bell count changes); one comment by the admin on TRT-014. `make seed` also finds its sample
   files relative to itself now (it hard-coded `/code/...`).
 - **Known gaps, recorded.**
-  - `NOT_PROBED` today: path probe 4 (`POST /catalog/{slug}` and `/bulk` take a catalog type, not a row id; lock-request
-    approve/reject have no seeded request and a dedicated test); body probe 3 (a manual take line, sheet stock for
-    `/optimise`, an unlinked material used by a quote); query probe 1 (`approvals/history` lists decided workflows, the
-    seeded one is pending). Lock requests, sheet stock and a manual take line are deliberately **not** seeded: a lock
-    would break the e2e specs that PATCH ALF-001 items (§4).
+  - `NOT_PROBED` today: path probe 2 (`POST /catalog/{slug}` and `/bulk` take a catalog type, not a row id); body probe 3
+    (a manual take line, sheet stock for `/optimise`, an unlinked material used by a quote); query probe none. Lock-request
+    approve/reject and `approvals/history` came off the list once the seed gained a pending Controlled-Lock request
+    (TRT-014 K-103, requested by mina; no e2e spec uses TRT-014's lock flows, nothing on the item changes) and a
+    rejected order (see "Follow-up" below). Sheet stock and a manual take line stay unseeded.
   - `GET /search` is excluded from the query probe (503 without Meilisearch); `test_search_routes` covers it on a fake index.
-  - ~20 per-file `_login` copies remain (they return dicts, slugs or fixed workspaces).
   - **CI had never run any of this** until PR #76 (a branch push does not trigger it; only `main` and PRs do), and the
     `concurrency` group cancels a superseded run, so a flurry of small pushes means no run ever finishes.
+
+### Follow-up (after PR #76)
+- **Seed:** a second item-less order is now *rejected* by the seeded admin (a row in `/procurement/approvals/history`), and
+  TRT-014's seeded-locked K-103 holds one pending lock request from mina (`patch_item` with a changed description; saving
+  again revises the same request, so a re-run is a no-op). The two lock-request routes and `approvals/history ?approver_id`
+  are probed now; `NOT_PROBED` shrank accordingly.
+- **`log_in(..., client=)`:** logs an existing client in again as another user (cookies cleared). The remaining raw
+  `/auth/login` copies (`_login_user`, `_login_b` x3, related parts, samples, shop drawings, users, auth, files upload,
+  estimating order helper) now go through it or `login()`. What remains per file are one-line `login(role, prefix=...)`
+  wrappers, and setups that build more than a login (`test_actual_costs`, `test_cut_floor_routes`, `test_cv_routes`,
+  `test_procurement_routes`).
+- **Dead code:** `TrackingGrid.tsx` and `StatusChip.tsx` (used only by it) were deleted. Older plan docs still mention them.
+
