@@ -19,7 +19,7 @@ test("a drafted take can be adjusted and approved, then summarised", async ({ pa
     expect(r.status(), `${method} ${path}`).toBeLessThan(300);
     return r.status() === 204 ? null : r.json();
   };
-  const boardId = (await api("get", "/catalog/board")).rows[0].material_id as number;
+  const boardId = (await api("get", "/catalog/board-materials")).rows[0].material_id as number;
   const stamp = Date.now();
   const itemWithParts = async (description: string) => {
     const item = await api("post", "/projects/1/items", { description });
