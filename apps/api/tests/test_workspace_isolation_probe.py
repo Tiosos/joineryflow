@@ -21,64 +21,17 @@ lists it, and a listed route that becomes probable must come off the list.
 Not covered: foreign ids inside a request *body* (the path check answers first),
 and routes with no path parameter (they are scoped by the caller's own workspace).
 """
-import contextlib
-import io
-import re
-import sys
-from pathlib import Path
-
 from sqlalchemy import text
 
 from app.db import SessionLocal
-from app.main import app
 
 from .conftest import truncate_fixture
-from .helpers import log_in, login
+from .helpers_probe import (
+    CLEANUP_TABLES, REAL_ID_QUERIES, answer, ids_for, operations, prepare_workspace_a, request,
+)
+from .helpers import login
 
-# cost_centers and budget_transactions are not reached by the standard TRUNCATE.
-_cleanup = truncate_fixture("budget_transactions", "cost_centers")
-
-GHOST_ID = 2_000_000_000
-# Workspace A's own admin (the seed gives them a notification); the control user.
-ADMIN_A_EMAIL = "aria.voss@hartwood.test"
-REAL_ID = 1  # the seed runs on freshly truncated tables, so most rows start at 1
-
-# Path-parameter values that are not ids.
-PATH_VALUES = {
-    "kind": "cv_drawing",
-    "material_type": "BOARD",
-    "stage_key": "REQ",
-    "table": "board_materials",
-    "slug": "board-materials",
-}
-
-# Fields the generic body builder cannot guess (a pattern, an enum, a non-empty
-# patch), merged over the generated body. Keyed by (METHOD, path template).
-BODY_OVERRIDES = {
-    ("POST", "/projects/{pid}/samples"): {"hex_swatch": "#aabbcc"},
-    ("PATCH", "/samples/{sid}"): {"title": "x"},
-    ("PATCH", "/users/{uid}"): {"full_name": "x"},
-    ("POST", "/items/{iid}/qc/rework"): {"kind": "internal"},
-    ("POST", "/procurement/approvals/{workflow_id}/decide"): {"decision": "approve"},
-    ("POST", "/suppliers/{vendor_id}/materials"): {"material_table": "board_materials"},
-}
-
-# Where id 1 is not the right kind of row (it is an ordinary item, not a related part;
-# an editor, not a shop worker), pick a real one from workspace A. Keyed by
-# (path template, parameter name).
-REAL_ID_QUERIES = {
-    ("/related-parts/{rid}", "rid"):
-        "SELECT item_id FROM items WHERE row_type = 'related_part' ORDER BY item_id LIMIT 1",
-    ("/related-parts/{rid}/reparent", "rid"):
-        "SELECT item_id FROM items WHERE row_type = 'related_part' ORDER BY item_id LIMIT 1",
-    ("/notifications/{nid}/read", "nid"):
-        "SELECT n.notification_id FROM notification n JOIN app_user u ON u.id = n.recipient_id"
-        f" WHERE u.email = '{ADMIN_A_EMAIL}' ORDER BY 1 LIMIT 1",
-    ("/workers/{wid}/queue", "wid"):
-        "SELECT id FROM app_user WHERE is_shop_worker ORDER BY id LIMIT 1",
-    ("/workers/{wid}/recent-completions", "wid"):
-        "SELECT id FROM app_user WHERE is_shop_worker ORDER BY id LIMIT 1",
-}
+_cleanup = truncate_fixture(*CLEANUP_TABLES)
 
 # Operations that cannot be probed, with the reason. Must equal the computed set.
 NOT_PROBED: dict[tuple[str, str], str] = {
@@ -94,168 +47,26 @@ NOT_PROBED: dict[tuple[str, str], str] = {
         "seed has no approval workflows; dedicated test exists",
 }
 
-_METHODS = ("get", "post", "put", "patch", "delete")
-
-_PERMISSION_GROUP_OPS = (
-    ("POST", "/permission-groups/{gid}/memberships"),
-    ("DELETE", "/permission-groups/memberships/{mid}"),
-    ("PUT", "/permission-groups/{gid}/grants"),
-    ("DELETE", "/permission-groups/{gid}"),
-)
-
-# Deleting these removes rows other deletes need, so they run last, children first.
-_DELETE_PARENTS = ("/parts/{pid}", "/modules/{mid}", "/items/{id}", "/cutlists/{cid}",
-                   "/orders/{po_id}", "/procurement/orders/{po_id}", "/cut-plans/{plan_id}",
-                   "/batches/{bid}", "/permission-groups/{gid}")
-
-
-def _seed_workspace_a() -> None:
-    try:
-        from seed import hartwood_joinery
-    except ImportError:  # run outside the container: the seed lives at the repo root
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-        from seed import hartwood_joinery
-    with contextlib.redirect_stdout(io.StringIO()):
-        hartwood_joinery.main()
-
-
-def _schemas() -> dict:
-    return app.openapi().get("components", {}).get("schemas", {})
-
-
-def _resolve(schema: dict) -> dict:
-    while "$ref" in schema:
-        schema = _schemas()[schema["$ref"].split("/")[-1]]
-    return schema
-
-
-def _example(schema: dict, depth: int = 0):
-    """The smallest value that satisfies `schema`'s required parts."""
-    schema = _resolve(schema)
-    options = schema.get("anyOf") or schema.get("oneOf")
-    if options:
-        non_null = [o for o in options if _resolve(o).get("type") != "null"]
-        return _example(non_null[0], depth) if non_null else None
-    if "allOf" in schema:
-        return _example(schema["allOf"][0], depth)
-    if "enum" in schema:
-        return schema["enum"][0]
-    kind = schema.get("type")
-    if kind == "object" or "properties" in schema:
-        return {k: (_example(schema["properties"][k], depth + 1) if depth < 6 else None)
-                for k in schema.get("required", [])}
-    if kind == "string":
-        return {"date": "2026-01-01", "date-time": "2026-01-01T00:00:00Z",
-                "email": "x@probe.test"}.get(schema.get("format"), "x")
-    if kind in ("integer", "number"):
-        return 1
-    if kind == "boolean":
-        return False
-    if kind == "array":
-        return [_example(schema["items"], depth + 1)] if schema.get("minItems", 0) > 0 else []
-    return None
-
-
-def _operations() -> list[tuple[str, str, dict]]:
-    """(METHOD, path template, operation) for every operation with a path parameter,
-    ordered so a probe cannot remove the rows a later probe needs: reads, then
-    writes, then deletes with children before parents."""
-    ops = [(m.upper(), p, op)
-           for p, item in app.openapi()["paths"].items() if "{" in p
-           for m, op in item.items() if m in _METHODS]
-    rank = {"GET": 0, "POST": 1, "PUT": 1, "PATCH": 1, "DELETE": 2}
-
-    def order(o):
-        method, path, _ = o
-        if (method, path) in _PERMISSION_GROUP_OPS:
-            # Changing a group's grants or members changes what the control user (a
-            # member of the Admin group) may do, so these run after everything else,
-            # members before grants and the group itself last.
-            return (100 + _PERMISSION_GROUP_OPS.index((method, path)), path)
-        if method == "DELETE" and path in _DELETE_PARENTS:
-            return (3 + _DELETE_PARENTS.index(path), path)
-        return (rank[method], path)
-
-    return sorted(ops, key=order)
-
-
-def _ids(path: str, real: bool, real_ids: dict) -> dict[str, int]:
-    """The value for each path parameter: the real row's id, or the ghost id."""
-    return {n: (real_ids.get((path, n), REAL_ID) if real else GHOST_ID)
-            for n in re.findall(r"\{(\w+)\}", path)}
-
-
-def _multipart(schema: dict) -> tuple[dict, dict]:
-    """(files, data) for a multipart body: a tiny PDF for each binary field, an example for the rest."""
-    schema = _resolve(schema)
-    files, data = {}, {}
-    for name, prop in schema.get("properties", {}).items():
-        prop = _resolve(prop)
-        if prop.get("format") == "binary" or "contentMediaType" in prop:  # OpenAPI 3.0 / 3.1
-            files[name] = ("probe.pdf", b"%PDF-1.4\n%probe\n%%EOF\n", "application/pdf")
-        elif name in schema.get("required", []):
-            data[name] = _example(prop)
-    return files, data
-
-
-def _request(client, method: str, path: str, op: dict, ids: dict[str, int]):
-    """Call `op` with `ids` in the path slots; None if no request can be built."""
-    url = re.sub(r"\{(\w+)\}", lambda m: str(PATH_VALUES.get(m.group(1), ids[m.group(1)])), path)
-    kwargs = {}
-    request_body = op.get("requestBody")
-    if request_body:
-        content = request_body["content"]
-        if "application/json" in content:
-            body = _example(content["application/json"]["schema"])
-            if isinstance(body, dict):
-                body.update(BODY_OVERRIDES.get((method, path), {}))
-            kwargs["json"] = body
-        elif "multipart/form-data" in content:
-            kwargs["files"], kwargs["data"] = _multipart(content["multipart/form-data"]["schema"])
-        else:
-            return None
-    required_query = {
-        p["name"]: PATH_VALUES.get(p["name"]) or _example(p["schema"])
-        for p in op.get("parameters", []) if p["in"] == "query" and p.get("required")
-    }
-    if required_query:
-        kwargs["params"] = required_query
-    return client.request(method, url, **kwargs)
-
-
-def _answer(response, ids: dict[str, int]) -> tuple[int, str]:
-    """Status and body with the probed ids masked, so 'item 1' and 'item 2000000000' compare equal."""
-    body = response.text
-    for value in set(ids.values()):
-        body = re.sub(rf"(?<!\d){value}(?!\d)", "<ID>", body)
-    return response.status_code, body
-
 
 def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, tmp_path):
-    truncate_all()
-    with SessionLocal() as db:
-        db.execute(text("TRUNCATE budget_transactions, cost_centers RESTART IDENTITY CASCADE"))
-        db.commit()
-    monkeypatch.setenv("FILE_STORE_ROOT", str(tmp_path))
-    _seed_workspace_a()
-    admin_a = log_in("hartwood-joinery", ADMIN_A_EMAIL, "hartwood-dev")
+    admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path)
     admin_b, _, _ = login("admin", prefix="probe-b")
 
     with SessionLocal() as db:
         real_ids = {key: db.execute(text(sql)).scalar() for key, sql in REAL_ID_QUERIES.items()}
     assert all(real_ids.values()), f"the seed no longer has the rows REAL_ID_QUERIES picks: {real_ids}"
 
-    operations = _operations()
+    all_ops = operations()
     leaks, unbuildable = [], set()
 
-    for method, path, op in operations:
-        real_ids_for, ghost_ids = _ids(path, True, real_ids), _ids(path, False, real_ids)
-        real = _request(admin_b, method, path, op, real_ids_for)
-        ghost = _request(admin_b, method, path, op, ghost_ids)
+    for method, path, op in all_ops:
+        real_ids_for, ghost_ids = ids_for(path, True, real_ids), ids_for(path, False, real_ids)
+        real = request(admin_b, method, path, op, real_ids_for)
+        ghost = request(admin_b, method, path, op, ghost_ids)
         if real is None or ghost is None:
             unbuildable.add((method, path))
             continue
-        if _answer(real, real_ids_for) != _answer(ghost, ghost_ids):
+        if answer(real, real_ids_for) != answer(ghost, ghost_ids):
             leaks.append(f"{method} {path}: foreign id -> {real.status_code} {real.text[:100]}, "
                          f"nonexistent id -> {ghost.status_code}")
 
@@ -267,13 +78,13 @@ def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, t
     # Which operations did the probe above actually exercise? Only those where A's own
     # admin sees a difference between the real row and the ghost one.
     no_signal = set(unbuildable)
-    for method, path, op in operations:
+    for method, path, op in all_ops:
         if (method, path) in unbuildable:
             continue
-        real_ids_for, ghost_ids = _ids(path, True, real_ids), _ids(path, False, real_ids)
-        real = _request(admin_a, method, path, op, real_ids_for)
-        ghost = _request(admin_a, method, path, op, ghost_ids)
-        if _answer(real, real_ids_for) == _answer(ghost, ghost_ids):
+        real_ids_for, ghost_ids = ids_for(path, True, real_ids), ids_for(path, False, real_ids)
+        real = request(admin_a, method, path, op, real_ids_for)
+        ghost = request(admin_a, method, path, op, ghost_ids)
+        if answer(real, real_ids_for) == answer(ghost, ghost_ids):
             no_signal.add((method, path))
 
     unlisted = sorted(no_signal - set(NOT_PROBED))

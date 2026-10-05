@@ -25,8 +25,10 @@ def _insert_user(db, *, wid: int, role: str, name: str = "U", email_prefix: str 
     return email, uid
 
 
-def log_in(slug: str, email: str, password: str = "pw") -> TestClient:
-    c = TestClient(app)
+def log_in(slug: str, email: str, password: str = "pw", *, raise_server_exceptions: bool = True) -> TestClient:
+    """A client logged in as `email`. With `raise_server_exceptions=False` an unhandled
+    server error comes back as a 500 response instead of being re-raised in the test."""
+    c = TestClient(app, raise_server_exceptions=raise_server_exceptions)
     r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": password})
     assert r.status_code == 200, r.text
     return c
