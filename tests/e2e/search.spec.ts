@@ -12,13 +12,18 @@ import { login } from "./helpers";
  */
 /**
  * Search has no Postgres fallback: with Meilisearch down `GET /search` answers
- * `503 SEARCH_UNAVAILABLE`. That is an environment without the `meili` /
- * `search-worker` services (a bare dev stack, the sandbox), not a defect, so
- * skip then — and only then: a reachable but empty or broken index still fails.
+ * `503 SEARCH_UNAVAILABLE`. Locally that is an environment without the `meili` /
+ * `search-worker` services (a bare dev stack, the sandbox), so skip. In CI the
+ * stack always has them, so a 503 fails. A reachable but empty or broken index
+ * fails everywhere.
  */
 async function skipWithoutSearch(page: import("@playwright/test").Page) {
   const res = await page.request.get("/api/search?q=297830");
-  test.skip(res.status() === 503, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
+  if (res.status() !== 503) return;
+  // The CI e2e job starts Meilisearch and the search-worker, so a 503 there is a
+  // broken stack, not a missing optional service: fail instead of skipping.
+  expect(process.env.CI, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE) in CI").toBeFalsy();
+  test.skip(true, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
 }
 
 test("a cutlist number in the top bar opens that cutlist", async ({ page }) => {
