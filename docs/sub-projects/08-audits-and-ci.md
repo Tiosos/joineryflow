@@ -336,5 +336,9 @@
   `item_project_detail` and `procurement` open, and have none of the seeded comments, questions or hardware, so seven
   specs failed. Fixtures belong in a project of their own (projects list in id order, so ALF-001 stays first).
 - **Result:** two consecutive runs on one database give the same result (only the `search` specs differ, without
-  Meilisearch). The seed and the app are unchanged. `drafter_editor` still leaves a part and a hardware line per run.
+  Meilisearch). The seed and the app are unchanged.
+- **Follow-up:** `drafter_editor` now deletes the part and the hardware line it adds (checked: after two runs the
+  parts / hardware-line totals equal the seeded 37 / 24, and the audit log shows each created line deleted). The CI e2e
+  job runs the suite **twice on the same database** (a second `playwright test` step, about +4 minutes), so the next spec
+  that only passes on a fresh database fails there instead of surfacing weeks later.
 
