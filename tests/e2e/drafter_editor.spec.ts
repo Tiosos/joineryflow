@@ -11,7 +11,9 @@ test("Drafter editor happy path", async ({ page }) => {
   await page.locator('[data-testid="myday-row"] a').first().click();
   await expect(page).toHaveURL(/\/items\/\d+/, { timeout: 30_000 });
 
-  // Cutlist tab: add row
+  // Cutlist tab: add row (and delete it again below: the spec must leave the item as seeded)
+  const partRows = page.locator('[data-testid="part-row"]');
+  const partCountBefore = await partRows.count();
   await page.getByRole("button", { name: /add row/i }).click();
   const lastRow = page.locator('[data-testid="part-row"]').last();
   await lastRow.locator('[data-field="qty"]').fill("2");
@@ -19,6 +21,8 @@ test("Drafter editor happy path", async ({ page }) => {
   await lastRow.locator('[data-field="part_name"]').blur();
   // Wait for PATCH success indicator
   await expect(lastRow).toHaveAttribute("data-saved", "true", { timeout: 10_000 });
+  await lastRow.getByRole("button", { name: "Delete part" }).click();
+  await expect(partRows).toHaveCount(partCountBefore, { timeout: 10_000 });
 
   // Hardware tab
   await page.getByRole("tab", { name: /hardware/i }).click();
@@ -27,6 +31,9 @@ test("Drafter editor happy path", async ({ page }) => {
   const cartCountBefore = await page.locator('[data-testid="cart-line"]').count();
   await page.locator('[data-testid="pantry-row"] [aria-label="Add"]').first().click();
   await expect(page.locator('[data-testid="cart-line"]')).toHaveCount(cartCountBefore + 1);
+  // take the new line out again
+  await page.locator('[data-testid="cart-line"]').last().getByRole("button", { name: "Remove hardware line" }).click();
+  await expect(page.locator('[data-testid="cart-line"]')).toHaveCount(cartCountBefore, { timeout: 10_000 });
 
   // Lock toggle. Toggle it back afterwards: this is the drafter's first My Day
   // item, which the seed leaves Controlled-Locked (K-103), and the lock specs

@@ -219,6 +219,16 @@ jobs:
           PW_BASE_URL: http://localhost:3000
         run: pnpm exec playwright test
 
+      # The same suite again on the same database, without re-seeding: a spec that
+      # consumes or changes seeded data (a notification, an estimate, a take, a
+      # question) passes the first time and fails here. See CLAUDE.md §3.
+      - name: Run Playwright again (same database)
+        working-directory: apps/web
+        env:
+          CI: "true"
+          PW_BASE_URL: http://localhost:3000
+        run: pnpm exec playwright test
+
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
