@@ -151,7 +151,6 @@ test("Apply status… reports the locked items a bulk change skipped", async ({ 
       body: JSON.stringify({
         updated: 0,
         not_found: [],
-        cross_workspace: [],
         locked: sent.item_ids.map((item_id) => ({ item_id, code: "HARD_LOCKED", owner_name: null })),
       }),
     });

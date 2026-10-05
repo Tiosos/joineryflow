@@ -299,8 +299,6 @@ export function TrackingClient({
         onApplied={(result) => {
           const parts: string[] = [`${result.updated} updated`];
           if (result.not_found.length > 0) parts.push(`${result.not_found.length} not found`);
-          if (result.cross_workspace.length > 0)
-            parts.push(`${result.cross_workspace.length} skipped (workspace)`);
           if (result.locked.length > 0)
             parts.push(
               `${result.locked.length} skipped (locked: ${result.locked

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_drafter, require_permission
 from ..auth.sessions import AuthUser
+from ..catalog.queries import MaterialNotFound
 from ..db import get_db
 from ..items.queries import ItemContentLocked
 from . import queries as q
@@ -27,6 +28,8 @@ def _call(fn, *args, **kw):
         raise HTTPException(409, {"code": c.code, **c.extra})
     except ItemContentLocked as e:
         raise HTTPException(409, e.detail)
+    except MaterialNotFound as e:
+        raise HTTPException(404, e.detail)
 
 
 @router.get("/items/{iid}/material-take", response_model=CurrentTakeOut)

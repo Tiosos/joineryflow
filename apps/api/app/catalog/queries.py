@@ -112,6 +112,42 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
 }
 
 
+# material_type (as stored on batches, take lines, hardware catalog rows) -> catalog table.
+MATERIAL_TABLE_BY_TYPE: dict[str, str] = {
+    "BOARD": "board_materials", "HARDWARE": "hardware_materials", "CUSTOM": "custom_made",
+    "BENCHTOP": "benchtop_materials", "APPLIANCE": "appliances", "HIRE": "equipment_hire",
+}
+_ID_COLUMN_BY_TABLE: dict[str, str] = {table: id_col for table, id_col, *_ in REGISTRY.values()}
+
+
+class MaterialNotFound(Exception):
+    """A request named a catalog row that is not in the caller's workspace.
+
+    A row of another workspace and a row that does not exist are the same answer
+    (workspace isolation: cross-workspace is 404, never a hint that the row exists).
+    """
+
+    def __init__(self, material_id: int):
+        self.detail = {
+            "code": "MATERIAL_NOT_FOUND", "material_id": material_id,
+            "message": "material not found in this workspace",
+        }
+
+
+def assert_material_in_workspace(
+    db: Session, *, table: str, material_id: int, workspace_id: int
+) -> None:
+    """Raise `MaterialNotFound` unless `material_id` is a row of catalog `table` in this
+    workspace. `table` is one of the six catalog tables; anything else is refused."""
+    id_col = _ID_COLUMN_BY_TABLE.get(table)
+    found = id_col is not None and db.execute(
+        text(f"SELECT 1 FROM {table} WHERE {id_col} = :m AND workspace_id = :w"),
+        {"m": material_id, "w": workspace_id},
+    ).first() is not None
+    if not found:
+        raise MaterialNotFound(material_id)
+
+
 def list_catalog(
     db: Session,
     *,

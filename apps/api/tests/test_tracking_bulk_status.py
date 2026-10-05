@@ -92,7 +92,6 @@ def test_bulk_status_happy_path():
     payload = r.json()
     assert payload["updated"] == 3
     assert payload["not_found"] == []
-    assert payload["cross_workspace"] == []
 
     db = SessionLocal()
     try:
@@ -132,8 +131,9 @@ def test_bulk_status_missing_note_422():
     assert r.status_code == 422, r.text
 
 
-def test_bulk_status_classifies_not_found_and_cross_workspace():
-    """An id from another workspace must come back in cross_workspace, not not_found."""
+def test_bulk_status_reports_another_workspaces_item_as_not_found():
+    """An id from another workspace is indistinguishable from one that does not exist:
+    both come back in not_found, and the response has no field that tells them apart."""
     c, wid, uid = _login(role="manager")
 
     db = SessionLocal()
@@ -172,8 +172,15 @@ def test_bulk_status_classifies_not_found_and_cross_workspace():
     assert r.status_code == 200, r.text
     payload = r.json()
     assert payload["updated"] == 1
-    assert payload["not_found"] == [missing_iid]
-    assert payload["cross_workspace"] == [other_iid]
+    assert sorted(payload["not_found"]) == sorted([missing_iid, other_iid])
+    assert "cross_workspace" not in payload
+    # and nothing of the other workspace's item changed
+    db = SessionLocal()
+    try:
+        assert db.execute(text("SELECT status FROM items WHERE item_id = :i"),
+                          {"i": other_iid}).scalar() != "VOID"
+    finally:
+        db.close()
 
 
 def test_bulk_status_purchase_officer_403():

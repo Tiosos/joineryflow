@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
+from ..catalog.queries import MaterialNotFound
 from ..db import get_db
 from . import queries as q
 from .schemas import (
@@ -194,6 +195,8 @@ def add_line_route(
         )
     except q.OrderLocked as e:
         raise _locked(e)
+    except MaterialNotFound as e:
+        raise HTTPException(404, e.detail)
     if order is None:
         raise HTTPException(404, "order not found")
     db.commit()

@@ -72,22 +72,6 @@ SIBLINGS = {
 # recorded so the probe can pass while they are open. Must equal the computed set, so
 # a new leak fails and a fixed one has to come off this list.
 KNOWN_LEAKS: dict[tuple[str, str, str], str] = {
-    ("POST", "/modules/{mid}/parts", "board_material_id"):
-        "accepts another workspace's board material and echoes its name; a nonexistent id is a raw 500",
-    ("PATCH", "/parts/{pid}", "board_material_id"):
-        "accepts another workspace's board material and echoes its name; a nonexistent id is a raw 500",
-    ("POST", "/batches", "material_id"):
-        "accepts another workspace's material (201); a nonexistent id is also 201",
-    ("POST", "/orders/{po_id}/lines", "material_id"):
-        "accepts another workspace's material (201); a nonexistent id is also 201",
-    ("POST", "/catalog/cv-mappings", "target_material_id"):
-        "creates a mapping to another workspace's material (201); a nonexistent id is 409",
-    ("PATCH", "/catalog/cv-mappings/{mid}", "target_material_id"):
-        "repoints a mapping at another workspace's material (200); a nonexistent id is rejected",
-    ("POST", "/material-takes/{tid}/lines", "material_id"):
-        "accepts another workspace's material (201); a nonexistent id is also 201, so it is not validated at all",
-    ("POST", "/items/bulk-status", "item_ids"):
-        'answers {"cross_workspace": [id]} for another workspace\'s item, so the caller learns it exists',
 }
 
 # Per-operation exceptions to the above. Keyed by (METHOD, path template).
@@ -326,3 +310,65 @@ def test_foreign_ids_in_a_body_look_like_nonexistent_ones(truncate_all, monkeypa
         "These NOT_PROBED entries are probed now (or no longer exist); remove them:\n  "
         + "\n  ".join(f"{m} {p} [{f}]" for m, p, f in stale)
     )
+
+
+# The routes that take a catalog material in the body: (method, path, field).
+_MATERIAL_ROUTES = (
+    ("POST", "/modules/{mid}/parts", "board_material_id"),
+    ("PATCH", "/parts/{pid}", "board_material_id"),
+    ("POST", "/batches", "material_id"),
+    ("POST", "/orders/{po_id}/lines", "material_id"),
+    ("POST", "/material-takes/{tid}/lines", "material_id"),
+    ("PATCH", "/material-takes/{tid}/lines/{lid}", "material_id"),
+    ("POST", "/catalog/cv-mappings", "target_material_id"),
+    ("PATCH", "/catalog/cv-mappings/{mid}", "target_material_id"),
+)
+
+# Everything those routes could write a material id (or a new row) into.
+_MATERIAL_SNAPSHOT = """
+    SELECT (SELECT count(*) FROM parts), (SELECT coalesce(sum(board_material_id), 0) FROM parts),
+           (SELECT count(*) FROM procurement_batches), (SELECT count(*) FROM po_line_items),
+           (SELECT count(*) FROM material_take_line),
+           (SELECT coalesce(sum(material_id), 0) FROM material_take_line),
+           (SELECT count(*) FROM cv_material_mapping),
+           (SELECT coalesce(sum(target_material_id), 0) FROM cv_material_mapping)
+"""
+
+
+def test_a_material_of_another_workspace_is_a_404_and_writes_nothing(truncate_all, monkeypatch, tmp_path):
+    """A material that is another workspace's, or that does not exist, is refused with
+    404 MATERIAL_NOT_FOUND on every route that takes one, before anything is written."""
+    admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path, raise_server_exceptions=False)
+    _, wid_b, uid_b = login("admin", prefix="probe-b")
+    with SessionLocal() as db:
+        a_rows = _rows_of_a(db, _scalar(db, "SELECT id FROM workspace WHERE slug = 'hartwood-joinery'"))
+        b_rows = _rows_of_b(db, wid_b, uid_b)
+        db.commit()
+        real_ids = {key: _scalar(db, sql)
+                    for key, sql in {**REAL_ID_QUERIES, **BODY_REAL_ID_QUERIES}.items()}
+    operations_by_key = {(m, p): (op, fields, required, props)
+                         for m, p, op, fields, required, props in _body_cases()}
+
+    # A manual take line of A's, so the PATCH route has a line whose material may change.
+    tid = real_ids[("/material-takes/{tid}/lines", "tid")]
+    line = admin_a.post(f"/material-takes/{tid}/lines", json={
+        "material_type": "BOARD", "material_id": a_rows["board_material"], "description": "manual",
+        "unit": "sheet", "qty": 1, "wastage_pct": 0})
+    assert line.status_code == 201, line.text
+    real_ids[("/material-takes/{tid}/lines/{lid}", "lid")] = line.json()["line_id"]
+
+    def snapshot():
+        with SessionLocal() as db:
+            return tuple(db.execute(text(_MATERIAL_SNAPSHOT)).one())
+
+    for method, path, field in _MATERIAL_ROUTES:
+        op, fields, required, props = operations_by_key[(method, path)]
+        for what, value in (("another workspace's", b_rows["board_material"]), ("nonexistent", GHOST_ID)):
+            before = snapshot()
+            response = request(admin_a, method, path, op, ids_for(path, True, real_ids),
+                               body_patch=_body_patch(method, path, fields, required, props,
+                                                      a_rows, field, value))
+            assert response.status_code == 404, f"{method} {path} with {what} material: {response.text}"
+            assert response.json()["detail"]["code"] == "MATERIAL_NOT_FOUND", \
+                f"{method} {path} with {what} material: {response.text}"
+            assert snapshot() == before, f"{method} {path} with {what} material changed data"

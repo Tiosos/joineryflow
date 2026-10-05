@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
+from ..catalog.queries import MATERIAL_TABLE_BY_TYPE, assert_material_in_workspace
 from ..edit_log import write_edit_log
 from ..items.queries import assert_item_content_unlocked
 from .generation import generate_lines, generated_signature
@@ -183,9 +184,20 @@ def regenerate(db: Session, take_id: int, workspace_id: int, actor: AuthUser) ->
          new=f"v{t['version']}", payload={"take_id": take_id, "lines": len(lines)})
 
 
+def _assert_line_material(db: Session, workspace_id: int, material_type: str,
+                          material_id: int | None) -> None:
+    """A line's catalog row must be one of this workspace's (see `MaterialNotFound`)."""
+    if material_id is not None:
+        assert_material_in_workspace(
+            db, table=MATERIAL_TABLE_BY_TYPE.get(material_type), material_id=material_id,
+            workspace_id=workspace_id,
+        )
+
+
 def add_line(db: Session, take_id: int, workspace_id: int, actor: AuthUser, line: dict) -> int:
     t = _draft(db, take_id, workspace_id, actor)
     actor_id = actor.id
+    _assert_line_material(db, workspace_id, line["material_type"], line.get("material_id"))
     lid = db.execute(text("""
         INSERT INTO material_take_line(take_id, material_type, material_id, description,
             unit, qty_generated, wastage_pct, qty, source, note)
@@ -221,6 +233,9 @@ def patch_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor
         if "wastage_pct" in changes and "qty" not in changes:
             factor = 1 + Decimal(changes["wastage_pct"]) / 100
             changes["qty"] = (Decimal(old["qty_generated"]) * factor).quantize(_CENT, ROUND_CEILING)
+    if "material_id" in changes or "material_type" in changes:
+        _assert_line_material(db, workspace_id, changes.get("material_type", old["material_type"]),
+                              changes.get("material_id", old["material_id"]))
     diff = {k: v for k, v in changes.items() if old.get(k) != v}
     if not diff:
         return

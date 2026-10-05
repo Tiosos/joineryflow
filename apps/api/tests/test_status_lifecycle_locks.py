@@ -204,7 +204,7 @@ def test_bulk_status_skips_locked_items_and_lists_them():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["updated"] == 2
-    assert body["not_found"] == [] and body["cross_workspace"] == []
+    assert body["not_found"] == []
     assert sorted(body["locked"], key=lambda x: x["item_id"]) == [
         {"item_id": hard, "code": "HARD_LOCKED", "owner_name": None},
         {"item_id": controlled, "code": "ITEM_LOCKED", "owner_name": "Olive Owner"},
@@ -230,4 +230,4 @@ def test_bulk_status_with_nothing_locked_reports_an_empty_locked_list():
     iid = _item(pid, 1)
     r = c.post("/items/bulk-status", json={"item_ids": [iid], "status": "LIVE", "note": "n"})
     assert r.status_code == 200
-    assert r.json() == {"updated": 1, "not_found": [], "cross_workspace": [], "locked": []}
+    assert r.json() == {"updated": 1, "not_found": [], "locked": []}
