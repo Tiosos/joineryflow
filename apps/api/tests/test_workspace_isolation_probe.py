@@ -27,17 +27,20 @@ import re
 import sys
 from pathlib import Path
 
-import pytest
 from sqlalchemy import text
 
 from app.db import SessionLocal
 from app.main import app
 
-from .helpers import login
+from .conftest import truncate_fixture
+from .helpers import log_in, login
 
-pytestmark = pytest.mark.usefixtures("truncate_after")
+# cost_centers and budget_transactions are not reached by the standard TRUNCATE.
+_cleanup = truncate_fixture("budget_transactions", "cost_centers")
 
 GHOST_ID = 2_000_000_000
+# Workspace A's own admin (the seed gives them a notification); the control user.
+ADMIN_A_EMAIL = "aria.voss@hartwood.test"
 REAL_ID = 1  # the seed runs on freshly truncated tables, so most rows start at 1
 
 # Path-parameter values that are not ids.
@@ -68,6 +71,9 @@ REAL_ID_QUERIES = {
         "SELECT item_id FROM items WHERE row_type = 'related_part' ORDER BY item_id LIMIT 1",
     ("/related-parts/{rid}/reparent", "rid"):
         "SELECT item_id FROM items WHERE row_type = 'related_part' ORDER BY item_id LIMIT 1",
+    ("/notifications/{nid}/read", "nid"):
+        "SELECT n.notification_id FROM notification n JOIN app_user u ON u.id = n.recipient_id"
+        f" WHERE u.email = '{ADMIN_A_EMAIL}' ORDER BY 1 LIMIT 1",
     ("/workers/{wid}/queue", "wid"):
         "SELECT id FROM app_user WHERE is_shop_worker ORDER BY id LIMIT 1",
     ("/workers/{wid}/recent-completions", "wid"):
@@ -86,20 +92,16 @@ NOT_PROBED: dict[tuple[str, str], str] = {
     # Covered by test_procurement_routes.test_decide_approval_cross_workspace_is_404.
     ("POST", "/procurement/approvals/{workflow_id}/decide"):
         "seed has no approval workflows; dedicated test exists",
-    # GAPS: no dedicated cross-workspace test (only the attachment *list* has one).
-    ("GET", "/procurement/orders/{po_id}/attachments/{attachment_id}/download"):
-        "GAP: seed has no PO attachments, no dedicated test",
-    ("DELETE", "/procurement/orders/{po_id}/attachments/{attachment_id}"):
-        "GAP: seed has no PO attachments, no dedicated test",
-    ("POST", "/procurement/orders/{po_id}/attachments"):
-        "GAP: multipart body the generator cannot build, no dedicated test",
-    ("GET", "/procurement/budget/{cost_center_id}/transactions"):
-        "GAP: seed has no cost centres; answers [] for any id, no dedicated test",
-    ("POST", "/notifications/{nid}/read"):
-        "GAP: the seed's notifications belong to other users; per-recipient, no dedicated test",
 }
 
 _METHODS = ("get", "post", "put", "patch", "delete")
+
+_PERMISSION_GROUP_OPS = (
+    ("POST", "/permission-groups/{gid}/memberships"),
+    ("DELETE", "/permission-groups/memberships/{mid}"),
+    ("PUT", "/permission-groups/{gid}/grants"),
+    ("DELETE", "/permission-groups/{gid}"),
+)
 
 # Deleting these removes rows other deletes need, so they run last, children first.
 _DELETE_PARENTS = ("/parts/{pid}", "/modules/{mid}", "/items/{id}", "/cutlists/{cid}",
@@ -165,6 +167,11 @@ def _operations() -> list[tuple[str, str, dict]]:
 
     def order(o):
         method, path, _ = o
+        if (method, path) in _PERMISSION_GROUP_OPS:
+            # Changing a group's grants or members changes what the control user (a
+            # member of the Admin group) may do, so these run after everything else,
+            # members before grants and the group itself last.
+            return (100 + _PERMISSION_GROUP_OPS.index((method, path)), path)
         if method == "DELETE" and path in _DELETE_PARENTS:
             return (3 + _DELETE_PARENTS.index(path), path)
         return (rank[method], path)
@@ -178,6 +185,19 @@ def _ids(path: str, real: bool, real_ids: dict) -> dict[str, int]:
             for n in re.findall(r"\{(\w+)\}", path)}
 
 
+def _multipart(schema: dict) -> tuple[dict, dict]:
+    """(files, data) for a multipart body: a tiny PDF for each binary field, an example for the rest."""
+    schema = _resolve(schema)
+    files, data = {}, {}
+    for name, prop in schema.get("properties", {}).items():
+        prop = _resolve(prop)
+        if prop.get("format") == "binary" or "contentMediaType" in prop:  # OpenAPI 3.0 / 3.1
+            files[name] = ("probe.pdf", b"%PDF-1.4\n%probe\n%%EOF\n", "application/pdf")
+        elif name in schema.get("required", []):
+            data[name] = _example(prop)
+    return files, data
+
+
 def _request(client, method: str, path: str, op: dict, ids: dict[str, int]):
     """Call `op` with `ids` in the path slots; None if no request can be built."""
     url = re.sub(r"\{(\w+)\}", lambda m: str(PATH_VALUES.get(m.group(1), ids[m.group(1)])), path)
@@ -185,12 +205,15 @@ def _request(client, method: str, path: str, op: dict, ids: dict[str, int]):
     request_body = op.get("requestBody")
     if request_body:
         content = request_body["content"]
-        if "application/json" not in content:
+        if "application/json" in content:
+            body = _example(content["application/json"]["schema"])
+            if isinstance(body, dict):
+                body.update(BODY_OVERRIDES.get((method, path), {}))
+            kwargs["json"] = body
+        elif "multipart/form-data" in content:
+            kwargs["files"], kwargs["data"] = _multipart(content["multipart/form-data"]["schema"])
+        else:
             return None
-        body = _example(content["application/json"]["schema"])
-        if isinstance(body, dict):
-            body.update(BODY_OVERRIDES.get((method, path), {}))
-        kwargs["json"] = body
     required_query = {
         p["name"]: PATH_VALUES.get(p["name"]) or _example(p["schema"])
         for p in op.get("parameters", []) if p["in"] == "query" and p.get("required")
@@ -210,11 +233,12 @@ def _answer(response, ids: dict[str, int]) -> tuple[int, str]:
 
 def test_another_workspace_cannot_tell_a_row_exists(truncate_all, monkeypatch, tmp_path):
     truncate_all()
+    with SessionLocal() as db:
+        db.execute(text("TRUNCATE budget_transactions, cost_centers RESTART IDENTITY CASCADE"))
+        db.commit()
     monkeypatch.setenv("FILE_STORE_ROOT", str(tmp_path))
     _seed_workspace_a()
-    with SessionLocal() as db:
-        wid_a = db.execute(text("SELECT id FROM workspace WHERE slug = 'hartwood-joinery'")).scalar()
-    admin_a, _, _ = login("admin", wid=wid_a)
+    admin_a = log_in("hartwood-joinery", ADMIN_A_EMAIL, "hartwood-dev")
     admin_b, _, _ = login("admin", prefix="probe-b")
 
     with SessionLocal() as db:

@@ -2855,6 +2855,11 @@ def main() -> None:
                      " WHERE slab_id = 'hartwood-CST-2297-A'"),
             ).scalar()
             s.execute(
+                text("DELETE FROM budget_transactions WHERE po_id IN"
+                     " (SELECT po_id FROM purchase_orders WHERE item_id = ANY(:ids))"),
+                {"ids": _rp_ids},
+            )
+            s.execute(
                 text("DELETE FROM purchase_orders WHERE item_id = ANY(:ids)"),
                 {"ids": _rp_ids},
             )
@@ -2908,11 +2913,42 @@ def main() -> None:
                 {"o": _po_id, "m": _slab_mid},
             )
 
+            # A cost centre carrying one Commitment for that order, and the
+            # supplier's quote attached to it (PO attachments live in the
+            # shared file store). Built through the legacy procurement query
+            # functions so the rows are the ones the API reads.
+            from app.files.seed_helper import put_seed_file as _put_po_file
+            from app.procurement import queries as _proc
+
+            _cc_id = s.execute(
+                text(
+                    """
+                    INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
+                    VALUES (:w, 'GEN', 'General', EXTRACT(year FROM now())::int, 50000)
+                    ON CONFLICT (workspace_id, code) DO UPDATE SET name = EXCLUDED.name
+                    RETURNING cost_center_id
+                    """
+                ),
+                {"w": workspace_id},
+            ).scalar()
+            _proc.commit_budget(s, _po_id, _cc_id, 3551.00)
+            _quote_pdf = _ASSETS / "sample_drawings" / "kitchen-base-run.pdf"
+            _quote_blob = _put_po_file(
+                s, workspace_id=workspace_id, workspace_slug="hartwood-joinery",
+                app_user_id=mina_id, path=_quote_pdf,
+            )
+            _proc.insert_attachment(
+                s, po_id=_po_id, attachment_type="PDF", file_name="supplier-quote.pdf",
+                file_size_bytes=_quote_pdf.stat().st_size, file_blob_id=_quote_blob,
+                uploaded_by=mina_id,
+            )
+
             s.commit()
             print(
                 "seeded #10 cutlist/orderbook: 1 shared cutlist (3 items, "
                 "1 fanned-out DOWN completion, 1 late joiner) + 2 related "
-                f"parts + supplier {_vendor_name!r} + 1 purchase order"
+                f"parts + supplier {_vendor_name!r} + 1 purchase order "
+                "(with a cost centre commitment and an attached quote)"
             )
 
         # ------------------------------------------------------------------
@@ -3263,7 +3299,9 @@ def main() -> None:
         _cm_drafter = _actor_by("auth_role = 'drafter'")
         _cm_foreman = _actor_by("email = 'juno.okafor@hartwood.test'")
         _cm_manager = _actor_by("auth_role = 'manager'")
-        if _cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager:
+        _cm_admin = _actor_by("auth_role = 'admin'")
+        if (_cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager
+                and _cm_admin):
             db.execute(text("""
                 DELETE FROM comment WHERE workspace_id = :w AND (
                     project_id = :p OR item_id = :i
@@ -3302,13 +3340,14 @@ def main() -> None:
                 db, actor=_cm_manager, object_type="project", object_id=_cm_project,
                 parent_id=None,
                 body=f"Site access is via the Block B loading dock only — book 24h ahead. "
-                     f"@{_cm_drafter.full_name} please note it on the install pack.",
-                mentioned_user_ids=[_cm_drafter.id],
+                     f"@{_cm_drafter.full_name} please note it on the install pack. "
+                     f"cc @{_cm_admin.full_name}",
+                mentioned_user_ids=[_cm_drafter.id, _cm_admin.id],
             )
             assert _code == "OK", _code
             # One comment each on that item's own area and room, so the project
             # page's Areas & Rooms card opens with counts. No mentions, so the
-            # seeded bell counts (Juno 1, Noa 2) are unchanged.
+            # seeded bell counts (Juno 1, Noa 2, Aria 1) are unchanged.
             _cm_area, _cm_room = db.execute(
                 text("SELECT area_id, room_id FROM items WHERE item_id = :i"),
                 {"i": _cm_item},

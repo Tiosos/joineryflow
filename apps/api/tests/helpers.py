@@ -25,9 +25,9 @@ def _insert_user(db, *, wid: int, role: str, name: str = "U", email_prefix: str 
     return email, uid
 
 
-def _log_in(slug: str, email: str) -> TestClient:
+def log_in(slug: str, email: str, password: str = "pw") -> TestClient:
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
+    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": password})
     assert r.status_code == 200, r.text
     return c
 
@@ -51,7 +51,7 @@ def login(role: str = "manager", *, wid: int | None = None, prefix: str = "h"):
         db.commit()
     finally:
         db.close()
-    return _log_in(slug, email), wid, uid
+    return log_in(slug, email), wid, uid
 
 
 def login_same_workspace(wid: int, role: str, name: str = "U2"):
@@ -63,7 +63,7 @@ def login_same_workspace(wid: int, role: str, name: str = "U2"):
         db.commit()
     finally:
         db.close()
-    return _log_in(slug, email), uid
+    return log_in(slug, email), uid
 
 
 def create_project(db, *, uid: int, code: str = "HJ-001") -> int:
