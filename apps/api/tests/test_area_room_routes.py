@@ -18,22 +18,10 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = ("item_edit_log", "item_stages", "items", "room", "area", "status_options")
-        s.execute(
-            text(f"TRUNCATE {', '.join(list(extra) + list(TRUNCATE_TABLES))}"
-                 " RESTART IDENTITY CASCADE")
-        )
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture("item_edit_log", "item_stages", "items", "room", "area", "status_options")
 
 
 @pytest.fixture

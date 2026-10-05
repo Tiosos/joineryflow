@@ -15,22 +15,13 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(
-            "TRUNCATE vendors, board_materials, hardware_materials, custom_made,"
-            " benchtop_materials, appliances, equipment_hire, "
-            + ", ".join(TRUNCATE_TABLES) + " RESTART IDENTITY CASCADE"
-        ))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "vendors", "board_materials", "hardware_materials", "custom_made", "benchtop_materials",
+    "appliances", "equipment_hire",
+)
 
 
 def _mk_workspace(slug_prefix: str):

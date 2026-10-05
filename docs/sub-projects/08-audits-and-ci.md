@@ -369,3 +369,11 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
   running. While the real checks of PR #81 were still queued the same state read `blocked`, which is how enforcement was
   confirmed.
 
+### Cleanup fixtures consolidated (after PR #82)
+- The leftovers from the first consolidation are gone: 13 files carried their own copy of the autouse "yield, then TRUNCATE"
+  fixture. They now use `truncate_fixture(...)` from `conftest.py`, with the extra tables they truncated as arguments
+  (`test_area_room_routes`, `test_supplier_routes`, `helpers_material_take`); the rest use the plain
+  `truncate_fixture()` (their old table lists were subsets of the standard set). About 125 lines fewer, same behaviour.
+- **Left on purpose:** `test_item_number_allocation`, whose truncate is the teardown half of a *setup* fixture (it creates the
+  workspace and project, yields, then cleans up), and the one-off `TRUNCATE search_outbox` inside a `test_search_routes` test.
+
