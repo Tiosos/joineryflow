@@ -52,3 +52,31 @@ body {
     letter-spacing: -0.005em;
   }
 }
+
+/* Scroll cards (the Tracking items table): scrollbars that stay visible. macOS and many laptops
+   draw overlay scrollbars that hide until you scroll, which made a scrollable table look cut off.
+   Palette tokens only. */
+.h-scrollbars::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.h-scrollbars::-webkit-scrollbar-track {
+  background: var(--h-surface-alt);
+}
+.h-scrollbars::-webkit-scrollbar-thumb {
+  background: var(--h-ink4);
+  border: 2px solid var(--h-surface-alt);
+  border-radius: 6px;
+}
+.h-scrollbars::-webkit-scrollbar-thumb:hover {
+  background: var(--h-ink3);
+}
+.h-scrollbars::-webkit-scrollbar-corner {
+  background: var(--h-surface-alt);
+}
+@supports (-moz-appearance: none) {
+  .h-scrollbars {
+    scrollbar-color: var(--h-ink4) var(--h-surface-alt);
+  }
+}
+
