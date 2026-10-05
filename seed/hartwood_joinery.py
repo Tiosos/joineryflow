@@ -3051,7 +3051,7 @@ def main() -> None:
                             " (SELECT item_id FROM items WHERE project_id = :p)"), {"p": _alf})
             _take_items = [r[0] for r in db.execute(text("""
                 SELECT i.item_id FROM items i
-                 WHERE i.project_id = :p AND i.row_type = 'joinery_item'
+                 WHERE i.project_id = :p AND i.row_type = 'joinery_item' AND NOT i.deleted
                    AND EXISTS (SELECT 1 FROM modules m WHERE m.item_id = i.item_id)
                  ORDER BY i.num"""), {"p": _alf})]
             if len(_take_items) >= 2:
