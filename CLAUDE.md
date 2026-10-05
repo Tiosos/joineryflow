@@ -148,7 +148,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 ## 3. Testing rules
 
 - **e2e baseline = a freshly created, migrated, seeded database.** The seed skips items that already exist, so a re-seed does not restore a lock or take an earlier run changed. The suite **is re-runnable on one database** (checked by running it twice without re-seeding; only the `search` specs, which need Meilisearch, differ): a spec that consumes or changes data builds its own — a name unique to the run (`Date.now()`), or a fixture made through the API — and asserts on that, never on a seeded row it changes. Do not add items to ALF-001 from a spec: "the first item" / "the first tracking row" of that project are what the comments, query and procurement specs open, so a fixture goes in a project of its own. CI runs the suite twice on one database (the second pass is the re-runnability guard), so a spec that only passes on a fresh database fails there. A spec puts back what it adds (`drafter_editor` deletes its part and hardware line).
-- CI runs e2e as an **advisory** job (production build, `next start`, `retries: 1` in CI). Never skip, disable or quarantine a spec to get green. A retried-and-passed spec is "flaky": read it.
+- The e2e job is a **required** check on `main` (branch protection; production build, `next start`, `retries: 1` in CI). `ci.yml` skips docs-only PRs, so `ci-docs-only.yml` reports the same four job names as instant passes for them: **keep the job names in both files in sync** with the required checks. Never skip, disable or quarantine a spec to get green. A retried-and-passed spec is "flaky": read it.
 - Specs run alphabetically in one worker and share state. When a spec fails, the guilty one is usually *earlier*: check `audit_log` for who touched what. Every spec must put shared state (locks, takes) back as seeded.
 - Click-before-hydration and "locator matches a different element with the same role/test id" are the two recurring flake shapes. Prefer `href` + `goto`, or retry the click (`toPass`).
 - A count assertion is satisfied by stale rows — reload and target by name.
@@ -285,7 +285,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 
 ### Audits and CI — `08-audits-and-ci.md`
 - **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.
-- **e2e repair and CI.** Whole suite verified on a fresh database; advisory Playwright job in `ci.yml`.
+- **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
 Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration.

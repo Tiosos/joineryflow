@@ -1,0 +1,41 @@
+name: CI (docs-only companion)
+
+# ci.yml skips docs-only pull requests (paths-ignore), so on such a PR none of its jobs
+# ever report. With branch protection requiring those checks, the merge would then wait
+# forever on checks that will never run. This workflow runs on the opposite filter and
+# reports the SAME job names as instant passes.
+#
+# On a PR that changes code AND docs both workflows run, so each name has two runs: the
+# real one and the instant pass here. A required check passes only if every run of that
+# name passes, so the real result decides.
+#
+# KEEP THE JOB NAMES IN SYNC with ci.yml: a name that is required but missing here (or a
+# renamed job there) blocks docs-only PRs again.
+on:
+  pull_request:
+    paths: ["docs/**", "**/*.md"]
+
+jobs:
+  api-tests:
+    name: API tests (pytest + migrations)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change, nothing to run"
+
+  api-lint:
+    name: API lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change, nothing to run"
+
+  web-typecheck:
+    name: Web typecheck (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change, nothing to run"
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change, nothing to run"

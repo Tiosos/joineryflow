@@ -354,3 +354,14 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
   item id was already harmless, but nothing proved it. `test_optimise_item_filter_treats_another_workspaces_item_like_a_missing_one`
   does (same body as a nonexistent id; B's parts never join the plan), and fails if the scoping is dropped.
 
+### e2e is a required check (after PR #80)
+- **Decision (the user):** with the suite stable and re-runnable (see above), the job is no longer advisory: branch protection
+  on `main` now requires it. This replaces the "advisory first" decision recorded under *e2e in CI*; the earlier text is history.
+- **The catch, found before it bit:** `ci.yml` skips docs-only PRs (`paths-ignore: docs/**, **/*.md`), so on such a PR no check
+  ever reports and a required one waits forever. Asked, and **settled:** a companion workflow, `ci-docs-only.yml`, runs on the
+  opposite filter and reports the same four job names as instant passes. On a PR that changes code *and* docs both run, so a
+  name has two runs; a required check passes only if every run passes, so the real one decides.
+- **Keep in sync:** the four job names (`API tests (pytest + migrations)`, `API lint (ruff)`, `Web typecheck (tsc)`,
+  `E2E (Playwright)`) exist in both workflows. Renaming one in `ci.yml` without the companion, or without the branch-protection
+  rule, blocks merges (docs-only PRs for the companion, all PRs for the rule).
+

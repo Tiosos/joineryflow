@@ -4,8 +4,9 @@ name: CI
 # Docs-only changes skip CI. For pull_request events GitHub applies the filter
 # to the PR's *whole* diff, not the latest push: a PR that touches any code runs
 # CI on every push, and only an all-docs PR skips. If branch
-# protection ever *requires* these checks, a skipped run leaves them pending
-# and blocks the merge — add an always-pass job for that case, don't drop this.
+# protection *requires* these checks, a skipped run leaves them pending and
+# blocks the merge, so ci-docs-only.yml reports the same job names as instant
+# passes for docs-only PRs. Keep the two workflows' job names in sync.
 on:
   push:
     branches: [main]
@@ -117,11 +118,10 @@ jobs:
         working-directory: apps/web
         run: pnpm build
 
-  # Whole Playwright suite against a real stack. ADVISORY: do not add this to
-  # the required checks until it has run green for a while (see CLAUDE.md,
-  # "e2e in CI"). The suite is not idempotent (estimating / procurement /
-  # comments fail on a second run), so it must always start from a database
-  # created, migrated and seeded in this job — which a fresh runner gives us.
+  # Whole Playwright suite against a real stack, run twice on the same database (the second
+  # pass guards that no spec only passes on a fresh one: see CLAUDE.md §3). A REQUIRED check
+  # on main: renaming this job needs the branch-protection rule (and ci-docs-only.yml) updated.
+  # The database is always created, migrated and seeded in this job, which a fresh runner gives us.
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
