@@ -226,7 +226,7 @@ def crash(label: str, response) -> str | None:
 # Body field -> the kind of row it points at.
 FIELD_KIND = {
     "assigned_to": "user", "pm_id": "user", "user_id": "user",
-    "requester_id": "user", "approver_id": "user", "reviewer_id": "user", "contractor_id": "user",
+    "requester_id": "user", "approver_id": "admin_user", "reviewer_id": "user", "contractor_id": "user",
     "mentioned_user_ids": "user", "worker_id": "shop_worker",
     "vendor_id": "vendor", "supplier_id": "vendor",
     "project_id": "project",
@@ -249,6 +249,7 @@ def scalar(db, sql: str, **params):
 def rows_of_a(db, wid: int) -> dict[str, int]:
     q = {
         "user": "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'editor' ORDER BY id LIMIT 1",
+        "admin_user": "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'admin' ORDER BY id LIMIT 1",
         "shop_worker": "SELECT id FROM app_user WHERE workspace_id = :w AND is_shop_worker ORDER BY id LIMIT 1",
         "vendor": "SELECT vendor_id FROM vendors WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "project": "SELECT project_id FROM projects WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
@@ -288,6 +289,7 @@ def rows_of_b(db, wid: int, uid: int) -> dict[str, int]:
                   " VALUES (:p, 'BOARD', :m, :u) RETURNING catalog_id", p=project, m=board)
     return {
         "user": uid,
+        "admin_user": uid,
         "shop_worker": one(
             "INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role, is_shop_worker)"
             " VALUES (:w, 'b-worker@probe.test', 'B worker', 'x', 'editor', true) RETURNING id"),

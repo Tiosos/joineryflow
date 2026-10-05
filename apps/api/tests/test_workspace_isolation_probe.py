@@ -42,9 +42,6 @@ NOT_PROBED: dict[tuple[str, str], str] = {
     # Covered by a dedicated test: test_lock_semantics.test_lock_request_is_workspace_isolated.
     ("POST", "/lock-requests/{rid}/approve"): "seed has no lock requests; dedicated test exists",
     ("POST", "/lock-requests/{rid}/reject"): "seed has no lock requests; dedicated test exists",
-    # Covered by test_procurement_routes.test_decide_approval_cross_workspace_is_404.
-    ("POST", "/procurement/approvals/{workflow_id}/decide"):
-        "seed has no approval workflows; dedicated test exists",
 }
 
 

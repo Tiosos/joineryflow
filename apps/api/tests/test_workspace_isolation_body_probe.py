@@ -64,6 +64,10 @@ OP_BODY = {("POST", "/comments"): lambda a_rows: {"object_type": "project", "obj
 # Path ids that must be a particular row for these operations to reach the body (material
 # take lines can only be added to a draft take).
 BODY_REAL_ID_QUERIES = {
+    # Only a comment's author may edit it: the seeded admin's own.
+    ("/comments/{cid}", "cid"):
+        "SELECT c.comment_id FROM comment c JOIN app_user u ON u.id = c.author_id"
+        " WHERE u.auth_role = 'admin' AND c.deleted_at IS NULL ORDER BY 1 LIMIT 1",
     ("/material-takes/{tid}/lines", "tid"):
         "SELECT take_id FROM material_take WHERE status = 'draft' ORDER BY 1 LIMIT 1",
     ("/material-takes/{tid}/lines/{lid}", "tid"):
@@ -74,16 +78,13 @@ BODY_REAL_ID_QUERIES = {
 }
 
 NOT_PROBED: dict[tuple[str, str, str], str] = {
-    ("PATCH", "/comments/{cid}", "mentioned_user_ids"):
-        "only a comment's author may edit it; no seeded comment is authored by the control admin",
     ("PATCH", "/material-takes/{tid}/lines/{lid}", "material_id"):
         "the seeded draft take's lines are generated, and their material fields are read-only",
-    ("POST", "/procurement/approvals/{workflow_id}/decide", "approver_id"):
-        "the seed has no approval workflows",
     ("POST", "/projects/{pid}/optimise", "include_only_item_ids"):
         "needs sheet stock for the SKU, which the seed does not have (NO_SHEET_SIZE)",
     ("POST", "/revisions/{rid}/link-supplier", "supplier_id"):
-        "the seeded materials already have a supplier (ALREADY_LINKED)",
+        "only links a material a quote line uses, and the seeded quotes use only material 1, "
+        "which already has a supplier (ALREADY_LINKED / MATERIAL_NOT_IN_REVISION)",
 }
 
 

@@ -55,8 +55,8 @@ A_ROW_QUERIES = {
 
 # (METHOD, path template, parameter) pairs that cannot be probed, with the reason.
 NOT_PROBED: dict[tuple[str, str, str], str] = {
-    ("GET", "/procurement/approvals/pending", "approver_id"): "the seed has no approval workflows",
-    ("GET", "/procurement/approvals/history", "approver_id"): "the seed has no approval workflows",
+    ("GET", "/procurement/approvals/history", "approver_id"):
+        "lists decided workflows; the seeded one is still pending",
 }
 
 

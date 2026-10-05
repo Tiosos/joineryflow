@@ -229,6 +229,25 @@ def test_decide_approval_cross_workspace_is_404():
     assert r.status_code == 404, r.text
 
 
+def test_decide_refuses_an_approver_from_another_workspace_and_writes_nothing():
+    """`approver_id` is written into the order's changelog (and later joined to a name), so
+    a user of another workspace, or a nonexistent one, is refused like the same id on
+    submit: 422, with the order, the workflow and the changelog untouched."""
+    mine = _login()
+    other = _login()
+    po_id, wf = _submitted_order(mine)
+    before = (_po_and_workflow_state(po_id, wf), _order_row(po_id)["changelog"])
+
+    for approver in (other["uid"], 2_000_000_000):
+        r = mine["client"].post(
+            f"/procurement/approvals/{wf}/decide",
+            json={"approver_id": approver, "decision": "approve"},
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == "approver not found in this workspace"
+        assert (_po_and_workflow_state(po_id, wf), _order_row(po_id)["changelog"]) == before
+
+
 def _submitted_order(ctx: dict, *, cost_centre: bool = True) -> tuple[int, int]:
     po = _create_order(ctx)
     if not cost_centre:

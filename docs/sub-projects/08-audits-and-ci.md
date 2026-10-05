@@ -239,3 +239,69 @@
     file that can be searched; the signed log URL and `gh api …/logs` are both blocked by the sandbox proxy.
   - ~10 minutes of Actions time per push on top of the other two jobs; the `concurrency` group cancels a superseded run.
   - Failures show as a red `E2E (Playwright)` row, not a blocked merge. Someone has to look.
+
+## Test consolidation and cross-workspace isolation probes (PR #76, no migration) — shipped
+
+> Chosen by the user: "check all the test files, review at max level, simplify or combine", then, over several
+> rounds of "suggest what we can still fix", the isolation probes and the fixes they forced. Decisions that were
+> **asked, not assumed** (Rule Zero): report **plus** implementation; merge depth = shared helpers and
+> parametrisation, **not** merging files or renaming tests (so `docs/sub-projects/` test-name citations stay valid);
+> e2e got a shared login only; `_login` copies that return different shapes were **left** (user: "leave them");
+> a foreign or missing catalog material answers **404 `MATERIAL_NOT_FOUND`**; bulk-status folds foreign ids into
+> `not_found`; the seed gets rows so the probes have something to find.
+
+- **Consolidation, measured.** 106 pytest files / 1597 tests / 31 e2e specs. One `tests/helpers.py` (`login`,
+  `login_same_workspace`, `create_project`, `set_item`), `helpers_<family>.py` for per-feature builders, and **no test
+  file imports another `test_*.py`**. `truncate_after` / `truncate_fixture(*extra)` replaced ~35 cleanup copies; `meili`
+  tests skip centrally; `_seed_refs` copies went because `conftest` already re-asserts `status_options`/`stages`. Test
+  ids are identical before and after except one deliberate replacement (a permanently skipped autoescape test became a
+  real one). **Cheap argon2 in tests** cut the full run from ~18 to ~11 minutes (every login hashed and verified at
+  ~175 ms). e2e: `tests/e2e/helpers.ts` `login()`; the two `search` specs now **fail** instead of skip when `CI` is set.
+- **The probes (the real find).** Three tests, one oracle: *another workspace's id must be answered exactly like a
+  nonexistent one* (status and body, ids masked). `test_workspace_isolation_probe.py` walks every OpenAPI operation with a
+  path id (235); `_body_probe` varies each foreign-key field of a JSON body (60 pairs); `_query_probe` does id-like query
+  parameters. Each pair also gets a **control** (the caller's own row must be told apart from a ghost), otherwise the
+  probe proved nothing: an operation without signal must be listed in `NOT_PROBED` with a reason, and the list is an
+  **exact ratchet** (a new unprobable route fails; a probable one must come off). Every probe also **fails on any 5xx**.
+- **Lessons that cost time (so the next probe avoids them).**
+  - A probe is only worth keeping if it can fail: a deliberately broken `GET /batches?project_id=` (workspace filter
+    dropped) did **not** fail the first query probe, because the caller was A's admin passing *B's* id and B owns no
+    batches. The direction that leaks data is **B's admin passing A's id** (A has the data). The query probe now
+    calls that way for lists with no path id, and the break is caught.
+  - A control that mutates its own permissions blinds everything after it: `PUT /permission-groups/{gid}/grants` on the
+    admin's own group made every later write a 403 (an empty DB result is a real "no", §5). Those operations run last.
+  - Ordering matters for deletes (parts → modules → items) and a control must pick a row the listed rows actually carry
+    (the seeded order's vendor, not the first vendor).
+- **Defects found and fixed (each with a test that fails on the old code).**
+  1. `POST /shop-drawings/{did}/revisions/{rid}/submit|withdraw`: 403 "only the uploader…" for another workspace's
+     revision (the pre-check was not workspace-scoped). An existence leak, no data reachable.
+  2. Seven routes took another workspace's catalog material from the body (parts create/patch, batches, order lines,
+     material take lines, CV mappings create/patch): accepted it, echoed its name, or **500**'d on a nonexistent id.
+     Now `catalog.queries.assert_material_in_workspace`, after the lock check and before any write.
+  3. `POST /items/bulk-status` returned `cross_workspace: [id]`, telling the caller an id exists elsewhere. Folded into
+     `not_found`; the field is gone from API, web and tests.
+  4. `POST /projects/{pid}/hardware_catalog` for a material already in the catalog: a raw 500 (`uq_proj_mat`). Now
+     `ON CONFLICT DO NOTHING` and `409 ALREADY_IN_CATALOG`. Found by the **5xx check**, not by an isolation rule.
+  5. `POST /procurement/approvals/{workflow_id}/decide` accepted another workspace's user as `approver_id` and wrote
+     them into the order's changelog (later joined to a name). Now `422 approver not found in this workspace`, the
+     same answer `submit` gives. Found only once the **seed gained an approval workflow** (the probe had no signal before).
+  6. Not a defect but a behaviour fix: an oversized *pasted* CV CSV answered Starlette's plain 400 (the structured
+     `415 FILE_TOO_LARGE` guard was unreachable for pasted text). The preview route now reads its form itself.
+- **Conventions settled here.** A catalog row in a body: **404 `{code: MATERIAL_NOT_FOUND}`** (as orders do with
+  `VENDOR_NOT_FOUND`). A user reference on the legacy `/procurement/*` module: **422 "… not found in this workspace"**
+  (that module's own convention). A refusable mutation: 409 with a stable code. Recorded in `CLAUDE.md` §7.
+- **Seed additions** (built with the API's own query functions, idempotent over repeated runs, no e2e count moved): a
+  cost centre with one Commitment and a PDF attached to the seeded order; a second, item-less order submitted for
+  approval by the seeded admin; a mention notification for that admin (an extra mention on the existing project
+  comment, so no comment or bell count changes); one comment by the admin on TRT-014. `make seed` also finds its sample
+  files relative to itself now (it hard-coded `/code/...`).
+- **Known gaps, recorded.**
+  - `NOT_PROBED` today: path probe 4 (`POST /catalog/{slug}` and `/bulk` take a catalog type, not a row id; lock-request
+    approve/reject have no seeded request and a dedicated test); body probe 3 (a manual take line, sheet stock for
+    `/optimise`, an unlinked material used by a quote); query probe 1 (`approvals/history` lists decided workflows, the
+    seeded one is pending). Lock requests, sheet stock and a manual take line are deliberately **not** seeded: a lock
+    would break the e2e specs that PATCH ALF-001 items (§4).
+  - `GET /search` is excluded from the query probe (503 without Meilisearch); `test_search_routes` covers it on a fake index.
+  - ~20 per-file `_login` copies remain (they return dicts, slugs or fixed workspaces).
+  - **CI had never run any of this** until PR #76 (a branch push does not trigger it; only `main` and PRs do), and the
+    `concurrency` group cancels a superseded run, so a flurry of small pushes means no run ever finishes.

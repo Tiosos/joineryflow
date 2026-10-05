@@ -2943,6 +2943,42 @@ def main() -> None:
                 uploaded_by=mina_id,
             )
 
+            # A second order, submitted for approval by the seeded admin, so the legacy
+            # approval queue (/procurement/approvals) has a row. It carries no item or
+            # project, so no cutlist or Tracking view shows it. Delete-then-insert on a
+            # marker, so a re-run neither duplicates it nor trips the workflow's FK.
+            _approval_mark = "Seeded demo order, awaiting approval."
+            _admin_id = s.execute(
+                text("SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'admin'"
+                     " ORDER BY id LIMIT 1"),
+                {"w": workspace_id},
+            ).scalar()
+            s.execute(
+                text("DELETE FROM approval_workflows WHERE po_id IN"
+                     " (SELECT po_id FROM purchase_orders WHERE internal_comments = :m)"),
+                {"m": _approval_mark},
+            )
+            s.execute(text("DELETE FROM purchase_orders WHERE internal_comments = :m"),
+                      {"m": _approval_mark})
+            _approval_po = s.execute(
+                text(
+                    """
+                    INSERT INTO purchase_orders (
+                        po_number, vendor_id, requester_id, description, category,
+                        status, priority, quantity, unit_of_measure, unit_cost,
+                        total_amount, internal_comments)
+                    VALUES (
+                        'PO-' || EXTRACT(year FROM now())::int || '-' ||
+                            lpad(nextval('po_number_seq')::text, 4, '0'),
+                        :v, :req, 'Edge banding, 3 rolls', 'Board', 'Draft', 'Medium',
+                        3, 'roll', 96.00, 288.00, :m)
+                    RETURNING po_id
+                    """
+                ),
+                {"v": _vendor_id, "req": mina_id, "m": _approval_mark},
+            ).scalar()
+            _proc.submit_for_approval(s, _approval_po, _admin_id)
+
             s.commit()
             print(
                 "seeded #10 cutlist/orderbook: 1 shared cutlist (3 items, "
@@ -3397,6 +3433,22 @@ def main() -> None:
                     parent_id=None,
                     body="Elevation dimensions need re-checking against the site measure "
                          "before this is approved.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
+            # One comment by the seeded admin on the other project (so ALF-001's comment
+            # counts and the seeded bells are unchanged): an author-only edit has
+            # something of the admin's to act on.
+            _cm_other = db.execute(text(
+                "SELECT project_id FROM projects WHERE project_code = 'TRT-014' AND workspace_id = :w"
+            ), {"w": wid}).scalar()
+            if _cm_other:
+                db.execute(text("DELETE FROM comment WHERE workspace_id = :w AND project_id = :p"),
+                           {"w": wid, "p": _cm_other})
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_admin, object_type="project", object_id=_cm_other,
+                    parent_id=None,
+                    body="Client wants the walnut sample confirmed before we order the veneer.",
                     mentioned_user_ids=[],
                 )
                 assert _code == "OK", _code
