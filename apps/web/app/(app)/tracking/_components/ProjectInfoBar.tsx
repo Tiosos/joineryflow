@@ -9,6 +9,10 @@ interface Props {
   projects: ProjectOut[];
   onOpenInfo: () => void;
   onOpenProcurement: () => void;
+  onNewItem: () => void;
+  onEditItem: () => void;
+  /** Why "Edit item" is unavailable right now (null = enabled). */
+  editItemDisabledReason: string | null;
   canEdit: boolean;
   procurementReady: boolean;
 }
@@ -20,6 +24,9 @@ export function ProjectInfoBar({
   projects,
   onOpenInfo,
   onOpenProcurement,
+  onNewItem,
+  onEditItem,
+  editItemDisabledReason,
   canEdit,
   procurementReady,
 }: Props) {
@@ -173,9 +180,11 @@ export function ProjectInfoBar({
 
         <button
           type="button"
-          disabled={!canEdit}
+          disabled={!canEdit || editItemDisabledReason != null}
+          onClick={onEditItem}
+          data-testid="edit-item"
           className="rounded border border-h-line bg-h-surface px-3 py-1 text-sm text-h-ink hover:bg-h-bg disabled:cursor-not-allowed disabled:opacity-50"
-          title={canEdit ? "Edit item (open item editor)" : "Read-only role"}
+          title={canEdit ? (editItemDisabledReason ?? "Open the ticked item in the item editor") : "Read-only role"}
         >
           Edit item
         </button>
@@ -183,8 +192,10 @@ export function ProjectInfoBar({
         <button
           type="button"
           disabled={!canEdit}
+          onClick={onNewItem}
+          data-testid="new-item"
           className="rounded bg-h-accent px-3 py-1 text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          title={canEdit ? "+ New item (needs API hookup)" : "Read-only role"}
+          title={canEdit ? "Create a new item in this project" : "Read-only role"}
         >
           + New item
         </button>

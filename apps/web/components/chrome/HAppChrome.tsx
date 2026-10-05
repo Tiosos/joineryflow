@@ -12,7 +12,9 @@ interface HAppChromeProps {
   children: React.ReactNode;
 }
 
-const SIDEBAR_ROUTES = ["/dashboard", "/tracking", "/shop-dwgs"];
+// Tracking is not listed: the project switcher in its header bar does the same job, and the
+// items table needs the width.
+const SIDEBAR_ROUTES = ["/dashboard", "/shop-dwgs"];
 
 function showsSidebar(pathname: string): boolean {
   return SIDEBAR_ROUTES.some(

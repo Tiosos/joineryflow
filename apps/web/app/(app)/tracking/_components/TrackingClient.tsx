@@ -14,6 +14,7 @@ import { StatusPopup } from "./StatusPopup";
 import { CreateOrderDialog } from "./CreateOrderDialog";
 import { can } from "@/lib/permissions";
 import { BulkStatusDialog } from "./BulkStatusDialog";
+import { NewItemDialog } from "./NewItemDialog";
 
 interface Props {
   project: ProjectOut;
@@ -53,6 +54,7 @@ export function TrackingClient({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkBanner, setBulkBanner] = useState<string | null>(null);
+  const [newItemOpen, setNewItemOpen] = useState(false);
 
   const drawerKind = sp.get("drawer");
   const drawerItemIdRaw = sp.get("itemId");
@@ -149,6 +151,12 @@ export function TrackingClient({
         projects={projects}
         onOpenInfo={() => setProjectModalOpen(true)}
         onOpenProcurement={() => router.push(`/projects/${project.id}/procurement`)}
+        onNewItem={() => setNewItemOpen(true)}
+        onEditItem={() => {
+          const [id] = Array.from(selectedIds);
+          if (selectedIds.size === 1 && id != null) router.push(`/items/${id}`);
+        }}
+        editItemDisabledReason={selectedIds.size === 1 ? null : "Tick exactly one row to edit it"}
         canEdit={canEdit}
         procurementReady={procurementReady}
       />
@@ -289,6 +297,14 @@ export function TrackingClient({
           projectId={project.id}
           items={items}
           onClose={() => setCreateOrderOpen(false)}
+        />
+      )}
+
+      {newItemOpen && (
+        <NewItemDialog
+          projectId={project.id}
+          onClose={() => setNewItemOpen(false)}
+          onCreated={(id) => router.push(`/items/${id}`)}
         />
       )}
 

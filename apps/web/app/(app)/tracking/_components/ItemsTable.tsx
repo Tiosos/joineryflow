@@ -266,11 +266,12 @@ export function ItemsTable({
   return (
     <div
       ref={containerRef}
-      className="overflow-x-auto rounded-lg border border-h-line bg-h-surface"
+      // Scrolls both ways inside the card (so both scrollbars stay on screen); the header stays put.
+      className="max-h-[calc(100vh-10rem)] overflow-auto rounded-lg border border-h-line bg-h-surface"
       onScroll={() => { savedScrollLeft.current = containerRef.current?.scrollLeft ?? 0; }}
     >
       <table className="w-full text-xs">
-        <thead className="bg-h-bg text-h-muted">
+        <thead className="sticky top-0 z-10 bg-h-bg text-h-muted shadow-[0_1px_0_0_var(--color-h-line)]">
           <tr>
             <td colSpan={17} />
             <th
