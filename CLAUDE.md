@@ -121,8 +121,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `db/` | Alembic migrations `0001`→`0051` (head `0051_estimate_line_material_order`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
-| `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here) |
-| `tests/e2e/` | Playwright specs (31 spec files; see §3) |
+| `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
+| `tests/e2e/` | Playwright specs (31 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/superpowers/` | Older specs + plans (read `plans/README.md` first) |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -142,7 +142,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - Login `http://localhost:3000/login` → `rin.park@hartwood.test` / `hartwood-dev` (any `*.hartwood.test` user). Health: `/api/health`.
 - `make test` TRUNCATEs `workspace`, `app_user`, `session`, `audit_log`, so re-run `make seed` afterwards.
-- Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest (~13 min).
+- Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest. The seed finds its sample files relative to itself, so `python -m seed.hartwood_joinery` works outside the container too.
 - `search-worker` runs with **no `--reload`** — restart it after editing `app/search/`.
 
 ## 3. Testing rules
@@ -155,6 +155,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **A failing or skipped spec is not coverage.** When one goes red for a trivial-looking reason, check what it stopped guarding.
 - Tests for a fix must be shown to **fail against the unfixed source**.
 - Test infrastructure traps: patch **`rbac_engine.MATRIX`**, not `permissions.MATRIX`; never assert an absolute PO or Item number (sequences survive `TRUNCATE`); tests assert `stage_key`, never lookup labels.
+- **Shared test setup lives in one place; do not copy it into a file.** pytest: `tests/conftest.py` re-asserts `status_options` / `stages` before every test (never seed them yourself), provides cleanup (`truncate_after` fixture, `truncate_fixture(*extra)` for extra tables), auto-skips `meili`-marked tests without `MEILI_URL`, and hashes passwords with minimal argon2 cost (the hash is still argon2id). `tests/helpers.py` is the one `login()` / `login_same_workspace()` / `create_project()` / `set_item()`; `helpers_<family>.py` hold the per-feature builders. **A test file never imports from another `test_*.py`.** e2e: `tests/e2e/helpers.ts` `login(page, email = MANAGER)`; `smoke.spec.ts` keeps its inline login because login is what it tests.
+- CI also runs `ruff --select F401,F841,F811` over `apps/api/tests` (an unused variable is often a dropped assertion). A fixture imported from a helper module needs `# noqa: F401`. The `search` e2e specs skip on a Meilisearch 503 locally but **fail** when `CI` is set (the CI stack starts Meilisearch).
 
 ## 4. Seed rules
 

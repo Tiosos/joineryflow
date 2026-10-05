@@ -17,11 +17,16 @@ Also seeds:
 - item_stages (5 per item: REQ, SM, LISTED, DOWN, CNC)
 """
 from datetime import date, timedelta
+from pathlib import Path
 
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
+
+# Sample drawings/photos live beside this file: /code/seed/hartwood_joinery in the
+# api container, the checkout's seed/hartwood_joinery anywhere else.
+_ASSETS = Path(__file__).resolve().parent / "hartwood_joinery"
 
 DEV_PASSWORD = "hartwood-dev"
 
@@ -709,8 +714,8 @@ def main() -> None:
         s = db
         workspace_id = wid
 
-        _kitchen_pdf = "/code/seed/hartwood_joinery/sample_drawings/kitchen-base-run.pdf"
-        _bath_pdf = "/code/seed/hartwood_joinery/sample_drawings/bathroom-vanity.pdf"
+        _kitchen_pdf = str(_ASSETS / "sample_drawings" / "kitchen-base-run.pdf")
+        _bath_pdf = str(_ASSETS / "sample_drawings" / "bathroom-vanity.pdf")
 
         # Resolve seeded ALF-001 project + a drafter + manager from the workspace.
         _alf_pid = s.execute(
@@ -924,7 +929,7 @@ def main() -> None:
         # ── iSample demo (sub-project #5c) ────────────────────────────────────
         from app.files.seed_helper import put_seed_file as _put_sample_photo
 
-        _stone_png = "/code/seed/hartwood_joinery/sample_photos/stone-corian.png"
+        _stone_png = str(_ASSETS / "sample_photos" / "stone-corian.png")
 
         # Resolve drafter + manager users (drafter creator, manager reviewer).
         _sample_drafter = s.execute(text("""
