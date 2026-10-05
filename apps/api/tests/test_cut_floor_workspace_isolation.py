@@ -5,6 +5,8 @@ from sqlalchemy import text
 
 from app.main import app
 
+from .helpers import log_in
+
 
 @pytest.fixture
 def client():
@@ -101,11 +103,7 @@ def _seed_two_workspaces_one_plan(truncate_all):
 
 
 def _login_b(client: TestClient):
-    r = client.post(
-        "/auth/login",
-        json={"workspace_slug": "cfb", "email": "b@cf.test", "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
+    log_in("cfb", "b@cf.test", client=client)
 
 
 def test_get_cut_plan_cross_workspace_returns_404(client, truncate_all):

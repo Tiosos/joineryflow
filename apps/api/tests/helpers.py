@@ -25,13 +25,19 @@ def _insert_user(db, *, wid: int, role: str, name: str = "U", email_prefix: str 
     return email, uid
 
 
-def log_in(slug: str, email: str, password: str = "pw", *, raise_server_exceptions: bool = True) -> TestClient:
+def log_in(slug: str, email: str, password: str = "pw", *, raise_server_exceptions: bool = True,
+           client: TestClient | None = None) -> TestClient:
     """A client logged in as `email`. With `raise_server_exceptions=False` an unhandled
-    server error comes back as a 500 response instead of being re-raised in the test."""
-    c = TestClient(app, raise_server_exceptions=raise_server_exceptions)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": password})
+    server error comes back as a 500 response instead of being re-raised in the test.
+    With `client`, that client is logged in again as `email` (its cookies are cleared
+    first) instead of a new one being made."""
+    if client is None:
+        client = TestClient(app, raise_server_exceptions=raise_server_exceptions)
+    else:
+        client.cookies.clear()
+    r = client.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": password})
     assert r.status_code == 200, r.text
-    return c
+    return client
 
 
 def login(role: str = "manager", *, wid: int | None = None, prefix: str = "h",

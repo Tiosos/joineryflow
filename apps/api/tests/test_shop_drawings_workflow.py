@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+from .helpers import log_in
+
 
 PDF_BYTES = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
 
@@ -56,10 +58,7 @@ def _seed_two_users(client) -> dict:
 
 
 def _login(client, who: str):
-    client.cookies.clear()
-    r = client.post("/auth/login",
-                    json={"workspace_slug": "hw", "email": f"{who}@hw.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("hw", f"{who}@hw.test", client=client)
 
 
 def _upload(client) -> int:

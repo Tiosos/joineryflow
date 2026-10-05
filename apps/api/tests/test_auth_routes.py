@@ -8,6 +8,8 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
+from .helpers import login
+
 
 @pytest.fixture(autouse=True)
 def _cleanup():
@@ -116,35 +118,8 @@ def test_me_includes_jtbd_role():
 
 
 def _login_as(auth_role: str):
-    """Seed a workspace + user with `auth_role`, log in, return the client."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"h-{suffix}"
-    email = f"r-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'Role User', :p, :r)
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": auth_role},
-        )
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c
+    """A user with `auth_role` in a fresh workspace, logged in -> the client."""
+    return login(auth_role, prefix="h")[0]
 
 
 def test_me_includes_permissions_matching_the_matrix():

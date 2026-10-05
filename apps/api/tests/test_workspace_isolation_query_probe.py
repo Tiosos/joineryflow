@@ -54,10 +54,7 @@ A_ROW_QUERIES = {
 }
 
 # (METHOD, path template, parameter) pairs that cannot be probed, with the reason.
-NOT_PROBED: dict[tuple[str, str, str], str] = {
-    ("GET", "/procurement/approvals/history", "approver_id"):
-        "lists decided workflows; the seeded one is still pending",
-}
+NOT_PROBED: dict[tuple[str, str, str], str] = {}
 
 
 def _query_params(op: dict) -> list[str]:

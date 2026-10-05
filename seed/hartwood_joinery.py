@@ -2943,41 +2943,81 @@ def main() -> None:
                 uploaded_by=mina_id,
             )
 
-            # A second order, submitted for approval by the seeded admin, so the legacy
-            # approval queue (/procurement/approvals) has a row. It carries no item or
-            # project, so no cutlist or Tracking view shows it. Delete-then-insert on a
-            # marker, so a re-run neither duplicates it nor trips the workflow's FK.
+            # Two more orders for the legacy approval queue (/procurement/approvals): one
+            # still awaiting the seeded admin, one already rejected by them (so
+            # /approvals/history has a row). Neither carries an item or project, so no
+            # cutlist or Tracking view shows them. Delete-then-insert on a marker, so a
+            # re-run neither duplicates them nor trips the workflow's FK.
             _approval_mark = "Seeded demo order, awaiting approval."
+            _decided_mark = "Seeded demo order, rejected."
             _admin_id = s.execute(
                 text("SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'admin'"
                      " ORDER BY id LIMIT 1"),
                 {"w": workspace_id},
             ).scalar()
-            s.execute(
-                text("DELETE FROM approval_workflows WHERE po_id IN"
-                     " (SELECT po_id FROM purchase_orders WHERE internal_comments = :m)"),
-                {"m": _approval_mark},
-            )
-            s.execute(text("DELETE FROM purchase_orders WHERE internal_comments = :m"),
-                      {"m": _approval_mark})
-            _approval_po = s.execute(
-                text(
-                    """
-                    INSERT INTO purchase_orders (
-                        po_number, vendor_id, requester_id, description, category,
-                        status, priority, quantity, unit_of_measure, unit_cost,
-                        total_amount, internal_comments)
-                    VALUES (
-                        'PO-' || EXTRACT(year FROM now())::int || '-' ||
-                            lpad(nextval('po_number_seq')::text, 4, '0'),
-                        :v, :req, 'Edge banding, 3 rolls', 'Board', 'Draft', 'Medium',
-                        3, 'roll', 96.00, 288.00, :m)
-                    RETURNING po_id
-                    """
-                ),
-                {"v": _vendor_id, "req": mina_id, "m": _approval_mark},
-            ).scalar()
+            for _mark in (_approval_mark, _decided_mark):
+                s.execute(
+                    text("DELETE FROM approval_workflows WHERE po_id IN"
+                         " (SELECT po_id FROM purchase_orders WHERE internal_comments = :m)"),
+                    {"m": _mark},
+                )
+                s.execute(text("DELETE FROM purchase_orders WHERE internal_comments = :m"),
+                          {"m": _mark})
+
+            def _seed_approval_order(mark: str, description: str) -> int:
+                return s.execute(
+                    text(
+                        """
+                        INSERT INTO purchase_orders (
+                            po_number, vendor_id, requester_id, description, category,
+                            status, priority, quantity, unit_of_measure, unit_cost,
+                            total_amount, internal_comments)
+                        VALUES (
+                            'PO-' || EXTRACT(year FROM now())::int || '-' ||
+                                lpad(nextval('po_number_seq')::text, 4, '0'),
+                            :v, :req, :d, 'Board', 'Draft', 'Medium',
+                            3, 'roll', 96.00, 288.00, :m)
+                        RETURNING po_id
+                        """
+                    ),
+                    {"v": _vendor_id, "req": mina_id, "d": description, "m": mark},
+                ).scalar()
+
+            _approval_po = _seed_approval_order(_approval_mark, "Edge banding, 3 rolls")
             _proc.submit_for_approval(s, _approval_po, _admin_id)
+
+            # The decided one goes through the same steps as POST /approvals/{id}/decide.
+            _decided_po = _seed_approval_order(_decided_mark, "Edge banding, 2 rolls")
+            _proc.submit_for_approval(s, _decided_po, _admin_id)
+            _decided_wf = s.execute(
+                text("SELECT workflow_id FROM approval_workflows WHERE po_id = :p"),
+                {"p": _decided_po},
+            ).scalar()
+            _proc.update_po_status(s, _decided_po, "Rejected", from_status="Pending")
+            _proc.update_workflow_decision(s, _decided_wf, "Rejected", "Seeded: wrong supplier.")
+            _proc.append_changelog(
+                s, _decided_po, f"Rejected by approver #{_admin_id}", _admin_id
+            )
+
+            # A pending Controlled-Lock request, so /lock-requests has a row to approve or
+            # reject. TRT-014's K-103 is seeded locked by its owner (noa); a save by anyone
+            # else is held as a request instead of applied, which is exactly what this does
+            # (nothing on the item changes). TRT-014 is not touched by any e2e spec's lock
+            # flows, and saving again revises the same pending request, so a re-run is a no-op.
+            from app.items.queries import patch_item as _patch_item
+            from app.items.schemas import PatchItemIn as _PatchItemIn
+            _locked_item = s.execute(
+                text("SELECT i.item_id FROM items i JOIN projects p ON p.project_id = i.project_id"
+                     " WHERE p.workspace_id = :w AND p.project_code = 'TRT-014'"
+                     " AND i.code = 'K-103' AND i.item_locked"),
+                {"w": workspace_id},
+            ).scalar()
+            if _locked_item is not None:
+                _held = _patch_item(
+                    s, item_id=_locked_item, workspace_id=workspace_id, actor_id=mina_id,
+                    payload=_PatchItemIn(description="Overhead cabinet run (revised depth)"),
+                )
+                assert _held["outcome"] == "lock_request", _held
 
             s.commit()
             print(

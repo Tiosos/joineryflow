@@ -15,6 +15,8 @@ from sqlalchemy import text
 
 from app.main import app
 
+from .helpers import log_in
+
 
 @pytest.fixture
 def client():
@@ -122,11 +124,7 @@ def _seed_two_workspaces(truncate_all):
 
 
 def _login_b(client: TestClient):
-    r = client.post(
-        "/auth/login",
-        json={"workspace_slug": "estb", "email": "b@est.test", "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
+    log_in("estb", "b@est.test", client=client)
 
 
 # ── Customers ─────────────────────────────────────────────────────────────────

@@ -8,6 +8,8 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
+from .helpers import log_in
+
 
 def _bootstrap(role: str = "estimator"):
     suffix = uuid.uuid4().hex[:8]
@@ -120,10 +122,7 @@ def _login_as(slug: str, role: str) -> TestClient:
         s.commit()
     finally:
         s.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c
+    return log_in(slug, email)
 
 
 def _make_quote(

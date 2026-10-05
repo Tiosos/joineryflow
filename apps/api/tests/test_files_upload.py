@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+from .helpers import log_in
+
 
 PDF_BYTES = b"%PDF-1.4\n%\xc7\xec\x8f\xa2\n" + b"x" * 100 + b"\n%%EOF\n"
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
@@ -49,8 +51,7 @@ def _login(client, role: str = "editor") -> tuple[int, int]:
     finally:
         s.close()
 
-    r = client.post("/auth/login", json={"workspace_slug": "hartwood", "email": f"{role}@hw.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("hartwood", f"{role}@hw.test", client=client)
     return wid, uid
 
 

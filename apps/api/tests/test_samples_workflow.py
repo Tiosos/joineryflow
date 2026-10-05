@@ -8,6 +8,8 @@ from sqlalchemy import text
 
 from app.main import app
 
+from .helpers import log_in
+
 
 @pytest.fixture
 def client():
@@ -49,9 +51,7 @@ def _seed_two_users(client, truncate_all) -> dict:
 
 
 def _login(client, who: str):
-    client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "wf", "email": f"{who}@wf.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("wf", f"{who}@wf.test", client=client)
 
 
 def _create_sample(client, pid: int, title: str = "T") -> int:
