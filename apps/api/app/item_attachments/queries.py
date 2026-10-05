@@ -15,11 +15,11 @@ from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
 from ..files.validators import CVJ_MIME, SKP_MIME
 from ..items.queries import assert_item_content_unlocked
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # The three attachment slots (CV drawing / floor plan / site measure) are
 # cutlist documents. A related part has no cutlist (Plan V1 Q417).
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 # sketchup and cabvision (0036) are separate slots beside cv_drawing, not a rename.
 AttachmentKind = Literal["cv_drawing", "sketchup", "cabvision", "floor_plan", "site_measure"]

@@ -11,10 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 from .schemas import CreateAreaIn, CreateRoomIn
 
-_JOINERY_I = joinery_items_only("i")
+_JOINERY_I = live_joinery_items("i")
 
 
 def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:

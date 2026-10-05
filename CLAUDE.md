@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0051` (head `0051_estimate_line_material_order`) |
+| `db/` | Alembic migrations `0001`→`0052` (head `0052_item_soft_delete`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
@@ -195,6 +195,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Number sequences, never `MAX+1`, allocated inside the INSERT:** `joinery_number_seq` (Item IDs, cutlist numbers, related parts — Q541) and `po_number_seq` (`PO-{year}-{0000}`). Neither has an owning table, so `TRUNCATE … RESTART IDENTITY` does not reset them. Per-project drawing numbers come from `workspace_counter`.
 - **Terminology pins:** `Stage` = site location (`items.stage`, still written, Q435); `Zone` = sub-division of Stage; `lifecycle_stage`/`stage_key` = the production milestones (`REQ SM LISTED DOWN CNC EDGED PAINTED MADE DEL INST`, plus `PACKING` as a Shop Floor stage since `0039`) — **never use bare "stage" for these**; `Status` = record state (`CLEAR VOID NOTE! LIVE APPROVED HOLD`); `Status Symbol` = drafter-only UI flag.
 - **Cutlist owns the production workflow** (Q412). Shop Floor keys on `(cutlist_id, stage_key)`. `item_stages` stays per-item as a *projection* fanned out on completion (Q439/Q562); undo reverses the whole cutlist (Q446); a late-linked item gets no backfill (Q539). DEL/INST are not Shop Floor stages (Q561).
+- **Items are soft-deleted** (`items.deleted`, `cutlist.deleted`, `0052`): `DELETE /items/{id}` flags the item, its related parts and its cutlist (once no live item is left in it); `POST /items/{id}/restore` (manager/admin) undoes it. A deleted item answers 404 everywhere. **Every SQL string that reads `items` or `cutlist` takes `row_types.not_deleted` / `live_joinery_items`** (`tests/test_items_deleted_filter.py` fails on one that does not); the only readers of deleted rows are `restore_item` and Tracking's Deleted list (`?deleted=true`).
 - **Related parts** are `items` rows with `row_type='related_part'` + parent FK (one level only, DB-enforced). They never hold a cutlist number (Q417), share the parent's Group ID, and have no thread, take, QC or attachments (404). **Use `row_types.joinery_items_only(alias)`** — never a hand-written predicate.
 - **Area / Room** are real project-scoped tables, Room nested under Area; composite FK `items (area_id, room_id)`.
 - **CutPlan ≠ CutSchedule** (two entities). `/optimise` is a pure function (no writes); sheet stock is read, never consumed.
@@ -261,7 +262,8 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items).
 - **Item & Project Detail 2.0 (`0036`).** `/projects/[id]` page, contacts, lift access, item queries, Document Register, close-out (the only way to close; PATCH to Current/Hold reopens).
 - **Tracking modal, Document Register UI.** Modal shows register, five slots and reference fields read-only; editing stays on the item editor.
-- **Duplicate item (`0050`).** Same-project copy with its own new cutlist, status reset to `CLEAR`, QC checklist unticked; links to source via `duplicated_from_item_id`. Deleting an item removes its cutlist only if it has no production history.
+- **Duplicate item (`0050`).** Same-project copy with its own new cutlist, status reset to `CLEAR`, QC checklist unticked; links to source via `duplicated_from_item_id`. Deleting an item is a soft delete (next entry).
+- **Item soft delete + Deleted chip (`0052`).** Delete flags item, related parts and (when empty) cutlist; manager/admin restore; Tracking's Deleted chip lists them read-only with Restore; a Delete button joins the selection group. Rule in §7; production history, QC and orders are untouched.
 
 ### RBAC and locks — `04-rbac-and-locks.md`
 - **Dynamic RBAC (`0037`).** Groups + memberships + grants in the DB, project scope only; `MATRIX` is the zero-membership fallback. Admin CRUD at `/permission-groups`, panel on `/it`.
@@ -288,7 +290,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration. Tracking's three disabled quick-filter chips (Deleted, Tg Solid, Orders) are parked until the user builds them: see `docs/sub-projects/03-tracking-and-item-detail.md`.
+Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration. Tracking's two disabled quick-filter chips (Tg Solid, Orders) are parked until the user builds them: see `docs/sub-projects/03-tracking-and-item-detail.md`.
 
 ## 11. Reference docs
 

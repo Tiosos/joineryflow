@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 class NotFound(Exception):

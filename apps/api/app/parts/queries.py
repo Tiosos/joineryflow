@@ -23,11 +23,11 @@ from ..catalog.queries import assert_material_in_workspace
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..items.queries import assert_item_content_unlocked
 from .schemas import CreateModuleIn, CreatePartIn, PatchModuleIn, PatchPartIn
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # Parts hang off modules, which hang off Joinery Items. A related part has no
 # modules and no parts (Plan V1 Q447), so every guard here refuses its id.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 # ── Workspace isolation helpers ───────────────────────────────────────────────
 

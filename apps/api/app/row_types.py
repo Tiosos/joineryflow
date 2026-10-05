@@ -25,6 +25,9 @@ Three kinds of call site, and only the first two take the filter:
 
 _JOINERY_ITEM = "joinery_item"
 
+# Deleting an item is a soft delete (`items.deleted`, migration 0052): the row, its
+# cutlist and its related parts stay, flagged, and drop out of every live view.
+
 
 def joinery_items_only(alias: str = "i") -> str:
     """SQL predicate restricting an `items` alias to Joinery Item rows.
@@ -33,3 +36,19 @@ def joinery_items_only(alias: str = "i") -> str:
     query has no alias.
     """
     return f"{alias}.row_type = '{_JOINERY_ITEM}'"
+
+
+def not_deleted(alias: str = "i") -> str:
+    """SQL predicate hiding soft-deleted rows of an `items` (or `cutlist`) alias.
+
+    Every query that surfaces an item, or resolves one by id, takes this (or
+    `live_joinery_items`). A deleted item then answers 404 like a missing one. The
+    only readers of deleted rows are the restore route and the Tracking "Deleted"
+    list, which say so.
+    """
+    return f"NOT {alias}.deleted"
+
+
+def live_joinery_items(alias: str = "i") -> str:
+    """`joinery_items_only` plus `not_deleted`: the usual predicate for a Joinery Item."""
+    return f"{joinery_items_only(alias)} AND {not_deleted(alias)}"

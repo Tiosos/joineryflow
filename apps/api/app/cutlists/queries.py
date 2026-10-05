@@ -30,10 +30,10 @@ from ..auth.audit import write_audit
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from ..edit_log import write_edit_log
 from ..orders.queries import sync_orders_for_item
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 from .schemas import CreateCutlistIn, PatchCutlistIn
 
-_JOINERY_I = joinery_items_only("i")
+_JOINERY_I = live_joinery_items("i")
 
 # Shape returned by both the list and the detail read.
 _CUTLIST_COLS = """
@@ -48,7 +48,7 @@ _CUTLIST_COLS = """
     c.field_versions,
     (
         SELECT COUNT(*) FROM items li
-        WHERE li.cutlist_id = c.cutlist_id
+        WHERE li.cutlist_id = c.cutlist_id AND NOT li.deleted
     ) AS item_count
 """
 
@@ -78,7 +78,7 @@ def _cutlist_row(
             FROM cutlist c
             JOIN projects p ON p.project_id = c.project_id
             LEFT JOIN app_user u ON u.id = c.created_by
-            WHERE c.cutlist_id = :cid AND p.workspace_id = :w
+            WHERE c.cutlist_id = :cid AND p.workspace_id = :w AND NOT c.deleted
             {"FOR UPDATE OF c" if for_update else ""}
             """
         ),
@@ -96,7 +96,7 @@ def list_cutlists(db: Session, *, project_id: int, workspace_id: int) -> dict | 
             SELECT {_CUTLIST_COLS}
             FROM cutlist c
             LEFT JOIN app_user u ON u.id = c.created_by
-            WHERE c.project_id = :p
+            WHERE c.project_id = :p AND NOT c.deleted
             ORDER BY c.cutlist_no
             """
         ),
@@ -365,7 +365,7 @@ def _item_for_link(db: Session, *, item_id: int, workspace_id: int) -> dict | No
             SELECT i.item_id, i.num, i.project_id, i.row_type, i.cutlist_id
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
-            WHERE i.item_id = :iid AND p.workspace_id = :w
+            WHERE i.item_id = :iid AND p.workspace_id = :w AND NOT i.deleted
             """
         ),
         {"iid": item_id, "w": workspace_id},

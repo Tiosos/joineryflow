@@ -23,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.sessions import AuthUser
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 from .schemas import (
     DeliveryToday,
     FavouriteProject,
@@ -35,7 +35,7 @@ from .schemas import (
 
 # Related parts are never counted in dashboard metrics (Plan V1 Q419 gives
 # them no workflow stages, so every metric below is meaningless for them).
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 # Workspace filter for items (items has no workspace_id; projects does, since 0014).
 _ITEM_WORKSPACE_EXISTS = """

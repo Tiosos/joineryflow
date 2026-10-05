@@ -450,6 +450,10 @@
 
 ## Item delete removes an unused cutlist (no migration) — shipped
 
+> **Superseded 2026-10-05 by *Item soft delete* (migration `0052`, below).** Deleting an item no longer removes
+> anything, so `_drop_cutlist_if_unused`, the `cutlist.delete` audit it wrote and the `IN_USE` refusal are gone and
+> `test_item_delete_cutlist.py` became `test_item_soft_delete.py`. The history below is kept as written.
+
 > Chosen by the user ("go", after I suggested it as the next task): a gap I found while building
 > *Duplicate a Joinery Item* — `DELETE /items/{id}` left the item's cutlist behind, so every
 > duplicate-then-delete (and the duplicate e2e spec) left an orphan row. The rule was
@@ -524,13 +528,46 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
 - **Page titles** match the tab name: `Tracking · JoineryFlow` etc. (`title.template` in `app/layout.tsx`, a `metadata` export in
   each tab's `page.tsx`; all of them are server components). `/login` shows plain `JoineryFlow`.
 
-### Parked on purpose: the three disabled quick-filter chips on Tracking
-Kept visible but disabled; **the user will build them later**. What each one is waiting for:
+## Item soft delete + the Deleted chip (migration `0052`) — shipped
+
+> Asked for by the user ("link `items.deleted` to get the items soft-delete"). Four decisions, all asked first and
+> **settled**: soft delete everywhere; the cutlist is kept and flagged too; the Deleted chip lists deleted items with a
+> Restore action; delete stays drafter/manager/admin, **restore is manager/admin only**. Later answers: delete an item
+> with production history anyway; separate PR.
+
+- **Schema.** `items.deleted` (there since `0001`, nullable, never written) becomes `NOT NULL DEFAULT false` after a
+  backfill, because every reader now says `NOT i.deleted` and a NULL would hide the row. `cutlist.deleted` is new.
+  No existing row changes.
+- **`DELETE /items/{id}`** (`items.queries.delete_item`) flags the item, its related parts (`parent_item_id`) and its
+  cutlist **once no live item is left in it** (one `UPDATE … WHERE NOT EXISTS`). Audited `item.delete` + `item_edit_log`
+  `_delete`. No `IN_USE` any more: nothing is removed, so no procurement row is orphaned. Production history
+  (`worker_assignment`, `stage_completion_log`), QC, orders and Actual Costs labour all stay.
+- **`POST /items/{id}/restore`** (manager/admin, else 403): clears the flag on the item, its related parts and its
+  cutlist. `404` unknown / another workspace, `409 ITEM_NOT_DELETED` for a live item. Audited `item.restore` + `_restore`.
+- **A deleted item answers 404 everywhere**, like a missing one. The predicate is `row_types.not_deleted(alias)` /
+  `live_joinery_items(alias)` (the old `joinery_items_only` plus the flag; modules that used the latter now use the
+  former). `_item_row` hides it unless `include_deleted=True` (only `restore_item`). Shop Floor, `/cutlists`, Global Search
+  (the worker drops it from the index) and notifications (a comment on a deleted item) hide it too.
+  **`tests/test_items_deleted_filter.py` scans every SQL string that reads `items` / `cutlist` and fails on one with no
+  deleted-row filter**; a deliberate exception goes in its `ALLOWED` with the reason (orders outlive their item, Actual
+  Costs keeps spent labour, bare FROM fragments completed by their callers).
+- **Tracking.** `GET /projects/{pid}/items?deleted=true` returns the deleted rows. The **Deleted** chip (`?deleted=1`) shows
+  them read-only (no editor links, no status popup, no metrics strip) with a notice; manager/admin tick rows and press
+  **Restore**. A **Delete** button (with a `window.confirm`) joined the selection group next to "Apply status…", because
+  the web had no way to delete an item before.
+- **Item codes were never unique** (`items.code` has no index), so reusing a deleted item's code needs no rule, and a
+  restore cannot collide.
+- **Not changed / known.** A related part's own delete route (`DELETE /related-parts/…`) still hard-deletes. A Hard Lock
+  does not stop a delete (it never did). Hard-deleting a *cutlist* (`DELETE /cutlists/{cid}`) is unchanged.
+- **Tests.** `test_item_soft_delete.py` (14), `test_items_deleted_filter.py` (1), e2e `item_soft_delete.spec.ts`.
+
+### Parked on purpose: the two disabled quick-filter chips on Tracking
+Kept visible but disabled; **the user will build them later** (the third, **Deleted**, was built: see above). What each
+one is waiting for:
 | Chip | Why it is disabled today (the tooltip in `TrackingClient.tsx`) | What building it needs |
 | --- | --- | --- |
-| **Deleted** | "Backend field not exposed": the tracking list has no deleted / archived flag on an item | `items.deleted` (boolean, default false) already exists, but the tracking query never selects it and `delete_item` hard-deletes (or answers `IN_USE`), so first decide whether items get soft-deleted; then select `deleted` in the tracking list query and wire the chip |
 | **Tg Solid** | "Backend field not exposed": no such field on items | the meaning of "Tg Solid" from the customer, the field behind it, and the API change |
 | **Orders** | "Backend wiring pending": the list carries each row's issued order number, but the chip has no filter logic | filter to rows that have an order (`issued_order_no` / `order_no` set) once the intended meaning is confirmed |
-The chips' state is already wired (`quick` filter keys `deleted`, `tgsolid`, `orders`); only the backend field or the filter
+The chips' state is already wired (`quick` filter keys `tgsolid`, `orders`); only the backend field or the filter
 logic and the removal of `disabled` are missing. Listed in CLAUDE.md "Still open".
 

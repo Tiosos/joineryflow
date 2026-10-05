@@ -10,10 +10,10 @@ from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
 from ..items.queries import assert_item_content_unlocked
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # Like the named attachment slots, the register belongs to Joinery Items only.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 ALLOWED_MIMES = ("application/pdf", "image/png", "image/jpeg")
 

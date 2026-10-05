@@ -20,11 +20,11 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log_many
 from .parser import ParsedPart
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # Cabinet Vision imports create modules and parts, which a related part
 # cannot have (Plan V1 Q447).
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 # --- Catalog table -> REGISTRY slug + legacy NOT NULL UNIQUE column ----------

@@ -174,7 +174,7 @@ def _cutlists(db, ids):
         SELECT c.cutlist_id, c.cutlist_no, c.name, c.project_id, c.updated_at,
                p.workspace_id, p.project_code
           FROM cutlist c JOIN projects p ON p.project_id = c.project_id
-         WHERE c.cutlist_id = ANY(:ids)""", ids):
+         WHERE c.cutlist_id = ANY(:ids) AND NOT c.deleted""", ids):
         yield _doc(
             type_="cutlist", entity_id=r["cutlist_id"], workspace_id=r["workspace_id"],
             project_id=r["project_id"], project_code=r["project_code"],
