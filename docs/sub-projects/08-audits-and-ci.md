@@ -364,4 +364,8 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
 - **Keep in sync:** the four job names (`API tests (pytest + migrations)`, `API lint (ruff)`, `Web typecheck (tsc)`,
   `E2E (Playwright)`) exist in both workflows. Renaming one in `ci.yml` without the companion, or without the branch-protection
   rule, blocks merges (docs-only PRs for the companion, all PRs for the rule).
+- **Verified on a real docs-only PR:** the PR that added this line changed only `.md` files, so `ci.yml` skipped it and the four
+  required checks were reported by `ci-docs-only.yml` alone; it was mergeable (`mergeable_state: clean`) without any real job
+  running. While the real checks of PR #81 were still queued the same state read `blocked`, which is how enforcement was
+  confirmed.
 
