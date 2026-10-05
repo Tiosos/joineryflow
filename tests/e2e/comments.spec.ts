@@ -12,9 +12,8 @@ import { login } from "./helpers";
  * area and one on its room (no mentions, so the bell counts above are
  * unchanged).
  *
- * Like estimating.spec.ts / item_project_detail.spec.ts this is not
- * idempotent against a second run without re-seeding: the first test reads
- * Juno's seeded notification, so his bell starts at 0 the next time.
+ * The first test makes its own mention rather than reading the seeded one, so a second
+ * run on the same database passes (the seeded notification stays unread until read).
  */
 /** Switch the item editor to its Comments tab and wait until it has *landed*.
  *  The tab is driven by the URL, so on a dev server that is still compiling the
@@ -39,24 +38,44 @@ async function openFirstAlfredItem(page: Page) {
 }
 
 test("a mention reaches the bell and opens the item's Comments tab", async ({ page }) => {
+  // The seed's mention of Juno is read by the first run, so the test makes its own: Noa
+  // mentions Juno on the first item's thread, then Juno finds it in his bell. (On a fresh
+  // database Juno also has the seeded one, so the count is "at least one", not "1".)
   await login(page, "juno.okafor@hartwood.test"); // editor: tracking:comment
+  const junoId = (await (await page.request.get("/api/auth/me")).json()).id as number;
+  await page.context().clearCookies();
+
+  const note = `Finish check ${Date.now()}`;
+  await login(page, "noa.lindqvist@hartwood.test");
+  await openFirstAlfredItem(page);
+  const itemId = Number(new URL(page.url()).pathname.split("/").pop());
+  const posted = await page.request.post("/api/comments", {
+    data: { object_type: "item", object_id: itemId, body: `${note} @Juno Okafor`, mentioned_user_ids: [junoId] },
+  });
+  expect(posted.status()).toBe(201);
+  await page.context().clearCookies();
+
+  await login(page, "juno.okafor@hartwood.test");
   const count = page.getByTestId("notification-count");
-  await expect(count).toHaveText("1", { timeout: 30_000 });
+  await expect(count).toBeVisible({ timeout: 30_000 });
+  const unread = Number(await count.textContent());
+  expect(unread).toBeGreaterThanOrEqual(1);
 
   await page.getByTestId("notification-bell").click();
   await page.getByRole("menuitem").count(); // menu is a plain div; assert by text instead
-  await page.getByText("Noa Lindqvist mentioned you").click();
+  await page.getByText("Noa Lindqvist mentioned you").first().click();
 
   await expect(page).toHaveURL(/\/items\/\d+\?tab=comments/, { timeout: 30_000 });
   const thread = page.getByTestId("comment-thread");
-  await expect(thread.getByText("Finish is confirmed as satin 2-pack")).toBeVisible();
+  await expect(thread.getByText(note)).toBeVisible();
   // the mention is highlighted, and the reply hangs under its parent
-  await expect(thread.locator("span.font-medium", { hasText: "@Juno Okafor" })).toBeVisible();
+  await expect(thread.locator("span.font-medium", { hasText: "@Juno Okafor" }).first()).toBeVisible();
   await expect(thread.getByText("the left door sits 2mm proud")).toBeVisible();
   await expect(thread.getByText("Client signed off the sample")).toBeVisible();
 
-  // opening it marked it read
-  await expect(count).toHaveCount(0, { timeout: 30_000 });
+  // opening it marked that one read
+  if (unread === 1) await expect(count).toHaveCount(0, { timeout: 30_000 });
+  else await expect(count).toHaveText(String(unread - 1), { timeout: 30_000 });
 });
 
 test("drafter mentions a manager through the picker; edit and delete work", async ({ page }) => {
@@ -138,18 +157,29 @@ test("Areas & Rooms card: counts, an area's and a room's thread, and the count f
   await openAlfredProjectPage(page);
   const card = page.getByTestId("areas-card");
 
-  // the seed left one comment on the first item's area and one on its room
-  const areaRow = card.locator('[data-testid^="area-row-"]').filter({ has: page.getByTestId("comment-badge") }).first();
-  const roomRow = card.locator('[data-testid^="room-row-"]').filter({ has: page.getByTestId("comment-badge") }).first();
-  await expect(areaRow).toBeVisible();
-  await expect(roomRow).toBeVisible();
+  // the seed left one comment on the first item's area and one on its room. Other specs (and
+  // earlier runs) comment on other areas and rooms, so find the rows by the seeded comment
+  // rather than taking the first row that has a badge.
+  const rowShowing = async (rowsSelector: string, text: string) => {
+    const rows = card.locator(rowsSelector).filter({ has: page.getByTestId("comment-badge") });
+    await expect(rows.first()).toBeVisible();
+    for (let i = 0; i < (await rows.count()); i++) {
+      await rows.nth(i).click();
+      try {
+        await expect(card.getByText(text)).toBeVisible({ timeout: 1_500 });
+        return rows.nth(i);
+      } catch {
+        // not this row
+      }
+    }
+    throw new Error(`no row of ${rowsSelector} shows "${text}"`);
+  };
 
-  await areaRow.click();
+  const areaRow = await rowShowing('[data-testid^="area-row-"]', "Fit-out is still in progress here");
   await expect(card.getByTestId("thread-heading")).toContainText("Area ·");
-  await expect(card.getByText("Fit-out is still in progress here")).toBeVisible();
   await expect(page).toHaveURL(/\?area=\d+/);                       // the selection is in the URL
 
-  await roomRow.click();
+  const roomRow = await rowShowing('[data-testid^="room-row-"]', "finish sample in this room");
   await expect(card.getByTestId("thread-heading")).toContainText("Room ·");
   await expect(card.getByText("finish sample in this room")).toBeVisible();
   await expect(card.getByText("Fit-out is still in progress here")).toHaveCount(0);

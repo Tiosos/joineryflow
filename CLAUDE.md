@@ -147,7 +147,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 ## 3. Testing rules
 
-- **e2e baseline = a freshly created, migrated, seeded database.** The seed skips items that already exist, so a re-seed does not restore a lock or take an earlier run changed. `estimating`, `procurement` and `comments` specs are not re-runnable on one database.
+- **e2e baseline = a freshly created, migrated, seeded database.** The seed skips items that already exist, so a re-seed does not restore a lock or take an earlier run changed. The suite **is re-runnable on one database** (checked by running it twice without re-seeding; only the `search` specs, which need Meilisearch, differ): a spec that consumes or changes data builds its own — a name unique to the run (`Date.now()`), or a fixture made through the API — and asserts on that, never on a seeded row it changes. Do not add items to ALF-001 from a spec: "the first item" / "the first tracking row" of that project are what the comments, query and procurement specs open, so a fixture goes in a project of its own. `drafter_editor` still leaves a part and a hardware line on its item each run.
 - CI runs e2e as an **advisory** job (production build, `next start`, `retries: 1` in CI). Never skip, disable or quarantine a spec to get green. A retried-and-passed spec is "flaky": read it.
 - Specs run alphabetically in one worker and share state. When a spec fails, the guilty one is usually *earlier*: check `audit_log` for who touched what. Every spec must put shared state (locks, takes) back as seeded.
 - Click-before-hydration and "locator matches a different element with the same role/test id" are the two recurring flake shapes. Prefer `href` + `goto`, or retry the click (`toPass`).
