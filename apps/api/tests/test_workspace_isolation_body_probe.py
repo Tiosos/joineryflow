@@ -77,14 +77,18 @@ BODY_REAL_ID_QUERIES = {
         " (SELECT take_id FROM material_take WHERE status = 'draft' ORDER BY 1 LIMIT 1) ORDER BY 1 LIMIT 1",
 }
 
+# Each entry names the test that covers the pair instead.
 NOT_PROBED: dict[tuple[str, str, str], str] = {
     ("PATCH", "/material-takes/{tid}/lines/{lid}", "material_id"):
-        "the seeded draft take's lines are generated, and their material fields are read-only",
+        "the seeded draft take's lines are generated, and their material fields are read-only; "
+        "test_a_material_of_another_workspace_is_a_404_and_writes_nothing (below) patches a manual line",
     ("POST", "/projects/{pid}/optimise", "include_only_item_ids"):
-        "needs sheet stock for the SKU, which the seed does not have (NO_SHEET_SIZE)",
+        "needs sheet stock for the SKU, which the seed does not have (NO_SHEET_SIZE); "
+        "test_optimiser.test_optimise_item_filter_treats_another_workspaces_item_like_a_missing_one",
     ("POST", "/revisions/{rid}/link-supplier", "supplier_id"):
         "only links a material a quote line uses, and the seeded quotes use only material 1, "
-        "which already has a supplier (ALREADY_LINKED / MATERIAL_NOT_IN_REVISION)",
+        "which already has a supplier (ALREADY_LINKED / MATERIAL_NOT_IN_REVISION); "
+        "test_estimating_generate_orders.test_the_shortcut_refuses_an_unknown_or_foreign_supplier_and_writes_nothing",
 }
 
 
