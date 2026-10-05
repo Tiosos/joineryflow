@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchMe } from "@/lib/session";
@@ -48,6 +49,8 @@ function pickQueue(sp: Awaited<PageProps["searchParams"]>): Queue {
   if (!sp.queue && sp.subtab && LEGACY_SUBTAB[sp.subtab]) return LEGACY_SUBTAB[sp.subtab]!;
   return "all";
 }
+
+export const metadata: Metadata = { title: "Shop Dwgs" };
 
 export default async function Page({ searchParams }: PageProps) {
   const sp = await searchParams;

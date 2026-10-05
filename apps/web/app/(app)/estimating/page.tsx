@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -47,6 +48,8 @@ async function fetchCustomers(tok: string): Promise<Customer[]> {
   if (!r.ok) return [];
   return (await r.json()) as Customer[];
 }
+
+export const metadata: Metadata = { title: "Estimating" };
 
 export default async function Page({ searchParams }: PageProps) {
   const sp = await searchParams;

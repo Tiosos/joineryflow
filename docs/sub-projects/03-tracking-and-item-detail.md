@@ -507,3 +507,30 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
   project of its own; table scrolls both ways and the header stays pinned). Screenshotting scrollbars in Playwright needs
   `ignoreDefaultArgs: ["--hide-scrollbars"]`, or headless Chromium hides them.
 
+### Tracking layout, round 2 (same session; decisions by the user)
+- **One row for search and filters.** `Cutlist #` and the free-text search first, then the quick-filter chips, in one card.
+  The old separate search row and the "Tip: tick rows to apply a bulk status" row are gone: when rows are ticked, an
+  `N selected - Apply status… - Clear selection` group appears at the right end of that row (and the bulk-result banner
+  with it). `status_locks.spec.ts` still finds "Apply status…" because it ticks a row first.
+- **Stats strip.** The four tiles became one slim card with the four numbers inline. "Items in job" says *joinery items,
+  related parts not counted*; the footer says `Total rows: 14 (12 items + 2 related parts)` (the 12 vs 14 mismatch was
+  related parts, which the tile has never counted, Q558).
+- **Pinned columns.** Checkbox through Lister (17 columns, about 950px) stay in place while the stage-date columns scroll.
+  `ItemsTable` measures the widths and sets `--pin-1..17`; the `.h-pinned` rules live in `globals.css`. Pinning only switches
+  on when the card leaves at least 400px for the scrolling columns (`PIN_MIN_SCROLL_PX`); on a narrower window nothing is
+  pinned, because pinning 953px on a 1024px window would leave the date columns unreachable. **Settled with the user**
+  (options were: pin when wide enough, always pin, or pin only through Description).
+- **JID on one line** (nowrap, 9px mono).
+- **Page titles** match the tab name: `Tracking · JoineryFlow` etc. (`title.template` in `app/layout.tsx`, a `metadata` export in
+  each tab's `page.tsx`; all of them are server components). `/login` shows plain `JoineryFlow`.
+
+### Parked on purpose: the three disabled quick-filter chips on Tracking
+Kept visible but disabled; **the user will build them later**. What each one is waiting for:
+| Chip | Why it is disabled today (the tooltip in `TrackingClient.tsx`) | What building it needs |
+| --- | --- | --- |
+| **Deleted** | "Backend field not exposed": the tracking list has no deleted / archived flag on an item | `items.deleted` (boolean, default false) already exists, but the tracking query never selects it and `delete_item` hard-deletes (or answers `IN_USE`), so first decide whether items get soft-deleted; then select `deleted` in the tracking list query and wire the chip |
+| **Tg Solid** | "Backend field not exposed": no such field on items | the meaning of "Tg Solid" from the customer, the field behind it, and the API change |
+| **Orders** | "Backend wiring pending": the list carries each row's issued order number, but the chip has no filter logic | filter to rows that have an order (`issued_order_no` / `order_no` set) once the intended meaning is confirmed |
+The chips' state is already wired (`quick` filter keys `deleted`, `tgsolid`, `orders`); only the backend field or the filter
+logic and the removal of `disabled` are missing. Listed in CLAUDE.md "Still open".
+

@@ -140,6 +140,8 @@ export function TrackingClient({
     });
   }
 
+  const relatedRowCount = visibleItems.filter((i) => i.row_type === "related_part").length;
+
   function clearSelection() {
     setSelectedIds(new Set());
   }
@@ -163,7 +165,22 @@ export function TrackingClient({
 
       <TrackingMetrics items={items} />
 
-      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-h-line bg-h-surface p-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface p-2">
+        <input
+          type="search"
+          placeholder="Cutlist #"
+          value={cutlistQuery}
+          onChange={(e) => setCutlistQuery(e.target.value)}
+          className="w-28 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
+        />
+        <input
+          type="search"
+          placeholder="Search items, rooms, codes…"
+          value={freeQuery}
+          onChange={(e) => setFreeQuery(e.target.value)}
+          className="min-w-[180px] max-w-sm flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
+        />
+        <span className="mx-1 h-4 w-px bg-h-line" />
         <Chip label="My Entries" active={quick === "my"} onClick={() => setQuick(quick === "my" ? null : "my")} disabled={!me} />
         <Chip label="Deleted" active={quick === "deleted"} onClick={() => setQuick(quick === "deleted" ? null : "deleted")} disabled title="Backend field not exposed" />
         <Chip label="Void" active={quick === "void"} onClick={() => setQuick(quick === "void" ? null : "void")} />
@@ -180,56 +197,36 @@ export function TrackingClient({
         >
           ↻
         </button>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface p-2">
-        <input
-          type="search"
-          placeholder="Cutlist #"
-          value={cutlistQuery}
-          onChange={(e) => setCutlistQuery(e.target.value)}
-          className="w-28 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
-        />
-        <input
-          type="search"
-          placeholder="Search items, rooms, codes…"
-          value={freeQuery}
-          onChange={(e) => setFreeQuery(e.target.value)}
-          className="min-w-[200px] flex-1 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink"
-        />
+        {canEdit && (selectedIds.size > 0 || bulkBanner) ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-h-muted">
+            {selectedIds.size > 0 ? (
+              <>
+                <span data-testid="bulk-selected">{selectedIds.size} selected</span>
+                <button
+                  type="button"
+                  onClick={() => setBulkDialogOpen(true)}
+                  className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                >
+                  Apply status…
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="rounded border border-h-line bg-h-bg px-2 py-0.5 text-[11px] text-h-muted hover:text-h-ink"
+                >
+                  Clear selection
+                </button>
+              </>
+            ) : null}
+            {bulkBanner ? (
+              <span className="rounded bg-[#e4efe5] px-2 py-0.5 text-[11px] text-[#3f7d48]">
+                {bulkBanner}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-
-      {canEdit ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface px-3 py-1.5 text-xs text-h-muted">
-          <span>
-            {selectedIds.size === 0
-              ? "Tip: tick rows to apply a bulk status."
-              : `${selectedIds.size} selected`}
-          </span>
-          <button
-            type="button"
-            onClick={() => setBulkDialogOpen(true)}
-            disabled={selectedIds.size === 0}
-            className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-40"
-          >
-            Apply status…
-          </button>
-          {selectedIds.size > 0 ? (
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="rounded border border-h-line bg-h-bg px-2 py-0.5 text-[11px] text-h-muted hover:text-h-ink"
-            >
-              Clear selection
-            </button>
-          ) : null}
-          {bulkBanner ? (
-            <span className="ml-auto rounded bg-[#e4efe5] px-2 py-0.5 text-[11px] text-[#3f7d48]">
-              {bulkBanner}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
 
       <ItemsTable
         items={visibleItems}
@@ -262,7 +259,12 @@ export function TrackingClient({
           Hide
         </button>
         {showRowCount ? (
-          <span className="font-mono">Total rows: {visibleItems.length}</span>
+          <span className="font-mono" title="Related parts hang off an item and are not counted as items in the job">
+            Total rows: {visibleItems.length}
+            {relatedRowCount > 0
+              ? ` (${visibleItems.length - relatedRowCount} items + ${relatedRowCount} related part${relatedRowCount === 1 ? "" : "s"})`
+              : ""}
+          </span>
         ) : null}
         <span className="ml-auto opacity-70">
           Click a CUTLIST number to open the full item editor. Click ▶ for a quick preview modal.

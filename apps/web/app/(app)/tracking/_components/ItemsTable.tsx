@@ -5,6 +5,10 @@ import Link from "next/link";
 import type { TrackingItemRow } from "@/lib/pm-types";
 import { AvailabilityChip } from "@/components/pm/AvailabilityChip";
 
+// Columns pinned at the left (checkbox through Lister) and the room that must stay for the rest.
+const PIN_COLS = 17;
+const PIN_MIN_SCROLL_PX = 400;
+
 // Q425 adds O/BOOK to the strip the legacy mock established. It swaps the
 // right-hand columns like every other entry — one row per item stays Tracking's
 // spine — and carries the Create Order button.
@@ -166,6 +170,36 @@ export function ItemsTable({
     }
   }, [subTab]);
 
+  // Pinned columns: the first PIN_COLS (checkbox .. Lister) stay in place while the stage-date
+  // columns scroll. Their left offsets are the measured widths of the columns before them, and
+  // pinning only switches on when the card leaves PIN_MIN_SCROLL_PX for the scrolling columns,
+  // so a narrow window never ends up with a table it cannot scroll to the right.
+  const [pin, setPin] = useState<{ offsets: number[]; on: boolean } | null>(null);
+  useLayoutEffect(() => {
+    const card = containerRef.current;
+    const table = card?.querySelector("table");
+    if (!card || !table) return;
+    const measure = () => {
+      const ths = card.querySelectorAll<HTMLElement>("thead tr:nth-child(2) > th");
+      if (ths.length < PIN_COLS) return;
+      const offsets: number[] = [];
+      let acc = 0;
+      for (let i = 0; i < PIN_COLS; i++) {
+        offsets.push(Math.round(acc));
+        acc += ths[i].getBoundingClientRect().width;
+      }
+      const on = card.clientWidth - acc >= PIN_MIN_SCROLL_PX;
+      setPin((prev) =>
+        prev && prev.on === on && prev.offsets.every((o, i) => o === offsets[i]) ? prev : { offsets, on },
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(card);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, []);
+
   // Q420: related parts are not free-standing rows — they hang off a parent.
   // Everything the grid does (filter, sort, the filter dropdowns' options) runs
   // over the Joinery Items alone; each parent's related parts follow it, so no
@@ -267,7 +301,12 @@ export function ItemsTable({
     <div
       ref={containerRef}
       // Scrolls both ways inside the card (so both scrollbars stay on screen); the header stays put.
-      className="h-scrollbars max-h-[calc(100vh-10rem)] overflow-auto rounded-lg border border-h-line bg-h-surface"
+      className={`h-scrollbars max-h-[calc(100vh-10rem)] overflow-auto rounded-lg border border-h-line bg-h-surface ${pin?.on ? "h-pinned" : ""}`}
+      style={
+        pin?.on
+          ? (Object.fromEntries(pin.offsets.map((o, i) => [`--pin-${i + 1}`, `${o}px`])) as React.CSSProperties)
+          : undefined
+      }
       onScroll={() => { savedScrollLeft.current = containerRef.current?.scrollLeft ?? 0; }}
     >
       <table className="w-full text-xs">
@@ -304,7 +343,7 @@ export function ItemsTable({
               )}
             </th>
           </tr>
-          <tr>
+          <tr className="h-pin-row h-pin-head">
             <Th className="w-6" />
             <Th className="w-6" />
             <Th sort sortActive={sortKey === "num"} sortAsc={sortAsc} onSort={() => setSort("num")}>CUTLIST</Th>
@@ -340,7 +379,7 @@ export function ItemsTable({
             <Th sort sortActive={sortKey === "itemId"} sortAsc={sortAsc} onSort={() => setSort("itemId")}>Item ID</Th>
             <Th>Avail.</Th>
           </tr>
-          <tr className="border-t border-h-line bg-h-surface">
+          <tr className="h-pin-row border-t border-h-line bg-h-surface">
             <td />
             <td className="px-1 py-1">
               <button
@@ -493,7 +532,7 @@ function Row({
   return (
     <tr
       data-testid="tracking-row"
-      className={`border-t border-h-line hover:bg-h-bg ${isRelated ? "bg-h-bg/60" : ""}`}
+      className={`h-pin-row border-t border-h-line hover:bg-h-bg ${isRelated ? "h-pin-related bg-h-bg/60" : ""}`}
     >
       <td className="px-1 py-1 text-center">
         <input
@@ -549,7 +588,7 @@ function Row({
           <ReferenceCell row={row} projectId={projectId} />
         </span>
       </td>
-      <td className="px-2 py-1 text-h-ink">
+      <td className="whitespace-nowrap px-2 py-1 text-h-ink">
         <JidCell code={row.jid_code} color={row.jid_color} />
       </td>
       <td className="px-2 py-1">
@@ -753,7 +792,7 @@ function OrderCells({ row }: { row: TrackingItemRow }) {
 function JidCell({ code, color }: { code: string | null | undefined; color: string | null | undefined }) {
   if (!code && !color) return <span className="text-h-muted">—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       {color ? (
         <span
           className="inline-block h-3 w-3 rounded-sm border border-h-line"
@@ -762,7 +801,7 @@ function JidCell({ code, color }: { code: string | null | undefined; color: stri
           title={`JID color ${color}`}
         />
       ) : null}
-      <span className="font-mono text-[10px]">{code ?? "—"}</span>
+      <span className="font-mono text-[9px]">{code ?? "—"}</span>
     </span>
   );
 }

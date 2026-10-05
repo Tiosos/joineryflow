@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { SearchResults } from "./_components/SearchResults";
 
 interface SearchParams {
@@ -5,6 +6,8 @@ interface SearchParams {
   type?: string;
   include_archived?: string;
 }
+
+export const metadata: Metadata = { title: "Search" };
 
 export default async function SearchPage({
   searchParams,

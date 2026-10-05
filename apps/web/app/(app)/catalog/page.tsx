@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -30,6 +31,8 @@ const VALID_TABS = [
 ] as const;
 
 type CatalogTab = (typeof VALID_TABS)[number];
+
+export const metadata: Metadata = { title: "Catalog" };
 
 export default async function Page({ searchParams }: PageProps) {
   const sp = await searchParams;

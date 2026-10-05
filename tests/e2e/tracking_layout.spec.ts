@@ -98,3 +98,86 @@ test("the items table scrolls both ways and keeps its header in view", async ({ 
   expect(top).toBeGreaterThan(0);
   expect(Math.abs(headTop - boxTop)).toBeLessThan(3);                  // header stuck to the top edge
 });
+
+test("search and chips share one row, and the bulk-status group only shows when rows are ticked", async ({ page }) => {
+  await login(page);
+  await page.goto("/tracking?project_id=1");
+  const rows = page.locator('[data-testid="tracking-row"]');
+  await expect(rows.first()).toBeVisible();
+
+  const search = await page.getByPlaceholder("Cutlist #").boundingBox();
+  const chip = await page.getByRole("button", { name: "My Entries" }).boundingBox();
+  expect(search && chip).toBeTruthy();
+  expect(Math.abs(search!.y - chip!.y)).toBeLessThan(12);              // same row
+  expect(search!.x).toBeLessThan(chip!.x);                             // search first, then the chips
+
+  await expect(page.getByText(/Tip: tick rows/)).toHaveCount(0);       // the tip row is gone
+  await expect(page.getByRole("button", { name: "Apply status…" })).toHaveCount(0);
+  await rows.first().locator('input[type="checkbox"]').check();
+  await expect(page.getByTestId("bulk-selected")).toHaveText("1 selected");
+  await expect(page.getByRole("button", { name: "Apply status…" })).toBeVisible();
+  await page.getByRole("button", { name: "Clear selection" }).click();
+  await expect(page.getByRole("button", { name: "Apply status…" })).toHaveCount(0);
+});
+
+test("the count labels say what is counted", async ({ page }) => {
+  await login(page);
+  await page.goto("/tracking?project_id=1");
+  await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
+  await expect(page.getByText(/related parts not counted/)).toBeVisible();
+  await expect(page.getByText(/Total rows: \d+ \(\d+ items \+ \d+ related parts?\)/)).toBeVisible();
+});
+
+test("the JID code stays on one line", async ({ page }) => {
+  await login(page);
+  await page.goto("/tracking?project_id=1");
+  const row = page.locator('[data-testid="tracking-row"]').first();
+  await expect(row).toBeVisible();
+  const lines = await row.locator("td").nth(3).locator("span.font-mono").evaluate((el) => {
+    const r = el.getBoundingClientRect(), fs = parseFloat(getComputedStyle(el).fontSize);
+    return Math.round(r.height / fs);
+  });
+  expect(lines).toBeLessThanOrEqual(2);                                // one text line (line-height ~1.5)
+});
+
+test("each tab's page title is its tab name", async ({ page }) => {
+  await login(page);
+  for (const [path, title] of [
+    ["/dashboard", "Dashboard"], ["/tracking?project_id=1", "Tracking"], ["/shop-dwgs", "Shop Dwgs"],
+    ["/orderbook", "Orderbook"], ["/catalog", "Catalog"], ["/estimating", "Estimating"],
+  ] as const) {
+    await page.goto(path);
+    await expect(page).toHaveTitle(`${title} · JoineryFlow`);
+  }
+});
+
+test.describe("pinned columns", () => {
+  test.describe("on a wide window", () => {
+    test.use({ viewport: { width: 1500, height: 900 } });
+    test("checkbox through Lister stay in place while the date columns scroll", async ({ page }) => {
+      await login(page);
+      await page.goto("/tracking?project_id=1");
+      await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
+      const card = page.locator("table").first().locator("xpath=..");
+      await expect(card).toHaveClass(/h-pinned/);
+
+      const left = (name: string) => page.getByRole("columnheader", { name: new RegExp(`^${name}`, "i") }).first()
+        .evaluate((el) => Math.round(el.getBoundingClientRect().left));
+      const [cutBefore, listerBefore, reqBefore] = [await left("CUTLIST"), await left("LISTER"), await left("REQ")];
+      await card.evaluate((el) => { el.scrollLeft = 200; });
+      await page.waitForTimeout(200);
+      expect(await left("CUTLIST")).toBe(cutBefore);                  // pinned
+      expect(await left("LISTER")).toBe(listerBefore);                // the last pinned column
+      expect(await left("REQ")).toBeLessThan(reqBefore);              // the date columns moved
+    });
+  });
+  test.describe("on a narrow window", () => {
+    test.use({ viewport: { width: 1100, height: 800 } });
+    test("nothing is pinned, so the table never becomes unreachable", async ({ page }) => {
+      await login(page);
+      await page.goto("/tracking?project_id=1");
+      await expect(page.locator('[data-testid="tracking-row"]').first()).toBeVisible();
+      await expect(page.locator("table").first().locator("xpath=..")).not.toHaveClass(/h-pinned/);
+    });
+  });
+});

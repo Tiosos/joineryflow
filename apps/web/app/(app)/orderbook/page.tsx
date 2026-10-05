@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { fetchMe } from "@/lib/session";
 
 import { OrderbookTabs } from "./_components/OrderbookTabs";
@@ -11,6 +12,8 @@ import { OrderbookTabs } from "./_components/OrderbookTabs";
  *   Q504 leaves batches beneath orders as the allocation mechanism rather than
  *   replacing them.
  */
+export const metadata: Metadata = { title: "Orderbook" };
+
 export default async function Page({
   searchParams,
 }: {
