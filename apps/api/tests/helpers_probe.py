@@ -162,9 +162,10 @@ def multipart(schema: dict) -> tuple[dict, dict]:
     return files, data
 
 
-def request(client, method: str, path: str, op: dict, ids: dict[str, int], body_patch: dict | None = None):
-    """Call `op` with `ids` in the path slots (and `body_patch` merged into a JSON body);
-    None if no request can be built."""
+def request(client, method: str, path: str, op: dict, ids: dict[str, int],
+            body_patch: dict | None = None, query_patch: dict | None = None):
+    """Call `op` with `ids` in the path slots (`body_patch` merged into a JSON body,
+    `query_patch` into the query string); None if no request can be built."""
     url = re.sub(r"\{(\w+)\}", lambda m: str(PATH_VALUES.get(m.group(1), ids[m.group(1)])), path)
     kwargs = {}
     request_body = op.get("requestBody")
@@ -184,8 +185,8 @@ def request(client, method: str, path: str, op: dict, ids: dict[str, int], body_
         p["name"]: PATH_VALUES.get(p["name"]) or example(p["schema"])
         for p in op.get("parameters", []) if p["in"] == "query" and p.get("required")
     }
-    if required_query:
-        kwargs["params"] = required_query
+    if required_query or query_patch:
+        kwargs["params"] = {**required_query, **(query_patch or {})}
     return client.request(method, url, **kwargs)
 
 
@@ -220,3 +221,98 @@ def crash(label: str, response) -> str | None:
     if response is not None and response.status_code >= 500:
         return f"{label} -> {response.status_code} {response.text[:100]}"
     return None
+
+
+# Body field -> the kind of row it points at.
+FIELD_KIND = {
+    "assigned_to": "user", "pm_id": "user", "user_id": "user",
+    "requester_id": "user", "approver_id": "user", "reviewer_id": "user", "contractor_id": "user",
+    "mentioned_user_ids": "user", "worker_id": "shop_worker",
+    "vendor_id": "vendor", "supplier_id": "vendor",
+    "project_id": "project",
+    "item_id": "item", "new_parent_item_id": "item", "include_only_item_ids": "item",
+    "item_ids": "item",
+    "file_blob_id": "file_blob", "photo_file_blob_id": "file_blob",
+    "sketch_file_blob_id": "file_blob",
+    "customer_id": "customer", "cost_center_id": "cost_center", "cut_plan_id": "cut_plan",
+    "area_id": "area", "room_id": "room",
+    "board_material_id": "board_material", "material_id": "board_material",
+    "target_material_id": "board_material", "source_id": "hardware_material",
+    "item_hardware_line_id": "hardware_line", "catalog_id": "catalog_row",
+}
+
+
+def scalar(db, sql: str, **params):
+    return db.execute(text(sql), params).scalar()
+
+
+def rows_of_a(db, wid: int) -> dict[str, int]:
+    q = {
+        "user": "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'editor' ORDER BY id LIMIT 1",
+        "shop_worker": "SELECT id FROM app_user WHERE workspace_id = :w AND is_shop_worker ORDER BY id LIMIT 1",
+        "vendor": "SELECT vendor_id FROM vendors WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "project": "SELECT project_id FROM projects WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "item": "SELECT i.item_id FROM items i JOIN projects p ON p.project_id = i.project_id"
+                " WHERE p.workspace_id = :w AND i.row_type = 'joinery_item' ORDER BY i.item_id LIMIT 1",
+        "file_blob": "SELECT file_blob_id FROM file_blob WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "customer": "SELECT customer_id FROM customer WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "cost_center": "SELECT cost_center_id FROM cost_centers WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "cut_plan": "SELECT id FROM cut_plan WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "area": "SELECT a.area_id FROM area a JOIN projects p ON p.project_id = a.project_id"
+                " WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
+        "room": "SELECT r.room_id FROM room r JOIN area a ON a.area_id = r.area_id"
+                " JOIN projects p ON p.project_id = a.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
+        "board_material": "SELECT material_id FROM board_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "hardware_material": "SELECT material_id FROM hardware_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
+        "hardware_line": "SELECT l.line_id FROM item_hardware_lines l JOIN items i ON i.item_id = l.item_id"
+                         " JOIN projects p ON p.project_id = i.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
+        "catalog_row": "SELECT c.catalog_id FROM project_hardware_catalog c JOIN projects p"
+                       " ON p.project_id = c.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
+    }
+    return {kind: scalar(db, sql, w=wid) for kind, sql in q.items()}
+
+
+def rows_of_b(db, wid: int, uid: int) -> dict[str, int]:
+    """One row of each kind in workspace B (whose only existing row is its admin)."""
+    def one(sql, **p):
+        return db.execute(text(sql), {"w": wid, "u": uid, **p}).scalar()
+
+    project = one("INSERT INTO projects(project_code, name, pm_id, workspace_id)"
+                  " VALUES ('B-1', 'B project', :u, :w) RETURNING project_id")
+    item = one("INSERT INTO items(num, project_id, description, status)"
+               " VALUES (nextval('joinery_number_seq'), :p, 'B item', 'CLEAR') RETURNING item_id", p=project)
+    area = one("INSERT INTO area(project_id, name) VALUES (:p, 'B area') RETURNING area_id", p=project)
+    board = one("INSERT INTO board_materials(code, description, workspace_id, sku, unit_cost)"
+                " VALUES ('B-BRD', 'B board', :w, 'B-BRD', 1) RETURNING material_id")
+    catalog = one("INSERT INTO project_hardware_catalog(project_id, material_type, material_id, added_by)"
+                  " VALUES (:p, 'BOARD', :m, :u) RETURNING catalog_id", p=project, m=board)
+    return {
+        "user": uid,
+        "shop_worker": one(
+            "INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role, is_shop_worker)"
+            " VALUES (:w, 'b-worker@probe.test', 'B worker', 'x', 'editor', true) RETURNING id"),
+        "vendor": one("INSERT INTO vendors(name, category, workspace_id)"
+                      " VALUES ('B vendor', 'Board', :w) RETURNING vendor_id"),
+        "project": project,
+        "item": item,
+        "file_blob": one(
+            "INSERT INTO file_blob(workspace_id, sha256, mime, byte_size, original_filename,"
+            " storage_key, uploaded_by) VALUES (:w, 'bbbb', 'application/pdf', 10, 'b.pdf', 'b', :u)"
+            " RETURNING file_blob_id"),
+        "customer": one("INSERT INTO customer(workspace_id, name) VALUES (:w, 'B customer')"
+                        " RETURNING customer_id"),
+        "cost_center": one(
+            "INSERT INTO cost_centers(workspace_id, code, name, fiscal_year, budget_amount)"
+            " VALUES (:w, 'BCC', 'B cost centre', 2026, 1) RETURNING cost_center_id"),
+        "cut_plan": one("INSERT INTO cut_plan(workspace_id, project_id, name) VALUES (:w, :p, 'B plan')"
+                        " RETURNING id", p=project),
+        "area": area,
+        "room": one("INSERT INTO room(area_id, rm_no) VALUES (:a, 'B1') RETURNING room_id", a=area),
+        "board_material": board,
+        "hardware_material": one(
+            "INSERT INTO hardware_materials(sku, description, workspace_id, unit_cost)"
+            " VALUES ('B-HW', 'B hardware', :w, 1) RETURNING material_id"),
+        "hardware_line": one("INSERT INTO item_hardware_lines(item_id, catalog_id, qty)"
+                             " VALUES (:i, :c, 1) RETURNING line_id", i=item, c=catalog),
+        "catalog_row": catalog,
+    }

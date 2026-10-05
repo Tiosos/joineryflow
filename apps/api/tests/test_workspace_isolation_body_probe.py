@@ -29,29 +29,11 @@ from app.db import SessionLocal
 from .conftest import truncate_fixture
 from .helpers import login
 from .helpers_probe import (
-    CLEANUP_TABLES, GHOST_ID, REAL_ID_QUERIES, answer, crash, ids_for, operations,
-    prepare_workspace_a, request, resolve,
+    CLEANUP_TABLES, FIELD_KIND, GHOST_ID, REAL_ID_QUERIES, answer, crash, ids_for, operations,
+    prepare_workspace_a, request, resolve, rows_of_a, rows_of_b, scalar,
 )
 
 _cleanup = truncate_fixture(*CLEANUP_TABLES)
-
-# Body field -> the kind of row it points at.
-FIELD_KIND = {
-    "assigned_to": "user", "pm_id": "user", "user_id": "user",
-    "requester_id": "user", "approver_id": "user", "contractor_id": "user",
-    "mentioned_user_ids": "user", "worker_id": "shop_worker",
-    "vendor_id": "vendor", "supplier_id": "vendor",
-    "project_id": "project",
-    "item_id": "item", "new_parent_item_id": "item", "include_only_item_ids": "item",
-    "item_ids": "item",
-    "file_blob_id": "file_blob", "photo_file_blob_id": "file_blob",
-    "sketch_file_blob_id": "file_blob",
-    "customer_id": "customer", "cost_center_id": "cost_center", "cut_plan_id": "cut_plan",
-    "area_id": "area", "room_id": "room",
-    "board_material_id": "board_material", "material_id": "board_material",
-    "target_material_id": "board_material", "source_id": "hardware_material",
-    "item_hardware_line_id": "hardware_line", "catalog_id": "catalog_row",
-}
 
 # Fields not probed at all, with the reason.
 FIELD_REASONS = {
@@ -139,82 +121,6 @@ def _body_cases():
             yield method, path, op, fields, set(schema.get("required", [])), set(schema.get("properties", {}))
 
 
-def _scalar(db, sql: str, **params):
-    return db.execute(text(sql), params).scalar()
-
-
-def _rows_of_a(db, wid: int) -> dict[str, int]:
-    q = {
-        "user": "SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'editor' ORDER BY id LIMIT 1",
-        "shop_worker": "SELECT id FROM app_user WHERE workspace_id = :w AND is_shop_worker ORDER BY id LIMIT 1",
-        "vendor": "SELECT vendor_id FROM vendors WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "project": "SELECT project_id FROM projects WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "item": "SELECT i.item_id FROM items i JOIN projects p ON p.project_id = i.project_id"
-                " WHERE p.workspace_id = :w AND i.row_type = 'joinery_item' ORDER BY i.item_id LIMIT 1",
-        "file_blob": "SELECT file_blob_id FROM file_blob WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "customer": "SELECT customer_id FROM customer WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "cost_center": "SELECT cost_center_id FROM cost_centers WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "cut_plan": "SELECT id FROM cut_plan WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "area": "SELECT a.area_id FROM area a JOIN projects p ON p.project_id = a.project_id"
-                " WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
-        "room": "SELECT r.room_id FROM room r JOIN area a ON a.area_id = r.area_id"
-                " JOIN projects p ON p.project_id = a.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
-        "board_material": "SELECT material_id FROM board_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "hardware_material": "SELECT material_id FROM hardware_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "hardware_line": "SELECT l.line_id FROM item_hardware_lines l JOIN items i ON i.item_id = l.item_id"
-                         " JOIN projects p ON p.project_id = i.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
-        "catalog_row": "SELECT c.catalog_id FROM project_hardware_catalog c JOIN projects p"
-                       " ON p.project_id = c.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
-    }
-    return {kind: _scalar(db, sql, w=wid) for kind, sql in q.items()}
-
-
-def _rows_of_b(db, wid: int, uid: int) -> dict[str, int]:
-    """One row of each kind in workspace B (whose only existing row is its admin)."""
-    def one(sql, **p):
-        return db.execute(text(sql), {"w": wid, "u": uid, **p}).scalar()
-
-    project = one("INSERT INTO projects(project_code, name, pm_id, workspace_id)"
-                  " VALUES ('B-1', 'B project', :u, :w) RETURNING project_id")
-    item = one("INSERT INTO items(num, project_id, description, status)"
-               " VALUES (nextval('joinery_number_seq'), :p, 'B item', 'CLEAR') RETURNING item_id", p=project)
-    area = one("INSERT INTO area(project_id, name) VALUES (:p, 'B area') RETURNING area_id", p=project)
-    board = one("INSERT INTO board_materials(code, description, workspace_id, sku, unit_cost)"
-                " VALUES ('B-BRD', 'B board', :w, 'B-BRD', 1) RETURNING material_id")
-    catalog = one("INSERT INTO project_hardware_catalog(project_id, material_type, material_id, added_by)"
-                  " VALUES (:p, 'BOARD', :m, :u) RETURNING catalog_id", p=project, m=board)
-    return {
-        "user": uid,
-        "shop_worker": one(
-            "INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role, is_shop_worker)"
-            " VALUES (:w, 'b-worker@probe.test', 'B worker', 'x', 'editor', true) RETURNING id"),
-        "vendor": one("INSERT INTO vendors(name, category, workspace_id)"
-                      " VALUES ('B vendor', 'Board', :w) RETURNING vendor_id"),
-        "project": project,
-        "item": item,
-        "file_blob": one(
-            "INSERT INTO file_blob(workspace_id, sha256, mime, byte_size, original_filename,"
-            " storage_key, uploaded_by) VALUES (:w, 'bbbb', 'application/pdf', 10, 'b.pdf', 'b', :u)"
-            " RETURNING file_blob_id"),
-        "customer": one("INSERT INTO customer(workspace_id, name) VALUES (:w, 'B customer')"
-                        " RETURNING customer_id"),
-        "cost_center": one(
-            "INSERT INTO cost_centers(workspace_id, code, name, fiscal_year, budget_amount)"
-            " VALUES (:w, 'BCC', 'B cost centre', 2026, 1) RETURNING cost_center_id"),
-        "cut_plan": one("INSERT INTO cut_plan(workspace_id, project_id, name) VALUES (:w, :p, 'B plan')"
-                        " RETURNING id", p=project),
-        "area": area,
-        "room": one("INSERT INTO room(area_id, rm_no) VALUES (:a, 'B1') RETURNING room_id", a=area),
-        "board_material": board,
-        "hardware_material": one(
-            "INSERT INTO hardware_materials(sku, description, workspace_id, unit_cost)"
-            " VALUES ('B-HW', 'B hardware', :w, 1) RETURNING material_id"),
-        "hardware_line": one("INSERT INTO item_hardware_lines(item_id, catalog_id, qty)"
-                             " VALUES (:i, :c, 1) RETURNING line_id", i=item, c=catalog),
-        "catalog_row": catalog,
-    }
-
-
 def _kind(method: str, path: str, field: str) -> str:
     return OP_KIND.get((method, path), {}).get(field, FIELD_KIND[field])
 
@@ -238,11 +144,11 @@ def test_foreign_ids_in_a_body_look_like_nonexistent_ones(truncate_all, monkeypa
     admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path, raise_server_exceptions=False)
     _, wid_b, uid_b = login("admin", prefix="probe-b")
     with SessionLocal() as db:
-        wid_a = _scalar(db, "SELECT id FROM workspace WHERE slug = 'hartwood-joinery'")
-        a_rows = _rows_of_a(db, wid_a)
-        b_rows = _rows_of_b(db, wid_b, uid_b)
+        wid_a = scalar(db, "SELECT id FROM workspace WHERE slug = 'hartwood-joinery'")
+        a_rows = rows_of_a(db, wid_a)
+        b_rows = rows_of_b(db, wid_b, uid_b)
         db.commit()
-        real_ids = {key: _scalar(db, sql)
+        real_ids = {key: scalar(db, sql)
                     for key, sql in {**REAL_ID_QUERIES, **BODY_REAL_ID_QUERIES}.items()}
     missing = sorted(k for k, v in a_rows.items() if v is None)
     assert not missing, f"the seed has no row of these kinds: {missing}"
@@ -346,10 +252,10 @@ def test_a_material_of_another_workspace_is_a_404_and_writes_nothing(truncate_al
     admin_a = prepare_workspace_a(truncate_all, monkeypatch, tmp_path, raise_server_exceptions=False)
     _, wid_b, uid_b = login("admin", prefix="probe-b")
     with SessionLocal() as db:
-        a_rows = _rows_of_a(db, _scalar(db, "SELECT id FROM workspace WHERE slug = 'hartwood-joinery'"))
-        b_rows = _rows_of_b(db, wid_b, uid_b)
+        a_rows = rows_of_a(db, scalar(db, "SELECT id FROM workspace WHERE slug = 'hartwood-joinery'"))
+        b_rows = rows_of_b(db, wid_b, uid_b)
         db.commit()
-        real_ids = {key: _scalar(db, sql)
+        real_ids = {key: scalar(db, sql)
                     for key, sql in {**REAL_ID_QUERIES, **BODY_REAL_ID_QUERIES}.items()}
     operations_by_key = {(m, p): (op, fields, required, props)
                          for m, p, op, fields, required, props in _body_cases()}
