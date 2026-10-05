@@ -9,16 +9,10 @@ from app.auth.rbac import require_drafter
 from app.auth.sessions import create_session
 from app.db import SessionLocal
 
+from .conftest import truncate_fixture
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text("TRUNCATE audit_log, session, app_user, workspace RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+
+_cleanup = truncate_fixture()
 
 
 def _seed(role: str) -> str:

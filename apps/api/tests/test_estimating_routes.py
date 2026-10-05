@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -13,20 +12,10 @@ from .helpers_estimating import (  # noqa: F401
     _make_estimate,
 )
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(
-            text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE")
-        )
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture()
 
 
 

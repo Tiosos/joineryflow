@@ -12,7 +12,7 @@ from app.search.index import FakeIndex
 from app.search.routes import search_index
 
 from .helpers import login
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
 @pytest.fixture
@@ -23,15 +23,7 @@ def index():
     app.dependency_overrides.pop(search_index, None)
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text("TRUNCATE " + ", ".join(TRUNCATE_TABLES) + " RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture()
 
 
 def _login(role="manager"):

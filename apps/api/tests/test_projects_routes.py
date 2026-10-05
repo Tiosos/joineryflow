@@ -1,25 +1,14 @@
 
-import pytest
 from sqlalchemy import text
 
 from app.db import SessionLocal
 
 from .helpers import login
 
+from .conftest import truncate_fixture
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(
-            text(
-                "TRUNCATE audit_log, session, project_favourites, projects, app_user, workspace RESTART IDENTITY CASCADE"
-            )
-        )
-        s.commit()
-    finally:
-        s.close()
+
+_cleanup = truncate_fixture()
 
 
 def _login(role: str):

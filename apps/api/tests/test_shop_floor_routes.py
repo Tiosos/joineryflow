@@ -6,7 +6,6 @@ station / RBAC + workspace isolation.
 import uuid
 from datetime import date
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -14,7 +13,7 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
 def _link_cutlist(db, *, project_id: int, item_id: int) -> int:
@@ -43,17 +42,7 @@ def _link_cutlist(db, *, project_id: int, item_id: int) -> int:
 
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(
-            text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE")
-        )
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture()
 
 
 def _bootstrap(role: str = "editor", *, with_worker: bool = True):
