@@ -5,13 +5,12 @@ Covers preview + commit + history + RBAC + cross-workspace + size caps.
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
+from .helpers import login
 from .conftest import truncate_fixture
 
 
@@ -28,29 +27,17 @@ _cleanup = truncate_fixture(
 
 
 def _login(role: str = "drafter"):
+    """A logged-in user with a project and one item -> (client, wid, uid, pid, iid)."""
+    c, wid, uid = login(role, prefix="r")
     suffix = uuid.uuid4().hex[:8]
-    slug = f"r-{suffix}"
-    email = f"u-{suffix}@example.com"
     s = SessionLocal()
     try:
-        wid = s.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'R') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = s.execute(
-            text("""
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r) RETURNING id
-            """),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
         pid = s.execute(text("""
             INSERT INTO projects(project_code, name, pm_id, workspace_id)
             VALUES (:pc, :pn, :u, :w) RETURNING project_id
         """), {"pc": f"P-{suffix}", "pn": f"Project {suffix}", "w": wid, "u": uid}).scalar()
         # items.num is UNIQUE — derive a stable-but-unique value from the
-        # workspace id (same workspace -> same num is not possible since this
-        # fixture only creates one item per workspace).
+        # workspace id (this fixture only creates one item per workspace).
         iid = s.execute(text("""
             INSERT INTO items(num, project_id, description)
             VALUES (:n, :p, 'Item 1') RETURNING item_id
@@ -58,11 +45,8 @@ def _login(role: str = "drafter"):
         s.commit()
     finally:
         s.close()
-    c = TestClient(app)
-    r = c.post("/auth/login",
-               json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
     return c, wid, uid, pid, iid
+
 
 
 def _seed_board_with_mapping(wid: int, uid: int, *, code: str, sku: str,

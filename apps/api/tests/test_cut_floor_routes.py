@@ -9,10 +9,9 @@ from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
+from .helpers import login
 from .conftest import truncate_fixture
 
 
@@ -25,31 +24,14 @@ _cleanup = truncate_fixture(
 
 
 def _login(role: str = "drafter"):
-    """Create a fresh workspace + user + project + 1 item with 1 module + 2 parts.
+    """A logged-in user with a project and 1 item with 1 module + 2 parts.
 
     Returns (client, wid, uid, pid, iid, [part_id_1, part_id_2]).
     """
+    c, wid, uid = login(role, prefix="r")
     suffix = uuid.uuid4().hex[:8]
-    slug = f"r-{suffix}"
-    email = f"u-{suffix}@example.com"
     s = SessionLocal()
     try:
-        wid = s.execute(
-            text(
-                "INSERT INTO workspace(slug, name) VALUES(:s, 'R') RETURNING id"
-            ),
-            {"s": slug},
-        ).scalar()
-        uid = s.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name,
-                                     password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r) RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
         pid = s.execute(
             text(
                 """
@@ -93,14 +75,8 @@ def _login(role: str = "drafter"):
         s.commit()
     finally:
         s.close()
-
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
     return c, wid, uid, pid, iid, part_ids
+
 
 
 def _make_cut_plan(c: TestClient, pid: int, part_ids: list[int]) -> dict:

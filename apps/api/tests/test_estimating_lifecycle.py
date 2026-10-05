@@ -5,10 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.estimating.queries import TENDER_STAGE_ORDER
-from app.main import app
+
+from .helpers import login
 
 
 
@@ -16,31 +16,8 @@ pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 def _bootstrap(role: str = "estimator"):
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"tl-{suffix}"
-    email = f"u-{suffix}@t"
-    s = SessionLocal()
-    try:
-        wid = s.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'T') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        s.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        )
-        s.commit()
-    finally:
-        s.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c
+    return login(role, prefix="tl")[0]
+
 
 
 def _make_estimate(c: TestClient) -> dict:

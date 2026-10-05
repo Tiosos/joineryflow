@@ -15,14 +15,12 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 from app.procurement import routes as proc_routes
 
+from .helpers import login
 from .conftest import truncate_fixture
 
 # Nothing in TRUNCATE_TABLES cascades into cost_centers/budget_transactions
@@ -34,23 +32,10 @@ _cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 def _login(role: str = "purchase_officer") -> dict:
-    """Create a fresh workspace with a user, vendor and cost center."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"proc-{suffix}"
-    email = f"u-{suffix}@example.com"
+    """A logged-in user in a fresh workspace with a vendor and cost center."""
+    c, wid, uid = login(role, prefix="proc")
     s = SessionLocal()
     try:
-        wid = s.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'Proc WS') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = s.execute(
-            text(
-                """INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                   VALUES (:w, :e, 'U', :p, :r) RETURNING id"""
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
         vendor_id = s.execute(
             text("INSERT INTO vendors(name, category, workspace_id)"
                  " VALUES('Vendor', 'Office', :w) RETURNING vendor_id"),
@@ -66,13 +51,8 @@ def _login(role: str = "purchase_officer") -> dict:
         s.commit()
     finally:
         s.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
     return {"client": c, "wid": wid, "uid": uid, "vendor_id": vendor_id, "cc_id": cc_id}
+
 
 
 def _create_order(ctx: dict, **overrides) -> dict:

@@ -1,18 +1,17 @@
 """GET /search and GET /search/health (plan tasks D1, D2; spec §5)."""
-import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth import permissions, rbac_engine
-from app.auth.passwords import hash_password
 from app.auth.rbac_engine import seed_system_groups
 from app.db import SessionLocal
 from app.main import app
 from app.search.index import FakeIndex
 from app.search.routes import search_index
 
+from .helpers import login
 from .conftest import TRUNCATE_TABLES
 
 
@@ -36,23 +35,9 @@ def _cleanup():
 
 
 def _login(role="manager"):
-    suffix = uuid.uuid4().hex[:8]
-    s = SessionLocal()
-    try:
-        wid = s.execute(text("INSERT INTO workspace(slug,name) VALUES(:s,'Search WS')"
-                             " RETURNING id"), {"s": f"srch-{suffix}"}).scalar()
-        email = f"u-{suffix}@x.test"
-        s.execute(text("INSERT INTO app_user(workspace_id,email,full_name,password_hash,auth_role)"
-                       " VALUES (:w,:e,'U',:p,:r)"),
-                  {"w": wid, "e": email, "p": hash_password("pw"), "r": role})
-        s.commit()
-    finally:
-        s.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": f"srch-{suffix}", "email": email,
-                                    "password": "pw"})
-    assert r.status_code == 200, r.text
+    c, wid, _ = login(role, prefix="srch")
     return c, wid
+
 
 
 def _doc(i, ws, type_="item", title="Kitchen island bench", archived=False, project_id=7):
