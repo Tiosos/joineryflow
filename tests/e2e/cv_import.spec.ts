@@ -1,16 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 // rin.park is a manager on ALF-001; manager has cut_floor read+write+approve+comment.
-const EMAIL = "rin.park@hartwood.test";
-const PASSWORD = "hartwood-dev";
-
-async function login(page: Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', EMAIL);
-  await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
 
 test.describe("CV Import wizard (#7b)", () => {
   test.beforeEach(async ({ page }) => {

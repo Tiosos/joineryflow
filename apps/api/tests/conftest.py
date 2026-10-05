@@ -4,6 +4,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
+def pytest_runtest_setup(item):
+    """`meili`-marked tests need a live Meilisearch; skip them when MEILI_URL is unset."""
+    if item.get_closest_marker("meili") and not os.environ.get("MEILI_URL"):
+        pytest.skip("MEILI_URL not set")
+
+
 # Reference/lookup rows that many tables FK against (items.status ->
 # status_options, item_stages.stage_key -> stages). Several test files seed
 # these per-test AND truncate them in teardown, which leaves them empty for any
@@ -21,6 +27,22 @@ _REF_STAGES = [
     ("PAINTED", "Painted", 7), ("MADE", "Made", 8), ("PACKING", "Packed", 9),
     ("DEL", "Delivered", 10), ("INST", "Installed", 11),
 ]
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cheap_password_hashing():
+    """Hash with minimal argon2 cost in tests.
+
+    Every test login hashes and verifies a password (~175 ms at the production
+    cost); at the suite's scale that is a third of the run time. The hash is
+    still argon2id, so nothing that inspects it changes.
+    """
+    from argon2 import PasswordHasher
+
+    from app.auth import passwords
+
+    passwords._ph = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +157,43 @@ TRUNCATE_TABLES = (
     # No FK to anything, so no CASCADE reaches it; fed by 0033's triggers.
     "search_outbox",
 )
+
+
+def _truncate(*extra: str) -> None:
+    from app.db import SessionLocal
+
+    s = SessionLocal()
+    try:
+        tables = ", ".join([*extra, *TRUNCATE_TABLES])
+        s.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        s.commit()
+    finally:
+        s.close()
+
+
+@pytest.fixture
+def truncate_after():
+    """Opt-in per-module cleanup: TRUNCATE the full TRUNCATE_TABLES set after each test.
+
+    Use as ``pytestmark = pytest.mark.usefixtures("truncate_after")``. A file that
+    also needs other tables truncated builds its own with ``truncate_fixture(...)``.
+    """
+    yield
+    _truncate()
+
+
+def truncate_fixture(*extra: str):
+    """An autouse cleanup fixture that also truncates `extra` tables (before TRUNCATE_TABLES).
+
+    Usage: ``_cleanup = truncate_fixture("items", "item_stages")``.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cleanup():
+        yield
+        _truncate(*extra)
+
+    return _cleanup
 
 
 @pytest.fixture

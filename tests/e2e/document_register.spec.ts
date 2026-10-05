@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * The Document Register section of the item editor's Attachments tab: list, add,
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  * Each test puts the item back exactly as seeded (workers: 1, so nothing else runs
  * meanwhile): documents a test adds are removed again, and locks are restored.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function itemId(page: Page, code: string): Promise<number> {
   await page.goto("/tracking?project_id=1");
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: code });

@@ -1,11 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 test("Drafter editor happy path", async ({ page }) => {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "noa.lindqvist@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
+  await login(page, "noa.lindqvist@hartwood.test");
 
   // My Day shows >=1 item
   await expect(page.locator('[data-testid="myday-row"]').first()).toBeVisible();

@@ -139,6 +139,60 @@ def test_list_shop_drawings_cross_workspace_returns_404():
     assert r.status_code == 404
 
 
+def _draft_revision_in(workspace_id: int, uploader_id: int, pid: int) -> tuple[int, int]:
+    """A shop drawing with one draft revision in `workspace_id` -> (drawing_id, revision_id)."""
+    db = SessionLocal()
+    try:
+        blob = db.execute(
+            text(
+                """
+                INSERT INTO file_blob(workspace_id, sha256, mime, byte_size,
+                                      original_filename, storage_key, uploaded_by)
+                VALUES (:w, :h, 'application/pdf', 10, 'a.pdf', 'k', :u)
+                RETURNING file_blob_id
+                """
+            ),
+            {"w": workspace_id, "h": uuid.uuid4().hex, "u": uploader_id},
+        ).scalar()
+        did = db.execute(
+            text(
+                "INSERT INTO shop_drawing(project_id, title, created_by)"
+                " VALUES (:p, 'Plan', :u) RETURNING drawing_id"
+            ),
+            {"p": pid, "u": uploader_id},
+        ).scalar()
+        rid = db.execute(
+            text(
+                """
+                INSERT INTO shop_drawing_revision(drawing_id, rev_no, file_blob_id, status, uploaded_by)
+                VALUES (:d, 1, :b, 'draft', :u) RETURNING revision_id
+                """
+            ),
+            {"d": did, "b": blob, "u": uploader_id},
+        ).scalar()
+        db.commit()
+    finally:
+        db.close()
+    return did, rid
+
+
+@pytest.mark.parametrize("action", ["submit", "withdraw", "approve", "reject"])
+def test_revision_transitions_cross_workspace_return_404_not_403(action):
+    """A foreign workspace must not learn a revision exists: the uploader/reviewer
+    403 checks may only run on a revision the caller's workspace owns."""
+    _c_a, wid_a, uid_a, _slug_a = _make_workspace_and_user()
+    pid = _create_project_in(wid_a, uid_a)
+    did, rid = _draft_revision_in(wid_a, uid_a, pid)
+
+    c_b, _wid_b, _uid_b, _slug_b = _make_workspace_and_user("manager")
+    body = {"review_note": "x"} if action == "reject" else None
+    r = c_b.post(f"/shop-drawings/{did}/revisions/{rid}/{action}", json=body)
+    assert r.status_code == 404, r.text
+    # Indistinguishable from a revision that does not exist at all.
+    ghost = c_b.post(f"/shop-drawings/{did + 1000}/revisions/{rid + 1000}/{action}", json=body)
+    assert (r.status_code, r.json()) == (ghost.status_code, ghost.json())
+
+
 # ── NULL-pm scenario (the legacy bypass) ────────────────────────────────────
 
 

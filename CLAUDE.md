@@ -121,8 +121,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `db/` | Alembic migrations `0001`→`0051` (head `0051_estimate_line_material_order`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
-| `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here) |
-| `tests/e2e/` | Playwright specs (31 spec files; see §3) |
+| `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
+| `tests/e2e/` | Playwright specs (31 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/superpowers/` | Older specs + plans (read `plans/README.md` first) |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -142,7 +142,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - Login `http://localhost:3000/login` → `rin.park@hartwood.test` / `hartwood-dev` (any `*.hartwood.test` user). Health: `/api/health`.
 - `make test` TRUNCATEs `workspace`, `app_user`, `session`, `audit_log`, so re-run `make seed` afterwards.
-- Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest (~13 min).
+- Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest. The seed finds its sample files relative to itself, so `python -m seed.hartwood_joinery` works outside the container too.
 - `search-worker` runs with **no `--reload`** — restart it after editing `app/search/`.
 
 ## 3. Testing rules
@@ -155,6 +155,9 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **A failing or skipped spec is not coverage.** When one goes red for a trivial-looking reason, check what it stopped guarding.
 - Tests for a fix must be shown to **fail against the unfixed source**.
 - Test infrastructure traps: patch **`rbac_engine.MATRIX`**, not `permissions.MATRIX`; never assert an absolute PO or Item number (sequences survive `TRUNCATE`); tests assert `stage_key`, never lookup labels.
+- **Shared test setup lives in one place; do not copy it into a file.** pytest: `tests/conftest.py` re-asserts `status_options` / `stages` before every test (never seed them yourself), provides cleanup (`truncate_after` fixture, `truncate_fixture(*extra)` for extra tables), auto-skips `meili`-marked tests without `MEILI_URL`, and hashes passwords with minimal argon2 cost (the hash is still argon2id). `tests/helpers.py` is the one `login()` / `login_same_workspace()` / `create_project()` / `set_item()`; `helpers_<family>.py` hold the per-feature builders. **A test file never imports from another `test_*.py`.** e2e: `tests/e2e/helpers.ts` `login(page, email = MANAGER)`; `smoke.spec.ts` keeps its inline login because login is what it tests.
+- **Workspace isolation is probed for every route with a path id** (`test_workspace_isolation_probe.py`): an admin of another workspace must get exactly the answer a nonexistent id gets (status and body), so a 403, a 200 or a different message is a leak. A new id route is covered automatically. If the test says an operation was "not really probed", make it probable (seed data, `BODY_OVERRIDES`, `REAL_ID_QUERIES`) or write a dedicated test and list it in `NOT_PROBED` with the reason. The control user is the seeded admin; permission-group mutations run last because they change what that admin may do. Foreign ids inside a request *body* are probed by `test_workspace_isolation_body_probe.py` (A's admin names B's row in each FK field; B's row must be answered like a nonexistent one). Its `KNOWN_LEAKS` are open defects, not exemptions: fix the route and remove the entry. Ids in a *query string* (`?project_id=`, `?customer_id=`…) are probed by `test_workspace_isolation_query_probe.py`: a list with no path id is called by another workspace's admin with workspace A's real id, because that is the direction that leaks data (A's admin passing B's id proves nothing when B owns no rows). Both probes also fail on any 5xx (a route that crashes on a bad id answers the real and the ghost id alike, so the comparison alone would pass it). Shared machinery: `tests/helpers_probe.py`.
+- CI also runs `ruff --select F401,F841,F811` over `apps/api/app` and `apps/api/tests` (an unused variable is often a dropped assertion). A fixture imported from a helper module needs `# noqa: F401`. The `search` e2e specs skip on a Meilisearch 503 locally but **fail** when `CI` is set (the CI stack starts Meilisearch).
 
 ## 4. Seed rules
 
@@ -199,7 +202,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Order coverage is per (quote line, material)** in `estimate_line_material_order` (row = ordered or ordered by hand; no row = pending). `estimate_line.orders_generated_at` / `orders_dismissed_*` are **derived** from it (`_refresh_line_state`) for a line that references catalog materials, and written directly only for a line with none. Never write the line columns for a materials line by hand.
 - **Estimating:** `locked_at` (set once at `MGMT_APPROVAL → SUBMITTED`) is the "frozen" gate; the 12-stage tender lifecycle replaced the old six states; `advance()` is the only forward action (`/send` is retired). Cost columns are snapshotted. `current_value` of contracts is computed on read.
 - **Material Take:** generated, then person-owned; approved takes are immutable (new version = n+1); boards are fractional sheets per item, rounded up once over the project (Q586).
-- **Workspace isolation everywhere**: scope through `projects.workspace_id` (or the entity's own `workspace_id`); cross-workspace is **404**. Any FK to `app_user` / `vendors` / `projects` taken from a request body must be validated against the caller's workspace (it would otherwise leak names).
+- **Workspace isolation everywhere**: scope through `projects.workspace_id` (or the entity's own `workspace_id`); cross-workspace is **404**. Any FK to `app_user` / `vendors` / `projects` taken from a request body must be validated against the caller's workspace (it would otherwise leak names). A catalog material taken from a body goes through `catalog.queries.assert_material_in_workspace` (after the lock check, before any write): another workspace's row and a missing one both answer `404 {code: MATERIAL_NOT_FOUND}`. `POST /items/bulk-status` reports another workspace's item as `not_found`, like a missing one (there is no `cross_workspace` list).
 - **Search:** the outbox is identity-only; a new searchable table needs a trigger in a migration *and* a loader in `documents.py` (a test enforces this). `codes` have typo tolerance **off**. Never index secrets, money, bank/tax fields.
 - **Files:** `file_blob` is workspace-scoped, sha256-deduped, never deleted (no orphan GC), shared by shop drawings, attachments, register, samples and PO attachments. Allowed: PDF / PNG / JPEG, plus `.skp` / `.cvj` (signature **and** extension must agree). 25 MB cap. Each binder checks the mime it accepts.
 

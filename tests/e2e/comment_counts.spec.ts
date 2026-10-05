@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Comment counts on a Module and on a shop-drawing revision (Plan V1 §29), against
@@ -9,14 +10,6 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
  * posting from the screen, with no reload, so the specs are re-runnable without
  * re-seeding (like the other comment specs they leave the extra rows behind).
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /** "💬 3" -> 3; no badge -> 0. */
 async function countOf(scope: Locator): Promise<number> {
   const badge = scope.getByTestId("comment-badge");

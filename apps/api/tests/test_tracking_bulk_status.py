@@ -1,15 +1,12 @@
 """Tests for POST /items/bulk-status (Tracking 2.0 #10 T04)."""
-import uuid
 
-import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
+from .conftest import truncate_fixture
 
 _STATUS_KEYS = [
     ("CLEAR", 1),
@@ -21,23 +18,13 @@ _STATUS_KEYS = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "item_status_log",
-            "item_edit_log",
-            "item_stages",
-            "items",
-            "status_options",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "item_status_log",
+    "item_edit_log",
+    "item_stages",
+    "items",
+    "status_options",
+)
 
 
 def _seed_status_options(db):
@@ -53,36 +40,9 @@ def _seed_status_options(db):
 
 
 def _login(role: str = "manager"):
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"bs-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        _seed_status_options(db)
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'BS') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'BS User', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="bs")
+
+
 
 
 def _create_project(db, *, wid: int, uid: int, code: str = "BS-001") -> int:
@@ -132,7 +92,6 @@ def test_bulk_status_happy_path():
     payload = r.json()
     assert payload["updated"] == 3
     assert payload["not_found"] == []
-    assert payload["cross_workspace"] == []
 
     db = SessionLocal()
     try:
@@ -172,8 +131,9 @@ def test_bulk_status_missing_note_422():
     assert r.status_code == 422, r.text
 
 
-def test_bulk_status_classifies_not_found_and_cross_workspace():
-    """An id from another workspace must come back in cross_workspace, not not_found."""
+def test_bulk_status_reports_another_workspaces_item_as_not_found():
+    """An id from another workspace is indistinguishable from one that does not exist:
+    both come back in not_found, and the response has no field that tells them apart."""
     c, wid, uid = _login(role="manager")
 
     db = SessionLocal()
@@ -212,8 +172,15 @@ def test_bulk_status_classifies_not_found_and_cross_workspace():
     assert r.status_code == 200, r.text
     payload = r.json()
     assert payload["updated"] == 1
-    assert payload["not_found"] == [missing_iid]
-    assert payload["cross_workspace"] == [other_iid]
+    assert sorted(payload["not_found"]) == sorted([missing_iid, other_iid])
+    assert "cross_workspace" not in payload
+    # and nothing of the other workspace's item changed
+    db = SessionLocal()
+    try:
+        assert db.execute(text("SELECT status FROM items WHERE item_id = :i"),
+                          {"i": other_iid}).scalar() != "VOID"
+    finally:
+        db.close()
 
 
 def test_bulk_status_purchase_officer_403():

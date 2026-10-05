@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.rbac import current_user, require_drafter
 from ..auth.sessions import AuthUser
+from ..catalog.queries import MaterialNotFound
 from ..db import get_db
 from ..items.queries import ItemContentLocked
 from ..items.schemas import ModuleOut, PartOut
@@ -169,6 +170,8 @@ def post_part(
         )
     except ItemContentLocked as e:
         raise HTTPException(status_code=409, detail=e.detail)
+    except MaterialNotFound as e:
+        raise HTTPException(status_code=404, detail=e.detail)
     if pid is None:
         raise HTTPException(status_code=404, detail="module not found")
     db.commit()
@@ -199,6 +202,8 @@ def patch_part_route(
         )
     except ItemContentLocked as e:
         raise HTTPException(status_code=409, detail=e.detail)
+    except MaterialNotFound as e:
+        raise HTTPException(status_code=404, detail=e.detail)
     if result is None:
         raise HTTPException(status_code=404, detail="part not found")
     db.commit()

@@ -6,105 +6,31 @@ Covers:
   - DELETE /batches/{bid}: soft-cancels; subsequent GET shows status='CANCELLED'.
   - POST /batches with unknown project_id -> 404.
 """
-import uuid
 
-import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "hardware_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "hardware_materials",
+)
 
 
 # Reference data for FK constraints on items and item_stages
-_STATUS_KEYS = [("CLEAR", 1), ("HOLD", 2), ("LIVE", 3), ("VOID", 4)]
-_STAGE_KEYS = [
-    ("REQ", "Required", 1),
-    ("SM", "Shop Material", 2),
-    ("LISTED", "Listed", 3),
-    ("DOWN", "Down", 4),
-    ("CNC", "CNC", 5),
-    ("EDGED", "Edged", 6),
-    ("PAINTED", "Painted", 7),
-    ("MADE", "Made", 8),
-    ("DEL", "Delivered", 9),
-    ("INST", "Installed", 10),
-]
 
 
-def _seed_refs(db) -> None:
-    """Insert status_options and stages reference rows (FK targets for items)."""
-    for key, order in _STATUS_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO status_options(status_key, sort_order)"
-                " VALUES(:k, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "o": order},
-        )
-    for key, label, order in _STAGE_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO stages(stage_key, label, sort_order)"
-                " VALUES(:k, :l, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "l": label, "o": order},
-        )
-    db.commit()
 
 
 def _login(role: str = "manager"):
-    """Create a fresh workspace + user, log in, return (client, wid, uid)."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"h-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        _seed_refs(db)
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="h")
+
+
 
 
 def _seed_project_and_material(*, wid: int, uid: int) -> tuple[int, int]:

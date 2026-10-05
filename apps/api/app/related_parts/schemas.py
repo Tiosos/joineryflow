@@ -9,7 +9,7 @@ Three fields are **never** inputs:
 """
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from ..schema_guards import no_null
 
 

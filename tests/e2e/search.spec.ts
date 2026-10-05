@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Sub-project #11 (E4) — Global Search, end to end against `make seed` with
@@ -9,23 +10,20 @@ import { test, expect } from "@playwright/test";
  *  - A misspelt word still finds its record (typo tolerance on titles), and
  *    the results page groups hits into type chips.
  */
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /**
  * Search has no Postgres fallback: with Meilisearch down `GET /search` answers
- * `503 SEARCH_UNAVAILABLE`. That is an environment without the `meili` /
- * `search-worker` services (a bare dev stack, the sandbox), not a defect, so
- * skip then — and only then: a reachable but empty or broken index still fails.
+ * `503 SEARCH_UNAVAILABLE`. Locally that is an environment without the `meili` /
+ * `search-worker` services (a bare dev stack, the sandbox), so skip. In CI the
+ * stack always has them, so a 503 fails. A reachable but empty or broken index
+ * fails everywhere.
  */
 async function skipWithoutSearch(page: import("@playwright/test").Page) {
   const res = await page.request.get("/api/search?q=297830");
-  test.skip(res.status() === 503, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
+  if (res.status() !== 503) return;
+  // The CI e2e job starts Meilisearch and the search-worker, so a 503 there is a
+  // broken stack, not a missing optional service: fail instead of skipping.
+  expect(process.env.CI, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE) in CI").toBeFalsy();
+  test.skip(true, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
 }
 
 test("a cutlist number in the top bar opens that cutlist", async ({ page }) => {

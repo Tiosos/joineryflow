@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * The Catalog grid's **Supplier link** column sets `default_supplier_id` — the FK
@@ -10,15 +11,6 @@ import { test, expect, type Page } from "@playwright/test";
  * (no vendor of that name), so it is the unlinked demo row; Plyco is a supplier.
  * Every test puts BM-203 back unlinked.
  */
-const PASSWORD = "hartwood-dev";
-
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
 
 const MANAGER = "rin.park@hartwood.test";
 const VIEWER = "sam.ito@hartwood.test";

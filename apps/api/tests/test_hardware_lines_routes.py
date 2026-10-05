@@ -11,14 +11,12 @@ Schema notes carried forward from queries.py:
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import create_project, login, login_same_workspace, set_item
+from .conftest import truncate_fixture
 
 # Source tables beyond the base TRUNCATE_TABLES list that we insert into
 _EXTRA_TABLES = (
@@ -39,73 +37,17 @@ _EXTRA_TABLES = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        all_tables = ", ".join(list(_EXTRA_TABLES) + list(TRUNCATE_TABLES))
-        s.execute(
-            text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE")
-        )
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _login(role: str = "manager"):
-    """Create a fresh workspace + user and return (client, workspace_id, user_id)."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"hw-{suffix}"
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, prefix="hw")
 
 
-def _create_project(db, *, uid: int, code: str = "HJ-001") -> int:
-    """Insert a project owned by uid and return project_id.
 
-    workspace_id is derived inline from the uid's app_user row, mirroring
-    create_project_route's default of using the caller's workspace.
-    """
-    pid = db.execute(
-        text(
-            """
-            INSERT INTO projects(project_code, name, pm_id, workspace_id)
-            VALUES (:code, :name, :uid, (SELECT workspace_id FROM app_user WHERE id = :uid))
-            RETURNING project_id
-            """
-        ),
-        {"code": code, "name": f"Project {code}", "uid": uid},
-    ).scalar()
-    db.commit()
-    return pid
+
 
 
 def _insert_board(
@@ -187,7 +129,7 @@ def test_catalog_empty_for_new_project():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid)
+        pid = create_project(db, uid=uid)
     finally:
         db.close()
 
@@ -203,7 +145,7 @@ def test_catalog_resolves_two_source_tables():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid)
+        pid = create_project(db, uid=uid)
         board_mid = _insert_board(
             db, wid=wid, code="BRD-A", sku="SKU-A", description="Oak Board"
         )
@@ -235,7 +177,7 @@ def test_catalog_404_for_other_workspace():
 
     db = SessionLocal()
     try:
-        pid_a = _create_project(db, uid=uid_a, code="HJ-WA1")
+        pid_a = create_project(db, uid=uid_a, code="HJ-WA1")
     finally:
         db.close()
 
@@ -248,7 +190,7 @@ def test_catalog_includes_qty_and_unit_cost():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid)
+        pid = create_project(db, uid=uid)
         board_mid = _insert_board(
             db, wid=wid, code="BRD-B", sku="SKU-B",
             description="Walnut Sheet", unit_cost=24.99,
@@ -279,7 +221,7 @@ def test_catalog_supplier_falls_back_to_default_supplier():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid)
+        pid = create_project(db, uid=uid)
         hw_mid = db.execute(
             text(
                 """INSERT INTO hardware_materials(workspace_id, sku, description,
@@ -397,12 +339,43 @@ def _add_hardware_line(db, *, item_id: int, catalog_id: int, qty: int = 1) -> in
     return lid
 
 
+def test_adding_a_material_already_in_the_catalog_is_a_409():
+    """The catalog holds a material once per project. A second add is refused with a
+    stable code (it used to hit the unique constraint and answer a raw 500), and writes
+    neither a second row nor a second ADD log entry."""
+    c, wid, uid = _login()
+    db = SessionLocal()
+    try:
+        pid = create_project(db, uid=uid, code="T18-DUP")
+        board_mid = _insert_board(db, wid=wid, code="BRD-DUP", sku="SKU-DUP", description="Oak DUP")
+    finally:
+        db.close()
+    body = {"source_table": "board_materials", "source_id": board_mid}
+
+    first = c.post(f"/projects/{pid}/hardware_catalog", json=body)
+    assert first.status_code == 201, first.text
+    second = c.post(f"/projects/{pid}/hardware_catalog", json=body)
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"] == {
+        "code": "ALREADY_IN_CATALOG", "catalog_id": first.json()["catalog_id"]}
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(text("SELECT COUNT(*) FROM project_hardware_catalog WHERE project_id = :p"),
+                          {"p": pid}).scalar()
+        adds = db.execute(text("SELECT COUNT(*) FROM project_hardware_catalog_log"
+                               " WHERE project_id = :p AND action = 'ADD'"), {"p": pid}).scalar()
+    finally:
+        db.close()
+    assert (rows, adds) == (1, 1)
+
+
 def test_add_catalog_writes_log_in_same_txn():
     """POST hardware_catalog inserts both catalog row and log row."""
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-A1")
+        pid = create_project(db, uid=uid, code="T18-A1")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18A", sku="SKU-T18A", description="Oak T18A")
     finally:
         db.close()
@@ -439,7 +412,7 @@ def test_add_catalog_invalid_source_404():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-A2")
+        pid = create_project(db, uid=uid, code="T18-A2")
     finally:
         db.close()
 
@@ -455,7 +428,7 @@ def test_remove_catalog_409_when_referenced():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-B1")
+        pid = create_project(db, uid=uid, code="T18-B1")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18B", sku="SKU-T18B", description="Walnut T18B")
         cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
         iid = _create_item(db, project_id=pid, uid=uid)
@@ -472,7 +445,7 @@ def test_remove_catalog_writes_remove_log_row():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-B2")
+        pid = create_project(db, uid=uid, code="T18-B2")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18C", sku="SKU-T18C", description="Birch T18C")
         cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
     finally:
@@ -501,8 +474,8 @@ def test_create_hardware_line_validates_catalog_belongs_to_project():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid_a = _create_project(db, uid=uid, code="T18-C1A")
-        pid_b = _create_project(db, uid=uid, code="T18-C1B")
+        pid_a = create_project(db, uid=uid, code="T18-C1A")
+        pid_b = create_project(db, uid=uid, code="T18-C1B")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18D", sku="SKU-T18D", description="Maple T18D")
         # Add catalog row to project B
         cid_b = _add_to_catalog(db, project_id=pid_b, material_type="BOARD", material_id=board_mid, added_by=uid)
@@ -524,7 +497,7 @@ def test_patch_hardware_line_qty_writes_edit_log():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-D1")
+        pid = create_project(db, uid=uid, code="T18-D1")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18E", sku="SKU-T18E", description="Pine T18E")
         cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
         iid = _create_item(db, project_id=pid, uid=uid)
@@ -556,7 +529,7 @@ def test_editor_403_on_hardware_line_create():
     c, wid, uid = _login(role="editor")
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-E1")
+        pid = create_project(db, uid=uid, code="T18-E1")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18F", sku="SKU-T18F", description="Cedar T18F")
         cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
         iid = _create_item(db, project_id=pid, uid=uid)
@@ -572,7 +545,7 @@ def test_availability_endpoint_reflects_new_line():
     c, wid, uid = _login()
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code="T18-F1")
+        pid = create_project(db, uid=uid, code="T18-F1")
         board_mid = _insert_board(db, wid=wid, code="BRD-T18G", sku="SKU-T18G", description="Ash T18G")
         cid = _add_to_catalog(db, project_id=pid, material_type="BOARD", material_id=board_mid, added_by=uid)
         iid = _create_item(db, project_id=pid, uid=uid)
@@ -596,38 +569,8 @@ def test_availability_endpoint_reflects_new_line():
 # ── Lock checks on hardware line writes ────────────────────────────────────────
 
 
-def _login_same_workspace(wid: int, role: str, name: str = "U2"):
-    """A second user in an existing workspace: (client, user_id)."""
-    suffix = uuid.uuid4().hex[:8]
-    email = f"u2-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        slug = db.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid}).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, :n, :p, :r) RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "n": name, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c, uid
 
 
-def _set_item(iid: int, sql: str, **params) -> None:
-    db = SessionLocal()
-    try:
-        db.execute(text(f"UPDATE items SET {sql} WHERE item_id = :i"), {"i": iid, **params})
-        db.commit()
-    finally:
-        db.close()
 
 
 def _hw_fixture():
@@ -635,7 +578,7 @@ def _hw_fixture():
     c, wid, uid = _login(role="drafter")
     db = SessionLocal()
     try:
-        pid = _create_project(db, uid=uid, code=f"HL-{uuid.uuid4().hex[:6]}")
+        pid = create_project(db, uid=uid, code=f"HL-{uuid.uuid4().hex[:6]}")
         mid = _insert_hardware(db, wid=wid, sku=f"HW-{uuid.uuid4().hex[:6]}")
         cid = _add_to_catalog(db, project_id=pid, material_type="HARDWARE", material_id=mid, added_by=uid)
         iid = _create_item(db, project_id=pid, uid=uid)
@@ -683,7 +626,7 @@ def test_locked_item_refuses_every_hardware_line_write(name, lock):
     c, wid, uid, iid, cid, lid = _hw_fixture()
     route = _hw_routes(iid, cid, lid)[name]
     if lock == "hard":
-        _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+        set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
         expected = {"code": "HARD_LOCKED", "locked_by": uid}
     else:
         db = SessionLocal()
@@ -693,9 +636,9 @@ def test_locked_item_refuses_every_hardware_line_write(name, lock):
             db.commit()
         finally:
             db.close()
-        _set_item(iid, "status = 'APPROVED'")
+        set_item(iid, "status = 'APPROVED'")
         expected = {"code": "APPROVAL_LOCKED"}
-    admin, _ = _login_same_workspace(wid, "admin")
+    admin, _ = login_same_workspace(wid, "admin")
 
     before = _hw_state(iid, wid)
     for client in (c, admin):                       # a Hard / Approval Lock has no way round
@@ -704,7 +647,7 @@ def test_locked_item_refuses_every_hardware_line_write(name, lock):
         assert r.json()["detail"] == expected
     assert _hw_state(iid, wid) == before, "a refused write must change and log nothing"
 
-    _set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL, status = 'CLEAR'")
+    set_item(iid, "hard_locked_at = NULL, hard_locked_by = NULL, status = 'CLEAR'")
     assert _send(c, route).status_code == route[3]   # the same request goes through once cleared
 
 
@@ -712,8 +655,8 @@ def test_locked_item_refuses_every_hardware_line_write(name, lock):
 def test_controlled_lock_refuses_a_non_owner_on_every_hardware_line_write(name):
     c, wid, uid, iid, cid, lid = _hw_fixture()
     routes = _hw_routes(iid, cid, lid)
-    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
-    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    owner_client, owner_id = login_same_workspace(wid, "drafter", name="Olive Owner")
+    set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
 
     before = _hw_state(iid, wid)
     r = _send(c, routes[name])
@@ -729,24 +672,24 @@ def test_controlled_lock_refuses_a_non_owner_on_every_hardware_line_write(name):
 def test_a_manager_passes_a_controlled_lock_on_every_hardware_line_write(name):
     c, wid, uid, iid, cid, lid = _hw_fixture()
     routes = _hw_routes(iid, cid, lid)
-    _other, owner_id = _login_same_workspace(wid, "drafter")
-    _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
-    manager, _ = _login_same_workspace(wid, "manager")
+    _other, owner_id = login_same_workspace(wid, "drafter")
+    set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
+    manager, _ = login_same_workspace(wid, "manager")
     assert _send(manager, routes[name]).status_code == routes[name][3]
 
 
 def test_an_unlocked_item_and_a_sticky_owner_do_not_block_hardware_line_writes():
     c, wid, uid, iid, cid, lid = _hw_fixture()
-    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _other, owner_id = login_same_workspace(wid, "drafter")
     # cutlist_owner_id survives an Unlock; only an active item_locked counts
-    _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
+    set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
     for name, route in _hw_routes(iid, cid, lid).items():
         assert _send(c, route).status_code == route[3], name
 
 
 def test_unknown_ids_are_still_404_not_lock_answers_for_hardware_lines():
     c, wid, uid, iid, cid, lid = _hw_fixture()
-    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
     assert c.post("/items/99999999/hardware_lines", json={"catalog_id": cid, "qty": 1}).status_code == 404
     assert c.patch("/hardware_lines/99999999", json={"qty": 1}).status_code == 404
     assert c.delete("/hardware_lines/99999999").status_code == 404
@@ -756,7 +699,7 @@ def test_project_catalog_writes_are_not_governed_by_an_items_lock():
     """The catalog belongs to the project, not to an item, so no item's lock
     governs it; removing a row still 409s while a line references it."""
     c, wid, uid, iid, cid, lid = _hw_fixture()
-    _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
+    set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
     db = SessionLocal()
     try:
         pid = db.execute(text("SELECT project_id FROM items WHERE item_id = :i"), {"i": iid}).scalar()
@@ -764,5 +707,5 @@ def test_project_catalog_writes_are_not_governed_by_an_items_lock():
     finally:
         db.close()
     r = c.post(f"/projects/{pid}/hardware_catalog", json={"source_table": "hardware_materials", "source_id": new_mid})
-    assert r.status_code in (200, 201), r.text
+    assert r.status_code == 201, r.text
     assert c.delete(f"/projects/{pid}/hardware_catalog/{cid}").status_code == 409   # still in use, not locked

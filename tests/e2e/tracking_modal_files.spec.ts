@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * The Tracking item modal shows the item's SketchUp / CabVision slots and its Document
@@ -7,14 +8,6 @@ import { test, expect, type Page } from "@playwright/test";
  *
  * The one test that binds a slot removes it again, so the seed is left as found.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 /** Open the modal for the Tracking row whose code is `code`; returns the item id. */
 async function openModal(page: Page, code: string): Promise<number> {
   await page.goto("/tracking?project_id=1");

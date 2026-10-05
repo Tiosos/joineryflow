@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 // Seeded users (see seed/hartwood_joinery.py):
 //   rin.park@hartwood.test   — manager (PM, owner of ALF-001)
@@ -9,15 +10,6 @@ import { test, expect, type Page } from "@playwright/test";
 // `isample` module per RBAC matrix).
 const CREATOR_EMAIL = "rin.park@hartwood.test";
 const REVIEWER_EMAIL = "theo.blake@hartwood.test";
-const PASSWORD = "hartwood-dev";
-
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
 
 async function gotoIsample(page: Page) {
   await page.goto("/isample");

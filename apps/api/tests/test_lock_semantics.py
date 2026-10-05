@@ -18,7 +18,6 @@ Uses the same truncate/seed patterns as test_items_routes.py.
 """
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -26,66 +25,25 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .conftest import TRUNCATE_TABLES
-
-_STATUS_KEYS = [("CLEAR", 1), ("HOLD", 2), ("LIVE", 3), ("VOID", 4)]
-_STAGE_KEYS = [
-    ("REQ", "Required", 1),
-    ("SM", "Shop Material", 2),
-    ("LISTED", "Listed", 3),
-    ("DOWN", "Down", 4),
-    ("CNC", "CNC", 5),
-    ("EDGED", "Edged", 6),
-    ("PAINTED", "Painted", 7),
-    ("MADE", "Made", 8),
-    ("DEL", "Delivered", 9),
-    ("INST", "Installed", 10),
-]
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "item_stages",
-            "item_hardware_lines",
-            "project_hardware_catalog",
-            "item_lock_request",
-            "items",
-            "hardware_materials",
-            "board_materials",
-            "status_options",
-            "stages",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "item_stages",
+    "item_hardware_lines",
+    "project_hardware_catalog",
+    "item_lock_request",
+    "items",
+    "hardware_materials",
+    "board_materials",
+    "status_options",
+    "stages",
+)
 
 
-def _seed_refs(db) -> None:
-    for key, order in _STATUS_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO status_options(status_key, sort_order)"
-                " VALUES(:k, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "o": order},
-        )
-    for key, label, order in _STAGE_KEYS:
-        db.execute(
-            text(
-                "INSERT INTO stages(stage_key, label, sort_order)"
-                " VALUES(:k, :l, :o) ON CONFLICT DO NOTHING"
-            ),
-            {"k": key, "l": label, "o": order},
-        )
-    db.commit()
 
 
 def _make_user(
@@ -131,7 +89,6 @@ def _setup_workspace_and_project(
     slug = f"ws-{suffix}"
     db = SessionLocal()
     try:
-        _seed_refs(db)
         wid = db.execute(
             text("INSERT INTO workspace(slug, name) VALUES(:s, 'Locks WS') RETURNING id"),
             {"s": slug},

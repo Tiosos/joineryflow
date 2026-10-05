@@ -17,11 +17,16 @@ Also seeds:
 - item_stages (5 per item: REQ, SM, LISTED, DOWN, CNC)
 """
 from datetime import date, timedelta
+from pathlib import Path
 
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
+
+# Sample drawings/photos live beside this file: /code/seed/hartwood_joinery in the
+# api container, the checkout's seed/hartwood_joinery anywhere else.
+_ASSETS = Path(__file__).resolve().parent / "hartwood_joinery"
 
 DEV_PASSWORD = "hartwood-dev"
 
@@ -709,8 +714,8 @@ def main() -> None:
         s = db
         workspace_id = wid
 
-        _kitchen_pdf = "/code/seed/hartwood_joinery/sample_drawings/kitchen-base-run.pdf"
-        _bath_pdf = "/code/seed/hartwood_joinery/sample_drawings/bathroom-vanity.pdf"
+        _kitchen_pdf = str(_ASSETS / "sample_drawings" / "kitchen-base-run.pdf")
+        _bath_pdf = str(_ASSETS / "sample_drawings" / "bathroom-vanity.pdf")
 
         # Resolve seeded ALF-001 project + a drafter + manager from the workspace.
         _alf_pid = s.execute(
@@ -924,7 +929,7 @@ def main() -> None:
         # ── iSample demo (sub-project #5c) ────────────────────────────────────
         from app.files.seed_helper import put_seed_file as _put_sample_photo
 
-        _stone_png = "/code/seed/hartwood_joinery/sample_photos/stone-corian.png"
+        _stone_png = str(_ASSETS / "sample_photos" / "stone-corian.png")
 
         # Resolve drafter + manager users (drafter creator, manager reviewer).
         _sample_drafter = s.execute(text("""
@@ -2850,6 +2855,11 @@ def main() -> None:
                      " WHERE slab_id = 'hartwood-CST-2297-A'"),
             ).scalar()
             s.execute(
+                text("DELETE FROM budget_transactions WHERE po_id IN"
+                     " (SELECT po_id FROM purchase_orders WHERE item_id = ANY(:ids))"),
+                {"ids": _rp_ids},
+            )
+            s.execute(
                 text("DELETE FROM purchase_orders WHERE item_id = ANY(:ids)"),
                 {"ids": _rp_ids},
             )
@@ -2903,11 +2913,78 @@ def main() -> None:
                 {"o": _po_id, "m": _slab_mid},
             )
 
+            # A cost centre carrying one Commitment for that order, and the
+            # supplier's quote attached to it (PO attachments live in the
+            # shared file store). Built through the legacy procurement query
+            # functions so the rows are the ones the API reads.
+            from app.files.seed_helper import put_seed_file as _put_po_file
+            from app.procurement import queries as _proc
+
+            _cc_id = s.execute(
+                text(
+                    """
+                    INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
+                    VALUES (:w, 'GEN', 'General', EXTRACT(year FROM now())::int, 50000)
+                    ON CONFLICT (workspace_id, code) DO UPDATE SET name = EXCLUDED.name
+                    RETURNING cost_center_id
+                    """
+                ),
+                {"w": workspace_id},
+            ).scalar()
+            _proc.commit_budget(s, _po_id, _cc_id, 3551.00)
+            _quote_pdf = _ASSETS / "sample_drawings" / "kitchen-base-run.pdf"
+            _quote_blob = _put_po_file(
+                s, workspace_id=workspace_id, workspace_slug="hartwood-joinery",
+                app_user_id=mina_id, path=_quote_pdf,
+            )
+            _proc.insert_attachment(
+                s, po_id=_po_id, attachment_type="PDF", file_name="supplier-quote.pdf",
+                file_size_bytes=_quote_pdf.stat().st_size, file_blob_id=_quote_blob,
+                uploaded_by=mina_id,
+            )
+
+            # A second order, submitted for approval by the seeded admin, so the legacy
+            # approval queue (/procurement/approvals) has a row. It carries no item or
+            # project, so no cutlist or Tracking view shows it. Delete-then-insert on a
+            # marker, so a re-run neither duplicates it nor trips the workflow's FK.
+            _approval_mark = "Seeded demo order, awaiting approval."
+            _admin_id = s.execute(
+                text("SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'admin'"
+                     " ORDER BY id LIMIT 1"),
+                {"w": workspace_id},
+            ).scalar()
+            s.execute(
+                text("DELETE FROM approval_workflows WHERE po_id IN"
+                     " (SELECT po_id FROM purchase_orders WHERE internal_comments = :m)"),
+                {"m": _approval_mark},
+            )
+            s.execute(text("DELETE FROM purchase_orders WHERE internal_comments = :m"),
+                      {"m": _approval_mark})
+            _approval_po = s.execute(
+                text(
+                    """
+                    INSERT INTO purchase_orders (
+                        po_number, vendor_id, requester_id, description, category,
+                        status, priority, quantity, unit_of_measure, unit_cost,
+                        total_amount, internal_comments)
+                    VALUES (
+                        'PO-' || EXTRACT(year FROM now())::int || '-' ||
+                            lpad(nextval('po_number_seq')::text, 4, '0'),
+                        :v, :req, 'Edge banding, 3 rolls', 'Board', 'Draft', 'Medium',
+                        3, 'roll', 96.00, 288.00, :m)
+                    RETURNING po_id
+                    """
+                ),
+                {"v": _vendor_id, "req": mina_id, "m": _approval_mark},
+            ).scalar()
+            _proc.submit_for_approval(s, _approval_po, _admin_id)
+
             s.commit()
             print(
                 "seeded #10 cutlist/orderbook: 1 shared cutlist (3 items, "
                 "1 fanned-out DOWN completion, 1 late joiner) + 2 related "
-                f"parts + supplier {_vendor_name!r} + 1 purchase order"
+                f"parts + supplier {_vendor_name!r} + 1 purchase order "
+                "(with a cost centre commitment and an attached quote)"
             )
 
         # ------------------------------------------------------------------
@@ -3258,7 +3335,9 @@ def main() -> None:
         _cm_drafter = _actor_by("auth_role = 'drafter'")
         _cm_foreman = _actor_by("email = 'juno.okafor@hartwood.test'")
         _cm_manager = _actor_by("auth_role = 'manager'")
-        if _cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager:
+        _cm_admin = _actor_by("auth_role = 'admin'")
+        if (_cm_project and _cm_item and _cm_drafter and _cm_foreman and _cm_manager
+                and _cm_admin):
             db.execute(text("""
                 DELETE FROM comment WHERE workspace_id = :w AND (
                     project_id = :p OR item_id = :i
@@ -3297,13 +3376,14 @@ def main() -> None:
                 db, actor=_cm_manager, object_type="project", object_id=_cm_project,
                 parent_id=None,
                 body=f"Site access is via the Block B loading dock only — book 24h ahead. "
-                     f"@{_cm_drafter.full_name} please note it on the install pack.",
-                mentioned_user_ids=[_cm_drafter.id],
+                     f"@{_cm_drafter.full_name} please note it on the install pack. "
+                     f"cc @{_cm_admin.full_name}",
+                mentioned_user_ids=[_cm_drafter.id, _cm_admin.id],
             )
             assert _code == "OK", _code
             # One comment each on that item's own area and room, so the project
             # page's Areas & Rooms card opens with counts. No mentions, so the
-            # seeded bell counts (Juno 1, Noa 2) are unchanged.
+            # seeded bell counts (Juno 1, Noa 2, Aria 1) are unchanged.
             _cm_area, _cm_room = db.execute(
                 text("SELECT area_id, room_id FROM items WHERE item_id = :i"),
                 {"i": _cm_item},
@@ -3353,6 +3433,22 @@ def main() -> None:
                     parent_id=None,
                     body="Elevation dimensions need re-checking against the site measure "
                          "before this is approved.",
+                    mentioned_user_ids=[],
+                )
+                assert _code == "OK", _code
+            # One comment by the seeded admin on the other project (so ALF-001's comment
+            # counts and the seeded bells are unchanged): an author-only edit has
+            # something of the admin's to act on.
+            _cm_other = db.execute(text(
+                "SELECT project_id FROM projects WHERE project_code = 'TRT-014' AND workspace_id = :w"
+            ), {"w": wid}).scalar()
+            if _cm_other:
+                db.execute(text("DELETE FROM comment WHERE workspace_id = :w AND project_id = :p"),
+                           {"w": wid, "p": _cm_other})
+                _code, _ = _cm.create_comment(
+                    db, actor=_cm_admin, object_type="project", object_id=_cm_other,
+                    parent_id=None,
+                    body="Client wants the walnut sample confirmed before we order the veneer.",
                     mentioned_user_ids=[],
                 )
                 assert _code == "OK", _code

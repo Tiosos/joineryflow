@@ -144,7 +144,7 @@ def test_create_drawing_cross_workspace_blob_rejected(client):
     from sqlalchemy import text
     from app.auth.passwords import hash_password
     # Set up workspace A + login + upload
-    ids_a = _setup(client)
+    _setup(client)
     blob_id_a = _upload_blob(client)
     # Set up workspace B + project
     s = SessionLocal()

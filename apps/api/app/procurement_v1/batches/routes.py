@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 from ...auth.audit import write_audit
 from ...auth.rbac import require_permission
 from ...auth.sessions import AuthUser
+from ...catalog.queries import (
+    MATERIAL_TABLE_BY_TYPE, MaterialNotFound, assert_material_in_workspace,
+)
 from ...db import get_db
 from ...projects.queries import get_project
 from .queries import (
@@ -60,6 +63,13 @@ def post_batch(
     )
     if proj is None:
         raise HTTPException(404, "Project not found")
+    try:
+        assert_material_in_workspace(
+            db, table=MATERIAL_TABLE_BY_TYPE[payload.material_type],
+            material_id=payload.material_id, workspace_id=user.workspace_id,
+        )
+    except MaterialNotFound as e:
+        raise HTTPException(404, e.detail)
     bid = create_batch(
         db,
         payload=payload.model_dump(exclude={"project_id"}),

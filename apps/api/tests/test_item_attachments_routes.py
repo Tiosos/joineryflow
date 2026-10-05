@@ -242,9 +242,8 @@ def test_route_bind_cross_workspace_returns_422(client, truncate_all):
 
     # Try to bind the workspace-B blob onto a workspace-A item
     r = client.post(f"/items/{iid_a}/attachments/cv_drawing", json={"file_blob_id": bid_b})
-    # The route maps "item not found in this workspace" ValueError to 404 (per existing routes.py logic
-    # which checks for "not found" substring). Either 404 or 422 is acceptable as long as the bind fails.
-    assert r.status_code in (404, 422)
+    # Cross-workspace is 404 (CLAUDE.md §7), never a validation error.
+    assert r.status_code == 404
 
 
 SKP_BYTES = b"\xFF\xFE\xFF\x0E" + "SketchUp Model".encode("utf-16-le") + b"\x00" * 200

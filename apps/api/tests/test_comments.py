@@ -7,63 +7,21 @@ author-or-manager delete (soft); mentions validated against the workspace and
 the RBAC engine; a notification per (recipient, comment, kind); workspace
 isolation; audit + item_edit_log.
 """
-import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-ROLES = ("manager", "drafter", "editor", "purchase_officer", "viewer")
+from .helpers_comments import ROLES, _client, _inbox, _restrict, _set_grants, _sql, _workspace  # noqa: F401
 
 
-def _workspace() -> dict:
-    slug = f"cm-{uuid.uuid4().hex[:8]}"
-    s = SessionLocal()
-    try:
-        s.execute(text("INSERT INTO status_options(status_key, sort_order)"
-                       " VALUES('CLEAR',1) ON CONFLICT DO NOTHING"))
-        wid = s.execute(text("INSERT INTO workspace(slug,name) VALUES(:s,'CM') RETURNING id"),
-                        {"s": slug}).scalar()
-        uids = {}
-        for role in ROLES:
-            uids[role] = s.execute(
-                text("""INSERT INTO app_user(workspace_id,email,full_name,password_hash,auth_role)
-                        VALUES(:w,:e,:n,:p,:r) RETURNING id"""),
-                {"w": wid, "e": f"{role}@{slug}.test", "n": role.title(),
-                 "p": hash_password("pw"), "r": role}).scalar()
-        pid = s.execute(text("""INSERT INTO projects(project_code,name,workspace_id)
-                                VALUES(:c,:c,:w) RETURNING project_id"""),
-                        {"c": slug.upper(), "w": wid}).scalar()
-        aid = s.execute(text("INSERT INTO area(project_id, name) VALUES(:p,'Level 1') RETURNING area_id"),
-                        {"p": pid}).scalar()
-        rid = s.execute(text("INSERT INTO room(area_id, rm_no) VALUES(:a,'R01') RETURNING room_id"),
-                        {"a": aid}).scalar()
-        iid = s.execute(text("""INSERT INTO items(num, project_id, description, status)
-                                VALUES (nextval('joinery_number_seq'), :p, 'Vanity', 'CLEAR')
-                                RETURNING item_id"""), {"p": pid}).scalar()
-        rp = s.execute(text("""INSERT INTO items(num, project_id, description, status, row_type,
-                                                 parent_item_id, related_part_type_key)
-                               VALUES (nextval('joinery_number_seq'), :p, 'Top', 'CLEAR',
-                                       'related_part', :par, 'benchtop')
-                               RETURNING item_id"""), {"p": pid, "par": iid}).scalar()
-        s.commit()
-    finally:
-        s.close()
-    return {"slug": slug, "wid": wid, "pid": pid, "aid": aid, "rid": rid,
-            "iid": iid, "rp": rp, "uid": uids}
 
 
-def _client(ws: dict, role: str) -> TestClient:
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"],
-                                    "email": f"{role}@{ws['slug']}.test", "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c
+
 
 
 @pytest.fixture
@@ -81,12 +39,6 @@ def _post(c, ws, body="Hello", kind="item", **extra):
     return c.post("/comments", json={**_target(ws, kind), "body": body, **extra})
 
 
-def _sql(query, **params):
-    s = SessionLocal()
-    try:
-        return s.execute(text(query), params).all()
-    finally:
-        s.close()
 
 
 def _thread(c, ws, kind="item"):
@@ -235,10 +187,6 @@ def test_deleting_the_object_takes_its_thread_with_it(ws):
 
 # -------------------------------------------------- mentions + notifications ---
 
-def _inbox(ws, role, **params):
-    r = _client(ws, role).get("/notifications", params=params)
-    assert r.status_code == 200, r.text
-    return r.json()
 
 
 def test_mention_notifies_the_mentioned_user_and_not_the_author(ws):
@@ -456,35 +404,8 @@ def test_project_comment_writes_audit_but_no_item_edit_log(ws):
 
 # ------------------------------------------- access is re-checked, not assumed ---
 
-def _restrict(ws, role, grants):
-    """Make `role`'s user governed by the DB alone, holding only `grants`
-    (list of (module, action)). Returns the group id so a test can change it."""
-    s = SessionLocal()
-    try:
-        gid = s.execute(text("""INSERT INTO permission_group(workspace_id, name, is_system)
-                                VALUES (:w, :n, false) RETURNING group_id"""),
-                        {"w": ws["wid"], "n": f"only-{role}-{uuid.uuid4().hex[:4]}"}).scalar()
-        for module, action in grants:
-            s.execute(text("INSERT INTO group_module_grant(group_id, module, action)"
-                           " VALUES (:g, :m, :a)"), {"g": gid, "m": module, "a": action})
-        s.execute(text("INSERT INTO user_group_membership(user_id, group_id, project_id)"
-                       " VALUES (:u, :g, NULL)"), {"u": ws["uid"][role], "g": gid})
-        s.commit()
-    finally:
-        s.close()
-    return gid
 
 
-def _set_grants(gid, grants):
-    s = SessionLocal()
-    try:
-        s.execute(text("DELETE FROM group_module_grant WHERE group_id = :g"), {"g": gid})
-        for module, action in grants:
-            s.execute(text("INSERT INTO group_module_grant(group_id, module, action)"
-                           " VALUES (:g, :m, :a)"), {"g": gid, "m": module, "a": action})
-        s.commit()
-    finally:
-        s.close()
 
 
 def test_item_thread_needs_list_read_as_well_as_tracking(ws):

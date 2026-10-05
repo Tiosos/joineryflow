@@ -8,7 +8,6 @@ export type StatusKey = (typeof STATUS_OPTIONS)[number];
 export interface BulkStatusResponse {
   updated: number;
   not_found: number[];
-  cross_workspace: number[];
   /** Skipped: a Hard Lock, or someone else's Controlled Lock, refuses the caller. */
   locked: { item_id: number; code: string; owner_name: string | null }[];
 }

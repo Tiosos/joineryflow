@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * QC Dashboard (Plan V1 §4.2), against `make seed`'s fixtures. On ALF-001:
@@ -15,14 +16,6 @@ import { test, expect, type Page } from "@playwright/test";
 /** The tile's number, exactly: `toContainText("2")` would also pass for "12". */
 function count(n: number) {
   return new RegExp(`(?<!\\d)${n}$`);
-}
-
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
 test("the QC tab opens a dashboard counting only cutlists in production", async ({ page }) => {

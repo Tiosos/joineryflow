@@ -2,54 +2,23 @@
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.auth.rbac_engine import seed_system_groups
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+
+pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 def _login(role: str = "admin"):
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"h-{suffix}"
-    email = f"u-{suffix}@t"
-    db = SessionLocal()
-    try:
-        wid = db.execute(
-            text("INSERT INTO workspace(slug, name) VALUES (:s, 'H') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r)
-                """
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        )
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    c, wid, _ = login(role)
     return c, wid
+
 
 
 def _seed_groups(wid: int) -> None:

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Locks on the item refuse every hardware line write (`assert_item_content_unlocked`,
@@ -10,14 +11,6 @@ import { test, expect, type Page } from "@playwright/test";
  * Each test puts the item back exactly as seeded (workers: 1, so nothing else runs
  * meanwhile). Nothing here writes a hardware line: refusals are the point.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function openHardware(page: Page, code: string) {
   await page.goto("/tracking?project_id=1");
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: code });

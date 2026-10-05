@@ -1,12 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
+import { login } from "./helpers";
 
 /** A small but valid N-page PDF (correct xref), so pdf.js can really open it. */
 function pdfWithPages(n: number): Buffer {

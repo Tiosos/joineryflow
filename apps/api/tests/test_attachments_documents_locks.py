@@ -20,7 +20,7 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .test_item_documents import _client, _sql, _upload, _workspace, reset_disk  # noqa: F401
+from .helpers_documents import _client, _sql, _upload, _workspace, reset_disk  # noqa: F401
 
 
 @pytest.fixture

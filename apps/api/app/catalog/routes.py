@@ -91,6 +91,13 @@ def create_cv_mapping_route(
     db: Session = Depends(get_db),
 ):
     try:
+        q.assert_material_in_workspace(
+            db, table=body.target_material_table, material_id=body.target_material_id,
+            workspace_id=user.workspace_id,
+        )
+    except q.MaterialNotFound as e:
+        raise HTTPException(404, e.detail)
+    try:
         mid = q.create_cv_mapping(
             db, payload=body.model_dump(), actor_id=user.id, workspace_id=user.workspace_id,
         )
@@ -114,11 +121,22 @@ def patch_cv_mapping_route(
     user: AuthUser = Depends(require_permission("catalog", "write")),
     db: Session = Depends(get_db),
 ):
-    if q.get_cv_mapping(db, mid=mid, workspace_id=user.workspace_id) is None:
+    current = q.get_cv_mapping(db, mid=mid, workspace_id=user.workspace_id)
+    if current is None:
         raise HTTPException(404, "Mapping not found")
     fields = body.model_dump(exclude_none=True)
     if not fields:
-        return q.get_cv_mapping(db, mid=mid, workspace_id=user.workspace_id)
+        return current
+    if "target_material_table" in fields or "target_material_id" in fields:
+        try:
+            q.assert_material_in_workspace(
+                db,
+                table=fields.get("target_material_table", current["target_material_table"]),
+                material_id=fields.get("target_material_id", current["target_material_id"]),
+                workspace_id=user.workspace_id,
+            )
+        except q.MaterialNotFound as e:
+            raise HTTPException(404, e.detail)
     try:
         q.patch_cv_mapping(db, mid=mid, fields=fields, workspace_id=user.workspace_id)
     except IntegrityError as e:

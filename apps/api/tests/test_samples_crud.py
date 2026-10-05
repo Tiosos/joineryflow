@@ -3,7 +3,6 @@
 Mirrors the lock-isolation pattern from #5b: route tests in their own file,
 not mixed with rollback `db` fixture tests.
 """
-import io
 import shutil
 from pathlib import Path
 

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Comment threads on a Module and on a shop-drawing revision (Plan V1 §29,
@@ -11,14 +12,6 @@ import { test, expect, type Page } from "@playwright/test";
  * comment carries its own unique text and is found by it); like the rest of the
  * comments spec they leave the extra rows behind.
  */
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 async function openFirstAlfredItem(page: Page) {
   await page.goto("/projects");
   await page.getByRole("link", { name: "Alfred Street Renovation", exact: true }).click();

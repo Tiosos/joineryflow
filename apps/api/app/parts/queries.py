@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
+from ..catalog.queries import assert_material_in_workspace
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..items.queries import assert_item_content_unlocked
 from .schemas import CreateModuleIn, CreatePartIn, PatchModuleIn, PatchPartIn
@@ -407,6 +408,11 @@ def create_part(
     assert_item_content_unlocked(
         db, item_id=item_id, workspace_id=workspace_id, actor=actor
     )
+    if payload.board_material_id is not None:
+        assert_material_in_workspace(
+            db, table="board_materials", material_id=payload.board_material_id,
+            workspace_id=workspace_id,
+        )
     actor_id = actor.id
 
     pid = db.execute(
@@ -492,6 +498,11 @@ def patch_part(
     assert_item_content_unlocked(
         db, item_id=item_id, workspace_id=workspace_id, actor=actor
     )
+    if payload.board_material_id is not None:
+        assert_material_in_workspace(
+            db, table="board_materials", material_id=payload.board_material_id,
+            workspace_id=workspace_id,
+        )
     actor_id = actor.id
 
     current = db.execute(

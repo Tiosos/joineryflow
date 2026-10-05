@@ -133,8 +133,8 @@ def test_patch_register_fields_audits_and_null_title_is_422(client):
 
 def test_queues_and_counts(client):
     ids = _setup(client)
-    draft = _create(client, ids["pid"], title="draft")
-    pend = _create(client, ids["pid"], title="pend", submit_immediately=True)
+    _create(client, ids["pid"], title="draft")
+    _create(client, ids["pid"], title="pend", submit_immediately=True)
     rej = _create(client, ids["pid"], title="rej", submit_immediately=True)
     appr = _create(client, ids["pid"], title="appr", submit_immediately=True)
     sub = _create(client, ids["pid"], title="sub", submit_immediately=True)
@@ -199,5 +199,5 @@ def test_comment_count_on_card(client):
 
 
 def test_history_is_workspace_scoped(client):
-    ids = _setup(client)
+    _setup(client)
     assert client.get("/shop-drawings/999999/history").status_code == 404

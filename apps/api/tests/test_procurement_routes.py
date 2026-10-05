@@ -15,51 +15,27 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 from app.procurement import routes as proc_routes
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
+from .conftest import truncate_fixture
 
 # Nothing in TRUNCATE_TABLES cascades into cost_centers/budget_transactions
 # (they're referenced BY purchase_orders, not the other way around).
 _EXTRA_TABLES = ("budget_transactions", "cost_centers")
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        all_tables = ", ".join(list(_EXTRA_TABLES) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 def _login(role: str = "purchase_officer") -> dict:
-    """Create a fresh workspace with a user, vendor and cost center."""
-    suffix = uuid.uuid4().hex[:8]
-    slug = f"proc-{suffix}"
-    email = f"u-{suffix}@example.com"
+    """A logged-in user in a fresh workspace with a vendor and cost center."""
+    c, wid, uid = login(role, prefix="proc")
     s = SessionLocal()
     try:
-        wid = s.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'Proc WS') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = s.execute(
-            text(
-                """INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                   VALUES (:w, :e, 'U', :p, :r) RETURNING id"""
-            ),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
         vendor_id = s.execute(
             text("INSERT INTO vendors(name, category, workspace_id)"
                  " VALUES('Vendor', 'Office', :w) RETURNING vendor_id"),
@@ -75,13 +51,8 @@ def _login(role: str = "purchase_officer") -> dict:
         s.commit()
     finally:
         s.close()
-    c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": email, "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
     return {"client": c, "wid": wid, "uid": uid, "vendor_id": vendor_id, "cc_id": cc_id}
+
 
 
 def _create_order(ctx: dict, **overrides) -> dict:
@@ -256,6 +227,25 @@ def test_decide_approval_cross_workspace_is_404():
         json={"approver_id": mine["uid"], "decision": "approve"},
     )
     assert r.status_code == 404, r.text
+
+
+def test_decide_refuses_an_approver_from_another_workspace_and_writes_nothing():
+    """`approver_id` is written into the order's changelog (and later joined to a name), so
+    a user of another workspace, or a nonexistent one, is refused like the same id on
+    submit: 422, with the order, the workflow and the changelog untouched."""
+    mine = _login()
+    other = _login()
+    po_id, wf = _submitted_order(mine)
+    before = (_po_and_workflow_state(po_id, wf), _order_row(po_id)["changelog"])
+
+    for approver in (other["uid"], 2_000_000_000):
+        r = mine["client"].post(
+            f"/procurement/approvals/{wf}/decide",
+            json={"approver_id": approver, "decision": "approve"},
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == "approver not found in this workspace"
+        assert (_po_and_workflow_state(po_id, wf), _order_row(po_id)["changelog"]) == before
 
 
 def _submitted_order(ctx: dict, *, cost_centre: bool = True) -> tuple[int, int]:

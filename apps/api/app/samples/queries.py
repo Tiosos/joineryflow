@@ -4,7 +4,6 @@ Routes own the transaction boundary (db.commit). Queries flush only.
 Workspace isolation enforced via projects.workspace_id direct join (post-hardening).
 The PNG/JPEG-only photo gate runs in routes.py (analogous to #5b's PDF-only gate).
 """
-from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import text

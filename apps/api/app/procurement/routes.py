@@ -42,14 +42,11 @@ from . import queries as q
 from .schemas import (
     ApprovalDecision,
     AttachmentType,
-    InventoryMovementCreate,
     POCategory,
     POCreate,
     POPriority,
     POStatus,
     POUpdate,
-    VendorCreate,
-    VendorStatus,
 )
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
@@ -584,6 +581,10 @@ def decide_approval(
     wf = q.get_workflow(db, workflow_id)
     if not wf or not q.po_in_workspace(db, po_id=wf["po_id"], workspace_id=user.workspace_id):
         raise HTTPException(404, "Workflow not found")
+    # `approver_id` is written into the order's changelog and later joined to a name, so it
+    # must be a user of this workspace (as on submit), and is checked before anything else.
+    if not q.user_in_workspace(db, user_id=action.approver_id, workspace_id=user.workspace_id):
+        raise HTTPException(422, "approver not found in this workspace")
     if wf["status"] != "Pending":
         raise HTTPException(400, "This approval has already been acted on")
 

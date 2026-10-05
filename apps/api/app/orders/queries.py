@@ -27,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..catalog.queries import assert_material_in_workspace
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from .schemas import (
     FROZEN_STATUSES,
@@ -566,6 +567,11 @@ def add_line(
     just created as Draft) must not assume every order accepts lines."""
     if not _lock_order_for_update(db, po_id=po_id, workspace_id=workspace_id):
         return None
+    if payload.material_table is not None or payload.material_id is not None:
+        assert_material_in_workspace(
+            db, table=payload.material_table, material_id=payload.material_id,
+            workspace_id=workspace_id,
+        )
     next_no = db.execute(
         text("SELECT COALESCE(MAX(line_number), 0) + 1 FROM po_line_items WHERE po_id = :o"),
         {"o": po_id},

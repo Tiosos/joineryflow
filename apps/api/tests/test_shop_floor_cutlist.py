@@ -20,20 +20,11 @@ from sqlalchemy import text
 from app.db import SessionLocal
 from app.shop_floor import queries as q
 
-from .conftest import TRUNCATE_TABLES
 
 _STAGES = [("DOWN", 4), ("CNC", 5), ("EDGED", 6), ("PAINTED", 7), ("MADE", 8)]
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        s.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
 @pytest.fixture

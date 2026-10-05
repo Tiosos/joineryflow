@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 /**
  * Sub-project #10 (E2) — the two behaviours the seed exists to demonstrate:
@@ -13,14 +14,6 @@ import { test, expect } from "@playwright/test";
  * ST-CT01, one carrying an issued order (`Corian Stoneworks`) and one carrying
  * none.
  */
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', "rin.park@hartwood.test");
-  await page.fill('input[type="password"]', "hartwood-dev");
-  await page.click('button:has-text("Sign in")');
-  await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
-}
-
 test("related parts are nested and collapsed by default (Q420-Q422)", async ({ page }) => {
   await login(page);
   await page.goto("/tracking?project_id=1");

@@ -5,62 +5,39 @@ Covers preview + commit + history + RBAC + cross-workspace + size caps.
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "equipment_hire",
-            "appliances",
-            "benchtop_materials",
-            "custom_made",
-            "hardware_materials",
-            "board_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "equipment_hire",
+    "appliances",
+    "benchtop_materials",
+    "custom_made",
+    "hardware_materials",
+    "board_materials",
+)
 
 
 def _login(role: str = "drafter"):
+    """A logged-in user with a project and one item -> (client, wid, uid, pid, iid)."""
+    c, wid, uid = login(role, prefix="r")
     suffix = uuid.uuid4().hex[:8]
-    slug = f"r-{suffix}"
-    email = f"u-{suffix}@example.com"
     s = SessionLocal()
     try:
-        wid = s.execute(
-            text("INSERT INTO workspace(slug, name) VALUES(:s, 'R') RETURNING id"),
-            {"s": slug},
-        ).scalar()
-        uid = s.execute(
-            text("""
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r) RETURNING id
-            """),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
         pid = s.execute(text("""
             INSERT INTO projects(project_code, name, pm_id, workspace_id)
             VALUES (:pc, :pn, :u, :w) RETURNING project_id
         """), {"pc": f"P-{suffix}", "pn": f"Project {suffix}", "w": wid, "u": uid}).scalar()
         # items.num is UNIQUE — derive a stable-but-unique value from the
-        # workspace id (same workspace -> same num is not possible since this
-        # fixture only creates one item per workspace).
+        # workspace id (this fixture only creates one item per workspace).
         iid = s.execute(text("""
             INSERT INTO items(num, project_id, description)
             VALUES (:n, :p, 'Item 1') RETURNING item_id
@@ -68,11 +45,8 @@ def _login(role: str = "drafter"):
         s.commit()
     finally:
         s.close()
-    c = TestClient(app)
-    r = c.post("/auth/login",
-               json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
     return c, wid, uid, pid, iid
+
 
 
 def _seed_board_with_mapping(wid: int, uid: int, *, code: str, sku: str,
@@ -164,21 +138,44 @@ def test_preview_missing_required_column_returns_422():
     assert r.status_code == 422
 
 
-def test_preview_file_too_large_is_rejected():
+_BIG_CSV = "Module,Part Name,Qty,Length,Width,Material\n" + (
+    "1,A,1,720,580,18-PB\n" * 60_000  # ~1.2 MB, over MAX_CSV_BYTES (1 MiB)
+)
+
+
+def test_preview_uploaded_file_too_large_is_415_file_too_large():
     c, wid, uid, pid, iid = _login("drafter")
-    big_body = "Module,Part Name,Qty,Length,Width,Material\n" + (
-        "1,A,1,720,580,18-PB\n" * 60_000  # ~1.2 MB, over MAX_CSV_BYTES (1 MiB)
-    )
-    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": big_body})
-    # The app's own guard returns 415 FILE_TOO_LARGE, but Starlette's form
-    # size limit (also ~1 MiB) can reject an oversized form field with a
-    # generic 400 *before* the handler runs — which layer wins depends on the
-    # installed starlette/python-multipart version. Either way the contract
-    # holds: oversized input is rejected. Assert the structured code when the
-    # app guard is the one that fired.
-    assert r.status_code in (400, 415)
-    if r.status_code == 415:
-        assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+    r = c.post(f"/items/{iid}/cv-imports/preview",
+               files={"file": ("big.csv", _BIG_CSV.encode(), "text/csv")})
+    assert r.status_code == 415
+    assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+
+
+@pytest.mark.parametrize("encoding", ["urlencoded", "multipart"])
+def test_preview_pasted_body_too_large_is_415_file_too_large(encoding):
+    """A pasted body answers exactly like an uploaded file: Starlette's own ~1 MiB
+    form-field limit must not turn it into a plain 400. `multipart` is what the
+    wizard's FormData sends; `urlencoded` is the other encoding a client may use."""
+    c, wid, uid, pid, iid = _login("drafter")
+    kwargs = ({"data": {"body": _BIG_CSV}} if encoding == "urlencoded"
+              else {"files": {"body": (None, _BIG_CSV)}})
+    r = c.post(f"/items/{iid}/cv-imports/preview", **kwargs)
+    assert r.status_code == 415
+    assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+    assert r.json()["detail"]["max_bytes"] == 1_048_576
+
+
+def test_preview_with_both_file_and_body_is_422():
+    c, wid, uid, pid, iid = _login("drafter")
+    csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,18-PB\n"
+    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": csv},
+               files={"file": ("a.csv", csv.encode(), "text/csv")})
+    assert r.status_code == 422
+
+
+def test_preview_with_neither_file_nor_body_is_422():
+    c, wid, uid, pid, iid = _login("drafter")
+    assert c.post(f"/items/{iid}/cv-imports/preview").status_code == 422
 
 
 def test_drafter_can_commit_simple():

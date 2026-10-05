@@ -5,7 +5,6 @@ Pure engine tests; no DB, no HTTP, no templates from disk (use inline strings).
 import io
 
 import pypdf
-import pytest
 
 from app.printing.engine import merge_pdfs, render_html_string_to_pdf
 
@@ -38,14 +37,13 @@ def test_merge_pdfs_single_part_roundtrips():
     assert len(reader.pages) == 1
 
 
-def test_render_template_pdf_uses_jinja_autoescape():
-    """Verify HTML autoescape is on so '<script>' becomes '&lt;script&gt;' in the PDF text."""
-    from app.printing.engine import render_template_to_pdf
-    # Use an inline template via a tmp environment? The plan-level test uses the
-    # production env so we exercise autoescape on the cutlist template's `item.description`
-    # context variable — but cutlist.html doesn't exist yet. Use a smoke template instead.
-    # Skip if not available; covered by route tests in Task 8.
-    pytest.skip("autoescape end-to-end coverage lives in test_print_routes.py once cutlist.html exists")
+def test_jinja_env_autoescapes_html_templates():
+    """User-controlled fields (item description, part names, notes) must be escaped
+    in every .html template the engine loads, and in string templates."""
+    from app.printing.engine import _env
+
+    assert _env.autoescape("cutlist.html") is True
+    assert _env.from_string("{{ x }}").render(x="<script>") == "&lt;script&gt;"
 
 
 def test_render_html_string_handles_unicode():

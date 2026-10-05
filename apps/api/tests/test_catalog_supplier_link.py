@@ -6,66 +6,32 @@
 FK. The only way to set it used to be `POST /suppliers/{id}/materials`; this is
 the catalog's own, gated `catalog:write` like every other edit on the grid.
 """
-import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.passwords import hash_password
 from app.db import SessionLocal
-from app.main import app
 
-from .conftest import TRUNCATE_TABLES
+from .helpers import login
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations", "procurement_batches", "equipment_hire",
-            "appliances", "benchtop_materials", "custom_made",
-            "hardware_materials", "board_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "equipment_hire",
+    "appliances",
+    "benchtop_materials",
+    "custom_made",
+    "hardware_materials",
+    "board_materials",
+)
 
 
 def _login(role: str = "drafter", wid: int | None = None):
-    """Fresh workspace (or an existing one) + user, logged in -> (client, wid, uid)."""
-    suffix = uuid.uuid4().hex[:8]
-    email = f"u-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        if wid is None:
-            slug = f"sl-{suffix}"
-            wid = db.execute(
-                text("INSERT INTO workspace(slug, name) VALUES(:s, 'SL') RETURNING id"),
-                {"s": slug},
-            ).scalar()
-        else:
-            slug = db.execute(
-                text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid},
-            ).scalar()
-        uid = db.execute(
-            text("""
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, 'U', :p, :r) RETURNING id
-            """),
-            {"w": wid, "e": email, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c, wid, uid
+    return login(role, wid=wid, prefix="sl")
+
+
 
 
 def _vendor(wid: int, name: str = "Laminex Australia") -> int:

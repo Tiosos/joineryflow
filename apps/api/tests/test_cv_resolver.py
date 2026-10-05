@@ -4,36 +4,25 @@ Resolution order: cv_material_mapping > catalog synonyms[] > catalog sku exact >
 """
 import uuid
 
-import pytest
 from sqlalchemy import text
 
 from app.cv.parser import ParsedPart
 from app.cv.resolver import resolve_codes, suggest_table
 from app.db import SessionLocal
 
-from .conftest import TRUNCATE_TABLES
+from .conftest import truncate_fixture
 
 
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    s = SessionLocal()
-    try:
-        extra = (
-            "batch_allocations",
-            "procurement_batches",
-            "equipment_hire",
-            "appliances",
-            "benchtop_materials",
-            "custom_made",
-            "hardware_materials",
-            "board_materials",
-        )
-        all_tables = ", ".join(list(extra) + list(TRUNCATE_TABLES))
-        s.execute(text(f"TRUNCATE {all_tables} RESTART IDENTITY CASCADE"))
-        s.commit()
-    finally:
-        s.close()
+_cleanup = truncate_fixture(
+    "batch_allocations",
+    "procurement_batches",
+    "equipment_hire",
+    "appliances",
+    "benchtop_materials",
+    "custom_made",
+    "hardware_materials",
+    "board_materials",
+)
 
 
 def _new_workspace_and_user() -> tuple[int, int]:
@@ -118,7 +107,7 @@ def _make_parts(*codes: str) -> list[ParsedPart]:
 
 def test_mapping_hit_beats_synonym():
     wid, uid = _new_workspace_and_user()
-    bmid_with_synonym = _insert_board(wid, code="18-PB", sku="18-PB-SKU", synonyms=["18-PB"])
+    _insert_board(wid, code="18-PB", sku="18-PB-SKU", synonyms=["18-PB"])  # the synonym match mapping must beat
     bmid_alt = _insert_board(wid, code="ALT", sku="ALT-SKU")
     _insert_mapping(wid, cv_code="18-PB", target_table="board_materials",
                     target_id=bmid_alt, uid=uid)
@@ -129,7 +118,7 @@ def test_mapping_hit_beats_synonym():
     finally:
         s.close()
     assert res["18-PB"].kind == "mapped"
-    # Mapping points at bmid_alt, not bmid_with_synonym.
+    # Mapping points at bmid_alt, not at the synonym-matching board.
     assert res["18-PB"].target_material_id == bmid_alt
 
 

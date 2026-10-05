@@ -25,10 +25,7 @@ def _doc(i, ws=1, type_="item", title="Kitchen island bench", codes=None,
 
 
 def _real():
-    url = os.environ.get("MEILI_URL")
-    if not url:
-        pytest.skip("MEILI_URL not set")
-    idx = MeiliIndex(url, os.environ.get("MEILI_API_KEY", ""),
+    idx = MeiliIndex(os.environ["MEILI_URL"], os.environ.get("MEILI_API_KEY", ""),
                      f"test_{uuid.uuid4().hex[:8]}")
     idx.ensure()
     return idx

@@ -1532,12 +1532,12 @@ def bulk_patch_item_status(
 
     For each id: classify into one of
       - 'updated': existed and was updated; status_log + audit + edit_log written.
-      - 'not_found': no item with that id exists at all.
-      - 'cross_workspace': item exists but belongs to another workspace.
+      - 'not_found': no item with that id exists in the caller's workspace. An item of
+        another workspace is reported exactly like one that does not exist.
       - 'locked': a Hard Lock or someone else's Controlled Lock refuses the
         caller (not the Approval Lock); skipped, nothing written for it.
 
-    Returns {'updated': int, 'not_found': [int], 'cross_workspace': [int],
+    Returns {'updated': int, 'not_found': [int],
     'locked': [{'item_id', 'code', 'owner_name'?}]}.
     """
     if not note:
@@ -1547,29 +1547,24 @@ def bulk_patch_item_status(
 
     actor_id = actor.id
     not_found: list[int] = []
-    cross_workspace: list[int] = []
     locked: list[dict] = []
     updated_count = 0
     bulk_size = len(item_ids)
 
     for iid in item_ids:
-        # Existence + workspace classification in one round-trip
-        row = db.execute(
+        exists = db.execute(
             text(
                 """
-                SELECT p.workspace_id AS wid
+                SELECT 1
                 FROM items i
                 JOIN projects p ON p.project_id = i.project_id
-                WHERE i.item_id = :iid
+                WHERE i.item_id = :iid AND p.workspace_id = :w
                 """
             ),
-            {"iid": iid},
-        ).mappings().first()
-        if row is None:
+            {"iid": iid, "w": workspace_id},
+        ).first()
+        if exists is None:
             not_found.append(iid)
-            continue
-        if row["wid"] != workspace_id:
-            cross_workspace.append(iid)
             continue
         try:
             assert_item_content_unlocked(
@@ -1635,7 +1630,6 @@ def bulk_patch_item_status(
     return {
         "updated": updated_count,
         "not_found": not_found,
-        "cross_workspace": cross_workspace,
         "locked": locked,
     }
 
