@@ -167,14 +167,31 @@ def test_preview_uploaded_file_too_large_is_415_file_too_large():
     assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
 
 
-def test_preview_pasted_body_too_large_is_a_plain_400():
-    """Known gap, pinned on purpose: Starlette's own ~1 MiB form-field limit rejects
-    an oversized *pasted* body before the handler runs, so the structured
-    FILE_TOO_LARGE guard is only reachable by file upload (see the test above)."""
+@pytest.mark.parametrize("encoding", ["urlencoded", "multipart"])
+def test_preview_pasted_body_too_large_is_415_file_too_large(encoding):
+    """A pasted body answers exactly like an uploaded file: Starlette's own ~1 MiB
+    form-field limit must not turn it into a plain 400. `multipart` is what the
+    wizard's FormData sends; `urlencoded` is the other encoding a client may use."""
     c, wid, uid, pid, iid = _login("drafter")
-    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _BIG_CSV})
-    assert r.status_code == 400
-    assert "exceeded maximum size" in r.json()["detail"]
+    kwargs = ({"data": {"body": _BIG_CSV}} if encoding == "urlencoded"
+              else {"files": {"body": (None, _BIG_CSV)}})
+    r = c.post(f"/items/{iid}/cv-imports/preview", **kwargs)
+    assert r.status_code == 415
+    assert r.json()["detail"]["code"] == "FILE_TOO_LARGE"
+    assert r.json()["detail"]["max_bytes"] == 1_048_576
+
+
+def test_preview_with_both_file_and_body_is_422():
+    c, wid, uid, pid, iid = _login("drafter")
+    csv = "Module,Part Name,Qty,Length,Width,Material\n1,A,1,720,580,18-PB\n"
+    r = c.post(f"/items/{iid}/cv-imports/preview", data={"body": csv},
+               files={"file": ("a.csv", csv.encode(), "text/csv")})
+    assert r.status_code == 422
+
+
+def test_preview_with_neither_file_nor_body_is_422():
+    c, wid, uid, pid, iid = _login("drafter")
+    assert c.post(f"/items/{iid}/cv-imports/preview").status_code == 422
 
 
 def test_drafter_can_commit_simple():

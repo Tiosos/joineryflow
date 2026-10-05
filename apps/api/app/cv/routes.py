@@ -18,14 +18,14 @@ from collections import defaultdict
 from fastapi import (
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
     Query,
-    UploadFile,
+    Request,
 )
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
@@ -141,17 +141,43 @@ def _build_preview_payload(
 
 # --- POST preview ------------------------------------------------------------
 
+async def _read_preview_input(request: Request) -> tuple[UploadFile | None, str | None]:
+    """The `file` and `body` form fields of a preview request.
+
+    Read here rather than declared as `File()`/`Form()` parameters: FastAPI parses
+    those before the handler runs, and Starlette's own ~1 MiB form-field limit
+    would then answer an oversized *pasted* CSV with a plain 400, bypassing the
+    structured FILE_TOO_LARGE answer an uploaded file gets.
+    """
+    try:
+        form = await request.form()
+    except StarletteHTTPException as exc:
+        # Starlette raises its own base HTTPException (not FastAPI's subclass).
+        if exc.status_code == 400 and "exceeded maximum size" in str(exc.detail):
+            raise HTTPException(
+                415, {"code": "FILE_TOO_LARGE", "max_bytes": MAX_CSV_BYTES}
+            )
+        raise
+    file = form.get("file")  # a starlette UploadFile, the base of FastAPI's
+    if file is not None and not isinstance(file, UploadFile):
+        raise HTTPException(422, "`file` must be a file upload")
+    body = form.get("body")
+    if body is not None and not isinstance(body, str):
+        raise HTTPException(422, "`body` must be text")
+    return file, body
+
+
 @router.post("/items/{iid}/cv-imports/preview")
 async def preview_cv_import(
     iid: int,
-    file: UploadFile | None = File(None),
-    body: str | None = Form(None),
+    request: Request,
     user: AuthUser = Depends(require_permission("cut_floor", "write")),
     db: Session = Depends(get_db),
 ) -> CvPreviewOut:
     project_id = _resolve_workspace_project(
         db, item_id=iid, workspace_id=user.workspace_id
     )
+    file, body = await _read_preview_input(request)
 
     if file is not None and body:
         raise HTTPException(422, "provide either `file` or `body`, not both")
