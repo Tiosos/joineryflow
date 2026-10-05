@@ -37,6 +37,9 @@ _cleanup = truncate_fixture(*CLEANUP_TABLES)
 NOT_PROBED: dict[tuple[str, str], str] = {
     # The path parameter is a catalog type, not a row id; the routes create rows in the
     # caller's own workspace, so there is no foreign row to find.
+    # The foreign id that matters here is the supplier in the body or the row: covered by
+    # test_catalog_supplier_link (create / patch refuse an unknown or foreign supplier and
+    # never echo its name; bulk import never matches another workspace's supplier by name).
     ("POST", "/catalog/{slug}"): "slug is a catalog type, not a row id",
     ("POST", "/catalog/{slug}/bulk"): "slug is a catalog type, not a row id",
 }

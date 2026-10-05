@@ -681,6 +681,28 @@ def test_optimise_cross_workspace_404():
     assert r.status_code == 404, r.text
 
 
+def test_optimise_item_filter_treats_another_workspaces_item_like_a_missing_one():
+    """include_only_item_ids names items; one that belongs to another workspace is answered
+    exactly like one that does not exist (nothing packed, same body), and its parts never
+    join the plan."""
+    c_a, _wa, _ua, pid_a, iid_a, mid_a, *_ = _setup("drafter")
+    _c_b, _wb, _ub, _pid_b, iid_b, mid_b, *_ = _setup("drafter")
+    _add_part(mid_a, 720, 580, qty=2)
+    _add_part(mid_b, 600, 400, qty=7)          # B's parts: must never be counted
+
+    foreign = c_a.post(f"/projects/{pid_a}/optimise", json=_body(include_only_item_ids=[iid_b]))
+    ghost = c_a.post(f"/projects/{pid_a}/optimise", json=_body(include_only_item_ids=[99999999]))
+    assert foreign.status_code == ghost.status_code == 200, (foreign.text, ghost.text)
+    assert foreign.json() == ghost.json()
+    assert foreign.json()["summary"]["total_parts"] == 0
+
+    # Mixed with A's own item: only A's parts are packed.
+    mixed = c_a.post(f"/projects/{pid_a}/optimise",
+                     json=_body(include_only_item_ids=[iid_a, iid_b]))
+    assert mixed.status_code == 200, mixed.text
+    assert mixed.json()["summary"]["total_parts"] == 2
+
+
 def test_optimise_proposal_round_trips_into_create_plan():
     c, _wid, _uid, pid, _iid, mid, *_ = _setup("drafter")
     _add_part(mid, 720, 580, qty=4)

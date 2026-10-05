@@ -342,3 +342,15 @@
   job runs the suite **twice on the same database** (a second `playwright test` step, about +4 minutes), so the next spec
   that only passes on a fresh database fails there instead of surfacing weeks later.
 
+### The last `NOT_PROBED` entries are each covered by a named test (after PR #79)
+Five entries remain (2 path, 3 body); none is an untested hole. Each reason now names the test that covers it:
+- `POST /catalog/{slug}` and `/bulk` (slug is a type, not an id): `test_catalog_supplier_link` — create and patch refuse an
+  unknown or foreign supplier with the same `UNKNOWN_SUPPLIER` and never echo its name; bulk import never matches another
+  workspace's supplier by name.
+- take-line PATCH `material_id`: the material-route test above patches a manual line.
+- `/revisions/{rid}/link-supplier` `supplier_id`: `test_the_shortcut_refuses_an_unknown_or_foreign_supplier_and_writes_nothing`
+  (foreign and nonexistent give the same answer).
+- `/optimise` `include_only_item_ids`: **the one real gap.** The query is scoped to the project and workspace, so a foreign
+  item id was already harmless, but nothing proved it. `test_optimise_item_filter_treats_another_workspaces_item_like_a_missing_one`
+  does (same body as a nonexistent id; B's parts never join the plan), and fails if the scoping is dropped.
+
