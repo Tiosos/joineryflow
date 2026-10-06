@@ -29,9 +29,9 @@ from ..auth.sessions import AuthUser
 from ..cutlists.queries import create_cutlist, link_item
 from ..cutlists.schemas import CreateCutlistIn
 from ..edit_log import write_edit_log
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
-_JOINERY_I = joinery_items_only("i")
+_JOINERY_I = live_joinery_items("i")
 
 # items columns the copy takes from its source, verbatim. Anything not listed here
 # starts from its column default (status CLEAR is explicit below).
@@ -86,7 +86,7 @@ def duplicate_item(
             INSERT INTO items (num, status, duplicated_from_item_id, {cols})
             SELECT nextval('joinery_number_seq'), 'CLEAR', i.item_id, {", ".join("i." + c for c in _COPIED_COLUMNS)}
             FROM items i
-            WHERE i.item_id = :iid
+            WHERE i.item_id = :iid AND NOT i.deleted
             RETURNING item_id
             """
         ),

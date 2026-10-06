@@ -13,6 +13,7 @@ from .queries import (
     create_item,
     decide_lock_request,
     delete_item,
+    restore_item,
     get_item_availability,
     get_item_detail,
     list_items_for_project,
@@ -47,6 +48,7 @@ def get_project_items(
     stage: str | None = None,
     q: str | None = None,
     availability: str | None = None,
+    deleted: bool = False,
     user: AuthUser = Depends(require_permission("tracking", "read")),
     db: Session = Depends(get_db),
 ):
@@ -58,6 +60,7 @@ def get_project_items(
       q             - free-text search on description / code
       availability  - 'blocked' to show only items with unallocated hardware
                       (powers the TO BE ORDERED subtab in Tracking 2.0)
+      deleted       - true lists the soft-deleted rows instead of the live ones
     """
     proj = get_project(
         db,
@@ -75,6 +78,7 @@ def get_project_items(
         stage_key=stage,
         q=q,
         availability=availability,
+        deleted=deleted,
     )
     return {"project_id": pid, "items": items}
 
@@ -217,20 +221,39 @@ def delete_item_route(
     user: AuthUser = Depends(require_permission("tracking", "write")),
     db: Session = Depends(get_db),
 ):
-    """Delete an item.  Returns 409 if hardware lines have batch allocations."""
+    """Soft-delete an item, its related parts and (when empty) its cutlist.
+
+    Nothing is removed, so there is no IN_USE refusal; `POST /items/{id}/restore` undoes it.
+    """
     result = delete_item(
         db,
         item_id=id,
         workspace_id=user.workspace_id,
         actor_id=user.id,
     )
-    if result == "IN_USE":
-        raise HTTPException(
-            status_code=409,
-            detail="item has allocated hardware; release allocations first",
-        )
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="item not found")
+    db.commit()
+
+
+@router.post("/items/{id}/restore", status_code=204)
+def restore_item_route(
+    id: int,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Manager/admin only. Brings back a soft-deleted item with its related parts and cutlist."""
+    if user.auth_role not in ("manager", "admin"):
+        raise HTTPException(status_code=403, detail="only a manager or admin can restore an item")
+    result = restore_item(
+        db, item_id=id, workspace_id=user.workspace_id, actor_id=user.id
+    )
+    if result == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="item not found")
+    if result == "NOT_DELETED":
+        raise HTTPException(
+            status_code=409, detail={"code": "ITEM_NOT_DELETED", "message": "item is not deleted"}
+        )
     db.commit()
 
 

@@ -16,9 +16,9 @@ from ..auth.audit import write_audit
 from ..material_takes.generation import summary_sheets
 from ..material_takes.queries import Conflict, NotFound
 from ..procurement_v1.materials.queries import project_material_rollup
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
-_JOINERY_I = joinery_items_only("i")
+_JOINERY_I = live_joinery_items("i")
 
 
 def _project(db: Session, project_id: int, workspace_id: int) -> None:
@@ -122,7 +122,7 @@ def _detail(db: Session, s: dict) -> dict:
                cur.version AS current_version
           FROM material_summary_source src
           JOIN material_take t ON t.take_id = src.take_id
-          JOIN items i ON i.item_id = t.item_id
+          JOIN items i ON i.item_id = t.item_id AND NOT i.deleted
           LEFT JOIN material_take cur ON cur.item_id = t.item_id AND cur.status = 'approved'
          WHERE src.summary_line_id = ANY(:ids)
          ORDER BY i.num"""), {"ids": [l["line_id"] for l in lines]}).mappings().all()

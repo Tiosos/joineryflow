@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 from .lifecycle import later_stages, prior_stages, shop_floor_order
 
 # Shop Floor is production-only: a related part has no workflow stages at all
@@ -21,7 +21,7 @@ from .lifecycle import later_stages, prior_stages, shop_floor_order
 # by-assignment-id / by-log-id lookups are deliberately left unfiltered — they
 # are reachable only through a row the guard already refused to create, and B3
 # re-keys those two tables to (cutlist_id, stage_key) anyway.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 # ============================================================================
@@ -129,7 +129,7 @@ def active_assignments_for_worker(
             SELECT wa.assignment_id, wa.cutlist_id, c.cutlist_no,
                    wa.stage_key, wa.status
             FROM worker_assignment wa
-            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id AND NOT c.deleted
             JOIN projects p ON p.project_id = c.project_id
             WHERE wa.worker_id = :wid
               AND p.workspace_id = :w
@@ -216,7 +216,7 @@ def cutlist_for_workspace(
             SELECT c.cutlist_id, c.cutlist_no, c.project_id, p.project_code
             FROM cutlist c
             JOIN projects p ON p.project_id = c.project_id
-            WHERE c.cutlist_id = :cid AND p.workspace_id = :w
+            WHERE c.cutlist_id = :cid AND p.workspace_id = :w AND NOT c.deleted
             """
         ),
         {"cid": cutlist_id, "w": workspace_id},
@@ -433,7 +433,7 @@ _ASSIGNMENT_SELECT = """
                AND li.deleted = false) AS item_count
     FROM worker_assignment wa
     LEFT JOIN app_user u ON u.id = wa.worker_id
-    JOIN cutlist c ON c.cutlist_id = wa.cutlist_id
+    JOIN cutlist c ON c.cutlist_id = wa.cutlist_id AND NOT c.deleted
 """
 
 # The workspace path for an assignment now runs through its cutlist.
@@ -551,7 +551,7 @@ def lock_assignment(
                    wa.stage_key, wa.worker_id,
                    wa.status, wa.note, wa.started_at
             FROM worker_assignment wa
-            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id AND NOT c.deleted
             JOIN projects p ON p.project_id = c.project_id
             WHERE wa.assignment_id = :aid AND p.workspace_id = :w
             FOR UPDATE OF wa
@@ -672,7 +672,7 @@ def worker_queue(
                    wa.stage_key, wa.status, wa.note,
                    wa.assigned_at, wa.started_at
             FROM worker_assignment wa
-            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id
+            JOIN cutlist c  ON c.cutlist_id = wa.cutlist_id AND NOT c.deleted
             JOIN projects p ON p.project_id = c.project_id
             WHERE wa.worker_id = :wid AND p.workspace_id = :w
               AND wa.status IN ('assigned', 'in_progress')
@@ -695,7 +695,7 @@ def recent_completions_for_worker(
             SELECT scl.log_id, scl.cutlist_id, c.cutlist_no,
                    scl.stage_key, scl.completed_at, scl.note
             FROM stage_completion_log scl
-            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id
+            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id AND NOT c.deleted
             JOIN projects p ON p.project_id = c.project_id
             WHERE scl.worker_id = :wid
               AND p.workspace_id = :w
@@ -790,7 +790,7 @@ def get_completion_log(
                    scl.assignment_id, scl.worker_id, scl.completed_at,
                    scl.note, scl.undone_at, scl.undone_by
             FROM stage_completion_log scl
-            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id
+            JOIN cutlist c  ON c.cutlist_id = scl.cutlist_id AND NOT c.deleted
             JOIN projects p ON p.project_id = c.project_id
             WHERE scl.log_id = :lid AND p.workspace_id = :w
             """

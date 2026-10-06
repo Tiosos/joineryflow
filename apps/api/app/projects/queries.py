@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 from .schemas import CreateProjectIn, PatchProjectIn
 
 
@@ -80,7 +80,7 @@ _FROM_JOINS = f"""
     LEFT JOIN (
         SELECT project_id, COUNT(*) AS cnt
         FROM items
-        WHERE {joinery_items_only("items")}
+        WHERE {live_joinery_items("items")}
         GROUP BY project_id
     ) ic ON ic.project_id = p.project_id
 """

@@ -12,11 +12,11 @@ Schema notes (real columns, see migrations 0001 + 0007):
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from ...row_types import joinery_items_only
+from ...row_types import live_joinery_items
 
 # The project material rollup covers cutlist demand. A related part is procured
 # through an order of its own (Plan V1 Q424), not through batches.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 _ROLLUP_SQL = text(
     f"""

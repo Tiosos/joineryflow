@@ -27,7 +27,7 @@ from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log, write_edit_log_many
 from ..items.queries import assert_item_content_unlocked
 from .schemas import AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 
 class AlreadyInCatalog(Exception):
@@ -39,7 +39,7 @@ class AlreadyInCatalog(Exception):
 
 # Hardware lines belong to Joinery Items. A related part is procured through an
 # order of its own (Q417/Q424), never through a hardware line.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 # Maps source_table name -> (material_type DB value, pk column name)
 _SOURCE_TABLE_MAP: dict[str, tuple[str, str]] = {

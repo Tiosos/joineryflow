@@ -82,6 +82,8 @@ def list_notifications(
               LEFT JOIN shop_drawing sd ON sd.drawing_id = sr.drawing_id
              WHERE n.recipient_id = :u AND n.workspace_id = :w
                AND c.object_type = ANY(:types)
+               AND (i.item_id IS NULL OR NOT i.deleted)
+               AND (mi.item_id IS NULL OR NOT mi.deleted)
                {"AND n.read_at IS NULL" if unread_only else ""}
              ORDER BY n.created_at DESC, n.notification_id DESC
              LIMIT :lim OFFSET :off

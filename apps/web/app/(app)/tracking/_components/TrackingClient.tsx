@@ -23,9 +23,11 @@ interface Props {
   me: Me | null;
   canEdit: boolean;
   procurementReady: boolean;
+  /** `?deleted=1`: the rows are the project's soft-deleted items (GET ...?deleted=true). */
+  deletedView: boolean;
 }
 
-type QuickFilter = "my" | "deleted" | "void" | "tgsolid" | "orders" | "overdue" | "installed" | null;
+type QuickFilter = "my" | "void" | "tgsolid" | "orders" | "overdue" | "installed" | null;
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -38,6 +40,7 @@ export function TrackingClient({
   me,
   canEdit,
   procurementReady,
+  deletedView,
 }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -93,7 +96,6 @@ export function TrackingClient({
           );
         case "installed":
           return Boolean(it.stages.INST?.done_date);
-        case "deleted":
         case "tgsolid":
         case "orders":
           return false;
@@ -146,6 +148,42 @@ export function TrackingClient({
     setSelectedIds(new Set());
   }
 
+  const canRestore = me?.auth_role === "manager" || me?.auth_role === "admin";
+
+  function toggleDeletedView() {
+    const next = new URLSearchParams(sp.toString());
+    next.set("project_id", String(project.id));
+    if (deletedView) next.delete("deleted");
+    else next.set("deleted", "1");
+    clearSelection();
+    router.push(`/tracking?${next.toString()}`);
+  }
+
+  // Soft delete / restore, one request per ticked row: the API answers each on its own.
+  async function changeDeleted(action: "delete" | "restore") {
+    const ids = Array.from(selectedIds);
+    const verb = action === "delete" ? "Delete" : "Restore";
+    const detail =
+      action === "delete"
+        ? "Their cutlists and related parts go with them. A manager or admin can restore them from the Deleted chip."
+        : "Their cutlists and related parts come back with them.";
+    if (!window.confirm(`${verb} ${ids.length} item${ids.length === 1 ? "" : "s"}? ${detail}`)) return;
+    let failed = 0;
+    for (const id of ids) {
+      const res =
+        action === "delete"
+          ? await fetch(`/api/items/${id}`, { method: "DELETE" })
+          : await fetch(`/api/items/${id}/restore`, { method: "POST" });
+      if (!res.ok) failed += 1;
+    }
+    const done = ids.length - failed;
+    setBulkBanner(
+      `${done} ${action === "delete" ? "deleted" : "restored"}${failed > 0 ? ` · ${failed} failed` : ""}`,
+    );
+    clearSelection();
+    refresh();
+  }
+
   return (
     <div className="grid gap-3">
       <ProjectInfoBar
@@ -159,11 +197,21 @@ export function TrackingClient({
           if (selectedIds.size === 1 && id != null) router.push(`/items/${id}`);
         }}
         editItemDisabledReason={selectedIds.size === 1 ? null : "Tick exactly one row to edit it"}
-        canEdit={canEdit}
+        canEdit={canEdit && !deletedView}
         procurementReady={procurementReady}
       />
 
-      <TrackingMetrics items={items} />
+      {deletedView ? (
+        <p
+          data-testid="deleted-view-notice"
+          className="rounded-lg border border-h-line bg-h-surface px-4 py-2 text-xs text-h-muted"
+        >
+          Showing this project&apos;s deleted items. They are hidden everywhere else.
+          {canRestore ? " Tick rows and press Restore to bring them back." : " A manager or admin can restore them."}
+        </p>
+      ) : (
+        <TrackingMetrics items={items} />
+      )}
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-h-line bg-h-surface p-2">
         <input
@@ -182,7 +230,7 @@ export function TrackingClient({
         />
         <span className="mx-1 h-4 w-px bg-h-line" />
         <Chip label="My Entries" active={quick === "my"} onClick={() => setQuick(quick === "my" ? null : "my")} disabled={!me} />
-        <Chip label="Deleted" active={quick === "deleted"} onClick={() => setQuick(quick === "deleted" ? null : "deleted")} disabled title="Backend field not exposed" />
+        <Chip label="Deleted" active={deletedView} onClick={toggleDeletedView} title="Show this project's deleted items" />
         <Chip label="Void" active={quick === "void"} onClick={() => setQuick(quick === "void" ? null : "void")} />
         <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} disabled title="Backend field not exposed" />
         <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} disabled title="Backend wiring pending" />
@@ -198,18 +246,37 @@ export function TrackingClient({
           ↻
         </button>
 
-        {canEdit && (selectedIds.size > 0 || bulkBanner) ? (
+        {(deletedView ? canRestore : canEdit) && (selectedIds.size > 0 || bulkBanner) ? (
           <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-h-muted">
             {selectedIds.size > 0 ? (
               <>
                 <span data-testid="bulk-selected">{selectedIds.size} selected</span>
-                <button
-                  type="button"
-                  onClick={() => setBulkDialogOpen(true)}
-                  className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white"
-                >
-                  Apply status…
-                </button>
+                {deletedView ? (
+                  <button
+                    type="button"
+                    onClick={() => changeDeleted("restore")}
+                    className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                  >
+                    Restore
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setBulkDialogOpen(true)}
+                      className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                    >
+                      Apply status…
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changeDeleted("delete")}
+                      className="rounded border border-[#b4443d] bg-h-bg px-2 py-0.5 text-[11px] text-[#b4443d] hover:bg-[#f2dcd9]/40"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={clearSelection}
@@ -238,9 +305,10 @@ export function TrackingClient({
         onOpenItem={(id) => setItemModalId(id)}
         onOpenStatus={(id) => setStatusPopupId(id)}
         onOpenAvailability={(id) => setDrawerItemId(id)}
-        selectedIds={canEdit ? selectedIds : undefined}
-        onToggleSelect={canEdit ? toggleSelect : undefined}
-        onToggleSelectVisible={canEdit ? toggleSelectVisible : undefined}
+        selectedIds={(deletedView ? canRestore : canEdit) ? selectedIds : undefined}
+        onToggleSelect={(deletedView ? canRestore : canEdit) ? toggleSelect : undefined}
+        onToggleSelectVisible={(deletedView ? canRestore : canEdit) ? toggleSelectVisible : undefined}
+        readOnly={deletedView}
       />
 
       <div className="flex items-center gap-2 text-xs text-h-muted">

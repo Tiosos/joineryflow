@@ -206,7 +206,7 @@ def list_orders_for_item(
             """
             SELECT 1 FROM items i
             JOIN projects p ON p.project_id = i.project_id
-            WHERE i.item_id = :i AND p.workspace_id = :w
+            WHERE i.item_id = :i AND p.workspace_id = :w AND NOT i.deleted
             """
         ),
         {"i": item_id, "w": workspace_id},
@@ -239,7 +239,7 @@ def _prefill_from_item(db: Session, *, item_id: int, workspace_id: int) -> dict 
             LEFT JOIN cutlist own       ON own.cutlist_id = i.cutlist_id
             LEFT JOIN items   parent    ON parent.item_id = i.parent_item_id
             LEFT JOIN cutlist parent_cl ON parent_cl.cutlist_id = parent.cutlist_id
-            WHERE i.item_id = :i AND p.workspace_id = :w
+            WHERE i.item_id = :i AND p.workspace_id = :w AND NOT i.deleted
             """
         ),
         {"i": item_id, "w": workspace_id},

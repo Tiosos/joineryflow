@@ -27,9 +27,9 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 UNTAGGED = "Untagged"
 

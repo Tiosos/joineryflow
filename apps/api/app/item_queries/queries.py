@@ -30,7 +30,7 @@ def _item_in_workspace(db: Session, *, item_id: int, workspace_id: int) -> bool:
             """
             SELECT 1 FROM items i
             JOIN projects p ON p.project_id = i.project_id
-            WHERE i.item_id = :iid AND p.workspace_id = :wid
+            WHERE i.item_id = :iid AND p.workspace_id = :wid AND NOT i.deleted
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -69,7 +69,7 @@ def _query_in_workspace(
               {_QUERY_JOINS}
               JOIN items i ON i.item_id = q.item_id
               JOIN projects p ON p.project_id = i.project_id
-             WHERE q.query_id = :qid AND p.workspace_id = :wid
+             WHERE q.query_id = :qid AND p.workspace_id = :wid AND NOT i.deleted
             """
         ),
         {"qid": query_id, "wid": workspace_id},

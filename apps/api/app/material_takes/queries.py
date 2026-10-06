@@ -39,7 +39,7 @@ def _item(db: Session, item_id: int, workspace_id: int) -> dict:
     r = db.execute(text("""
         SELECT i.item_id, i.row_type FROM items i
           JOIN projects p ON p.project_id = i.project_id
-         WHERE i.item_id = :i AND p.workspace_id = :w"""),
+         WHERE i.item_id = :i AND p.workspace_id = :w AND NOT i.deleted"""),
         {"i": item_id, "w": workspace_id}).mappings().first()
     if r is None:
         raise NotFound()
@@ -54,7 +54,7 @@ def _take(db: Session, take_id: int, workspace_id: int, *, lock: bool = False) -
         SELECT t.* FROM material_take t
           JOIN items i ON i.item_id = t.item_id
           JOIN projects p ON p.project_id = i.project_id
-         WHERE t.take_id = :t AND p.workspace_id = :w
+         WHERE t.take_id = :t AND p.workspace_id = :w AND NOT i.deleted
          {'FOR UPDATE OF t' if lock else ''}"""),
         {"t": take_id, "w": workspace_id}).mappings().first()
     if r is None:

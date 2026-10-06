@@ -33,14 +33,14 @@ from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from ..edit_log import write_edit_log, write_edit_log_many
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items, not_deleted
 from .schemas import CreateItemIn, PatchItemIn, PatchLifecycleIn
 
 # The drafter editor and the availability drawer are cutlist surfaces: neither
 # means anything for a related part (Q417/Q447), so both 404 on its id.  The
 # Tracking LIST is deliberately different — it returns related parts inline,
 # nested under their parent (Q420/Q422) — and so carries no filter.
-_JOINERY_I = joinery_items_only("i")
+_JOINERY_I = live_joinery_items("i")
 # Status keys writable by /status and /bulk-status endpoints (matches PatchItemStatusIn).
 _VALID_STATUS_KEYS = frozenset({"CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD"})
 
@@ -150,8 +150,12 @@ def list_items_for_project(
     stage_key: str | None = None,
     q: str | None = None,
     availability: str | None = None,
+    deleted: bool = False,
 ) -> list[dict]:
     """Return tracking grid rows for a project, scoped to the caller's workspace.
+
+    `deleted=True` lists the soft-deleted rows instead of the live ones (Tracking's
+    Deleted chip); it is the only reader of them besides `restore_item`.
 
     Filters:
       status    - exact match on items.status
@@ -167,6 +171,7 @@ def list_items_for_project(
         "stage_key": stage_key,
         "q": q,
         "blocked_only": 1 if availability == "blocked" else 0,
+        "deleted": deleted,
     }
 
     # Query 1: items with availability rollup + contractor join
@@ -198,6 +203,7 @@ def list_items_for_project(
             LEFT JOIN app_user c ON c.id = i.contractor_id
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
+              AND i.deleted = :deleted
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
               AND (
                   CAST(:stage_key AS text) IS NULL
@@ -365,7 +371,7 @@ def get_item_availability(
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
-              AND {joinery_items_only("i")}
+              AND {_JOINERY_I}
             """
         ),
         {"iid": item_id, "wid": workspace_id},
@@ -835,7 +841,12 @@ def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) ->
 
 
 def _item_row(
-    db: Session, *, item_id: int, workspace_id: int, for_update: bool = False
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    for_update: bool = False,
+    include_deleted: bool = False,
 ) -> dict | None:
     """Fetch bare item columns for mutation helpers.  Returns None if 404.
 
@@ -851,6 +862,9 @@ def _item_row(
     elsewhere in this codebase. Only the write paths (`patch_item`,
     `decide_lock_request`'s approval) pass it; plain reads leave it False so
     a GET never takes a row lock.
+
+    A soft-deleted item answers None like a missing one; only `restore_item` passes
+    `include_deleted=True`.
     """
     row = db.execute(
         text(
@@ -891,6 +905,7 @@ def _item_row(
             FROM items i
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
+              {"" if include_deleted else "AND " + not_deleted("i")}
             {"FOR UPDATE OF i" if for_update else ""}
             """
         ),
@@ -1309,33 +1324,17 @@ def delete_item(
     workspace_id: int,
     actor_id: int,
 ) -> str:
-    """Delete an item.  Returns 'OK', 'NOT_FOUND', or 'IN_USE'.
+    """Soft-delete an item.  Returns 'OK' or 'NOT_FOUND'.
 
-    IN_USE if any item_hardware_lines for this item are referenced by
-    batch_allocations — indicates procurement data would be orphaned.
-    Writes audit and edit_log BEFORE the delete so foreign-key cascade
-    doesn't remove the log target.
+    Sets `deleted` on the item, on its related parts, and on its cutlist when no live
+    item is left in it. Nothing is removed, so production history, QC records, orders
+    and audit stay as they were, and `restore_item` brings it all back. A deleted item
+    answers 404 everywhere (`_item_row`, `row_types.not_deleted`).
     """
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id)
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND"
 
-    # Guard: any hardware lines referenced by batch_allocations?
-    in_use = db.execute(
-        text(
-            """
-            SELECT 1 FROM item_hardware_lines hl
-            JOIN batch_allocations ba ON ba.item_hardware_line_id = hl.line_id
-            WHERE hl.item_id = :iid
-            LIMIT 1
-            """
-        ),
-        {"iid": item_id},
-    ).first()
-    if in_use is not None:
-        return "IN_USE"
-
-    # Write audit + edit_log before DELETE (CASCADE would nuke item_edit_log)
     write_audit(
         db,
         workspace_id=workspace_id,
@@ -1353,62 +1352,79 @@ def delete_item(
         new_value=None,
     )
 
-    cutlist_id = db.execute(
-        text("SELECT cutlist_id FROM items WHERE item_id = :iid"), {"iid": item_id}
-    ).scalar()
-
-    db.execute(text("DELETE FROM items WHERE item_id = :iid"), {"iid": item_id})
-    db.flush()
-    if cutlist_id is not None:
-        _drop_cutlist_if_unused(
-            db, cutlist_id=cutlist_id, workspace_id=workspace_id,
-            actor_id=actor_id, item_id=item_id,
-        )
+    db.execute(
+        text(
+            "UPDATE items SET deleted = true, updated_at = now()"
+            " WHERE item_id = :iid OR parent_item_id = :iid"
+        ),
+        {"iid": item_id},
+    )
+    # One statement, so "no live item left" and the flag cannot be split by a concurrent link.
+    db.execute(
+        text(
+            """
+            UPDATE cutlist c SET deleted = true, updated_at = now()
+            WHERE c.cutlist_id = (SELECT cutlist_id FROM items WHERE item_id = :iid)
+              AND NOT EXISTS (
+                  SELECT 1 FROM items i WHERE i.cutlist_id = c.cutlist_id AND NOT i.deleted
+              )
+            """
+        ),
+        {"iid": item_id},
+    )
     return "OK"
 
 
-def _drop_cutlist_if_unused(
-    db: Session, *, cutlist_id: int, workspace_id: int, actor_id: int, item_id: int
-) -> bool:
-    """Remove a cutlist its last item has just left, but only when it never did
-    any production work.
+def restore_item(
+    db: Session,
+    *,
+    item_id: int,
+    workspace_id: int,
+    actor_id: int,
+) -> str:
+    """Undo `delete_item`.  Returns 'OK', 'NOT_FOUND' or 'NOT_DELETED'."""
+    current = _item_row(
+        db, item_id=item_id, workspace_id=workspace_id,
+        for_update=True, include_deleted=True,
+    )
+    if current is None:
+        return "NOT_FOUND"
+    if not db.execute(
+        text("SELECT deleted FROM items WHERE item_id = :iid"), {"iid": item_id}
+    ).scalar():
+        return "NOT_DELETED"
 
-    Deleting a cutlist CASCADEs `worker_assignment` and `stage_completion_log`
-    (`0030`), and the Actual Costs labour figure is priced from the latter — so a
-    cutlist that carries any assignment or completion, undone or not, is kept as
-    an empty record rather than erasing that history. A cutlist that still holds
-    another item is never touched. One statement, so the "no items, no history"
-    test and the delete cannot be split by a concurrent link.
-    """
-    row = db.execute(
-        text(
-            """
-            DELETE FROM cutlist c
-            WHERE c.cutlist_id = :cid
-              AND NOT EXISTS (SELECT 1 FROM items i WHERE i.cutlist_id = c.cutlist_id)
-              AND NOT EXISTS (SELECT 1 FROM worker_assignment w WHERE w.cutlist_id = c.cutlist_id)
-              AND NOT EXISTS (SELECT 1 FROM stage_completion_log l WHERE l.cutlist_id = c.cutlist_id)
-            RETURNING c.cutlist_no, c.project_id
-            """
-        ),
-        {"cid": cutlist_id},
-    ).mappings().first()
-    if row is None:
-        return False
     write_audit(
         db,
         workspace_id=workspace_id,
         actor_id=actor_id,
-        event="cutlist.delete",
-        target=str(cutlist_id),
-        payload={
-            "cutlist_no": row["cutlist_no"],
-            "project_id": row["project_id"],
-            "via": "item.delete",
-            "item_id": item_id,
-        },
+        event="item.restore",
+        target=str(item_id),
+        payload={"description": current.get("description")},
     )
-    return True
+    write_edit_log(
+        db,
+        item_id=item_id,
+        actor_id=actor_id,
+        field="_restore",
+        old_value=None,
+        new_value=str(current.get("description")),
+    )
+    db.execute(
+        text(
+            "UPDATE items SET deleted = false, updated_at = now()"
+            " WHERE item_id = :iid OR parent_item_id = :iid"
+        ),
+        {"iid": item_id},
+    )
+    db.execute(
+        text(
+            "UPDATE cutlist SET deleted = false, updated_at = now()"
+            " WHERE cutlist_id = (SELECT cutlist_id FROM items WHERE item_id = :iid)"
+        ),
+        {"iid": item_id},
+    )
+    return "OK"
 
 
 # ── T16 write helpers ─────────────────────────────────────────────────────────
@@ -1558,7 +1574,7 @@ def bulk_patch_item_status(
                 SELECT 1
                 FROM items i
                 JOIN projects p ON p.project_id = i.project_id
-                WHERE i.item_id = :iid AND p.workspace_id = :w
+                WHERE i.item_id = :iid AND p.workspace_id = :w AND NOT i.deleted
                 """
             ),
             {"iid": iid, "w": workspace_id},
@@ -2010,6 +2026,7 @@ def _lock_request_row(db: Session, *, request_id: int, workspace_id: int) -> dic
          LEFT JOIN app_user du ON du.id = r.decided_by
              WHERE r.request_id = :rid
                AND p.workspace_id = :wid
+               AND NOT i.deleted
             """
         ),
         {"rid": request_id, "wid": workspace_id},

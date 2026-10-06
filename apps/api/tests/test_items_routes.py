@@ -796,8 +796,8 @@ def test_patch_item_writes_one_log_row_per_changed_field():
     assert log_count == 3, f"Expected 3 log rows for 3 changed fields, got {log_count}"
 
 
-def test_delete_item_409_when_hardware_allocated():
-    """DELETE returns 409 if item has a hardware line referenced by a batch allocation."""
+def test_delete_item_with_allocated_hardware_soft_deletes_and_keeps_the_allocation():
+    """No IN_USE any more (soft delete, 0052): the line and its batch allocation stay."""
     c, wid, uid = _login(role="drafter")
     db = SessionLocal()
     try:
@@ -816,8 +816,15 @@ def test_delete_item_409_when_hardware_allocated():
         db.close()
 
     r = c.delete(f"/items/{iid}")
-    assert r.status_code == 409, r.text
-    assert "allocated" in r.json()["detail"].lower()
+    assert r.status_code == 204, r.text
+    db = SessionLocal()
+    try:
+        assert db.execute(text("SELECT deleted FROM items WHERE item_id = :i"), {"i": iid}).scalar() is True
+        assert db.execute(
+            text("SELECT count(*) FROM batch_allocations WHERE item_hardware_line_id = :l"), {"l": line_id}
+        ).scalar() == 1
+    finally:
+        db.close()
 
 
 def test_editor_post_item_403():

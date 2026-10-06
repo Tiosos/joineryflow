@@ -10,11 +10,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .catalog_enrich import group_hardware_for_print
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # Printing renders a cutlist. A related part has none (Plan V1 Q417), so the
 # print routes 404 on its id rather than emitting an empty PDF.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 def build_context(item_id: int, db: Session, *, workspace_id: int) -> dict | None:

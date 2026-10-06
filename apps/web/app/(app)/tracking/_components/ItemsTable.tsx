@@ -108,6 +108,8 @@ interface Props {
   selectedIds?: Set<number>;
   onToggleSelect?: (id: number) => void;
   onToggleSelectVisible?: (ids: number[], select: boolean) => void;
+  /** The Deleted view: rows are shown but cannot be opened — a deleted item answers 404. */
+  readOnly?: boolean;
 }
 
 function statusClasses(status: string | null): string {
@@ -152,6 +154,7 @@ export function ItemsTable({
   selectedIds,
   onToggleSelect,
   onToggleSelectVisible,
+  readOnly = false,
 }: Props) {
   const bulkEnabled = Boolean(selectedIds && onToggleSelect && onToggleSelectVisible);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -463,6 +466,7 @@ export function ItemsTable({
                   onOpen={() => onOpenItem(it.id)}
                   onOpenStatus={() => onOpenStatus(it.id)}
                   onOpenAvailability={onOpenAvailability}
+                  readOnly={readOnly}
                 />,
               ];
               if (isOpen) {
@@ -482,6 +486,7 @@ export function ItemsTable({
                       onOpen={() => onOpenItem(kid.id)}
                       onOpenStatus={() => onOpenStatus(kid.id)}
                       onOpenAvailability={onOpenAvailability}
+                      readOnly={readOnly}
                     />,
                   );
                 }
@@ -511,6 +516,7 @@ function Row({
   onOpen,
   onOpenStatus,
   onOpenAvailability,
+  readOnly = false,
 }: {
   row: TrackingItemRow;
   projectId: number;
@@ -527,6 +533,7 @@ function Row({
   onOpen: () => void;
   onOpenStatus: () => void;
   onOpenAvailability?: (id: number) => void;
+  readOnly?: boolean;
 }) {
   const isRelated = row.row_type === "related_part";
   return (
@@ -546,12 +553,13 @@ function Row({
         />
       </td>
       <td className="px-1 py-1 text-center">
-        {isRelated ? (
+        {isRelated || readOnly ? (
           // Q559: GET /items/{id} 404s on a related part — it has no Cutlist,
           // Hardware or Board tab to open. Related parts are edited in Tracking.
+          // A deleted item 404s the same way.
           <span
             className="inline-block p-0.5 text-h-line"
-            title="A related part has no item editor (Q559)"
+            title={isRelated ? "A related part has no item editor (Q559)" : "A deleted item cannot be opened"}
           >
             ▪
           </span>
@@ -585,7 +593,7 @@ function Row({
           ) : (
             <span className="w-3.5 shrink-0" />
           )}
-          <ReferenceCell row={row} projectId={projectId} />
+          <ReferenceCell row={row} projectId={projectId} readOnly={readOnly} />
         </span>
       </td>
       <td className="whitespace-nowrap px-2 py-1 text-h-ink">
@@ -613,15 +621,21 @@ function Row({
         )}
       </td>
       <td className="px-2 py-1">
-        <button
-          type="button"
-          onClick={onOpenStatus}
-          title="Open status detail (Add New Status)"
-          aria-label="Open status detail"
-          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold transition hover:opacity-80 hover:ring-2 hover:ring-h-accent/40 ${statusClasses(row.status)}`}
-        >
-          {row.status ?? "—"}
-        </button>
+        {readOnly ? (
+          <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClasses(row.status)}`}>
+            {row.status ?? "—"}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenStatus}
+            title="Open status detail (Add New Status)"
+            aria-label="Open status detail"
+            className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold transition hover:opacity-80 hover:ring-2 hover:ring-h-accent/40 ${statusClasses(row.status)}`}
+          >
+            {row.status ?? "—"}
+          </button>
+        )}
       </td>
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">
         {formatAmount(row.total_amount)}
@@ -655,7 +669,7 @@ function Row({
             key. It moved here from the CUTLIST column, which now carries the
             cutlist's own number, and keeps the click-through to the editor —
             except on a related part, which has no editor (Q559). */}
-        {isRelated ? (
+        {isRelated || readOnly ? (
           <span>{row.item_number ?? row.id}</span>
         ) : (
           <Link href={`/items/${row.id}`} className="hover:text-h-accent hover:underline">
@@ -707,7 +721,15 @@ function Row({
  * `order` param by selecting the row and opening its detail panel; #4's
  * procurement-batch queue moved to the Delivery queue tab beside it (Q504).
  */
-function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: number }) {
+function ReferenceCell({
+  row,
+  projectId,
+  readOnly = false,
+}: {
+  row: TrackingItemRow;
+  projectId: number;
+  readOnly?: boolean;
+}) {
   if (row.row_type !== "related_part") {
     // Q438/Q568: the cutlist's number, which several items share — not this
     // item's own. Blank while the item has no cutlist, which Q440 allows
@@ -719,6 +741,7 @@ function ReferenceCell({ row, projectId }: { row: TrackingItemRow; projectId: nu
     if (row.cutlist_no == null) {
       return <span className="text-h-muted" title="No cutlist assigned yet">—</span>;
     }
+    if (readOnly) return <span>{row.cutlist_no}</span>;      // a deleted item's cutlist is hidden too
     return (
       <Link
         href={`/list?project_id=${projectId}&cutlist=${row.cutlist_id}`}

@@ -18,7 +18,11 @@ as #9's `/optimise` (Q501). Two sources, both already recorded elsewhere:
   `0030`), shared by every item on it, so a completion's cost is apportioned
   across the cutlist's items by each item's share of total part area (Q549) —
   falling back to an equal split when no item on the cutlist has any
-  measurable part area yet.
+  measurable part area yet. Soft-deleted items (`0052`) are left out of the
+  split, so the live items absorb their share; if none is left the labour stays
+  in `labour_actual` with no per-item entry. **The project total never drops
+  when an item is deleted**: the completions belong to the cutlist, which a
+  delete keeps, and hours already worked are real cost.
 
 A completion with no `assignment_id` (nullable — pre-`0030` provenance rows,
 per `stage_completion_log`'s own comment) has no `started_at` to compute a
@@ -84,7 +88,7 @@ def _item_areas_by_cutlist(db: Session, *, cutlist_ids: set[int]) -> dict[int, d
               FROM items i
               LEFT JOIN modules m ON m.item_id = i.item_id
               LEFT JOIN parts p ON p.module_id = m.module_id
-             WHERE i.cutlist_id = ANY(:ids)
+             WHERE i.cutlist_id = ANY(:ids) AND NOT i.deleted
              GROUP BY i.item_id, i.cutlist_id
             """
         ),

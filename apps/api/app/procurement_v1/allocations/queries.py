@@ -6,11 +6,11 @@ was unsafe for projects with NULL pm_id and is no longer used.
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from ...row_types import joinery_items_only
+from ...row_types import live_joinery_items
 
 # Allocations answer "is this item blocked on a material?" for cutlist work.
 # A related part has no hardware lines to allocate against (Plan V1 Q447).
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 def list_allocations_for_batch(db: Session, *, batch_id: int) -> list[dict]:

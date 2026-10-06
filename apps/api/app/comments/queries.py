@@ -18,7 +18,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # Fixed map — the only place a column name is interpolated into SQL.
 _OBJECT_COL = {
@@ -81,12 +81,12 @@ def _object_in_workspace(
         # precedent (§29 says "Joinery Item").
         "item": f"""SELECT 1 FROM items i JOIN projects p ON p.project_id = i.project_id
                      WHERE i.item_id = :id AND p.workspace_id = :w
-                       AND {joinery_items_only("i")}""",
+                       AND {live_joinery_items("i")}""",
         # A module's item must be a Joinery Item too: the thread's link opens it.
         "module": f"""SELECT 1 FROM modules m JOIN items i ON i.item_id = m.item_id
                        JOIN projects p ON p.project_id = i.project_id
                       WHERE m.module_id = :id AND p.workspace_id = :w
-                        AND {joinery_items_only("i")}""",
+                        AND {live_joinery_items("i")}""",
         "revision": """SELECT 1 FROM shop_drawing_revision v
                          JOIN shop_drawing d ON d.drawing_id = v.drawing_id
                          JOIN projects p ON p.project_id = d.project_id

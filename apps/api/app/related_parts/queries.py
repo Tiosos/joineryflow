@@ -70,7 +70,7 @@ def _parent_row(db: Session, *, item_id: int, workspace_id: int) -> dict | None:
             SELECT i.item_id, i.num, i.project_id, i.row_type
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
-            WHERE i.item_id = :i AND p.workspace_id = :w
+            WHERE i.item_id = :i AND p.workspace_id = :w AND NOT i.deleted
             """
         ),
         {"i": item_id, "w": workspace_id},
@@ -87,7 +87,7 @@ def get_related_part(
             SELECT {_PART_COLS} {_PART_FROM}
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :i AND p.workspace_id = :w
-              AND i.row_type = 'related_part'
+              AND i.row_type = 'related_part' AND NOT i.deleted
             """
         ),
         {"i": item_id, "w": workspace_id},
@@ -105,7 +105,7 @@ def list_for_parent(
         text(
             f"""
             SELECT {_PART_COLS} {_PART_FROM}
-            WHERE i.parent_item_id = :p AND i.row_type = 'related_part'
+            WHERE i.parent_item_id = :p AND i.row_type = 'related_part' AND NOT i.deleted
             ORDER BY COALESCE(i.num, CAST(i.item_id AS integer))
             """
         ),

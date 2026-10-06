@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -41,7 +41,7 @@ def workspace_stats(
                 FROM parts pa
                 JOIN modules mo ON mo.module_id = pa.module_id
                 JOIN items   it ON it.item_id   = mo.item_id
-                                AND {joinery_items_only("it")}
+                                AND {live_joinery_items("it")}
                 JOIN projects pr ON pr.project_id = it.project_id
                 JOIN ws ON pr.workspace_id = ws.id
             ),

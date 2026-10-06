@@ -179,3 +179,41 @@ def test_materials_actual_excludes_cancelled_batch():
     # 10 * $50 = $500 from the live batch; the cancelled batch's 10 * $999
     # must not be added on top.
     assert float(r.json()["materials_actual"]) == pytest.approx(500.00, abs=0.01)
+
+
+# --- soft-deleted items (migration 0052) -----------------------------------
+# Labour is priced from the cutlist's stage completions, which a delete keeps: hours already
+# worked stay costed. Only the per-item split follows the live items.
+
+def test_deleting_an_item_does_not_lower_the_project_labour_total():
+    c, ids = _login()
+    before = c.get(f"/projects/{ids['pid']}/actual-costs").json()
+    assert c.delete(f"/items/{ids['item_big']}").status_code == 204
+    after = c.get(f"/projects/{ids['pid']}/actual-costs").json()
+    assert after["labour_actual"] == before["labour_actual"] == "200.00"
+    assert after["total_actual"] == before["total_actual"]
+
+
+def test_a_deleted_item_drops_out_of_the_per_item_split_and_its_share_goes_to_the_live_items():
+    c, ids = _login()
+    assert c.delete(f"/items/{ids['item_big']}").status_code == 204
+    split = c.get(f"/projects/{ids['pid']}/actual-costs").json()["labour_by_item"]
+    assert str(ids["item_big"]) not in split
+    assert split[str(ids["item_small"])] == "200.00"          # the whole cutlist's labour: nothing is lost
+
+
+def test_deleting_every_item_keeps_the_labour_in_the_total_with_no_per_item_split():
+    c, ids = _login()
+    for key in ("item_big", "item_small"):
+        assert c.delete(f"/items/{ids[key]}").status_code == 204
+    body = c.get(f"/projects/{ids['pid']}/actual-costs").json()
+    assert body["labour_actual"] == "200.00"
+    assert body["labour_by_item"] == {}
+
+
+def test_restoring_the_item_restores_its_share():
+    c, ids = _login()
+    assert c.delete(f"/items/{ids['item_big']}").status_code == 204
+    assert c.post(f"/items/{ids['item_big']}/restore").status_code == 204
+    split = c.get(f"/projects/{ids['pid']}/actual-costs").json()["labour_by_item"]
+    assert split[str(ids["item_big"])] == "133.33" and split[str(ids["item_small"])] == "66.67"

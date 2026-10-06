@@ -17,11 +17,11 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from ..row_types import joinery_items_only
+from ..row_types import live_joinery_items
 
 # A related part has no modules, parts or cut plan (Plan V1 Q447), so it can
 # neither be nested nor looked up here.
-_JOINERY_ITEM = joinery_items_only("i")
+_JOINERY_ITEM = live_joinery_items("i")
 
 
 # ---- Status transition matrix (per spec §6) --------------------------------

@@ -10,6 +10,7 @@ import { fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
 
 interface SearchParams {
   project_id?: string;
+  deleted?: string;
 }
 
 async function apiGet<T>(path: string, cookieHeader: string): Promise<T | null> {
@@ -54,9 +55,14 @@ export default async function TrackingPage({
     );
   }
 
+  const deletedView = sp.deleted === "1";
+
   const [project, grid] = await Promise.all([
     apiGet<ProjectOut>(`/projects/${pid}`, cookieHeader),
-    apiGet<TrackingGridOut>(`/projects/${pid}/items`, cookieHeader),
+    apiGet<TrackingGridOut>(
+      `/projects/${pid}/items${deletedView ? "?deleted=true" : ""}`,
+      cookieHeader,
+    ),
   ]);
 
   if (!project) {
@@ -78,6 +84,7 @@ export default async function TrackingPage({
       me={me}
       canEdit={canEdit}
       procurementReady={procurementReady}
+      deletedView={deletedView}
     />
   );
 }
