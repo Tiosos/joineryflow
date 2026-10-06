@@ -28,10 +28,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("orders/queries.py", "WITH reference AS"):
         "keeps the cutlist reference of an item's existing orders current; the item was resolved by the caller",
     ("project_contracts/actual_costs.py", "FROM stage_completion_log scl"):
-        "Actual Costs: labour already spent stays costed, even on a deleted cutlist",
-    ("project_contracts/actual_costs.py", "SELECT i.item_id, i.cutlist_id"):
-        "Actual Costs apportions a cutlist's labour by item area; a deleted item keeps its share "
-        "so the project total does not move",
+        "Actual Costs: labour already spent stays costed in the project total, even on a deleted cutlist (the per-item split skips deleted items)",
     ("related_parts/queries.py", "FROM items i"):
         "`_PART_FROM`: a bare fragment; `get_related_part` and `list_for_parent` add `NOT i.deleted`",
     ("related_parts/queries.py", "DELETE FROM items"):

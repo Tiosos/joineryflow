@@ -542,6 +542,12 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
   cutlist **once no live item is left in it** (one `UPDATE … WHERE NOT EXISTS`). Audited `item.delete` + `item_edit_log`
   `_delete`. No `IN_USE` any more: nothing is removed, so no procurement row is orphaned. Production history
   (`worker_assignment`, `stage_completion_log`), QC, orders and Actual Costs labour all stay.
+- **Actual Costs (settled 2026-10-06, the user asked whether a delete should zero the labour).** It does not, and must
+  not: labour is priced from the cutlist's `stage_completion_log` rows, which a delete keeps, and hours already worked are
+  real cost, so the project's `labour_actual` / `total_actual` are unchanged by a delete (and by a restore). Only the
+  per-item split (`labour_by_item`, Q549) follows the live items: a deleted item drops out of it and the live items on its
+  cutlist absorb its share (the sum still equals the total); if none is left, the labour stays in the total with no
+  per-item entry. `labour_by_item` is not shown in the web today. Tests in `test_actual_costs.py` (4).
 - **`POST /items/{id}/restore`** (manager/admin, else 403): clears the flag on the item, its related parts and its
   cutlist. `404` unknown / another workspace, `409 ITEM_NOT_DELETED` for a live item. Audited `item.restore` + `_restore`.
 - **A deleted item answers 404 everywhere**, like a missing one. The predicate is `row_types.not_deleted(alias)` /
