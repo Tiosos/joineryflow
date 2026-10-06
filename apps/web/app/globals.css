@@ -52,3 +52,107 @@ body {
     letter-spacing: -0.005em;
   }
 }
+
+/* Scroll cards (the Tracking items table): scrollbars that stay visible. macOS and many laptops
+   draw overlay scrollbars that hide until you scroll, which made a scrollable table look cut off.
+   Palette tokens only. */
+.h-scrollbars::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.h-scrollbars::-webkit-scrollbar-track {
+  background: var(--h-surface-alt);
+}
+.h-scrollbars::-webkit-scrollbar-thumb {
+  background: var(--h-ink4);
+  border: 2px solid var(--h-surface-alt);
+  border-radius: 6px;
+}
+.h-scrollbars::-webkit-scrollbar-thumb:hover {
+  background: var(--h-ink3);
+}
+.h-scrollbars::-webkit-scrollbar-corner {
+  background: var(--h-surface-alt);
+}
+@supports (-moz-appearance: none) {
+  .h-scrollbars {
+    scrollbar-color: var(--h-ink4) var(--h-surface-alt);
+  }
+}
+
+/* Tracking items table: pinned columns (checkbox .. Lister). ItemsTable measures the column widths
+   and sets --pin-1 .. --pin-17 on the card, and adds .h-pinned only when the card is wide enough to
+   leave room for the scrolling columns. Palette tokens only. */
+.h-pinned .h-pin-row > :nth-child(-n + 17) {
+  position: sticky;
+  z-index: 2;
+  background-color: var(--h-surface);
+}
+.h-pinned .h-pin-row:hover > :nth-child(-n + 17) {
+  background-color: var(--h-bg);
+}
+.h-pinned .h-pin-related > :nth-child(-n + 17) {
+  background-color: color-mix(in srgb, var(--h-bg) 60%, var(--h-surface));
+}
+.h-pinned thead .h-pin-row > :nth-child(-n + 17) {
+  z-index: 3;
+}
+.h-pinned thead .h-pin-head > :nth-child(-n + 17) {
+  background-color: var(--h-bg);
+}
+.h-pinned .h-pin-row > :nth-child(1) {
+  left: 0;
+}
+.h-pinned .h-pin-row > :nth-child(2) {
+  left: var(--pin-2);
+}
+.h-pinned .h-pin-row > :nth-child(3) {
+  left: var(--pin-3);
+}
+.h-pinned .h-pin-row > :nth-child(4) {
+  left: var(--pin-4);
+}
+.h-pinned .h-pin-row > :nth-child(5) {
+  left: var(--pin-5);
+}
+.h-pinned .h-pin-row > :nth-child(6) {
+  left: var(--pin-6);
+}
+.h-pinned .h-pin-row > :nth-child(7) {
+  left: var(--pin-7);
+}
+.h-pinned .h-pin-row > :nth-child(8) {
+  left: var(--pin-8);
+}
+.h-pinned .h-pin-row > :nth-child(9) {
+  left: var(--pin-9);
+}
+.h-pinned .h-pin-row > :nth-child(10) {
+  left: var(--pin-10);
+}
+.h-pinned .h-pin-row > :nth-child(11) {
+  left: var(--pin-11);
+}
+.h-pinned .h-pin-row > :nth-child(12) {
+  left: var(--pin-12);
+}
+.h-pinned .h-pin-row > :nth-child(13) {
+  left: var(--pin-13);
+}
+.h-pinned .h-pin-row > :nth-child(14) {
+  left: var(--pin-14);
+}
+.h-pinned .h-pin-row > :nth-child(15) {
+  left: var(--pin-15);
+}
+.h-pinned .h-pin-row > :nth-child(16) {
+  left: var(--pin-16);
+}
+.h-pinned .h-pin-row > :nth-child(17) {
+  left: var(--pin-17);
+}
+.h-pinned .h-pin-row > :nth-child(17) {
+  box-shadow:
+    1px 0 0 var(--h-line),
+    4px 0 6px -5px color-mix(in srgb, var(--h-ink) 30%, transparent);
+}

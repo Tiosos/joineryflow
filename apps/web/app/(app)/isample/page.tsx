@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -18,6 +19,8 @@ interface PageProps {
     new?: string;
   }>;
 }
+
+export const metadata: Metadata = { title: "iSample" };
 
 export default async function Page({ searchParams }: PageProps) {
   const sp = await searchParams;

@@ -181,7 +181,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 ## 6. Web shell
 
 - Browser → Next.js Route Handler (`app/api/[...proxy]/route.ts`) → FastAPI. **The browser never calls FastAPI directly.** `proxy.ts` enforces login redirect.
-- `(app)/layout.tsx` does server-side `fetchMe()` and renders chrome. Editor mode (`/items/[id]`) hides TabStrip + SideBar.
+- `(app)/layout.tsx` does server-side `fetchMe()` and renders chrome. Editor mode (`/items/[id]`) hides TabStrip + SideBar. The project SideBar shows on Dashboard only (`HAppChrome.SIDEBAR_ROUTES`); Tracking (header bar) and Shop Dwgs (filter row) have their own project switchers and need the width.
 - **IA is fixed: 6 primary tabs** `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook` (the `List` tab *is* the Cutlist module, Q474) plus admin-only `/it`. New top-level surfaces go on the **secondary strip**: `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`. The strip hides a tab when `can(me, module, "read")` is false; the API's 403 is the real control.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand.**
 - Design tokens live once in `globals.css` (`@theme inline`) and `lib/tokens.ts`. **Do not invent colours** — use `bg-h-*`, `text-h-*`, `border-h-line`. Inter for UI, JetBrains Mono (`.h-mono`) for part #, PO #, ETAs, money. No `tailwind.config.ts`.
@@ -288,7 +288,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration.
+Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration. Tracking's three disabled quick-filter chips (Deleted, Tg Solid, Orders) are parked until the user builds them: see `docs/sub-projects/03-tracking-and-item-detail.md`.
 
 ## 11. Reference docs
 

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -21,6 +22,8 @@ function todayIso(): string {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+
+export const metadata: Metadata = { title: "Cut Floor" };
 
 export default async function CutFloorPage({ searchParams }: PageProps) {
   const sp = await searchParams;

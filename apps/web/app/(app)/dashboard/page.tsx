@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { MetricCard } from "@/components/pm/MetricCard";
 import { MyDayList } from "@/components/pm/MyDayList";
@@ -16,6 +17,8 @@ async function apiGet<T>(path: string, tok: string): Promise<T | null> {
   if (!r || !r.ok) return null;
   return (await r.json()) as T;
 }
+
+export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const c = await cookies();

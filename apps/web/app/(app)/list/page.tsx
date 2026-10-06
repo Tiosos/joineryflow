@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -23,6 +24,8 @@ async function apiGet<T>(path: string, cookieHeader: string): Promise<T | null> 
   if (!r || !r.ok) return null;
   return (await r.json()) as T;
 }
+
+export const metadata: Metadata = { title: "List" };
 
 export default async function ListPage({
   searchParams,

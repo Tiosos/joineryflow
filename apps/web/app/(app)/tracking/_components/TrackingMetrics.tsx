@@ -49,8 +49,8 @@ export function TrackingMetrics({ items }: Props) {
   const pct = total > 0 ? Math.round((installed / total) * 100) : 0;
 
   return (
-    <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Metric label="Items in job" value={total} subtitle="total" />
+    <section className="flex flex-wrap items-center gap-x-8 gap-y-1 rounded-lg border border-h-line bg-h-surface px-4 py-2">
+      <Metric label="Items in job" value={total} subtitle="joinery items, related parts not counted" />
       <Metric label="Overdue" value={overdue} subtitle="across all stages" tone="bad" />
       <Metric label="Due this week" value={dueWeek} subtitle="within 7 days" tone="warn" />
       <Metric label="Installed" value={installed} subtitle={`${pct}% of total`} tone="good" />
@@ -75,16 +75,10 @@ function Metric({ label, value, subtitle, tone }: MetricProps) {
       ? "text-[#3f7d48]"
       : "text-h-ink";
   return (
-    <div className="rounded-lg border border-h-line bg-h-surface p-4">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">
-        {label}
-      </div>
-      <div className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${valueColor}`}>
-        {value}
-      </div>
-      {subtitle ? (
-        <div className="mt-1 text-[11px] text-h-muted">{subtitle}</div>
-      ) : null}
+    <div className="flex items-baseline gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">{label}</span>
+      <span className={`font-mono text-lg font-semibold tabular-nums ${valueColor}`}>{value}</span>
+      {subtitle ? <span className="text-[11px] text-h-muted">{subtitle}</span> : null}
     </div>
   );
 }

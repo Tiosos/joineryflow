@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -11,6 +12,8 @@ interface PageProps {
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export const metadata: Metadata = { title: "QC" };
 
 export default async function QcPage({ searchParams }: PageProps) {
   const sp = await searchParams;

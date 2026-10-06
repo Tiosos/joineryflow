@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -10,6 +11,8 @@ import { ShopFloorClient } from "./_components/ShopFloorClient";
 interface PageProps {
   searchParams: Promise<{ project?: string }>;
 }
+
+export const metadata: Metadata = { title: "Shop Floor" };
 
 export default async function ShopFloorPage({ searchParams }: PageProps) {
   const sp = await searchParams;

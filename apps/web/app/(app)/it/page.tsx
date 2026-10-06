@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { fetchMe } from "@/lib/session";
 import { redirect } from "next/navigation";
 
@@ -5,6 +6,8 @@ import { LabourRatesPanel } from "./_components/LabourRatesPanel";
 import { PermissionGroupsPanel } from "./_components/PermissionGroupsPanel";
 import { SearchHealthPanel } from "./_components/SearchHealthPanel";
 import { WorkerRosterPanel } from "./_components/WorkerRosterPanel";
+
+export const metadata: Metadata = { title: "IT Management" };
 
 export default async function ITPage() {
   const me = await fetchMe();
