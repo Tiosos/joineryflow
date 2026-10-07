@@ -169,17 +169,25 @@ export function TrackingClient({
         : "Their cutlists and related parts come back with them.";
     if (!window.confirm(`${verb} ${ids.length} item${ids.length === 1 ? "" : "s"}? ${detail}`)) return;
     let failed = 0;
+    let locked = 0;
     for (const id of ids) {
       const res =
         action === "delete"
           ? await fetch(`/api/items/${id}`, { method: "DELETE" })
           : await fetch(`/api/items/${id}/restore`, { method: "POST" });
-      if (!res.ok) failed += 1;
+      if (res.ok) continue;
+      // 409 on a delete is a Hard Lock; on a restore it is a related part whose parent is deleted.
+      if (res.status === 409) locked += 1;
+      else failed += 1;
     }
-    const done = ids.length - failed;
-    setBulkBanner(
-      `${done} ${action === "delete" ? "deleted" : "restored"}${failed > 0 ? ` · ${failed} failed` : ""}`,
-    );
+    const done = ids.length - failed - locked;
+    const parts = [`${done} ${action === "delete" ? "deleted" : "restored"}`];
+    if (locked > 0)
+      parts.push(
+        `${locked} skipped (${action === "delete" ? "Hard Locked" : "restore the parent item first"})`,
+      );
+    if (failed > 0) parts.push(`${failed} failed`);
+    setBulkBanner(parts.join(" · "));
     clearSelection();
     refresh();
   }

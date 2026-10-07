@@ -316,10 +316,10 @@ def delete_related_part(
 ) -> str:
     """'OK' | 'NOT_FOUND'.
 
-    A hard delete: unlike a Joinery Item, a related part has no cutlist, no
-    stages and no production history to preserve. `purchase_orders.item_id` is
-    ON DELETE SET NULL (`0029`), so an issued order survives the row it was
-    raised for, which is what an order already sent to a supplier requires.
+    A soft delete, like a Joinery Item's (`0052`): the row is flagged and every reader
+    hides it; `POST /items/{id}/restore` brings it back. An order raised for it keeps
+    its `item_id` and survives, which is what an order already sent to a supplier
+    requires.
     """
     current = get_related_part(db, item_id=item_id, workspace_id=workspace_id)
     if current is None:
@@ -329,7 +329,10 @@ def delete_related_part(
         text("SELECT po_id FROM purchase_orders WHERE item_id = :i"), {"i": item_id}
     ).scalars().all()
 
-    db.execute(text("DELETE FROM items WHERE item_id = :i"), {"i": item_id})
+    db.execute(
+        text("UPDATE items SET deleted = true, updated_at = now() WHERE item_id = :i"),
+        {"i": item_id},
+    )
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -337,7 +340,7 @@ def delete_related_part(
         payload={
             "parent_item_id": current["parent_item_id"],
             "type": current["related_part_type_key"],
-            "orphaned_order_ids": list(orders),
+            "order_ids": list(orders),
         },
     )
     return "OK"

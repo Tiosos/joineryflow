@@ -47,7 +47,14 @@ export default async function ItemEditorPage({
 
   return (
     <div className="grid gap-4">
-      <ItemHeader item={item} />
+      <ItemHeader
+        item={item}
+        canDelete={
+          me?.auth_role === "drafter" ||
+          me?.auth_role === "manager" ||
+          me?.auth_role === "admin"
+        }
+      />
       {item.lock_warning && (
         <SoftLockBanner warning={item.lock_warning} />
       )}

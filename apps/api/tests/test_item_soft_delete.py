@@ -281,3 +281,83 @@ def test_duplicate_then_delete_flags_only_the_copys_cutlist():
     assert _delete(c, copy_id).status_code == 204
     assert _flag("cutlist", "cutlist_id", copy_cl) is True
     assert _flag("cutlist", "cutlist_id", src_cl) is False
+
+
+# --- follow-ups settled 2026-10-07: Hard Lock blocks delete; related parts soft-delete too ----
+
+def _hard_lock(iid: int) -> None:
+    _sql("UPDATE items SET hard_locked_at = now() WHERE item_id=:i", {"i": iid})
+
+
+def test_a_hard_locked_item_cannot_be_deleted_by_anyone():
+    ws = _workspace()
+    iid = _item(ws, None)
+    _hard_lock(iid)
+    for c in (_client(ws), _login_as(ws, "manager"), _login_as(ws, "admin")):
+        r = _delete(c, iid)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "HARD_LOCKED", r.text
+    assert _flag("items", "item_id", iid) is False
+    assert _scalar("SELECT count(*) FROM audit_log WHERE event='item.delete' AND target=:t",
+                   {"t": str(iid)}) == 0                      # a refused delete writes nothing
+
+
+def test_clearing_the_hard_lock_lets_the_delete_through():
+    ws = _workspace()
+    iid = _item(ws, None)
+    _hard_lock(iid)
+    mgr = _login_as(ws, "manager")
+    assert mgr.delete(f"/items/{iid}/hard-lock").status_code == 200
+    assert _delete(_client(ws), iid).status_code == 204
+
+
+def test_the_approval_lock_does_not_stop_a_delete():
+    ws = _workspace()
+    iid = _item(ws, None)
+    _sql("UPDATE items SET status='APPROVED' WHERE item_id=:i", {"i": iid})
+    assert _delete(_client(ws), iid).status_code == 204
+
+
+def test_restore_is_not_stopped_by_a_hard_lock():
+    ws = _workspace()
+    iid = _item(ws, None)
+    assert _delete(_client(ws), iid).status_code == 204
+    _hard_lock(iid)
+    assert _login_as(ws, "manager").post(f"/items/{iid}/restore").status_code == 204
+
+
+def _related_part(ws: dict, parent: int) -> int:
+    return _scalar("""INSERT INTO items(num, project_id, description, status, row_type,
+                                        parent_item_id, related_part_type_key)
+                      VALUES (nextval('joinery_number_seq'), :p, 'RP', 'CLEAR', 'related_part', :par,
+                              (SELECT type_key FROM related_part_type LIMIT 1))
+                      RETURNING item_id""", {"p": ws["pid"], "par": parent})
+
+
+def test_a_related_part_delete_is_a_soft_delete_and_can_be_restored():
+    ws = _workspace()
+    parent = _item(ws, None)
+    part = _related_part(ws, parent)
+    c = _client(ws)
+    assert c.delete(f"/related-parts/{part}").status_code == 204
+    assert _scalar("SELECT count(*) FROM items WHERE item_id=:i", {"i": part}) == 1
+    assert _flag("items", "item_id", part) is True
+    assert c.get(f"/related-parts/{part}").status_code == 404
+    assert _listed(c, ws) == {parent} and _listed(c, ws, deleted=True) == {part}
+    assert _login_as(ws, "manager").post(f"/items/{part}/restore").status_code == 204
+    assert c.get(f"/related-parts/{part}").status_code == 200
+    assert _listed(c, ws) == {parent, part}
+
+
+def test_a_related_part_cannot_be_restored_while_its_parent_is_deleted():
+    ws = _workspace()
+    parent = _item(ws, None)
+    part = _related_part(ws, parent)
+    c = _client(ws)
+    assert c.delete(f"/related-parts/{part}").status_code == 204
+    assert _delete(c, parent).status_code == 204
+    mgr = _login_as(ws, "manager")
+    r = mgr.post(f"/items/{part}/restore")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "PARENT_DELETED", r.text
+    assert _flag("items", "item_id", part) is True
+    assert mgr.post(f"/items/{parent}/restore").status_code == 204     # the parent first
+    assert _flag("items", "item_id", part) is False                    # and it brings its parts back

@@ -1322,18 +1322,25 @@ def delete_item(
     *,
     item_id: int,
     workspace_id: int,
-    actor_id: int,
+    actor: AuthUser,
 ) -> str:
     """Soft-delete an item.  Returns 'OK' or 'NOT_FOUND'.
+    Raises `ItemContentLocked` (HARD_LOCKED) on a Hard Lock, which blocks everyone: a
+    manager/admin clears it first. The Approval and Controlled Locks do not stop a delete.
 
     Sets `deleted` on the item, on its related parts, and on its cutlist when no live
     item is left in it. Nothing is removed, so production history, QC records, orders
     and audit stay as they were, and `restore_item` brings it all back. A deleted item
     answers 404 everywhere (`_item_row`, `row_types.not_deleted`).
     """
+    assert_item_content_unlocked(
+        db, item_id=item_id, workspace_id=workspace_id, actor=actor,
+        include_approval=False, include_controlled=False,
+    )
     current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
     if current is None:
         return "NOT_FOUND"
+    actor_id = actor.id
 
     write_audit(
         db,
@@ -1382,7 +1389,9 @@ def restore_item(
     workspace_id: int,
     actor_id: int,
 ) -> str:
-    """Undo `delete_item`.  Returns 'OK', 'NOT_FOUND' or 'NOT_DELETED'."""
+    """Undo `delete_item`.  Returns 'OK', 'NOT_FOUND', 'NOT_DELETED' or, for a related part
+    whose parent is still deleted, 'PARENT_DELETED' (restore the parent instead).
+    Not stopped by a Hard Lock: it only undoes a delete."""
     current = _item_row(
         db, item_id=item_id, workspace_id=workspace_id,
         for_update=True, include_deleted=True,
@@ -1393,6 +1402,14 @@ def restore_item(
         text("SELECT deleted FROM items WHERE item_id = :iid"), {"iid": item_id}
     ).scalar():
         return "NOT_DELETED"
+    if current["row_type"] == "related_part" and db.execute(
+        text(
+            "SELECT p.deleted FROM items p"
+            " WHERE p.item_id = (SELECT parent_item_id FROM items WHERE item_id = :iid)"
+        ),
+        {"iid": item_id},
+    ).scalar():
+        return "PARENT_DELETED"
 
     write_audit(
         db,

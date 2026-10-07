@@ -224,13 +224,14 @@ def delete_item_route(
     """Soft-delete an item, its related parts and (when empty) its cutlist.
 
     Nothing is removed, so there is no IN_USE refusal; `POST /items/{id}/restore` undoes it.
+    A Hard Lock refuses it (409 HARD_LOCKED).
     """
-    result = delete_item(
-        db,
-        item_id=id,
-        workspace_id=user.workspace_id,
-        actor_id=user.id,
-    )
+    try:
+        result = delete_item(
+            db, item_id=id, workspace_id=user.workspace_id, actor=user
+        )
+    except ItemContentLocked as e:
+        raise HTTPException(409, e.detail)
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="item not found")
     db.commit()
@@ -253,6 +254,11 @@ def restore_item_route(
     if result == "NOT_DELETED":
         raise HTTPException(
             status_code=409, detail={"code": "ITEM_NOT_DELETED", "message": "item is not deleted"}
+        )
+    if result == "PARENT_DELETED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "PARENT_DELETED", "message": "restore the parent item first"},
         )
     db.commit()
 

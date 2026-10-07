@@ -245,8 +245,8 @@ def test_list_under_a_parent(ctx):
 
 
 def test_delete_keeps_an_issued_order(ctx):
-    """0029 made purchase_orders.item_id ON DELETE SET NULL: an order already
-    sent to a supplier outlives the row it was raised for."""
+    """An order already sent to a supplier outlives the part it was raised for: the part is
+    soft-deleted (`0052`), so the order keeps its `item_id` and a restore re-links it."""
     part = _create(ctx).json()
     po_id = ctx["drafter"].post("/orders", json={
         "vendor_id": ctx["vendor"], "description": "rail", "category": "Metal",
@@ -265,7 +265,7 @@ def test_delete_keeps_an_issued_order(ctx):
     finally:
         s.close()
     assert row is not None
-    assert row["item_id"] is None
+    assert row["item_id"] == part["item_id"]
 
 
 # ── C1: the Tracking reference column (Q417 / Q418 / Q567) ────────────────────

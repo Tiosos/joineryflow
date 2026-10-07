@@ -31,8 +31,6 @@ ALLOWED: dict[tuple[str, str], str] = {
         "Actual Costs: labour already spent stays costed in the project total, even on a deleted cutlist (the per-item split skips deleted items)",
     ("related_parts/queries.py", "FROM items i"):
         "`_PART_FROM`: a bare fragment; `get_related_part` and `list_for_parent` add `NOT i.deleted`",
-    ("related_parts/queries.py", "DELETE FROM items"):
-        "the related-part delete route, after `get_related_part` (filtered) resolved the id",
 }
 
 
