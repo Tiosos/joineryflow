@@ -29,7 +29,8 @@ test("a drafter duplicates an item: new Item ID, status CLEAR, link back to the 
     await expect(page.getByTestId("duplicate-dialog")).toContainText(`#${source.item_number}`);
     await page.getByTestId("duplicate-confirm").click();
 
-    await expect(page).toHaveURL(/\/items\/\d+$/, { timeout: 30_000 });
+    // The copy's page, not the source's: wait until the URL is an item other than `id`.
+    await expect(page).toHaveURL(new RegExp(`/items/(?!${id}$)\\d+$`), { timeout: 30_000 });
     copyId = Number(new URL(page.url()).pathname.split("/")[2]);
     expect(copyId).not.toBe(id);
 
@@ -51,7 +52,9 @@ test("a drafter duplicates an item: new Item ID, status CLEAR, link back to the 
     await expect(duplicateButton(page)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("duplicated-from")).toHaveCount(0);
   } finally {
-    if (copyId) await page.request.delete(`/api/items/${copyId}`);
+    // Never the source: a delete that reached it would remove a seeded item (it used to be
+    // refused while the source had allocated hardware, which hid a copyId taken too early).
+    if (copyId && copyId !== id) await page.request.delete(`/api/items/${copyId}`);
   }
 });
 

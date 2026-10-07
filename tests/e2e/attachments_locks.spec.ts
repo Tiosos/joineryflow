@@ -18,8 +18,11 @@ async function itemId(page: Page, code: string): Promise<number> {
   return Number(href!.split("/")[2]);
 }
 
+// Not the editor header's own Delete-item button (data-testid="delete-item"), which is on every tab.
+const tabButtons = (page: Page) => page.locator('button:not([data-testid="delete-item"])');
+
 const writeButtons = (page: Page) =>
-  page.getByRole("button", { name: /^(Upload|Replace|Uploading…|Replacing…|Delete)$/ });
+  tabButtons(page).filter({ hasText: /^(Upload|Replace|Uploading…|Replacing…|Delete)$/ });
 
 async function openAttachments(page: Page, id: number) {
   await page.goto(`/items/${id}?tab=attachments`);
@@ -126,7 +129,7 @@ test("a stale page shows the lock's reason when a slot write is refused", async 
 
   // delete: refused, message shown, nothing removed
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Delete" }).first().click();
+  await tabButtons(page).filter({ hasText: "Delete" }).first().click();
   await expect(message.first()).toBeVisible({ timeout: 15_000 });
 
   // upload / replace: the file is stored, the bind is refused
