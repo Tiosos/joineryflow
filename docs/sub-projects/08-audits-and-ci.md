@@ -377,3 +377,17 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
 - **Left on purpose:** `test_item_number_allocation`, whose truncate is the teardown half of a *setup* fixture (it creates the
   workspace and project, yields, then cleans up), and the one-off `TRUNCATE search_outbox` inside a `test_search_routes` test.
 
+
+### `pdf_generation` attachments spec made re-runnable (2026-10-08)
+- **What was wrong.** The spec's comment said it replaced the seeded item's `cv_drawing` slot, but `page.locator('input[type="file"]').first()`
+  ran before the slot cards had loaded (they arrive after the page, in a client fetch), so it picked the **Document Register's** "Add
+  document" input. Every run added a register row to a *seeded* ALF-001 item, and `getByText('e2e-replace.pdf')` then matched the
+  card plus one register row per run: 2 elements on the second pass (so CI's two passes were tolerated by luck of timing) and a strict-mode
+  failure from the third run on one database (4-5 matches after about five local runs). It also never touched a slot at all.
+- **Fix.** The spec now makes a project and an item of its own (`POST /api/projects`, `POST /api/projects/{pid}/items`), waits for the
+  *CV Production Drawing* card, uploads into **that card's** input, and asserts the card flips to *Populated*, shows the file name, the tab
+  says "1 of 3 slots populated", and the register stays empty (a slot upload is not a register entry). The file bytes are unique to the
+  run because `file_blob` is deduplicated by content: identical bytes come back under whichever name was stored first, which hid the
+  mix-up. Seeded items are no longer changed. Verified: three consecutive runs on a database that the old spec fails on.
+- **Checked, not changed.** `attachments_locks.spec.ts` also uses `input[type="file"]').first()`, but only after `openAttachments`
+  has waited for the slot cards' buttons, so the first input is a slot's.
