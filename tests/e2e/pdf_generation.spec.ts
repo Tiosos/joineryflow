@@ -64,24 +64,40 @@ test("pdf generation: drafter prints cutlist + hardware + combined", async ({ pa
 
 test("attachments tab: drafter uploads a slot then sees populated card", async ({ page }) => {
   await login(page, "rin.park@hartwood.test");
-  await openFirstAlfredItem(page);
 
-  // Switch to Attachments tab via the tablist.
-  await page.getByRole("tab", { name: "Attachments" }).click();
-  await expect(page).toHaveURL(/tab=attachments/, { timeout: 10_000 });
+  // A project and item of its own, so the upload never changes a seeded item for later runs
+  // (CLAUDE.md section 3). Names and file bytes are unique to the run: `file_blob` is deduplicated by
+  // content, so identical bytes would come back under whichever file name was stored first.
+  const stamp = Date.now();
+  const made = await page.request.post("/api/projects", {
+    data: { project_code: `PG-${stamp}`, name: `Attachment upload ${stamp}` },
+  });
+  expect(made.status()).toBe(201);
+  const pid = (await made.json()).id as number;
+  const item = await page.request.post(`/api/projects/${pid}/items`, {
+    data: { description: `Upload target ${stamp}`, code: null, qty: 1 },
+  });
+  expect(item.status()).toBe(201);
+  const itemId = (await item.json()).id as number;
 
-  // The seed pre-populates item 1 with all 3 slots; replacing the cv_drawing should still work.
-  const pdfBytes = "%PDF-1.4\n%abc\n" + "x".repeat(150) + "\n%%EOF\n";
-  const buf = Buffer.from(pdfBytes);
+  await page.goto(`/items/${itemId}?tab=attachments`);
+  // The slot cards load after the page: wait for the one we use, then take ITS file input. The first
+  // file input on the tab can be the Document Register's "Add document" input, which exists earlier.
+  const cvHeading = page.getByRole("heading", { name: /CV Production Drawing/ });
+  await expect(cvHeading).toBeVisible({ timeout: 30_000 });
+  const card = cvHeading.locator("xpath=ancestor::div[.//input[@type='file']][1]");
+  await expect(card).toContainText("Empty");
 
-  // First slot card's hidden file input.
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles({
-    name: "e2e-replace.pdf",
+  const fileName = `e2e-upload-${stamp}.pdf`;
+  await card.locator('input[type="file"]').setInputFiles({
+    name: fileName,
     mimeType: "application/pdf",
-    buffer: buf,
+    buffer: Buffer.from(`%PDF-1.4\n%${stamp}\n` + "x".repeat(150) + "\n%%EOF\n"),
   });
 
-  // Wait for the card to refresh — the original_filename text should change to e2e-replace.pdf
-  await expect(page.getByText("e2e-replace.pdf")).toBeVisible({ timeout: 15_000 });
+  // The card flips to Populated and shows the file name; the tab's summary counts it.
+  await expect(card).toContainText(fileName, { timeout: 15_000 });
+  await expect(card).toContainText("Populated");
+  await expect(page.getByText("1 of 3 slots populated")).toBeVisible();
+  await expect(page.getByTestId("register-row")).toHaveCount(0);       // a slot upload is not a register entry
 });
