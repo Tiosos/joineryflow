@@ -1,5 +1,7 @@
 # Joinery Workflow Software — Plan V1
 
+> **Reading note.** Where a passage carries a `Decided — Qnnn` blockquote, the decision overrides the prose above it. Three such departures exist (Q499, Q513, Q527); the original wording is kept so the history stays readable.
+
 ## 1. Vision and Objectives
 
 This software is a company-wide joinery workflow and control platform. Its goals are:
@@ -495,6 +497,8 @@ The system retains at least the last **20 change states/steps** for rollback.
 
 Rollback creates a restorative revision rather than erasing history.
 
+> **Decided — Q513 = Option 3 (2026-09-18).** There is **no rollback** of change states. History is kept for accountability, not restoration, so the two rollback sentences above are not built and must not be "fixed" in code. See `OPEN-QUESTIONS.md` Q513 and `ALIGNMENT.md` §6.
+
 Change engine principle:
 
 **Change → Impact Detection → Proposed Change → Human Review → Accept / Reject / Modify / Send for Approval → Controlled Update → Audit Record**
@@ -627,6 +631,8 @@ The system automatically consolidates approved Material Takes as a starting draf
 The Project Manager checks and confirms final quantity.
 
 Only after PM confirmation is the summary released to Procurement Dashboard.
+
+> **Decided — Q499 = Option 2 (2026-09-18).** PM confirmation is **advisory**, not a gate: Procurement may order early and the line is flagged as unconfirmed. The code is right and this sentence is superseded. See `OPEN-QUESTIONS.md` Q499 and `ALIGNMENT.md` §6.
 
 Procurement may then compare prices or directly order.
 
@@ -814,6 +820,8 @@ Scheduled reports stay pinned to old template versions until manually upgraded.
 ## 32. KPIs
 
 IT defines KPI formulas. Management selects displays and may set project-specific targets. KPIs can combine system-wide data and use simple or weighted formulas.
+
+> **Decided — Q527 = Option 2 (2026-09-18).** KPIs are a **fixed catalogue** defined in code; a new KPI needs a deploy. "IT defines KPI formulas" is not built as formulas-as-data. See `OPEN-QUESTIONS.md` Q527 and `ALIGNMENT.md` §6.
 
 KPI display uses numbers only. KPIs are reporting-only and do not themselves trigger operational alerts.
 
