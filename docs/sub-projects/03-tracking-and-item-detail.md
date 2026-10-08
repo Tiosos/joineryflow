@@ -563,9 +563,18 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
   the web had no way to delete an item before.
 - **Item codes were never unique** (`items.code` has no index), so reusing a deleted item's code needs no rule, and a
   restore cannot collide.
-- **Not changed / known.** A related part's own delete route (`DELETE /related-parts/…`) still hard-deletes. A Hard Lock
-  does not stop a delete (it never did). Hard-deleting a *cutlist* (`DELETE /cutlists/{cid}`) is unchanged.
-- **Tests.** `test_item_soft_delete.py` (14), `test_items_deleted_filter.py` (1), e2e `item_soft_delete.spec.ts`.
+- **Follow-ups (settled 2026-10-07, the user chose the recommended option each time).**
+  - **A Hard Lock blocks delete** (`409 HARD_LOCKED`, nothing written or audited). The Approval and Controlled Locks do not.
+    Restore is never refused by a lock, since it only undoes a delete. The editor's Delete button is off while locked;
+    Tracking's bulk Delete reports `N skipped (Hard Locked)`.
+  - **Related parts are soft-deleted too** (`DELETE /related-parts/{id}` flags the row; the audit payload key
+    `orphaned_order_ids` became `order_ids`, since an order now keeps its `item_id`). Restore goes through
+    `POST /items/{id}/restore`; a part whose parent is still deleted answers `409 PARENT_DELETED`.
+  - **The item editor has a Delete button** (header, drafter/manager/admin, `window.confirm`, then back to the project's Tracking).
+  - **Known, accepted:** restoring a parent restores *all* its related parts, including one deleted on its own earlier
+    (no per-row deleted-at to tell them apart).
+- **Not changed.** Hard-deleting a *cutlist* (`DELETE /cutlists/{cid}`) is unchanged.
+- **Tests.** `test_item_soft_delete.py` (21), `test_items_deleted_filter.py` (1), e2e `item_soft_delete.spec.ts` (3).
 
 ### Parked on purpose: the two disabled quick-filter chips on Tracking
 Kept visible but disabled; **the user will build them later** (the third, **Deleted**, was built: see above). What each
