@@ -11,6 +11,7 @@ Full per-sub-project records, moved out of `CLAUDE.md`. Read the relevant file b
 - `06-orders-procurement.md`
 - `07-comments.md`
 - `08-audits-and-ci.md`
+- `09-e3-pilot-data-import.md` (E3: the FileMaker Tracking 2.0 grid importer, migration `0053`)
 
 ## Reference docs (read before large changes)
 

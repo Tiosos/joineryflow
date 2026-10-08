@@ -2601,6 +2601,22 @@ def main() -> None:
         s.commit()
         print(f"advanced joinery_number_seq to {seq_row}")
 
+        # Factories (migration 0053): the demo workspace has TG and SI. TRT-014's Pantry tower is made at
+        # TG and tagged Tg Solid; its Master ensuite vanity is made at SI. No e2e spec edits these rows, and
+        # the Tracking spec for the Tg Solid chip / Factory column reads them. Idempotent.
+        for _fcode, _fname in (("TG", "TG factory"), ("SI", "SI factory")):
+            s.execute(text("INSERT INTO factory(workspace_id, code, name) VALUES (:w, :c, :n)"
+                           " ON CONFLICT (workspace_id, code) DO NOTHING"),
+                      {"w": wid, "c": _fcode, "n": _fname})
+        for _icode, _fcode, _tag in (("K-102", "TG", True), ("B-201", "SI", False)):
+            s.execute(text("""
+                UPDATE items SET factory_id = (SELECT factory_id FROM factory WHERE workspace_id = :w AND code = :f),
+                                 tg_solid = :t
+                 WHERE code = :i AND project_id = (SELECT project_id FROM projects
+                                                    WHERE workspace_id = :w AND project_code = 'TRT-014')"""),
+                      {"w": wid, "f": _fcode, "t": _tag, "i": _icode})
+        s.commit()
+
         # ==================================================================
         # === Sub-project #10: cutlist + related parts + Orderbook (D1) ===
         # Demo state for the four things this sub-project introduced that no

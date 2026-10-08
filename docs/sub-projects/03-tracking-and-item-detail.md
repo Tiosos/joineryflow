@@ -576,13 +576,12 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
 - **Not changed.** Hard-deleting a *cutlist* (`DELETE /cutlists/{cid}`) is unchanged.
 - **Tests.** `test_item_soft_delete.py` (21), `test_items_deleted_filter.py` (1), e2e `item_soft_delete.spec.ts` (3).
 
-### Parked on purpose: the two disabled quick-filter chips on Tracking
-Kept visible but disabled; **the user will build them later** (the third, **Deleted**, was built: see above). What each
-one is waiting for:
+### Parked on purpose: the disabled Orders chip on Tracking
+Kept visible but disabled; **the user will build it later** (**Deleted** was built with soft delete, and **Tg Solid** went live
+with migration `0053`, see `09-e3-pilot-data-import.md`: it filters on the per-item `items.tg_solid` tag).
 | Chip | Why it is disabled today (the tooltip in `TrackingClient.tsx`) | What building it needs |
 | --- | --- | --- |
-| **Tg Solid** | "Backend field not exposed": no such field on items | the meaning of "Tg Solid" from the customer, the field behind it, and the API change |
 | **Orders** | "Backend wiring pending": the list carries each row's issued order number, but the chip has no filter logic | filter to rows that have an order (`issued_order_no` / `order_no` set) once the intended meaning is confirmed |
-The chips' state is already wired (`quick` filter keys `tgsolid`, `orders`); only the backend field or the filter
-logic and the removal of `disabled` are missing. Listed in CLAUDE.md "Still open".
+The chip's state is already wired (`quick` filter key `orders`); only the filter logic and the removal of `disabled` are
+missing. Listed in CLAUDE.md "Still open".
 

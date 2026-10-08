@@ -164,6 +164,8 @@ export type VarBoq = "BOQ" | "VAR";
 
 export interface TrackingItemRow {
   id: number;
+  factory_code?: string | null; // where the work is made (`0053`); null = not assigned yet
+  tg_solid?: boolean; // the per-item Tg Solid tag (`0053`)
   item_number: number | null;
   status: string | null;
   stage: string | null; // site location (items.stage), not lifecycle_stage

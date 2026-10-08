@@ -79,6 +79,8 @@ class TrackingItemRow(BaseModel):
     var_boq: VarBoq = "BOQ"
     contractor_id: int | None = None
     contractor_name: str | None = None
+    factory_code: str | None = None   # where the work is made (`0053`); None = not assigned yet
+    tg_solid: bool = False            # the per-item Tg Solid tag (`0053`), behind Tracking's chip
     total_amount: Decimal | None = None
     site_measure_notes: str | None = None
     site_measure_attachment_id: int | None = None

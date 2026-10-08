@@ -315,9 +315,9 @@ export function ItemsTable({
       <table className="w-full text-xs">
         <thead className="sticky top-0 z-10 bg-h-bg text-h-muted shadow-[0_1px_0_0_var(--color-h-line)]">
           <tr>
-            <td colSpan={17} />
+            <td colSpan={18} />
             <th
-              // 17 fixed columns before this + the stage/sub-tab columns + Item ID + Avail.
+              // 18 fixed columns before this (17 pinned + Factory) + the stage/sub-tab columns + Item ID + Avail.
               colSpan={(isDateLike ? 10 : subCols!.length) + 2}
               className="px-2 py-1 text-right"
             >
@@ -364,6 +364,7 @@ export function ItemsTable({
             <Th align="right" sort sortActive={sortKey === "qty"} sortAsc={sortAsc} onSort={() => setSort("qty")}>Qty</Th>
             <Th sort sortActive={sortKey === "assem"} sortAsc={sortAsc} onSort={() => setSort("assem")} title="Contractor">Contractor</Th>
             <Th sort sortActive={sortKey === "lister"} sortAsc={sortAsc} onSort={() => setSort("lister")}>Lister</Th>
+            <Th title="Factory the work is made in">Factory</Th>
             {isDateLike ? (
               STAGE_KEYS.map((sk) => (
                 <Th
@@ -427,6 +428,7 @@ export function ItemsTable({
             <td className="px-1 py-1">
               <FilterSelect value={filters.lister} onChange={(v) => patch("lister", v)} options={listers} placeholder="All listers" />
             </td>
+            <td />
             {isDateLike ? (
               <>
                 <td /><td /><td /><td /><td /><td /><td /><td /><td /><td />
@@ -440,7 +442,7 @@ export function ItemsTable({
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={29} className="px-4 py-8 text-center text-h-muted">
+              <td colSpan={30} className="px-4 py-8 text-center text-h-muted">
                 No items match your filters.
               </td>
             </tr>
@@ -643,6 +645,7 @@ function Row({
       <td className="px-2 py-1 text-right font-mono tabular-nums text-h-ink">{row.qty ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted" title="Contractor">{row.contractor_name ?? "—"}</td>
       <td className="px-2 py-1 text-h-muted">{row.cutlist_owner_name ?? "—"}</td>
+      <td className="px-2 py-1 font-mono text-h-muted" title="Factory">{row.factory_code ?? "—"}</td>
       {isRelated && isDateLike ? (
         // Q419: show NO workflow stages for a related part — leave the whole
         // stage area blank rather than borrowing the parent's dates. Blank
