@@ -70,7 +70,7 @@ export function PartsGrid({ module, lockReason }: PartsGridProps) {
   }
 
   return (
-    <div className="flex-1 overflow-x-auto">
+    <div className="min-w-0 flex-1 overflow-x-auto">
       {error && <p className="mb-2 text-xs text-h-bad">{error}</p>}
       <table className="w-full text-sm border-collapse">
         <thead>

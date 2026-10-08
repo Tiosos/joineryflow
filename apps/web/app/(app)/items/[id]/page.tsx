@@ -46,7 +46,7 @@ export default async function ItemEditorPage({
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <ItemHeader
         item={item}
         canDelete={
@@ -63,7 +63,7 @@ export default async function ItemEditorPage({
         item={item}
         canManage={me?.auth_role === "manager" || me?.auth_role === "admin"}
       />
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
         <ItemMetadataPanel item={item} />
         <EditorTabs
           item={item}

@@ -576,6 +576,15 @@ Asked for by the user while reviewing a screenshot of the Tracking tab.
 - **Not changed.** Hard-deleting a *cutlist* (`DELETE /cutlists/{cid}`) is unchanged.
 - **Tests.** `test_item_soft_delete.py` (21), `test_items_deleted_filter.py` (1), e2e `item_soft_delete.spec.ts` (3).
 
+### Item editor header stays on screen (2026-10-08)
+A wide Cutlist or Material Take table used to stretch `<main>` (a flex child with `min-width: auto`) and the editor's grid
+(`1fr` columns) past the window, which pushed the header's Delete and close buttons, and the Hard-lock / Import from CV /
+Delete module buttons, off the right edge (79px at 1500px wide, 299px at 1280px). Fixed with `min-w-0` on `<main>` in editor
+mode (`HAppChrome`), `minmax(0,1fr)` columns on the editor's two grids, `min-w-0` on `PartsGrid`, and an `overflow-x-auto` box
+around the Material Take table; the tables now scroll inside their own box. Verified: no sideways page scroll on any editor tab
+at 1500, 1280 and 1000px. Below 1000px a small (about 35px) overflow on every tab remains from elsewhere in the chrome, which this
+did not touch. e2e `item_editor_header.spec.ts` (fails without the fix: 299px at 1280).
+
 ### Parked on purpose: the disabled Orders chip on Tracking
 Kept visible but disabled; **the user will build it later** (**Deleted** was built with soft delete, and **Tg Solid** went live
 with migration `0053`, see `09-e3-pilot-data-import.md`: it filters on the per-item `items.tg_solid` tag).
