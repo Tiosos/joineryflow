@@ -977,7 +977,7 @@ hand-edited predicates.
       `0027`'s migration tests against synthetic rows in the meantime.
       → **Update 2026-10-08: first slice built.** The user supplied a Tracking 2.0
       export for one project, and `app/importers/tracking_grid.py` imports it keeping
-      both FileMaker numbers (Q540); the dry run on the real file inserted cleanly.
+      both FileMaker numbers (Q540) (a `#`-prefixed cutlist number is imported with the `#` stripped); the dry run on the real file inserted cleanly.
       Still open: running it against the user's own database, and the other
       FileMaker layouts. See `docs/sub-projects/09-e3-pilot-data-import.md`.
 

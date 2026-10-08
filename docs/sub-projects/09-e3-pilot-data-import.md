@@ -15,6 +15,9 @@
 >    **separate per-item tag**, not the existing `solid_surface_req`.
 > 5. Project code = FileMaker's `PID` (`2325`); name from the file name; rows with no usable cutlist number are imported as
 >    items without a cutlist and listed in the report.
+> 6. **A cutlist number written with a leading `#` (`#101973`) is imported as cutlist `101973`** (the `#` is stripped).
+>    Because Item IDs and cutlist numbers share one number space (Q541), the importer refuses to run if a cutlist number is
+>    already an Item ID, an Item ID is already a cutlist number, or the file uses one number as both.
 
 ## Migration `0053`
 - `factory (factory_id, workspace_id, code, name, is_active)`, `UNIQUE (workspace_id, code)`; `items.factory_id` (nullable FK, `ON DELETE SET NULL`).
@@ -40,7 +43,7 @@ It never touches `joinery_number_seq` (sequences are not transactional; a dry ru
 | FileMaker | JoineryFlow |
 | --- | --- |
 | `ItemId` | `items.num` (kept) |
-| `CutlistNumber` | `cutlist.cutlist_no` (kept); items sharing a number share the cutlist; `created_at` = earliest `Date_Created` on it |
+| `CutlistNumber` | `cutlist.cutlist_no` (kept; a leading `#` is stripped); items sharing a number share the cutlist; `created_at` = earliest `Date_Created` on it. Any other non-numeric text → no cutlist, the text kept in the notes |
 | `ItemId_Old` | `items.legacy_item_ref` |
 | `Item` / `QTY` / `JID` | `description` / `qty` / `jid_code` (`code` stays empty: FileMaker has no item code) |
 | `STG` | `items.stage` **and** the Area (one per distinct value); `VARIES` → no area, no room |
@@ -61,17 +64,17 @@ It never touches `joinery_number_seq` (sequences are not transactional; a dry ru
 No `stage_completion_log` / `worker_assignment` rows are written, so imported work carries **no labour hours** in Actual Costs.
 
 ## What the pilot file showed (aggregates only)
-626 items, 5 areas, 159 rooms, 310 cutlists with a usable number, 1 factory (`TG`, 178 items), 11 Tg Solid tags, 87 status notes, 4,506 stage rows; the dry run inserted cleanly into an empty database. Anomalies the report lists:
-- **65 rows (40 distinct values) have a cutlist number written `#101230`…`#103195`**: not a number in our sense. Imported without a cutlist, the text kept in the notes. **Open question for the user**: is `#` a different numbering series (then strip it and import as cutlist numbers, risking a clash with old item numbers near 100000), or something else?
+626 items, 5 areas, 159 rooms, 350 cutlists (310 plain numbers + 40 written with a `#`), 1 factory (`TG`, 178 items), 11 Tg Solid tags, 87 status notes, 4,506 stage rows; the dry run inserted cleanly into an empty database. Anomalies the report lists:
+- **65 rows (40 distinct values) have a cutlist number written `#101230`…`#103195`.** Imported as cutlists 101230…103195 (the `#` stripped, settled with the user); none of the 40 overlaps another cutlist number or an Item ID in the file. The old numbers sit near 100000, so the importer's number-space check matters when it runs on a database that already has items.
 - 9 rows have no cutlist at all (4 "Prelims" billing lines, 4 pinboards, 1 more).
 - 35 room-number clashes: one `(area, room number)` carries different descriptions (e.g. one number for two different rooms); the first description names the Room, each item keeps its own `rm_desc`.
 - 32 date-order oddities (made after delivered, delivered after installed); 2 rows with stage/level `VARIES`.
 
 ## Still to confirm with the user (assumptions made, easy to change in `STAGE_DATES` / `build_plan`)
-`Notes` → `estimator_notes`; `DWG_FullDrawingPlan` → `rls` (the item editor's "RLS" field); the `#` cutlist numbers above; whether `Lister` should also map to a user (`cutlist_owner_id`) once the real user names are known.
+`Notes` → `estimator_notes`; `DWG_FullDrawingPlan` → `rls` (the item editor's "RLS" field); whether `Lister` should also map to a user (`cutlist_owner_id`) once the real user names are known.
 
 ## Known, unchanged
 `projects.name` is `UNIQUE` across **all** workspaces (a `0001` artefact); importing a project whose name already exists elsewhere fails with that constraint. Not touched here.
 
 ## Tests
-`apps/api/tests/test_import_tracking_grid.py` (13), the `ALLOWED` entries in `test_items_deleted_filter.py` (the importer reads deleted rows on purpose), e2e `tracking_factory_tg_solid.spec.ts`; the seed puts TG / SI on two TRT-014 items.
+`apps/api/tests/test_import_tracking_grid.py` (16), the `ALLOWED` entries in `test_items_deleted_filter.py` (the importer reads deleted rows on purpose), e2e `tracking_factory_tg_solid.spec.ts`; the seed puts TG / SI on two TRT-014 items.
