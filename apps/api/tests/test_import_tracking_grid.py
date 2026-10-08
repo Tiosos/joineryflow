@@ -45,6 +45,8 @@ def _rows() -> list[dict]:
         # a room number reused with another description; a stage that names no area
         _row(ItemId=700005, CutlistNumber="298002", STG="B1", RmDesc="Staff Works", RoomNoTXT="BG06", Item="Shelf"),
         _row(ItemId=700006, CutlistNumber="298003", STG="VARIES", LevelTXT="VARIES", Item="Whiteboard", QTY=2),
+        # cutlist text that is neither a number nor `#number`: no cutlist, the text kept in the notes
+        _row(ItemId=700007, CutlistNumber="see tender", Item="Odd", Notes="x"),
     ]
 
 
@@ -94,12 +96,12 @@ def _scalar(sql, **p):
 
 def test_the_plan_reads_the_rows_and_names_every_oddity():
     plan = tg.build_plan(_rows())
-    assert plan.pid == 2325 and len(plan.items) == 6
+    assert plan.pid == 2325 and len(plan.items) == 7
     assert plan.areas == ["A", "B1"] and plan.factories == ["TG"]
-    assert list(plan.cutlists) == [298001, 298002, 298003]
+    assert list(plan.cutlists) == [298001, 101973, 298002, 298003]       # `#101973` is cutlist 101973
     assert plan.cutlists[298001] == dt.date(2026, 2, 1)            # the earliest Date_Created on it
     kinds = {k for k, _ in plan.anomalies}
-    assert kinds == {"no_cutlist", "bad_cutlist", "varies", "room_desc_conflict", "date_order"}
+    assert kinds == {"no_cutlist", "bad_cutlist", "hash_cutlist", "varies", "room_desc_conflict", "date_order"}
     assert plan.skipped_optimized == 1
     assert plan.rooms[("B1", "BG06")] == "Staff Work"              # the first description wins
 
@@ -124,13 +126,13 @@ def test_several_projects_in_one_sheet_need_a_pid():
     rows = _rows() + [_row(ItemId=700099, PID=9999, Item="Other project")]
     with pytest.raises(tg.ImportErrorReport, match="several projects"):
         tg.build_plan(rows)
-    assert len(tg.build_plan(rows, pid=2325).items) == 6
+    assert len(tg.build_plan(rows, pid=2325).items) == 7
 
 
 def test_a_repeated_item_id_and_an_unreadable_one_are_skipped():
     rows = _rows() + [_row(ItemId=700002, Item="again"), _row(ItemId="n/a", Item="junk")]
     plan = tg.build_plan(rows)
-    assert len(plan.items) == 6
+    assert len(plan.items) == 7
     assert {k for k, _ in plan.anomalies} >= {"duplicate_item_id", "bad_item_id"}
 
 
@@ -141,7 +143,7 @@ def test_commit_creates_everything_with_the_fileMaker_numbers(tmp_path):
     plan = tg.build_plan(tg.read_rows(_xlsx(tmp_path, _rows())))
     res = _apply(wid, uid, plan)
     assert (res.items_created, res.cutlists_created, res.areas_created, res.rooms_created,
-            res.factories_created) == (6, 3, 2, 2, 1)
+            res.factories_created) == (7, 4, 2, 2, 1)
 
     db = SessionLocal()
     try:
@@ -170,10 +172,15 @@ def test_commit_creates_everything_with_the_fileMaker_numbers(tmp_path):
         assert db.execute(text("SELECT count(DISTINCT cutlist_id) FROM items WHERE num IN (700002, 700003)")).scalar() == 1
         assert db.execute(text("SELECT created_at::date FROM items WHERE num = 700003")).scalar() == dt.date(2026, 2, 1)
 
-        # the odd rows: no cutlist, the '#' text kept in the notes, no area for 'VARIES', status defaults to CLEAR
-        bad = db.execute(text("SELECT cutlist_id, estimator_notes, status FROM items WHERE num = 700004")).one()
-        assert bad.cutlist_id is None and bad.status == "CLEAR"
-        assert bad.estimator_notes == "from tender\nFileMaker cutlist number: #101973"
+        # `#101973` becomes cutlist 101973 (the `#` is stripped); the status defaults to CLEAR
+        hashed = db.execute(text("""SELECT c.cutlist_no, i.estimator_notes, i.status FROM items i
+                                     JOIN cutlist c ON c.cutlist_id = i.cutlist_id WHERE i.num = 700004""")).one()
+        assert tuple(hashed) == (101973, "from tender", "CLEAR")
+        # other cutlist text is not a number: no cutlist, the text kept in the notes
+        odd = db.execute(text("SELECT cutlist_id, estimator_notes FROM items WHERE num = 700007")).one()
+        assert odd.cutlist_id is None and odd.estimator_notes == "x\nFileMaker cutlist number: see tender"
+        # no area for 'VARIES'
+
         varies = db.execute(text("SELECT area_id, room_id, stage, level, qty FROM items WHERE num = 700006")).one()
         assert (varies.area_id, varies.room_id, varies.stage, varies.level, varies.qty) == (None, None, "VARIES", "VARIES", 2)
         assert db.execute(text("SELECT cutlist_id FROM items WHERE num = 700001")).scalar() is None
@@ -196,7 +203,7 @@ def test_a_dry_run_changes_nothing(tmp_path, capsys):
     code = tg.main([str(path), "--workspace-slug", slug, "--actor-email", email,
                     "--project-code", "2325", "--project-name", "Pilot"])
     out = capsys.readouterr().out
-    assert code == 0 and "DRY RUN" in out and "6 items" in out and "anomalies:" in out
+    assert code == 0 and "DRY RUN" in out and "7 items" in out and "anomalies:" in out
     assert _scalar("SELECT count(*) FROM items WHERE project_id IN (SELECT project_id FROM projects WHERE workspace_id=:w)", w=wid) == 0
     assert _scalar("SELECT count(*) FROM projects WHERE workspace_id=:w AND project_code='2325'", w=wid) == 0
     assert _scalar("SELECT count(*) FROM audit_log WHERE event='import.tracking_grid'") == 0
@@ -208,16 +215,16 @@ def test_commit_through_the_command_line_keeps_it(tmp_path, capsys):
     code = tg.main([str(_xlsx(tmp_path, _rows())), "--workspace-slug", slug, "--actor-email", email,
                     "--project-code", "2325", "--project-name", "Pilot", "--commit"])
     assert code == 0 and "COMMITTED" in capsys.readouterr().out
-    assert _scalar("SELECT count(*) FROM items WHERE num BETWEEN 700001 AND 700006") == 6
+    assert _scalar("SELECT count(*) FROM items WHERE num BETWEEN 700001 AND 700007") == 7
 
 
 def test_running_it_twice_creates_nothing_new_even_if_an_item_was_deleted(tmp_path):
     c, wid, uid, _, _ = _workspace()
     plan = tg.build_plan(_rows())
-    assert _apply(wid, uid, plan).items_created == 6
+    assert _apply(wid, uid, plan).items_created == 7
     assert c.delete(f"/items/{_scalar('SELECT item_id FROM items WHERE num = 700002')}").status_code == 204
     again = _apply(wid, uid, tg.build_plan(_rows()))
-    assert again.items_created == 0 and again.items_skipped_existing == 6 and again.cutlists_created == 0
+    assert again.items_created == 0 and again.items_skipped_existing == 7 and again.cutlists_created == 0
     assert _scalar("SELECT count(*) FROM items WHERE num = 700002") == 1          # not recreated
 
 
@@ -255,3 +262,35 @@ def test_factory_codes_are_unique_per_workspace_and_isolated():
     _apply(wid_b, uid_b, plan_b, code="B-1")
     assert _scalar("SELECT count(*) FROM factory WHERE code='TG'") == 2          # one each, never shared
     assert _scalar("SELECT count(DISTINCT workspace_id) FROM factory WHERE code='TG'") == 2
+
+
+# ---- one number space: an Item ID and a cutlist number must never be the same number (Q541) ------------------
+
+def _refuses(wid, uid, rows, match):
+    db = SessionLocal()
+    try:
+        with pytest.raises(tg.ImportErrorReport, match=match):
+            tg.apply(db, tg.build_plan(rows), workspace_id=wid, actor_id=uid, project_code="2325",
+                     project_name="x", source_sha256="y", advance_sequence=True)
+        db.rollback()
+    finally:
+        db.close()
+    assert _scalar("SELECT count(*) FROM projects WHERE project_code = '2325'") == 0
+
+
+def test_a_cutlist_number_that_is_already_an_item_id_stops_the_import():
+    _, wid, uid, _, _ = _workspace()
+    _apply(wid, uid, tg.build_plan([_row(ItemId=101973, Item="Existing", CutlistNumber="298500")]), code="OLD")
+    _refuses(wid, uid, _rows(), "already an Item ID")                  # `#101973` strips to 101973
+
+
+def test_an_item_id_that_is_already_a_cutlist_number_stops_the_import():
+    _, wid, uid, _, _ = _workspace()
+    _apply(wid, uid, tg.build_plan([_row(ItemId=799999, Item="Existing", CutlistNumber="700002")]), code="OLD")
+    _refuses(wid, uid, _rows(), "already a cutlist number")            # ItemId 700002 is cutlist 700002 there
+
+
+def test_one_number_used_as_both_in_the_file_stops_the_import():
+    _, wid, uid, _, _ = _workspace()
+    rows = _rows() + [_row(ItemId=700008, CutlistNumber="#700002", Item="Clash")]
+    _refuses(wid, uid, rows, "both an Item ID and a cutlist number")

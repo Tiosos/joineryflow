@@ -16,8 +16,10 @@ Settled with the user (2026-10-08):
   `Date_Created` becomes `items.created_at`.
 - `_Contractor` (e.g. `TG`) is a **factory** (`factory`, `items.factory_id`); `Tag_TgSolidItem` is the
   separate `items.tg_solid` tag.
+- A cutlist number written with a leading `#` (`#101973`, 65 rows in the pilot file) is imported as the
+  cutlist number **101973**: the `#` is stripped (settled with the user, 2026-10-08).
 - A row with no usable cutlist number is imported as an item **without** a cutlist (the data model allows
-  it, Q440); a cutlist number that is not a number (e.g. `#101973`) is kept in the item's notes.
+  it, Q440); any other cutlist text that is not a number is kept in the item's notes.
 
 A dry run does the real inserts inside one transaction and rolls it back, so a constraint that would fail
 on `--commit` fails the dry run too. (Postgres sequences are not rolled back: a dry run burns a few
@@ -30,6 +32,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import re
 import sys
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
@@ -61,6 +64,9 @@ STAGE_DATES: tuple[tuple[str, str, str], ...] = (
     ("Date_Delivered", "DEL", "done_date"),
     ("Date_Installed", "INST", "done_date"),
 )
+
+# A cutlist number FileMaker shows with a leading `#`.
+HASH_CUTLIST = re.compile(r"^#\s*(\d+)$")
 
 # Values FileMaker uses where no single area / level applies.
 NO_AREA = {"VARIES"}
@@ -191,7 +197,11 @@ def build_plan(rows: list[dict], *, pid: int | None = None) -> Plan:
         notes = _clean(r.get("Notes"))
         raw_cutlist = _clean(r.get("CutlistNumber"))
         cutlist_no = _int(raw_cutlist)
-        if raw_cutlist is None:
+        hashed = HASH_CUTLIST.match(raw_cutlist) if raw_cutlist else None
+        if hashed:
+            cutlist_no = int(hashed.group(1))
+            plan.note("hash_cutlist", f"item {fm_id}: cutlist number {raw_cutlist!r} imported as {cutlist_no}")
+        elif raw_cutlist is None:
             plan.note("no_cutlist", f"item {fm_id} ({_clean(r.get('Item'))}): no cutlist number; imported without one")
         elif cutlist_no is None:
             plan.note("bad_cutlist", f"item {fm_id}: cutlist number {raw_cutlist!r} is not a number; "
@@ -319,6 +329,19 @@ def apply(
         {"n": cl_nos, "p": pid})]
     if clashes:
         raise ImportErrorReport(f"cutlist numbers already used by another project: {sorted(clashes)[:10]}")
+    # Item IDs and cutlist numbers share one number space (Q541): a six-digit number must never mean two
+    # things. Check both directions, against what is already in the database and within the file.
+    as_item = sorted({r[0] for r in db.execute(text("SELECT i.num FROM items i WHERE i.num = ANY(:n)"),
+                                               {"n": cl_nos})})
+    if as_item:
+        raise ImportErrorReport(f"cutlist numbers that are already an Item ID: {as_item[:10]}")
+    as_cutlist = sorted({r[0] for r in db.execute(
+        text("SELECT c.cutlist_no FROM cutlist c WHERE c.cutlist_no = ANY(:n)"), {"n": nums})})
+    if as_cutlist:
+        raise ImportErrorReport(f"Item IDs that are already a cutlist number: {as_cutlist[:10]}")
+    both = sorted(set(nums) & set(cl_nos))
+    if both:
+        raise ImportErrorReport(f"numbers used as both an Item ID and a cutlist number in the file: {both[:10]}")
 
     # ---- lookups -------------------------------------------------------------------------------------
     factory_ids: dict[str, int] = {}
