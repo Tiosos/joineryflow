@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from .helpers import log_in
 
 
 PDF_BYTES = b"%PDF-1.4\n%\xc7\xec\x8f\xa2\n" + b"x" * 100 + b"\n%%EOF\n"
@@ -42,8 +43,7 @@ def _seed_workspace_and_login(client, slug: str, role: str = "editor") -> int:
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": slug, "email": f"u@{slug}.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(slug, f"u@{slug}.test", client=client)
     return wid
 
 

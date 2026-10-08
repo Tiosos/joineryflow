@@ -14,6 +14,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .conftest import truncate_fixture
+from .helpers import log_in
 
 
 _cleanup = truncate_fixture(
@@ -50,8 +51,7 @@ def _two_workspaces(role: str = "drafter"):
         finally:
             s.close()
         c = TestClient(app)
-        r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-        assert r.status_code == 200, r.text
+        log_in(slug, email, client=c)
         out.append({"client": c, "wid": wid, "uid": uid})
     return out[0], out[1]
 

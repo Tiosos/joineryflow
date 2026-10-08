@@ -148,8 +148,7 @@ def test_patch_drawing_only_creator_or_manager(client):
 
     # Drafter B tries to rename → 403.
     client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "hw", "email": "drafter2@hw.test", "password": "pw"})
-    assert r.status_code == 200
+    log_in("hw", "drafter2@hw.test", client=client)
     r = client.patch(f"/shop-drawings/{did}", json={"title": "Stolen"})
     assert r.status_code == 403
 

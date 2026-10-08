@@ -19,6 +19,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .conftest import truncate_fixture
+from .helpers import log_in
 
 
 _cleanup = truncate_fixture("item_edit_log", "item_stages", "items", "room", "area", "status_options")
@@ -63,9 +64,7 @@ def ctx():
         db.close()
 
     c = TestClient(app)
-    assert c.post("/auth/login",
-                  json={"workspace_slug": slug, "email": email, "password": pw}
-                  ).status_code == 200
+    log_in(slug, email, pw, client=c)
     return {"client": c, "pid": pid, "pid2": pid2, "iid": iid}
 
 

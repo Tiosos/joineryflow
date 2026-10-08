@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from .helpers import log_in
 
 PDF = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
 
@@ -49,8 +50,7 @@ def _setup(client, role="drafter"):
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": "hartwood", "email": f"{role}@hw.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("hartwood", f"{role}@hw.test", client=client)
     return {"wid": wid, "uid": uid, "mgr": mgr, "pid": pid}
 
 
@@ -142,8 +142,7 @@ def test_queues_and_counts(client):
 
     # review as the manager (uploader cannot review their own)
     client.post("/auth/logout")
-    assert client.post("/auth/login", json={"workspace_slug": "hartwood",
-                       "email": "mgr@hw.test", "password": "pw"}).status_code == 200
+    log_in("hartwood", "mgr@hw.test", client=client)
     rid = lambda d: d["revisions"][0]["revision_id"]
     assert client.post(f"/shop-drawings/{rej['drawing_id']}/revisions/{rid(rej)}/reject",
                        json={"review_note": "redo"}).status_code == 200

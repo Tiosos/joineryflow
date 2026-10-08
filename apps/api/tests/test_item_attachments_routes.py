@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from .helpers import log_in
 
 
 PDF_BYTES = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
@@ -66,9 +67,7 @@ def _route_seed(client, truncate_all, role: str = "drafter") -> dict:
     finally:
         s.close()
 
-    r = client.post("/auth/login",
-                    json={"workspace_slug": "rt", "email": f"{role}@rt.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("rt", f"{role}@rt.test", client=client)
 
     bid = None
     if role != "viewer":
@@ -165,8 +164,7 @@ def test_route_get_bundle_cross_workspace_returns_404(client, truncate_all):
     finally:
         s.close()
     client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("rt-b", "b@rt.test", client=client)
 
     r = client.get(f"/items/{iid_a}/attachments")
     assert r.status_code == 404
@@ -195,8 +193,7 @@ def test_route_clear_cross_workspace_returns_404(client, truncate_all):
     finally:
         s.close()
     client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("rt-b", "b@rt.test", client=client)
 
     r = client.delete(f"/items/{iid_a}/attachments/cv_drawing")
     assert r.status_code == 404
@@ -235,8 +232,7 @@ def test_route_bind_cross_workspace_returns_422(client, truncate_all):
     finally:
         s.close()
     client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "rt-b", "email": "b@rt.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("rt-b", "b@rt.test", client=client)
     files = {"file": ("b.pdf", io.BytesIO(PDF_BYTES + b"\nB"), "application/pdf")}
     bid_b = client.post("/files", files=files).json()["file_blob_id"]
 

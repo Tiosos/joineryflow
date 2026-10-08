@@ -21,7 +21,7 @@ from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
 
-from .helpers import login
+from .helpers import login, log_in, login_same_workspace
 from .conftest import truncate_fixture
 
 # ── Cleanup fixture ────────────────────────────────────────────────────────────
@@ -311,11 +311,7 @@ def test_editor_403_on_part_patch():
         db.close()
 
     c_editor = TestClient(app)
-    login_r = c_editor.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": editor_email, "password": "pw"},
-    )
-    assert login_r.status_code == 200, login_r.text
+    log_in(slug, editor_email, client=c_editor)
 
     r = c_editor.patch(f"/parts/{part_id}", json={"qty": 99})
     assert r.status_code == 403, r.text
@@ -423,31 +419,6 @@ def test_delete_module_records_what_went_with_it_and_still_answers_204():
 # ── Lock checks on module delete ───────────────────────────────────────────────
 
 
-def _login_same_workspace(wid: int, role: str, name: str = "U2") -> tuple:
-    """A second user in an existing workspace: (client, user_id)."""
-    suffix = uuid.uuid4().hex[:8]
-    email = f"u2-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        slug = db.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": wid}).scalar()
-        uid = db.execute(
-            text(
-                """
-                INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)
-                VALUES (:w, :e, :n, :p, :r) RETURNING id
-                """
-            ),
-            {"w": wid, "e": email, "n": name, "p": hash_password("pw"), "r": role},
-        ).scalar()
-        db.commit()
-    finally:
-        db.close()
-    c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
-    return c, uid
-
-
 def _set_item(iid: int, sql: str, **params) -> None:
     db = SessionLocal()
     try:
@@ -485,7 +456,7 @@ def _module_survives(mid: int) -> bool:
 def test_hard_locked_item_refuses_module_delete_for_everyone():
     c, wid, uid, iid, mid = _module_with_threads()
     _set_item(iid, "hard_locked_at = now(), hard_locked_by = :u", u=uid)
-    admin, _ = _login_same_workspace(wid, "admin")
+    admin, _ = login_same_workspace(wid, "admin")
     for client in (c, admin):                     # even a manager-level authority
         r = client.delete(f"/modules/{mid}")
         assert r.status_code == 409, r.text
@@ -518,7 +489,7 @@ def test_approved_item_refuses_module_delete_until_status_moves_off_approved():
 
 def test_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager():
     c, wid, uid, iid, mid = _module_with_threads()          # `c` is a drafter, not the owner
-    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
+    owner_client, owner_id = login_same_workspace(wid, "drafter", name="Olive Owner")
     _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
 
     r = c.delete(f"/modules/{mid}")
@@ -532,7 +503,7 @@ def test_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager():
     assert c.get(f"/modules/{mid}/delete-impact").status_code == 200
 
     # a manager can decide lock requests, so can delete
-    manager, _ = _login_same_workspace(wid, "manager")
+    manager, _ = login_same_workspace(wid, "manager")
     assert manager.delete(f"/modules/{mid}").status_code == 204
 
     # ...and so can the owner (on a second module of the same still-locked item)
@@ -546,7 +517,7 @@ def test_controlled_lock_refuses_a_non_owner_but_not_the_owner_or_a_manager():
 
 def test_a_sticky_owner_without_an_active_lock_does_not_block_delete():
     c, wid, _uid, iid, mid = _module_with_threads()
-    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _other, owner_id = login_same_workspace(wid, "drafter")
     # cutlist_owner_id survives an Unlock (sticky claim); only item_locked matters
     _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
     assert c.delete(f"/modules/{mid}").status_code == 204
@@ -629,7 +600,7 @@ def test_locked_item_refuses_every_module_and_part_write(name, lock):
         _approve_status_exists()
         _set_item(iid, "status = 'APPROVED'")
         expected = {"code": "APPROVAL_LOCKED"}
-    admin, _ = _login_same_workspace(wid, "admin")
+    admin, _ = login_same_workspace(wid, "admin")
 
     before = _state(iid, wid)
     for client in (c, admin):                       # a Hard / Approval Lock has no way round
@@ -647,7 +618,7 @@ def test_locked_item_refuses_every_module_and_part_write(name, lock):
 def test_controlled_lock_refuses_a_non_owner_on_every_module_and_part_write(name):
     c, wid, uid, iid, mid, part_id = _fixture_with_part()
     routes = _write_routes(iid, mid, part_id)
-    owner_client, owner_id = _login_same_workspace(wid, "drafter", name="Olive Owner")
+    owner_client, owner_id = login_same_workspace(wid, "drafter", name="Olive Owner")
     _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
 
     before = _state(iid, wid)
@@ -666,15 +637,15 @@ def test_controlled_lock_refuses_a_non_owner_on_every_module_and_part_write(name
 def test_a_manager_passes_a_controlled_lock_on_every_module_and_part_write(name):
     c, wid, uid, iid, mid, part_id = _fixture_with_part()
     routes = _write_routes(iid, mid, part_id)
-    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _other, owner_id = login_same_workspace(wid, "drafter")
     _set_item(iid, "item_locked = true, cutlist_owner_id = :o", o=owner_id)
-    manager, _ = _login_same_workspace(wid, "manager")
+    manager, _ = login_same_workspace(wid, "manager")
     assert _send(manager, routes[name]).status_code == routes[name][3]
 
 
 def test_an_unlocked_item_and_a_sticky_owner_do_not_block_module_and_part_writes():
     c, wid, uid, iid, mid, part_id = _fixture_with_part()
-    _other, owner_id = _login_same_workspace(wid, "drafter")
+    _other, owner_id = login_same_workspace(wid, "drafter")
     # cutlist_owner_id survives an Unlock; only an active item_locked counts
     _set_item(iid, "item_locked = false, cutlist_owner_id = :o", o=owner_id)
     for name, route in _write_routes(iid, mid, part_id).items():

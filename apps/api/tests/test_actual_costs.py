@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 
 
@@ -128,8 +129,7 @@ def _login():
     finally:
         s.close()
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(slug, email, client=c)
     return c, result
 
 

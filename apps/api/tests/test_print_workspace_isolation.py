@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from .helpers import log_in
 
 
 @pytest.fixture
@@ -62,7 +63,6 @@ def _seed_two_workspaces_one_item(truncate_all):
 @pytest.mark.parametrize("path", ["cutlist.pdf", "hardware.pdf", "combined.pdf"])
 def test_cross_workspace_print_returns_404(client, truncate_all, path):
     iid = _seed_two_workspaces_one_item(truncate_all)
-    r = client.post("/auth/login", json={"workspace_slug": "wsb", "email": "b@b.test", "password": "pw"})
-    assert r.status_code == 200
+    log_in("wsb", "b@b.test", client=client)
     r = client.get(f"/items/{iid}/{path}")
     assert r.status_code == 404

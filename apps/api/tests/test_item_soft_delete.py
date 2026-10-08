@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 
 def _sql(sql: str, params: dict | None = None):
@@ -57,9 +58,7 @@ def _workspace() -> dict:
 
 def _client(ws: dict) -> TestClient:
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"],
-                                    "email": f"drafter@{ws['slug']}.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(ws["slug"], f"drafter@{ws['slug']}.test", client=c)
     return c
 
 
@@ -84,8 +83,7 @@ def _login_as(ws: dict, role: str) -> TestClient:
     _sql("""INSERT INTO app_user(workspace_id,email,full_name,password_hash,auth_role)
             VALUES(:w,:e,:r,:p,:r)""", {"w": ws["wid"], "e": email, "r": role, "p": hash_password("pw")})
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"], "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(ws["slug"], email, client=c)
     return c
 
 
