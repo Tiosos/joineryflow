@@ -1,4 +1,11 @@
-# Implementation Record — Estimating — sub-project #9a
+# Estimating
+
+> Merged from `plans/2026-05-26-estimating.md` (October 2026). Each part below is the original text, verbatim, with headings pushed down two levels; use `git log --follow` on the original paths for history. This is a record of intent at one moment, not a description of the current code: see `docs/sub-projects/` and `CLAUDE.md`.
+
+
+## Implementation plan
+
+### Implementation Record — Estimating — sub-project #9a
 
 > **Status: shipped. Written after the fact (2026-08-14).** #9a was built
 > directly on `main` without a spec or a plan, so for three months the only
@@ -27,7 +34,7 @@
 
 ---
 
-## 1. Why a seventh role
+#### 1. Why a seventh role
 
 Estimating is the first surface that belongs to someone who is neither
 upstream nor downstream of the Drafter: an estimator prices work that does not
@@ -45,7 +52,7 @@ plus a **10th operational module**:
 configuration, so it gates on `("it_management", …)` — admin only — even
 though it lives in the estimating router.
 
-## 2. Data model
+#### 2. Data model
 
 `estimate` is the root (one per quoted job); `estimate_revision` is the
 versioned unit (`rev_no`, immutable once it leaves `draft`); `estimate_line`
@@ -79,7 +86,7 @@ Constraints worth knowing:
 Migration 0021's **downgrade is a no-op** — it is irreversible by design;
 recover from 0001–0020.
 
-## 3. Revision workflow (binding)
+#### 3. Revision workflow (binding)
 
 `_LEGAL_TRANSITIONS` in `queries.py`:
 
@@ -100,7 +107,7 @@ lock-and-send and Convert.
 window — the `expired` transition is a human action against that date, not a
 scheduled job.
 
-## 4. Convert-to-Project
+#### 4. Convert-to-Project
 
 `POST /revisions/{rid}/convert` is the seam between estimating and the rest of
 the app. It requires status `accepted` (`409 BAD_STATUS` otherwise), refuses a
@@ -113,7 +120,7 @@ and creates a project wired to `projects.estimate_revision_id` +
 quote is deferred — the procurement side owns that, and forcing it here would
 couple the two modules on a workflow nobody has specified yet.
 
-## 5. Surface
+#### 5. Surface
 
 32 endpoints, all at top-level paths (no prefix): customers CRUD + archive;
 estimates list / detail / create / patch / revise; revision detail + patch +
@@ -126,7 +133,7 @@ Web: `/estimating?subtab=active|archive&q=&customer=&status=` plus
 `/estimating/[eid]`, and the `/customers` registry with `/customers/[cid]`.
 Both are **secondary** TabStrip entries — the primary six IA tabs do not grow.
 
-## 6. What shipped alongside (not strictly estimating)
+#### 6. What shipped alongside (not strictly estimating)
 
 These landed in the same batch and touch shared chrome, which is why they are
 easy to mistake for estimating work:
@@ -147,7 +154,7 @@ easy to mistake for estimating work:
   `ProjectDetailModal`, `StatusPopup`, `ProjectInfoBar`, `TrackingMetrics`;
   `/list` wired to the shared `ItemsTable`.
 
-## 7. Known gaps
+#### 7. Known gaps
 
 - **`_role_view` does not know this role.** `/home/dashboard` branches on
   `auth_role` alone; `estimator` (and `editor`) fall through to the viewer
@@ -155,7 +162,7 @@ easy to mistake for estimating work:
   estimator gets a viewer's dashboard.
 - No workspace-isolation suite shipped with #9a. Added later in `901d0d6`.
 
-## 8. Out of scope (deferred)
+#### 8. Out of scope (deferred)
 
 PO / supplier-order generation from an accepted quote; multi-currency; client
 e-signature or portal; estimate templates; per-line margin overrides beyond

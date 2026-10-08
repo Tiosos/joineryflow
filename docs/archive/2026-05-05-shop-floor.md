@@ -1,23 +1,30 @@
-# JoineryFlow Shop Floor Ops (v2 — Foreman Worker Assignment) — Design Spec
+# Shop Floor
+
+> Merged from `specs/2026-05-05-shop-floor-design.md`, `plans/2026-05-08-shop-floor.md` (October 2026). Each part below is the original text, verbatim, with headings pushed down two levels; use `git log --follow` on the original paths for history. This is a record of intent at one moment, not a description of the current code: see `docs/sub-projects/` and `CLAUDE.md`.
+
+
+## Design spec
+
+### JoineryFlow Shop Floor Ops (v2 — Foreman Worker Assignment) — Design Spec
 
 **Date:** 2026-05-05
 **Sub-project:** #8 (Foreman + Machine team Shop Floor Ops; the first surface for the Foreman JTBD role)
 **Sequencing:** Ships **after** Cabinet Vision sub-project #7 (slices #7a/#7b/#7c). Assumes migrations 0017–0019 are already applied.
 **Branch base:** `feat/foundation` post-#7c (latest migration on disk: 0019; matrix has 9 modules incl. `catalog` + `cut_floor`).
 **Prior context:**
-- `docs/archive/specs/2026-04-22-foundation-design.md`
-- `docs/archive/specs/2026-04-25-pm-workbench-design.md`
-- `docs/archive/specs/2026-04-28-procurement-workbench-design.md`
-- `docs/archive/specs/2026-05-01-shop-drawings-design.md`
-- `docs/archive/specs/2026-05-02-pdf-generation-design.md`
-- `docs/archive/specs/2026-05-02-isample-design.md`
-- `docs/archive/specs/2026-05-05-cabinet-vision-design.md`
+- `docs/archive/2026-04-22-foundation.md`
+- `docs/archive/2026-04-25-pm-workbench.md`
+- `docs/archive/2026-04-28-procurement-workbench.md`
+- `docs/archive/2026-05-01-shop-drawings.md`
+- `docs/archive/2026-05-02-pdf-generation.md`
+- `docs/archive/2026-05-02-isample.md`
+- `docs/archive/2026-05-05-cabinet-vision.md`
 - `legacy/product_spec.md` §2, §4.2
 - `legacy/trackingv2.md`
 
 ---
 
-## 0. Goal
+#### 0. Goal
 
 A Foreman in the office assigns shop workers to specific items at specific lifecycle stages (DOWN, CNC, EDGED, PAINTED, MADE) on a Foreman Office board. A tablet mounted on the shop floor shows that worker their queue and lets them mark a stage done with one tap, with optional note. Marking done writes back to `item_stages.done_date` and to a new immutable `stage_completion_log`, atomically with an `audit_log` row, and advances the item lifecycle if every part of the item is done. PM dashboards consume the same `item_stages` they always have — Shop Floor Ops is purely additive write-traffic into surfaces v1 already reads.
 
@@ -25,9 +32,9 @@ This sub-project also closes the v1 placeholder gap on lifecycle stages DOWN→M
 
 ---
 
-## 1. Scope
+#### 1. Scope
 
-### In scope
+##### In scope
 
 1. **Worker registry** — extend `app_user` with `is_shop_worker boolean NOT NULL DEFAULT false`. Single column, no separate `workers` table.
 2. **`worker_assignment` table** — assignment of one worker (`app_user.id`) to one (item, stage_key) at a time, with `started_at`, `ended_at`, status enum (`assigned`, `in_progress`, `done`, `cancelled`), optional note. Uniqueness invariant: at most one active assignment per (item_id, stage_key).
@@ -40,7 +47,7 @@ This sub-project also closes the v1 placeholder gap on lifecycle stages DOWN→M
 9. **Audit hooks** — `shop_floor.assign`, `shop_floor.unassign`, `shop_floor.reassign`, `shop_floor.stage_start`, `shop_floor.stage_complete`, `shop_floor.stage_undo`.
 10. **Seed updates** — 4 demo workers + 6 demo assignments across stages on ALF-001.
 
-### Out of scope (deferred to v2.5 or v3)
+##### Out of scope (deferred to v2.5 or v3)
 
 - **Mobile-first responsive UI** — the shop-floor display is tablet-sized only (1024+ landscape).
 - **Real-time pub/sub** — board polls `GET /shop-floor/board` every 15s.
@@ -54,9 +61,9 @@ This sub-project also closes the v1 placeholder gap on lifecycle stages DOWN→M
 
 ---
 
-## 2. Architecture
+#### 2. Architecture
 
-### 2.1 Backend layout
+##### 2.1 Backend layout
 
 ```
 apps/api/app/shop_floor/
@@ -73,7 +80,7 @@ apps/api/tests/conftest.py            # MODIFY: TRUNCATE_TABLES gains worker_ass
 
 Auth via `require_permission("shop_floor", action)` for all routes. Workspace isolation via `projects.workspace_id = :w` direct join.
 
-### 2.2 Web layout
+##### 2.2 Web layout
 
 ```
 apps/web/app/(app)/shop-floor/
@@ -98,7 +105,7 @@ apps/web/lib/
 
 State management: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / RHF / Zustand.**
 
-### 2.3 Two-surface interaction
+##### 2.3 Two-surface interaction
 
 **Foreman Office board (`/shop-floor?project=…`)**:
 1. URL state: `?project=N&stage=DOWN|CNC|…&worker=worker_id&q=…&assignee=unassigned|me|all`.
@@ -114,15 +121,15 @@ State management: raw `fetch()` + URL search params + controlled inputs. **No Ta
 4. Big "Mark done" button on the active card → `MarkDoneDialog` → confirm → `POST /assignments/{aid}/complete`.
 5. After confirmation, an undo banner sits at the top for 5 minutes.
 
-### 2.4 Why two tables (`worker_assignment` + `stage_completion_log`)
+##### 2.4 Why two tables (`worker_assignment` + `stage_completion_log`)
 
 Separates **mutable assignment state** from **immutable completion history**. PM dashboards aggregate from `stage_completion_log` (read-heavy, JOIN-friendly). Foreman office board reads from `worker_assignment` (active rows only).
 
 ---
 
-## 3. Data model
+#### 3. Data model
 
-### 3.1 Migration 0020 — `0020_shop_floor.py`
+##### 3.1 Migration 0020 — `0020_shop_floor.py`
 
 ```sql
 -- 1. Worker flag on existing app_user
@@ -188,7 +195,7 @@ CREATE INDEX idx_completion_worker
     WHERE undone_at IS NULL;
 ```
 
-### 3.2 Invariants
+##### 3.2 Invariants
 
 - **`stage_key` CHECK** locks the table to the 5 shop-floor stages.
 - **Partial unique index `uniq_active_assignment`** enforces "at most one assigned/in-progress assignment per (item, stage_key)".
@@ -198,9 +205,9 @@ CREATE INDEX idx_completion_worker
 
 ---
 
-## 4. RBAC + audit + security
+#### 4. RBAC + audit + security
 
-### 4.1 RBAC matrix update — `apps/api/app/auth/permissions.py`
+##### 4.1 RBAC matrix update — `apps/api/app/auth/permissions.py`
 
 Add `shop_floor` to the `Module` Literal and to `_ALL_MODULES`. Per-role:
 
@@ -215,7 +222,7 @@ Add `shop_floor` to the `Module` Literal and to `_ALL_MODULES`. Per-role:
 
 Foreman + Machine team both map to `editor`. Restrictions on who can override an in-progress assignment held by another worker are enforced in route handlers, not the matrix.
 
-### 4.2 Audit events
+##### 4.2 Audit events
 
 | Action | `event` | `target` | `payload` |
 |---|---|---|---|
@@ -226,7 +233,7 @@ Foreman + Machine team both map to `editor`. Restrictions on who can override an
 | Mark done | `shop_floor.stage_complete` | `assignment_id` | `{item_id, stage_key, worker_id, completed_at, note?, lifecycle_advanced: bool}` |
 | Undo done | `shop_floor.stage_undo` | `log_id` | `{item_id, stage_key, undone_by, original_worker_id, original_completed_at}` |
 
-### 4.3 Security checklist
+##### 4.3 Security checklist
 
 - **Workspace isolation** via `projects.workspace_id = :w` on every query.
 - **Worker eligibility check at the route layer** — `POST /assignments` validates `worker.is_shop_worker = true AND worker.workspace_id = :w`.
@@ -237,9 +244,9 @@ Foreman + Machine team both map to `editor`. Restrictions on who can override an
 
 ---
 
-## 5. Workflow & state machine
+#### 5. Workflow & state machine
 
-### 5.1 Assignment states
+##### 5.1 Assignment states
 
 ```
    ┌──────────┐  worker first taps   ┌──────────────┐
@@ -267,7 +274,7 @@ Key behaviors:
 - **Stage ordering enforced** — cannot mark CNC done before DOWN done. 409 with `{missing: [...]}`.
 - **PAINTED is conditional** — only shown for items where `items.painting_required = true`.
 
-### 5.2 Permission rules summary
+##### 5.2 Permission rules summary
 
 | Action | Required | Additional rule |
 |---|---|---|
@@ -279,9 +286,9 @@ Key behaviors:
 
 ---
 
-## 6. SQL — board + station queries
+#### 6. SQL — board + station queries
 
-### 6.1 Foreman Office board
+##### 6.1 Foreman Office board
 
 ```sql
 WITH item_pool AS (
@@ -314,7 +321,7 @@ SELECT ip.*, wa.assignment_id, wa.worker_id, wa.status, wa.started_at,
  ORDER BY ip.next_stage_key, ip.item_number;
 ```
 
-### 6.2 Worker station queue
+##### 6.2 Worker station queue
 
 ```sql
 SELECT wa.assignment_id, wa.item_id, i.num AS item_number, i.code, i.description,
@@ -328,7 +335,7 @@ SELECT wa.assignment_id, wa.item_id, i.num AS item_number, i.code, i.description
  ORDER BY CASE wa.status WHEN 'in_progress' THEN 0 ELSE 1 END, wa.assigned_at;
 ```
 
-### 6.3 Recently-completed (undo banner data)
+##### 6.3 Recently-completed (undo banner data)
 
 ```sql
 SELECT log_id, item_id, stage_key, completed_at, note
@@ -340,7 +347,7 @@ SELECT log_id, item_id, stage_key, completed_at, note
 
 ---
 
-## 7. API surface
+#### 7. API surface
 
 | Verb | Path | Purpose | Permission |
 |---|---|---|---|
@@ -357,7 +364,7 @@ SELECT log_id, item_id, stage_key, completed_at, note
 
 10 endpoints. All mounted in `apps/api/app/main.py`.
 
-### 7.1 Pydantic schemas
+##### 7.1 Pydantic schemas
 
 ```python
 ShopFloorStage = Literal["DOWN", "CNC", "EDGED", "PAINTED", "MADE"]
@@ -397,7 +404,7 @@ class BoardOut(BaseModel):
 
 ---
 
-## 8. Lifecycle integration — mark-done transaction
+#### 8. Lifecycle integration — mark-done transaction
 
 Mark-done runs in **one DB transaction** through `apps/api/app/shop_floor/lifecycle.py`:
 
@@ -413,7 +420,7 @@ def mark_stage_done(db, *, user, assignment_id, note) -> tuple[int, bool]:
     # 8. Return (log_id, lifecycle_advanced)
 ```
 
-### 8.1 Stage-ordering validation
+##### 8.1 Stage-ordering validation
 
 ```python
 SHOP_FLOOR_ORDER = ("DOWN", "CNC", "EDGED", "PAINTED", "MADE")
@@ -435,19 +442,19 @@ def prior_stages_done(db, item_id, stage_key, painting_required):
 
 If validation fails, return 409: `{"error": "stage_out_of_order", "missing": ["DOWN"]}`.
 
-### 8.2 Undo path
+##### 8.2 Undo path
 
 Symmetric: clears `item_stages.done_date`, sets `stage_completion_log.undone_at`, sets `worker_assignment.status = 'in_progress', ended_at = NULL`, writes `shop_floor.stage_undo`. The 5-minute window check is a Python `if` against `completed_at`.
 
-### 8.3 PM dashboard read-side compatibility
+##### 8.3 PM dashboard read-side compatibility
 
 PM tracking grids today read `item_stages.done_date` directly. Once `mark_stage_done` writes there, PM dashboards "just work" — no PM-side change required.
 
 ---
 
-## 9. Web — UI components
+#### 9. Web — UI components
 
-### 9.1 Foreman Office board
+##### 9.1 Foreman Office board
 
 - **Header:** project chip selector, counts, Refresh button (auto-polls every 15s).
 - **Filter strip:** search by item code, worker chip dropdown, stage filter.
@@ -455,7 +462,7 @@ PM tracking grids today read `item_stages.done_date` directly. Once `mark_stage_
 - **Within each column:** Worker swimlanes + "Unassigned" lane at top.
 - **Card interactions:** click → drawer; drag between worker lanes → reassign; "× cancel" on hover.
 
-### 9.2 Shop-floor display
+##### 9.2 Shop-floor display
 
 - Sized for 1024×768+ landscape tablets. Larger touch targets, thicker fonts.
 - **Header:** Worker name + project banner. Big clock top-right.
@@ -464,7 +471,7 @@ PM tracking grids today read `item_stages.done_date` directly. Once `mark_stage_
 - **Mark done flow:** tap big button → full-screen modal with optional note → Confirm/Cancel.
 - **Undo banner:** sticky top after a completion, 5-minute countdown.
 
-### 9.3 Polling hook
+##### 9.3 Polling hook
 
 ```tsx
 function useBoardPolling(fetchFn, intervalMs = 15000) {
@@ -479,7 +486,7 @@ function useBoardPolling(fetchFn, intervalMs = 15000) {
 
 ---
 
-## 10. Seed updates
+#### 10. Seed updates
 
 `seed/hartwood_joinery.py` — add 4 demo workers + 6 in-flight assignments on ALF-001:
 
@@ -509,9 +516,9 @@ Item 3's "done" assignment also writes a real `stage_completion_log` row. Idempo
 
 ---
 
-## 11. Testing
+#### 11. Testing
 
-### 11.1 Pytest suite (~43 cases)
+##### 11.1 Pytest suite (~43 cases)
 
 | File | Cases | Focus |
 |---|---|---|
@@ -525,17 +532,17 @@ Item 3's "done" assignment also writes a real `stage_completion_log` row. Idempo
 
 `worker_assignment` and `stage_completion_log` added to `TRUNCATE_TABLES` in `apps/api/tests/conftest.py`.
 
-### 11.2 Playwright E2E
+##### 11.2 Playwright E2E
 
 `tests/e2e/shop_floor.spec.ts` — single happy-path covering both surfaces, then out-of-order 409 and undo flows.
 
-### 11.3 Manual smoke
+##### 11.3 Manual smoke
 
 10-step checklist covering: login → assign → drag-reassign → station mark-done → undo → 5-min expiry → out-of-order → cross-workspace 404 → viewer permission → manager override.
 
 ---
 
-## 12. Implementation order
+#### 12. Implementation order
 
 1. Migration 0020 (worker flag + 2 tables + indexes).
 2. RBAC matrix update (10th module `shop_floor`).
@@ -558,13 +565,13 @@ Item 3's "done" assignment also writes a real `stage_completion_log` row. Idempo
 
 ---
 
-## 13. Audit log events
+#### 13. Audit log events
 
 Already enumerated in §4.2. The IT Management timeline at `/it` aggregates `audit_log` and surfaces all 6 events for free.
 
 ---
 
-## 14. Resolved decisions
+#### 14. Resolved decisions
 
 - **Worker registry**: `app_user.is_shop_worker` boolean, not separate table.
 - **Sub-project module name**: `shop_floor` (snake_case).
@@ -581,7 +588,7 @@ Already enumerated in §4.2. The IT Management timeline at `/it` aggregates `aud
 
 ---
 
-## 15. Open questions — resolved 2026-08-14
+#### 15. Open questions — resolved 2026-08-14
 
 Q1 and Q2 were answered by the implementation plan and shipped. Q3 and Q4 were
 never dispositioned and sat here as live questions long after #8 shipped;
@@ -616,3 +623,170 @@ recorded below against what the code actually does.
 ---
 
 **End of spec.** Ready for the planner agent to break into a 16-task implementation plan covering migration 0020, the `shop_floor` app module, RBAC matrix update, two-surface UI, seed updates, and the test suite.
+
+
+## Implementation plan
+
+### Implementation Plan — Shop Floor Ops (sub-project #8)
+
+> **Status: shipped.** Migration `0020`. Current state lives in
+> `## Shop Floor Ops (sub-project #8)` in `CLAUDE.md`;
+> the task checkboxes below were never ticked and are not a progress signal
+> (see `docs/archive/README.md`).
+
+> **Later change:** Spec §15 Q3 (deactivating a worker who holds active assignments) was
+> proposed but never built — see the spec for the consequence.
+
+> **Later change — superseded in part by Plan V1 (see `docs/plan-v1/`).** This
+> module is re-keyed. `worker_assignment` and `stage_completion_log` move from
+> `(item_id, stage_key)` to **`(cutlist_id, stage_key)` for production stages**,
+> keeping `(item_id, 'INST')` for installation (Q445) — including the partial
+> unique index `uniq_active_assignment`. Completion **fans out** to every item on
+> the cutlist (Q439) and **undo reverses the whole cutlist** atomically (Q446).
+> A **Packing** stage joins the lifecycle, with scanning (Q519), and QC arrives
+> as its own module rather than a stage (Q515).
+
+**Spec:** `docs/archive/2026-05-05-shop-floor.md`
+**Branch base:** `feat/foundation` post-#7c (HEAD `bf6d331`).
+**Migration introduced:** `0020_shop_floor.py`.
+**RBAC module added:** `shop_floor` (10th IA module).
+**Scope decision:** ship as a single merge per user direction.
+
+---
+
+#### Schema note
+
+The spec references `items.painting_required`. The actual column name in
+the existing migration 0001 is **`items.painting_req`** (boolean default
+false). This plan uses the existing column name; no rename in 0020.
+
+#### 0. User decisions binding this plan
+
+1. **Stage ordering is per-item via a new column `items.paint_after_assembly` (boolean, default `false`).** When `false`, ordering is `DOWN → CNC → EDGED → PAINTED → MADE`. When `true`, ordering is `DOWN → CNC → EDGED → MADE → PAINTED`. The `prior_stages_done` helper at `apps/api/app/shop_floor/lifecycle.py` reads the column.
+2. **Reassign clears `started_at`** and resets status to `'assigned'`. Audit row `shop_floor.reassign` records both the worker swap and the timer reset.
+3. **Worker registry**: seed adds 4 workers (12 staff total) + an admin-only toggle UI lives at `/it` (IT Management page) for promoting/retiring `is_shop_worker`. No separate `/shop-floor/workers` admin page in v2.
+4. **Single merge** — all 17 tasks land on `feat/foundation` in one cohesive commit series.
+
+---
+
+#### 1. Tasks
+
+##### Backend (8 tasks)
+
+1. **Migration `0020_shop_floor.py`** — `app_user.is_shop_worker`, `worker_assignment` (with the partial unique index `uniq_active_assignment`), `stage_completion_log`, plus the new `items.paint_after_assembly boolean NOT NULL DEFAULT false` column.
+2. **Pydantic schemas** at `apps/api/app/shop_floor/schemas.py`: `AssignIn`, `PatchAssignmentIn`, `CompleteIn`, `BoardCard`, `BoardOut`, `AssignmentOut`, `StationCard`, `StationOut`, `RecentCompletionOut`.
+3. **`lifecycle.py`** at `apps/api/app/shop_floor/lifecycle.py`: pure helpers `shop_floor_order(paint_after_assembly: bool) -> tuple[str, ...]`, `prior_stages_done(...)`, `is_within_undo_window(...)`. Pure functions, unit-testable.
+4. **Queries** at `apps/api/app/shop_floor/queries.py` — workspace-isolated SQL for: board, station queue, recent completions, assignment CRUD, mark-done transaction, undo transaction. Uses `SELECT … FOR UPDATE` on `worker_assignment` rows on the mark-done + undo paths.
+5. **Routes** at `apps/api/app/shop_floor/routes.py` (10 endpoints, gated `("shop_floor", action)`):
+   - `GET /projects/{pid}/shop-floor/board`
+   - `GET /projects/{pid}/shop-floor/workers`
+   - `GET /workers/{wid}/queue`
+   - `GET /workers/{wid}/recent-completions`
+   - `POST /projects/{pid}/items/{iid}/assignments`
+   - `PATCH /assignments/{aid}` (reassign clears `started_at`; note edits don't)
+   - `DELETE /assignments/{aid}` (cancel)
+   - `POST /assignments/{aid}/start` (idempotent)
+   - `POST /assignments/{aid}/complete`
+   - `POST /completions/{log_id}/undo`
+6. **Worker-toggle route** for #3 — `PATCH /users/{uid}/shop-worker` body `{is_shop_worker: bool}`, gated `("it_management", "write")` (admin-only). Lives in the existing `apps/api/app/users/` module so the `/it` page picks it up.
+7. **RBAC matrix update** — add `shop_floor` to `_ALL_MODULES` and to `MATRIX` per spec §4.1. Foreman = `editor`, no new role.
+8. **Mount router** in `apps/api/app/main.py`, add `worker_assignment` + `stage_completion_log` to `apps/api/tests/conftest.py::TRUNCATE_TABLES`.
+
+##### Tests (1 task)
+
+9. **Pytest** — six files matching the spec §11.1 layout:
+   - `tests/test_shop_floor_assign.py` (assign/reassign/cancel + perms)
+   - `tests/test_shop_floor_complete.py` (mark-done txn, stage ordering, PAINTED skip)
+   - `tests/test_shop_floor_undo.py` (worker <5min, foreman any time)
+   - `tests/test_shop_floor_board.py` (5 columns, PAINTED filter, unassigned)
+   - `tests/test_shop_floor_station.py` (queue, ordering, cross-workspace 404)
+   - `tests/test_shop_floor_lifecycle.py` (`prior_stages_done` + `paint_after_assembly` flip + undo window)
+   - Cross-workspace + RBAC coverage rolled into the per-feature files.
+   Target ≥35 cases, ≥80% line coverage on the new module.
+
+##### Web (5 tasks)
+
+10. **Lib** — `apps/web/lib/shop-floor-{types,fetch}.ts` mirroring the API.
+11. **Foreman office board** — `/shop-floor/page.tsx` (server component) + `_components/ShopFloorClient.tsx` + `StageColumn.tsx` + `WorkerLane.tsx` + `AssignmentCard.tsx` + `AssignDialog.tsx` + `Refresher.tsx` (15-second polling hook).
+12. **Shop-floor display** — `/shop-floor/station/[worker_id]/page.tsx` + `_components/StationClient.tsx` + `StationQueue.tsx` + `MarkDoneDialog.tsx` + `UndoBanner.tsx`.
+13. **`/it` worker toggle** — small `WorkerRosterPanel.tsx` rendered on `apps/web/app/(app)/it/page.tsx`. Lists every workspace user with a checkbox column for `is_shop_worker`; clicking the checkbox fires `PATCH /api/users/{uid}/shop-worker`. Admin-only.
+14. **SideBar entry** — add a `Shop Floor` link under `Catalog` + `Cut Floor` in `apps/web/components/chrome/SideBar.tsx` for any user with `shop_floor.read`.
+
+##### Seed + docs + verification (3 tasks)
+
+15. **Seed** (`seed/hartwood_joinery.py`): grow `USERS` from 8 → 12, set `is_shop_worker = true` on the 4 new rows (Sam Lee, Priya Dhar, Marko Villas, Kira Osei). Insert 6 demo `worker_assignment` rows + 1 `stage_completion_log` row on ALF-001. Idempotent via `WHERE NOT EXISTS` guards. Re-run safety: assignments are scoped per (item, stage) so the unique index protects re-seeds.
+16. **CLAUDE.md** — add `## Shop Floor Ops (sub-project #8)` section + a Reference docs entry pointing at this plan + the spec.
+17. **Docker verification** — `make migrate` (apply 0020) + `make test` (full pytest) + `make seed` round-trip + manual smoke against `/shop-floor` and `/shop-floor/station/{wid}`.
+
+---
+
+#### 2. Status machine (binding)
+
+```
+   assigned ─worker taps─▶ in_progress ─mark done─▶ done
+        │                       │                    │
+        │ Foreman cancel         │                    │ undo (5m worker / ∞ foreman+)
+        ▼                       ▼                    ▼
+    cancelled              cancelled            in_progress
+```
+
+PATCH route accepts `worker_id` change (clears `started_at`, status flips back to `assigned`) OR `note` edit (no status touch). Concurrent assignment to the same `(item_id, stage_key)` is rejected by the partial unique index → 409 with `{code: "ACTIVE_ASSIGNMENT_EXISTS", assignment_id}`.
+
+---
+
+#### 3. Stage ordering with `paint_after_assembly`
+
+```python
+SHOP_FLOOR_ORDER_DEFAULT = ("DOWN", "CNC", "EDGED", "PAINTED", "MADE")
+SHOP_FLOOR_ORDER_PAINT_LAST = ("DOWN", "CNC", "EDGED", "MADE", "PAINTED")
+
+def shop_floor_order(paint_after_assembly: bool) -> tuple[str, ...]:
+    return SHOP_FLOOR_ORDER_PAINT_LAST if paint_after_assembly else SHOP_FLOOR_ORDER_DEFAULT
+```
+
+`prior_stages_done()` reads `items.painting_required` AND `items.paint_after_assembly` to build the per-item priors list. UI: drafter editor's metadata panel gets a checkbox "Paint after assembly" (gated on `painting_required`) — that ships in this plan as a tiny addition to `ItemMetadataPanel.tsx`.
+
+The board's "next stage" subquery (spec §6.1) is updated to honour the per-item ordering — by joining the item's flags into the `CASE` ordering.
+
+---
+
+#### 4. Audit events (binding, all through `write_audit`)
+
+| Event | Payload |
+|---|---|
+| `shop_floor.assign` | `{item_id, stage_key, worker_id, assigned_by}` |
+| `shop_floor.reassign` | `{assignment_id, item_id, stage_key, old_worker_id, new_worker_id, started_at_cleared: true}` |
+| `shop_floor.unassign` | `{assignment_id, item_id, stage_key, cancelled_by, reason?}` |
+| `shop_floor.stage_start` | `{assignment_id, worker_id, started_at}` |
+| `shop_floor.stage_complete` | `{assignment_id, item_id, stage_key, worker_id, completed_at, note?, lifecycle_advanced: bool}` |
+| `shop_floor.stage_undo` | `{log_id, item_id, stage_key, undone_by, original_worker_id, original_completed_at}` |
+| `it.worker_toggle` | `{user_id, is_shop_worker, by_admin_id}` |
+
+---
+
+#### 5. Out of scope (deferred)
+
+Per spec §1 "Out of scope":
+- Mobile-first responsive UI (tablet 1024+ landscape only).
+- Real-time pub/sub (15-second poll instead).
+- Efficiency analytics dashboards (data captured; UI later).
+- Per-part painting tracking.
+- `time_record` table for payroll.
+- Worker self-assignment.
+- Quality / rework loop.
+- Cross-project worker view.
+- Per-worker login (kiosk URL = pseudo-auth).
+- PM "today's completions" widget on `/tracking` (spec §15 Q4 — defer).
+
+---
+
+#### 6. Exit criteria
+
+- 0020 applies cleanly on top of 0019; downgrade is no-op pattern.
+- ≥35 pytest cases pass; existing #7c suite still green.
+- `/shop-floor?project=ALF-001` shows 5 columns with the seeded 6 assignments + 1 completed (Item 3 DOWN done yesterday).
+- `/shop-floor/station/{sam_lee_id}` shows Sam Lee's queue with the active card on top.
+- Mark-done from station writes `item_stages.done_date`, the `stage_completion_log` row, and the `audit_log` `shop_floor.stage_complete` row inside one transaction. Verified by checking PM's existing `/tracking` page reflects the completion.
+- Undo within 5 minutes works for the worker; after, only Foreman+ can undo.
+- `/it` admin can flip `is_shop_worker` for any workspace user; PATCH writes audit `it.worker_toggle`.
+- Cross-workspace GETs and POSTs return 404/403; viewer cannot mutate.

@@ -575,7 +575,7 @@ these land.
 
 **Q538's work is complete.** Eight of the nine sub-project plans now carry a
 Plan V1 supersession blockquote, following the convention in
-`plans/README.md` — which calls a plan without an accurate header a bug and
+`docs/archive/README.md` — which calls a plan without an accurate header a bug and
 cites a case where that caused real trouble. #7b (CV import) is the one plan no
 decision materially supersedes.
 
@@ -1309,7 +1309,7 @@ and never reserves or decrements it. §18 wants reservations.
 **Raised writing the Material Take spec, answered same day (2026-09-24):**
 **Q581 = 1**, **Q582 = 1**, **Q583 = 1**, **Q584 = 1**, **Q585 = 1** — every
 recommendation taken. They are the gaps
-`docs/archive/specs/2026-09-24-material-take-design.md` found between §J's
+`docs/archive/2026-09-24-material-take.md` found between §J's
 answers and what the schema and data actually hold.
 
 ### Q581 — In what unit is a board line counted? *(new — raised writing the Material Take spec)*
@@ -2094,7 +2094,7 @@ sub-project needs before a spec can be written.
 
 **Raised writing the Search spec, answered same day (2026-09-24):** **Q577 = 1**,
 **Q578 = 1**, **Q579 = 1**, **Q580 = 1** — every recommendation taken. The spec
-(`docs/archive/specs/2026-09-24-search-design.md`) is now fully decided.
+(`docs/archive/2026-09-24-search.md`) is now fully decided.
 
 ### Q577 — Where does the search worker run? *(new — raised writing the Search spec)*
 **Option 1 confirmed (2026-09-24).** A separate `search-worker` compose service.
@@ -2229,7 +2229,7 @@ It is committed at `docs/plan-v1/plan_v1.md`.
 
 ### Q538 — Do the nine existing sub-project plans get re-headed?
 **Option 1 confirmed (2026-09-18) — and done.** A `> **Later change — superseded in part by Plan V1**` blockquote was added to **8 of the 9 plans**: #2/#3, #4, #5a, #7a, #7c, #8, #9, #9a. Only #7b (CV import) is untouched, as no decision materially supersedes it.
-`docs/archive/plans/README.md` requires a status header on every plan.
+`docs/archive/README.md` requires a status header on every plan.
 Plans that Plan V1 supersedes are currently marked simply "shipped".
 1. Add a `> **Later change:** superseded by Plan V1 §x` blockquote to each
    affected plan.

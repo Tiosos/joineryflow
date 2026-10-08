@@ -6,7 +6,7 @@
 
 > **Plan V1 #10** — selected by Q437, widened by Q542 to take the whole
 > Orderbook with it. Plan + per-task verification notes:
-> `docs/archive/plans/2026-09-18-cutlist-related-parts-orderbook.md`.
+> `docs/archive/2026-09-18-cutlist-related-parts-orderbook.md`.
 > Every binding rule traces to a numbered answer in
 > `docs/plan-v1/OPEN-QUESTIONS.md`; Q552–Q573 were raised *while building*,
 > each where a document and the code disagreed.
@@ -220,8 +220,8 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
 
 ## Global Search (sub-project #11)
 
-> Plan V1 §13, selected by Q520. Design: `docs/archive/specs/2026-09-24-search-design.md`;
-> plan with per-task verification notes: `docs/archive/plans/2026-09-24-search.md`.
+> Plan V1 §13, selected by Q520. Design: `docs/archive/2026-09-24-search.md`;
+> plan with per-task verification notes: `docs/archive/2026-09-24-search.md`.
 > Every rule traces to Q525 or Q574–Q580.
 
 - **Infrastructure.** Two new compose services: `meili`
@@ -285,8 +285,8 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
 ## Material Take → Material Summary (sub-project #12)
 
 > Plan V1 §19–§20, step 3 of `ALIGNMENT.md` §6. Design:
-> `docs/archive/specs/2026-09-24-material-take-design.md`; plan with
-> per-task verification notes: `docs/archive/plans/2026-09-24-material-take.md`.
+> `docs/archive/2026-09-24-material-take.md`; plan with
+> per-task verification notes: `docs/archive/2026-09-24-material-take.md`.
 > Every rule traces to Q80, Q495–Q501 or Q581–Q586.
 
 - **Migration `0034_material_take`** — `material_take` (per Joinery Item,

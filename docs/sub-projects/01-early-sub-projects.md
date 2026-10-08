@@ -607,7 +607,7 @@
 
 > **Built without a spec or plan.** #9a shipped directly (commit `a7b8d3d`
 > + follow-ups); the design record was backfilled afterwards as
-> `docs/archive/plans/2026-05-26-estimating.md`, which explains *why*
+> `docs/archive/2026-05-26-estimating.md`, which explains *why*
 > the schema and workflow read as they do. **This section stays the
 > statement of current state.** #9 (CutPlan optimiser) is a *different*
 > sub-project; it shipped after #9a, which is why estimating holds

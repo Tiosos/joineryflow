@@ -1,4 +1,11 @@
-# Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
+# Cutlist, related parts, Orderbook
+
+> Merged from `plans/2026-09-18-cutlist-related-parts-orderbook.md` (October 2026). Each part below is the original text, verbatim, with headings pushed down two levels; use `git log --follow` on the original paths for history. This is a record of intent at one moment, not a description of the current code: see `docs/sub-projects/` and `CLAUDE.md`.
+
+
+## Implementation plan
+
+### Implementation Plan — Cutlist + Related Parts + Orderbook (Plan V1 #10)
 
 > **Status: shipped, bar one blocked task.** Migrations `0026`–`0032` applied
 > (`0030`–`0032` were not reserved up front — B3, B6 and B7 each needed one).
@@ -66,7 +73,7 @@ write holders; the `qc` module (Q515) and the permission engine (Q466) are
 
 ---
 
-## 0. Why this shape
+#### 0. Why this shape
 
 Three things that look like separate jobs share one table and one migration
 window, so they ship together rather than migrating `items` three times:
@@ -82,7 +89,7 @@ The single largest cost is not any of those: it is that **every query reading
 across 13 modules**. Task B1 exists to make that one helper rather than 50
 hand-edited predicates.
 
-## 1. Binding decisions this plan implements
+#### 1. Binding decisions this plan implements
 
 | Area | Rule | Source |
 | --- | --- | --- |
@@ -113,9 +120,9 @@ hand-edited predicates.
 | Item cost | **Deferred** — orders carry cost, nothing rolls up yet | Q543 |
 | Locking | Item soft-lock becomes a **Controlled Lock** | Q509, Q510 |
 
-## 2. Tasks
+#### 2. Tasks
 
-### A. Schema (migrations `0026`–`0029`)
+##### A. Schema (migrations `0026`–`0029`)
 
 - [x] **A1** `0026_area_room` — **done.** `area` (project-scoped, Q457) +
       `room` **nested under area** (Q552, raised while building this); composite
@@ -233,7 +240,7 @@ hand-edited predicates.
       **byte-identical** to a fresh `0001`–`0029` across all columns,
       constraints and indexes.
 
-### B. Backend
+##### B. Backend
 
 - [x] **B1** — **done.** `apps/api/app/row_types.py` holds the one definition
       (`joinery_items_only(alias)`); **35 of the 50 call sites** carry it. The
@@ -558,7 +565,7 @@ hand-edited predicates.
       and the owner's own save still applying. Full suite **608 passed, 1
       skipped**.
 
-### C. Web
+##### C. Web
 
 - [x] **C1** `ItemsTable` — nest related parts under their parent, collapsed by
       default (Q420–Q422); **empty stage-strip area** for them (Q419); leftmost
@@ -803,7 +810,7 @@ hand-edited predicates.
       dual-written, and the move appears in the item's log. Full suite
       **633 passed, 1 skipped**.
 
-### D. Seed + docs
+##### D. Seed + docs
 
 - [x] **D1** Seed: areas + rooms from existing values; one shared cutlist across
       2 ALF-001 items to exercise fan-out; 1 late-linked item for Q539; 2
@@ -880,7 +887,7 @@ hand-edited predicates.
       schema that contradicted the decision record and would have misled
       anyone reading it as the design of record.
 
-### E. Verification
+##### E. Verification
 
 - [x] **E1** — **done.** The suite **can** be run in this environment,
       contrary to what B2/B2a/B3 first recorded: a Python 3.12 venv
@@ -981,13 +988,13 @@ hand-edited predicates.
       Still open: running it against the user's own database, and the other
       FileMaker layouts. See `docs/sub-projects/09-e3-pilot-data-import.md`.
 
-## 3. Sequencing
+#### 3. Sequencing
 
 `A1 → A2 → A3 → A4` then **B1 before all other B tasks** — every later query
 change assumes the helper exists. `B3` is the riskiest single task and should
 land with its tests in the same commit. Web follows backend; seed last.
 
-## 4. What this plan does NOT do
+#### 4. What this plan does NOT do
 
 Deferred by explicit decision, not oversight:
 
@@ -1000,7 +1007,7 @@ Deferred by explicit decision, not oversight:
   sub-project (Q519).
 - **Cars / OH&S tabs** (Q550) — unspecified.
 
-## 5. Audit events introduced
+#### 5. Audit events introduced
 
 `cutlist.{create|link_item|unlink_item|renumber}`,
 `related_part.{create|reparent|status_change}`,
@@ -1009,7 +1016,7 @@ Deferred by explicit decision, not oversight:
 `area.{create|update}`, `room.{create|update}`,
 `item.lock_request` + `item.lock_approve` (replacing `item.lock_overridden`).
 
-## 6. Exit criteria
+#### 6. Exit criteria
 
 - Several Joinery Items share one cutlist; completing a production stage once
   records it against the cutlist and shows on every linked item's strip.
@@ -1021,7 +1028,7 @@ Deferred by explicit decision, not oversight:
 - Every pre-existing item kept the number its users recognise.
 - `make test` and `make e2e-docker` green.
 
-## 7. Deliberate departures from Plan V1's prose
+#### 7. Deliberate departures from Plan V1's prose
 
 Do not "fix" these to match the spec — the decisions supersede it:
 

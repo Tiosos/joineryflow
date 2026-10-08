@@ -1,4 +1,11 @@
-# Implementation Plan — CutPlan Optimiser — sub-project #9
+# CutPlan optimiser
+
+> Merged from `plans/2026-05-09-cutplan-optimiser.md` (October 2026). Each part below is the original text, verbatim, with headings pushed down two levels; use `git log --follow` on the original paths for history. This is a record of intent at one moment, not a description of the current code: see `docs/sub-projects/` and `CLAUDE.md`.
+
+
+## Implementation plan
+
+### Implementation Plan — CutPlan Optimiser — sub-project #9
 
 > **Status: shipped, and superseded in flight.** This plan was written on
 > `5e20813` for a deliberately naive single-sheet stub. What shipped is the
@@ -29,7 +36,7 @@
 > **dropped** rather than revived (Q544). The nest's part areas also become the
 > basis for apportioning shared cutlist labour across items (Q549).
 
-**Spec source:** §8.1 of `docs/archive/specs/2026-05-05-cabinet-vision-design.md`
+**Spec source:** §8.1 of `docs/archive/2026-05-05-cabinet-vision.md`
 ("Bin-packing engine API contract — RESOLVED. Future optimizer ships as a
 separate POST /projects/{pid}/optimise endpoint that *returns* a CutPlanIn for
 the user to confirm-then-commit.")
@@ -38,9 +45,9 @@ the user to confirm-then-commit.")
 
 ---
 
-## What shipped
+#### What shipped
 
-### Wire contract
+##### Wire contract
 
 ```http
 POST /projects/{pid}/optimise            # gated ("cut_floor", "write")
@@ -74,7 +81,7 @@ then "Save as plan" forwards it to that endpoint, which owns persistence and the
 `board_inventory` but never reserves or decrements it. `test_optimise_does_not_write_audit`
 locks this in.
 
-### Sheet size resolution (migration 0025)
+##### Sheet size resolution (migration 0025)
 
 1. Explicit `sheet_len_mm` + `sheet_wid_mm` win — ad-hoc stock the catalog
    doesn't know about can still be nested against.
@@ -85,13 +92,13 @@ locks this in.
 `sheets_available` is **null when no stock is recorded at that size** — that
 means *unknown*, not zero. The UI must not claim a shortfall against null.
 
-### `include_only_item_ids` semantics
+##### `include_only_item_ids` semantics
 
 `null`/absent = all items in the project. An **empty list means no items**, not
 "no filter" — `candidate_parts_for_optimise` short-circuits, and the dialog
 disables **Optimise** when nothing is selected (`b29bb31`).
 
-### Packing engine — `apps/api/app/cut_floor/optimiser.py`
+##### Packing engine — `apps/api/app/cut_floor/optimiser.py`
 
 Pure stdlib, no DB and no Pydantic, unit-tested against deterministic inputs.
 
@@ -113,7 +120,7 @@ Rotation is governed by `grain_locked boolean NOT NULL DEFAULT false`, added to
 `board_materials` + `benchtop_materials` by migration 0024 and round-tripped
 through `/catalog/board-materials` + `/catalog/benchtop-materials` PATCH.
 
-### Board inventory (migration 0025)
+##### Board inventory (migration 0025)
 
 One row per `(workspace, board material, sheet size)`: `len_mm`, `wid_mm`,
 `qty_on_hand`, `location`, `notes`. UNIQUE on
@@ -130,7 +137,7 @@ not a second row. Routes in `apps/api/app/cut_floor/` (queries in
 Audit: `board_inventory.{upsert|update|delete}`. Unlike `/optimise`, these do
 write.
 
-### Web
+##### Web
 
 - **`SheetCanvas.tsx`** (`cut-floor/_components/`) — the SVG sheet renderer
   extracted from `BoardTab.tsx`; both surfaces import it. Known sheet dims pass
@@ -148,14 +155,14 @@ write.
   qty/location editing, remove, and a set-stock form (the same upsert, so
   re-entering a size updates it).
 
-### Seed
+##### Seed
 
 `make seed` grain-locks the walnut veneer demo board (BM-103) on ALF-001 and
 writes 6 stock rows across 5 boards — BM-101 deliberately stocked in **two**
 sizes (2440×1220 and 3600×1800) to exercise the largest-sheet pick, and BM-104
 at **zero** to exercise the out-of-stock path. Idempotent via the same upsert.
 
-### Tests
+##### Tests
 
 36 cases in `apps/api/tests/test_optimiser.py`: packer unit tests (fit, grid
 no-overlap, rotation, grain lock, oversize, kerf spacing, empty input),
@@ -167,7 +174,7 @@ accepted by `POST /projects/{pid}/cut-plans`.
 
 ---
 
-## Still out of scope
+#### Still out of scope
 
 - Non-rectangular parts. Joinery is rectangular cuts in v1.
 - Grain-**direction** visualisation in the SVG. `grain_locked` affects packing
@@ -180,7 +187,7 @@ accepted by `POST /projects/{pid}/cut-plans`.
 
 ---
 
-## Original scope (superseded — historical record)
+#### Original scope (superseded — historical record)
 
 The plan as written on `5e20813` called for:
 
