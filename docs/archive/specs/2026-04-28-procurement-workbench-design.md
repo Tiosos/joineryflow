@@ -3,7 +3,7 @@
 **Date:** 2026-04-28
 **Sub-project:** #4 (Procurement Workbench v1)
 **Branch base:** `feat/foundation` (post PM Workbench merge)
-**Prior context:** `docs/superpowers/specs/2026-04-22-foundation-design.md`, `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`, `legacy/trackingv2.md` §6
+**Prior context:** `docs/archive/specs/2026-04-22-foundation-design.md`, `docs/archive/specs/2026-04-25-pm-workbench-design.md`, `legacy/trackingv2.md` §6
 
 ---
 
@@ -320,7 +320,7 @@ No new colours invented. Reference: `procurement_orderbook_dashboard.html` in `l
 
 ## 10. Implementation phases (preview for the plan)
 
-The actual task-level plan goes in `docs/superpowers/plans/2026-04-28-procurement-workbench.md`. Sketch:
+The actual task-level plan goes in `docs/archive/plans/2026-04-28-procurement-workbench.md`. Sketch:
 
 1. **Phase 1 — RBAC + schema additions**
    - Migration 0012 (`cancelled_at`, indexes)

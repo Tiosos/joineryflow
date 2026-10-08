@@ -3,7 +3,7 @@
 > **Status: shipped.** Migration `0020`. Current state lives in
 > `## Shop Floor Ops (sub-project #8)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **Later change:** Spec §15 Q3 (deactivating a worker who holds active assignments) was
 > proposed but never built — see the spec for the consequence.
@@ -17,7 +17,7 @@
 > A **Packing** stage joins the lifecycle, with scanning (Q519), and QC arrives
 > as its own module rather than a stage (Q515).
 
-**Spec:** `docs/superpowers/specs/2026-05-05-shop-floor-design.md`
+**Spec:** `docs/archive/specs/2026-05-05-shop-floor-design.md`
 **Branch base:** `feat/foundation` post-#7c (HEAD `bf6d331`).
 **Migration introduced:** `0020_shop_floor.py`.
 **RBAC module added:** `shop_floor` (10th IA module).

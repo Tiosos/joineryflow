@@ -3,7 +3,7 @@
 **Date:** 2026-05-02
 **Sub-project:** #5c (final slice of sub-project #5; #5a Shop Drawings + #5b PDF generation already shipped)
 **Branch base:** `feat/foundation` (post #5b merge)
-**Prior context:** `docs/superpowers/specs/2026-04-22-foundation-design.md`, `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`, `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`, `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`, `docs/superpowers/specs/2026-05-02-pdf-generation-design.md`, `legacy/product_spec.md` §10.7, `legacy/hi-order-dwg-sample.jsx`
+**Prior context:** `docs/archive/specs/2026-04-22-foundation-design.md`, `docs/archive/specs/2026-04-25-pm-workbench-design.md`, `docs/archive/specs/2026-04-28-procurement-workbench-design.md`, `docs/archive/specs/2026-05-01-shop-drawings-design.md`, `docs/archive/specs/2026-05-02-pdf-generation-design.md`, `legacy/product_spec.md` §10.7, `legacy/hi-order-dwg-sample.jsx`
 
 ---
 

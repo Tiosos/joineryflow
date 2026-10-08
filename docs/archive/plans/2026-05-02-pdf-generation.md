@@ -3,13 +3,13 @@
 > **Status: shipped.** Migration `0015` (`0014`, the workspace-isolation hardening, landed alongside). Current state lives in
 > `## PDF Generation + Item Attachments (sub-project #5b)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship sub-project #5b — PDF generation (Cutlist, Hardware, Combined) + item attachments (cv_drawing, floor_plan, site_measure slots) — on top of the merged Shop Drawings + file-upload subsystem from #5a. A Drafter clicks Print Cutlist / Print Hardware / Print Combined PDF in the item editor footer and gets a PDF download. Combined PDF merges the rendered Cutlist + Hardware + 3 uploaded attachments + (optional) painting parts list.
 
-**Spec:** `docs/superpowers/specs/2026-05-02-pdf-generation-design.md`. Read before starting; this plan only sequences the implementation. The spec resolves all open product/engine/RBAC questions including the WeasyPrint + pypdf engine choice, three-named-slots-per-item attachment model, sync rendering, no caching, material-type hardware grouping, and the lister-blank em-dash fallback.
+**Spec:** `docs/archive/specs/2026-05-02-pdf-generation-design.md`. Read before starting; this plan only sequences the implementation. The spec resolves all open product/engine/RBAC questions including the WeasyPrint + pypdf engine choice, three-named-slots-per-item attachment model, sync rendering, no caching, material-type hardware grouping, and the lister-blank em-dash fallback.
 
 **Architecture:** No new infrastructure other than 3 new Python deps (`weasyprint`, `pypdf`, `jinja2`) + ~25 MB of pango runtime libs in the api Dockerfile. One small migration (0015) adds `item_attachment` with `UNIQUE (item_id, kind)` slot constraint. Migration 0014 was consumed by the workspace-isolation hardening that landed in commit `cc7ea11`; this sub-project's migration is therefore numbered 0015. New backend modules `apps/api/app/item_attachments/` (CRUD) and `apps/api/app/printing/` (engine + context + routes). Five Jinja2 templates + one `print.css` + four `.woff2` font files committed under `seed/fonts/`. Web side adds an "Attachments" tab to the item editor and turns the 3 disabled Print buttons in `EditorFooter.tsx` into live `<a target="_blank">` download links. State management is raw `fetch()` + URL search params + controlled inputs — **no TanStack Query / React Hook Form / Zustand**, matching prior sub-projects.
 
@@ -78,7 +78,7 @@ apps/web/lib/
 tests/e2e/
   pdf_generation.spec.ts                # NEW
 
-docs/superpowers/plans/
+docs/archive/plans/
   2026-05-02-pdf-generation.md          # this file
 
 CLAUDE.md                               # PDF Generation dev notes appended
@@ -3064,11 +3064,11 @@ In `CLAUDE.md`, after the existing "Shop Drawings + File-Upload Subsystem (sub-p
 
 - [ ] **Step 2: Append to the "Reference docs" bullet list**
 
-In `CLAUDE.md`, find the "Reference docs" section (the bullet list of `docs/superpowers/specs/...` and `docs/superpowers/plans/...` entries). Add at the bottom:
+In `CLAUDE.md`, find the "Reference docs" section (the bullet list of `docs/archive/specs/...` and `docs/archive/plans/...` entries). Add at the bottom:
 
 ```markdown
-- `docs/superpowers/specs/2026-05-02-pdf-generation-design.md` — PDF generation + item attachments v1 spec (sub-project #5b).
-- `docs/superpowers/plans/2026-05-02-pdf-generation.md` — 15-task implementation plan for sub-project #5b.
+- `docs/archive/specs/2026-05-02-pdf-generation-design.md` — PDF generation + item attachments v1 spec (sub-project #5b).
+- `docs/archive/plans/2026-05-02-pdf-generation.md` — 15-task implementation plan for sub-project #5b.
 ```
 
 - [ ] **Step 3: Commit**
@@ -3148,7 +3148,7 @@ Type consistency check:
 
 Placeholder scan: no TBD / TODO / "implement appropriate" / "similar to Task N". Each task has full code or full commands.
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-02-pdf-generation.md`. Two execution options:
+Plan complete and saved to `docs/archive/plans/2026-05-02-pdf-generation.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
 

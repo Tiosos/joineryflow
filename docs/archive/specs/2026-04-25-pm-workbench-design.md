@@ -685,6 +685,6 @@ Prevents scope creep into later sub-projects:
 - `legacy/trackingv2.md` — canonical v1 build plan.
 - `legacy/product_spec.md` — product overview, role model, status taxonomy.
 - `legacy/hi-*.jsx`, `legacy/Joinery Workflow Hi-fi.html` — visual binding for every surface.
-- `docs/superpowers/specs/2026-04-22-foundation-design.md` — Foundation spec (sub-project #1).
-- `docs/superpowers/plans/2026-04-22-foundation.md` — Foundation implementation plan (31 tasks; reference style).
+- `docs/archive/specs/2026-04-22-foundation-design.md` — Foundation spec (sub-project #1).
+- `docs/archive/plans/2026-04-22-foundation.md` — Foundation implementation plan (31 tasks; reference style).
 - `CLAUDE.md` — repo nature, dev loop, design system, terminology pins.

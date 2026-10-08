@@ -6,7 +6,7 @@
 
 > Built directly against the confirmed decisions in `docs/plan-v1/OPEN-QUESTIONS.md`
 > §F, the same way #9a shipped without a spec or plan — there is no
-> `docs/superpowers/{specs,plans}/` doc for this one; this section is its only
+> `docs/archive/{specs,plans}/` doc for this one; this section is its only
 > written record.
 
 Replaces the static `apps/api/app/auth/permissions.py` matrix as the *live*

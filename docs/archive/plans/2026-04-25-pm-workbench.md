@@ -3,7 +3,7 @@
 > **Status: shipped.** Migrations `0008` + `0009`. Current state lives in
 > `## PM Workbench (sub-project #2 + #3)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **Later change:** This plan makes `/home` the landing page in place of `/dashboard`; **#9a
 > reversed that** — `/home` is now a bare `redirect("/dashboard")`.
@@ -26,7 +26,7 @@
 
 **Goal:** Ship sub-projects #2 + #3 (PM Project Workbench grid + Drafter Item Editor) of the JoineryFlow build, on top of the Foundation branch. PM lands on `/home`, opens a project, sees the tracking grid, clicks an item ▶, lands in the Drafter Item Editor with editable Cutlist + Hardware tabs, and returns to home — end-to-end verifiable via two new Playwright specs.
 
-**Spec:** `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`. Read it before starting. The spec resolves all open product/RBAC questions; this plan only sequences the implementation.
+**Spec:** `docs/archive/specs/2026-04-25-pm-workbench-design.md`. Read it before starting. The spec resolves all open product/RBAC questions; this plan only sequences the implementation.
 
 **Architecture:** No new infrastructure. Same three-container docker-compose (db, api, web). Two new Alembic migrations (0008 narrows the auth-role check; 0009 repoints legacy `users` FKs to `app_user` and adds `projects.pm_id`). Five new FastAPI routers under `apps/api/app/{home,projects,items,parts,hardware_lines}/`. New Next.js routes under `apps/web/app/(app)/{home,projects,tracking,items}/`. State management is raw `fetch()` + URL params + controlled inputs — **no TanStack Query / React Hook Form / Zustand in v1**.
 
@@ -125,7 +125,7 @@ apps/web/lib/
 tests/e2e/
   pm_workbench.spec.ts               # NEW
   drafter_editor.spec.ts             # NEW
-docs/superpowers/plans/
+docs/archive/plans/
   2026-04-25-pm-workbench.md         # this file
 CLAUDE.md                            # PM Workbench dev notes appended at end
 ```

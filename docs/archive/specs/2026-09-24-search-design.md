@@ -1,7 +1,7 @@
 # Global Search — design spec (sub-project #11)
 
 > **Status: shipped** (migration `0033_search_outbox`). Current state lives in
-> `CLAUDE.md`; the plan (`docs/superpowers/plans/2026-09-24-search.md`)
+> `CLAUDE.md`; the plan (`docs/archive/plans/2026-09-24-search.md`)
 > records per task what shipped and where it departed from this spec.
 >
 > **Fully decided.** Q577–Q580, raised by this spec, were answered 2026-09-24

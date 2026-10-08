@@ -3,7 +3,7 @@
 > **Status: shipped.** Migration `0012`. Current state lives in
 > `## Procurement Workbench (sub-project #4)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **Later change — Phase 4 is retired.** The `/catalogs/{type}` surface it specifies was
 > removed in `64ef89e` — it duplicated the six catalog tables under the
@@ -24,7 +24,7 @@
 
 **Goal:** Ship sub-project #4 — the Procurement Workbench v1 — on top of the merged PM Workbench branch. A PM (or Drafter, who is elevated to PM-parity for `orderbook` in this sub-project) clicks the "0 ready / 2 blocked" availability chip on a tracking row, opens an item-scoped drawer, and either allocates from an existing batch or orders more — all in three clicks. A Procurement officer (`purchase_officer`) gets a cross-project queue at `/orderbook` for working across projects, and every project gets a `/projects/[id]/procurement` page with Materials, Batches, and Catalog tabs. End-to-end verifiable via one new Playwright spec.
 
-**Spec:** `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions.
+**Spec:** `docs/archive/specs/2026-04-28-procurement-workbench-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions.
 
 **Architecture:** No new infrastructure. Same three-container docker-compose. One small migration (0012) adds `procurement_batches.cancelled_at` and two indexes. New backend module `apps/api/app/procurement_v1/` with five sub-routers — mounted at top-level paths to avoid colliding with the legacy `/procurement/*` namespace, which is left untouched and unused. New Next.js routes under `apps/web/app/(app)/{orderbook,projects/[id]/procurement}/` plus a client `AvailabilityDrawer` over `/tracking`. State management is raw `fetch()` + URL search params + controlled inputs — **no TanStack Query / React Hook Form / Zustand in v1.**
 
@@ -109,7 +109,7 @@ apps/web/app/
   globals.css                                 # + .h-mono utility
 tests/e2e/
   procurement.spec.ts                         # NEW
-docs/superpowers/plans/
+docs/archive/plans/
   2026-04-28-procurement-workbench.md         # this file
 CLAUDE.md                                     # Procurement Workbench dev notes appended
 ```
@@ -4070,8 +4070,8 @@ git commit -m "test(e2e): procurement resolution flow"
 Also add, in the "Reference docs" section near the top, this line near the existing PM Workbench reference:
 
 ```markdown
-- `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md` — Procurement Workbench v1 spec.
-- `docs/superpowers/plans/2026-04-28-procurement-workbench.md` — 24-task implementation plan for sub-project #4.
+- `docs/archive/specs/2026-04-28-procurement-workbench-design.md` — Procurement Workbench v1 spec.
+- `docs/archive/plans/2026-04-28-procurement-workbench.md` — 24-task implementation plan for sub-project #4.
 ```
 
 - [ ] **Step 2: Run the full verification loop**

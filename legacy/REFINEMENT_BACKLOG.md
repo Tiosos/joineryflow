@@ -121,4 +121,4 @@ Keep the existing legacy file as a historical reference.
 
 ## Tracking
 
-When you pick one up, move it into `docs/superpowers/plans/` as a proper implementation plan and link the resulting commit / PR back here.
+When you pick one up, move it into `docs/archive/plans/` as a proper implementation plan and link the resulting commit / PR back here.

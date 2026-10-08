@@ -12,7 +12,7 @@ recorded:
 > **Status: shipped.** Migration `00NN`. Current state lives in
 > `## <section>` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 ```
 
 Use `**Status: in progress.**` or `**Status: not started.**` while a plan is

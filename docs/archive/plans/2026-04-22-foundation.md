@@ -3,7 +3,7 @@
 > **Status: shipped.** Migrations `0001`–`0004`. Current state lives in
 > `## Foundation dev loop` / `## Auth & RBAC` / `## Web shell` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **Later change:** The Goal below says *five-role RBAC* and *six-tab IA*: both have since
 > grown — 7 auth roles and 11 modules, with a secondary tab row added by #9a.
@@ -170,7 +170,7 @@ Web replacement for a legacy FileMaker joinery production system.
 
 Dev: `make up` → http://localhost:3000 (login: rin.park@hartwood.test / hartwood-dev).
 
-See `docs/superpowers/specs/2026-04-22-foundation-design.md`.
+See `docs/archive/specs/2026-04-22-foundation-design.md`.
 ```
 
 - [ ] **Step 4: Commit**

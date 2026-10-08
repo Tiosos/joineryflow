@@ -29,7 +29,7 @@
 > **dropped** rather than revived (Q544). The nest's part areas also become the
 > basis for apportioning shared cutlist labour across items (Q549).
 
-**Spec source:** §8.1 of `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md`
+**Spec source:** §8.1 of `docs/archive/specs/2026-05-05-cabinet-vision-design.md`
 ("Bin-packing engine API contract — RESOLVED. Future optimizer ships as a
 separate POST /projects/{pid}/optimise endpoint that *returns* a CutPlanIn for
 the user to confirm-then-commit.")

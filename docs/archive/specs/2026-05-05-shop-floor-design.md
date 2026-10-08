@@ -5,13 +5,13 @@
 **Sequencing:** Ships **after** Cabinet Vision sub-project #7 (slices #7a/#7b/#7c). Assumes migrations 0017–0019 are already applied.
 **Branch base:** `feat/foundation` post-#7c (latest migration on disk: 0019; matrix has 9 modules incl. `catalog` + `cut_floor`).
 **Prior context:**
-- `docs/superpowers/specs/2026-04-22-foundation-design.md`
-- `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`
-- `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`
-- `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`
-- `docs/superpowers/specs/2026-05-02-pdf-generation-design.md`
-- `docs/superpowers/specs/2026-05-02-isample-design.md`
-- `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md`
+- `docs/archive/specs/2026-04-22-foundation-design.md`
+- `docs/archive/specs/2026-04-25-pm-workbench-design.md`
+- `docs/archive/specs/2026-04-28-procurement-workbench-design.md`
+- `docs/archive/specs/2026-05-01-shop-drawings-design.md`
+- `docs/archive/specs/2026-05-02-pdf-generation-design.md`
+- `docs/archive/specs/2026-05-02-isample-design.md`
+- `docs/archive/specs/2026-05-05-cabinet-vision-design.md`
 - `legacy/product_spec.md` §2, §4.2
 - `legacy/trackingv2.md`
 

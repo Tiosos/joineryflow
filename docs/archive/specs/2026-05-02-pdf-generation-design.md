@@ -3,7 +3,7 @@
 **Date:** 2026-05-02
 **Sub-project:** #5b (sibling slice of sub-project #5; #5a Shop Drawings + file uploads is done; #5c iSample follows)
 **Branch base:** `feat/foundation` (post Shop Drawings merge)
-**Prior context:** `docs/superpowers/specs/2026-04-22-foundation-design.md`, `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`, `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`, `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`, `legacy/trackingv2.md` §5.5 + §11
+**Prior context:** `docs/archive/specs/2026-04-22-foundation-design.md`, `docs/archive/specs/2026-04-25-pm-workbench-design.md`, `docs/archive/specs/2026-04-28-procurement-workbench-design.md`, `docs/archive/specs/2026-05-01-shop-drawings-design.md`, `legacy/trackingv2.md` §5.5 + §11
 
 ---
 

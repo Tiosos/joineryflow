@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Date:** 2026-05-27
-**Plan:** `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md`
+**Plan:** `docs/archive/plans/2026-05-27-item-project-detail-2-0.md`
 **Driver:** Bill — legacy-parity roadmap from `pictures attached/`.
 
 ## 1. Why

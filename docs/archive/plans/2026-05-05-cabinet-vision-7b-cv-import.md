@@ -3,13 +3,13 @@
 > **Status: shipped.** Migration `0018`. Current state lives in
 > `## CV Import wizard (sub-project #7b)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Date:** 2026-05-05
 **Sub-project:** #7b — CV Import wizard (the second slice of #7 Cabinet Vision Integration)
-**Spec:** `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — read §1 (scope items 1, 4, 8), §2.1 (backend layout — `apps/api/app/cv/`), §3.1 (`cv_import_run`), §4.2 (CV import routes), §5 (RBAC — `cut_floor` row), §6 (CSV import workflow detail end-to-end), §7.2 (Cutlist tab Import dialog), §8 (migration 0018 portion only), §9 (seed updates limited to cv_import_run + import demo), §10.1 (test plan — `test_cv_parser.py`, `test_cv_resolver.py`, `test_cv_routes.py`).
+**Spec:** `docs/archive/specs/2026-05-05-cabinet-vision-design.md` — read §1 (scope items 1, 4, 8), §2.1 (backend layout — `apps/api/app/cv/`), §3.1 (`cv_import_run`), §4.2 (CV import routes), §5 (RBAC — `cut_floor` row), §6 (CSV import workflow detail end-to-end), §7.2 (Cutlist tab Import dialog), §8 (migration 0018 portion only), §9 (seed updates limited to cv_import_run + import demo), §10.1 (test plan — `test_cv_parser.py`, `test_cv_resolver.py`, `test_cv_routes.py`).
 **Branch base:** `feat/foundation` after #7a merge (HEAD `83fe558`; latest migration on disk is `0017_catalog_enrichment.py`).
 **Baseline:** 334 passed, 1 skipped, 0 failed (verified 2026-05-07).
 
@@ -53,7 +53,7 @@ Ship the **CV CSV import wizard** that turns a Cabinet Vision part-list export i
 
 ## Pre-flight checklist
 
-- [ ] Confirm clean working tree: `git status` shows only `.gitignore`, `.claude/`, `.pnpm-store/`, and `docs/superpowers/specs/2026-05-05-shop-floor-design.md` (the parallel Shop Floor spec — untouched by #7b).
+- [ ] Confirm clean working tree: `git status` shows only `.gitignore`, `.claude/`, `.pnpm-store/`, and `docs/archive/specs/2026-05-05-shop-floor-design.md` (the parallel Shop Floor spec — untouched by #7b).
 - [ ] Confirm branch: `git rev-parse --abbrev-ref HEAD` → `feat/foundation`.
 - [ ] Confirm latest migration: `ls db/alembic/versions/ | sort | tail -3` → `0015_*`, `0016_sample.py`, `0017_catalog_enrichment.py`.
 - [ ] Confirm baseline: `docker compose exec -T api pytest -q` → **334 passed, 1 skipped, 0 failed** (recorded 2026-05-07).
@@ -109,7 +109,7 @@ apps/web/lib/
 tests/e2e/
   cv_import.spec.ts           # NEW — Scenario A from spec §10.2 (drafter imports → resolves 1 unknown → commits → 9 parts visible)
 
-docs/superpowers/plans/
+docs/archive/plans/
   2026-05-05-cabinet-vision-7b-cv-import.md  # this file
 
 CLAUDE.md                     # MODIFY: append "CV Import wizard (sub-project #7b)" subsection

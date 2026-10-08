@@ -3,7 +3,7 @@
 > **Status: shipped.** Migration `0017`. Current state lives in
 > `## Catalog enrichment + CV Mappings (sub-project #7a)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **Later change:** The risk note telling you **not** to retire the procurement-side
 > `/catalogs/*` is superseded — that surface was retired in `64ef89e` and
@@ -18,7 +18,7 @@
 
 **Date:** 2026-05-05
 **Sub-project:** #7a — Catalog enrichment + CV Mappings UI (the first slice of #7 Cabinet Vision Integration)
-**Spec:** `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — read §1 (scope), §2.1 (backend layout), §3.1–3.4 (catalog enrichment + `cv_material_mapping`), §4.1 (catalog routes incl. CV mappings), §5 (RBAC), §7.1 (`/catalog` page UI), §8 (migration 0017 portion only), §9 (seed updates limited to catalog enrichment + 2 cv_material_mapping rows).
+**Spec:** `docs/archive/specs/2026-05-05-cabinet-vision-design.md` — read §1 (scope), §2.1 (backend layout), §3.1–3.4 (catalog enrichment + `cv_material_mapping`), §4.1 (catalog routes incl. CV mappings), §5 (RBAC), §7.1 (`/catalog` page UI), §8 (migration 0017 portion only), §9 (seed updates limited to catalog enrichment + 2 cv_material_mapping rows).
 **Branch base:** `feat/foundation` (HEAD `2f72c89`; latest migration on disk is `0016_sample.py`).
 
 ---
@@ -119,7 +119,7 @@ apps/web/components/chrome/
 tests/e2e/
   catalog.spec.ts                       # NEW happy-path
 
-docs/superpowers/plans/
+docs/archive/plans/
   2026-05-05-cabinet-vision-7a-catalog.md  # this file
 
 CLAUDE.md                               # MODIFY: append Catalog (#7a) subsection
@@ -2066,8 +2066,8 @@ Append a new subsection after the iSample one:
 Add a corresponding entry in the "Reference docs" section of CLAUDE.md:
 
 ```markdown
-- `docs/superpowers/specs/2026-05-05-cabinet-vision-design.md` — Cabinet Vision Integration spec (sub-projects #7a + #7b + #7c).
-- `docs/superpowers/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
+- `docs/archive/specs/2026-05-05-cabinet-vision-design.md` — Cabinet Vision Integration spec (sub-projects #7a + #7b + #7c).
+- `docs/archive/plans/2026-05-05-cabinet-vision-7a-catalog.md` — 15-task implementation plan for sub-project #7a.
 ```
 
 - [ ] **Step 4: Final pytest + e2e + docker compose ps sanity**

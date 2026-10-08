@@ -6,15 +6,15 @@
 - **#7a — Catalog enrichment + Mappings UI** (migration 0017, the `catalog` RBAC module, `/catalog` page incl. CV Mappings subtab; the catalog write-side that everything else depends on)
 - **#7b — CV Import wizard** (migration 0018, the `cv_import_run` register, the `/items/{id}?tab=cutlist&import=cv` 3-phase wizard; depends on #7a's catalog + mapping CRUD)
 - **#7c — CutPlan / CutSchedule + Board tab** (migration 0019, the `cut_floor` RBAC module, `/cut-floor` page + Drafter Board tab; independent of #7a/#7b — could ship in parallel but sequenced after for review bandwidth)
-**Sequencing:** Cabinet Vision ships **before** Shop Floor (sub-project #8). Shop Floor's spec lives at `docs/superpowers/specs/2026-05-05-shop-floor-design.md` and assumes migrations 0017–0019 are already applied.
+**Sequencing:** Cabinet Vision ships **before** Shop Floor (sub-project #8). Shop Floor's spec lives at `docs/archive/specs/2026-05-05-shop-floor-design.md` and assumes migrations 0017–0019 are already applied.
 **Branch base:** `feat/foundation` (HEAD `2f72c89`; latest migration on disk is 0016).
 **Prior context:**
-- `docs/superpowers/specs/2026-04-22-foundation-design.md`
-- `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`
-- `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`
-- `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`
-- `docs/superpowers/specs/2026-05-02-pdf-generation-design.md`
-- `docs/superpowers/specs/2026-05-02-isample-design.md`
+- `docs/archive/specs/2026-04-22-foundation-design.md`
+- `docs/archive/specs/2026-04-25-pm-workbench-design.md`
+- `docs/archive/specs/2026-04-28-procurement-workbench-design.md`
+- `docs/archive/specs/2026-05-01-shop-drawings-design.md`
+- `docs/archive/specs/2026-05-02-pdf-generation-design.md`
+- `docs/archive/specs/2026-05-02-isample-design.md`
 - `legacy/product_spec.md` §4.3, §5.2, §5.5, §5.6
 - `legacy/trackingv2.md` §7
 - `db/alembic/versions/0003_cut_schedule.py`

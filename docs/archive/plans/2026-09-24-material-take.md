@@ -3,14 +3,14 @@
 > **Status: shipped.** Migration `0034_material_take`. Current state lives in
 > `## Material Take → Material Summary (sub-project #12)` in `CLAUDE.md`. it follows
 > `0033_search_outbox` (#11, PR #14), so **A1 cannot land before #14 merges**.
-> Design: `docs/superpowers/specs/2026-09-24-material-take-design.md`. As with
+> Design: `docs/archive/specs/2026-09-24-material-take-design.md`. As with
 > #10 and #11, checkboxes are kept current and each finished task gets a `→`
 > note recording what shipped and how it was verified.
 
 **Selected by:** `ALIGNMENT.md` §6 step 3. **Decisions:** Q80, Q495–Q501,
 Q581–Q585 (all confirmed). **RBAC:** no matrix change — `("list", action)`
 throughout. **IA:** no new top-level tab.
-**Format:** summary (see `docs/superpowers/plans/README.md`); the spec holds
+**Format:** summary (see `docs/archive/plans/README.md`); the spec holds
 the detail.
 
 **Working rule for this sub-project: CI minutes are scarce.** Every task is

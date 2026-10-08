@@ -3,7 +3,7 @@
 > **Status: shipped.** Migration `0013`. Current state lives in
 > `## Shop Drawings + File-Upload Subsystem (sub-project #5a)` in `CLAUDE.md`;
 > the task checkboxes below were never ticked and are not a progress signal
-> (see `docs/superpowers/plans/README.md`).
+> (see `docs/archive/plans/README.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,7 +16,7 @@
 
 **Goal:** Ship sub-project #5a — the file-upload subsystem + Shop Drawings tab — on top of the merged Procurement Workbench branch. A Drafter can upload a PDF/PNG/JPG drawing for a project, tag it with a room, and submit it for review. Manager/Admin can approve or reject with a note. Drawings render as cards on `/shop-dwgs` across three subtabs (Current / In review / Archive). Files are RBAC-gated, content-addressable on local disk behind a swappable `FileStore` interface, and deduped per workspace by sha256.
 
-**Spec:** `docs/superpowers/specs/2026-05-01-shop-drawings-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions including the revision state machine, "one in-flight per drawing" rule, and the not-uploader review constraint.
+**Spec:** `docs/archive/specs/2026-05-01-shop-drawings-design.md`. Read it before starting; this plan only sequences the implementation. The spec resolves all open product/RBAC questions including the revision state machine, "one in-flight per drawing" rule, and the not-uploader review constraint.
 
 **Architecture:** No new infrastructure other than a single Docker volume for uploads. One migration (0013) adds three new tables: `file_blob` (generic, reusable by future surfaces), `shop_drawing` (project-scoped with `room` as free-text tag), `shop_drawing_revision` (one row per uploaded version). New backend modules `apps/api/app/files/` (upload subsystem) and `apps/api/app/shop_drawings/` (entity routes). New Next.js routes under `apps/web/app/(app)/shop-dwgs/` plus a client `DrawingDrawer` over the list. State management is raw `fetch()` + URL search params + controlled inputs — **no TanStack Query / React Hook Form / Zustand**, matching prior sub-projects.
 
@@ -91,7 +91,7 @@ docker-compose.yml                      # + uploads volume on api service
 tests/e2e/
   shop_drawings.spec.ts                 # NEW
 
-docs/superpowers/plans/
+docs/archive/plans/
   2026-05-01-shop-drawings.md           # this file
 
 CLAUDE.md                               # Shop Drawings dev notes appended
@@ -4614,8 +4614,8 @@ In `CLAUDE.md`, after the "Procurement Workbench (sub-project #4)" section, appe
 In the same file, append to the "Reference docs" section's bullet list:
 
 ```markdown
-- `docs/superpowers/specs/2026-05-01-shop-drawings-design.md` — Shop Drawings + file-upload subsystem v1 spec (sub-project #5a).
-- `docs/superpowers/plans/2026-05-01-shop-drawings.md` — 21-task implementation plan for sub-project #5a.
+- `docs/archive/specs/2026-05-01-shop-drawings-design.md` — Shop Drawings + file-upload subsystem v1 spec (sub-project #5a).
+- `docs/archive/plans/2026-05-01-shop-drawings.md` — 21-task implementation plan for sub-project #5a.
 ```
 
 - [ ] **Step 2: Commit**
@@ -4688,7 +4688,7 @@ Type consistency check:
 
 Placeholder scan: no TBD / TODO / "implement appropriate" / "similar to Task N". Each task has full code or full commands.
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-01-shop-drawings.md`. Two execution options:
+Plan complete and saved to `docs/archive/plans/2026-05-01-shop-drawings.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
 

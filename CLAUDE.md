@@ -124,7 +124,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
 | `tests/e2e/` | Playwright specs (31 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
-| `docs/superpowers/` | Older specs + plans (read `plans/README.md` first) |
+| `docs/archive/` | Archived specs + plans for built sub-projects (read `plans/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
 
 Plan V1 is the **roadmap**, not a description of the tree (Q433); shipped behaviour may change only behind data-preserving migrations (Q435). `docs/plan-v1/ALIGNMENT.md` maps it onto the code — **read its §3 before building anything from Plan V1**. Three decisions deliberately depart from Plan V1's prose and must not be "fixed": **Q499** (PM confirmation of the Material Summary is advisory), **Q513** (no rollback of change states), **Q527** (fixed KPI catalogue).
@@ -299,4 +299,4 @@ Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; 
 
 ## 11. Reference docs
 
-`docs/sub-projects/00-foundation-and-architecture.md` (the pre-reorganisation preamble, verbatim), `docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/superpowers/plans/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.
+`docs/sub-projects/00-foundation-and-architecture.md` (the pre-reorganisation preamble, verbatim), `docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/archive/plans/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.

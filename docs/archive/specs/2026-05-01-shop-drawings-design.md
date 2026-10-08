@@ -3,7 +3,7 @@
 **Date:** 2026-05-01
 **Sub-project:** #5a (first slice of sub-project #5; sibling slices #5b PDF generation and #5c iSample are independent and follow)
 **Branch base:** `feat/foundation` (post Procurement Workbench merge)
-**Prior context:** `docs/superpowers/specs/2026-04-22-foundation-design.md`, `docs/superpowers/specs/2026-04-25-pm-workbench-design.md`, `docs/superpowers/specs/2026-04-28-procurement-workbench-design.md`, `legacy/product_spec.md` §10.6, `legacy/trackingv2.md` §11
+**Prior context:** `docs/archive/specs/2026-04-22-foundation-design.md`, `docs/archive/specs/2026-04-25-pm-workbench-design.md`, `docs/archive/specs/2026-04-28-procurement-workbench-design.md`, `legacy/product_spec.md` §10.6, `legacy/trackingv2.md` §11
 
 ---
 
