@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..edit_log import write_edit_log
 from ..row_types import live_joinery_items
+from ..sql_columns import require_columns
 
 _JOINERY_ITEM = live_joinery_items("i")
 
@@ -126,12 +127,20 @@ def create_defect(
     return _defect(db, defect_id=did, workspace_id=workspace_id)
 
 
+# Columns each patch may write: the fields of PatchDefectIn / PatchChecklistItemIn /
+# PatchReworkIn. They are interpolated into UPDATE ... SET, so they are listed, not trusted.
+_DEFECT_COLUMNS = frozenset({"stage_key", "description"})
+_CHECKLIST_COLUMNS = frozenset({"label", "is_checked", "sort_order"})
+_REWORK_COLUMNS = frozenset({"cause", "scope", "responsibility", "cost"})
+
+
 def patch_defect(
     db: Session, *, defect_id: int, workspace_id: int, actor_id: int, changes: dict,
 ) -> dict:
     current = _defect(db, defect_id=defect_id, workspace_id=workspace_id)
     if current["status"] != "open":
         raise Conflict("DEFECT_NOT_OPEN")
+    require_columns(changes, _DEFECT_COLUMNS)
     diff = {k: v for k, v in changes.items() if current[k] != v}
     if not diff:
         return current
@@ -259,6 +268,7 @@ def patch_checklist_item(
     changes: dict,
 ) -> dict:
     current = _checklist_item(db, checklist_item_id=checklist_item_id, workspace_id=workspace_id)
+    require_columns(changes, _CHECKLIST_COLUMNS)
     diff = {k: v for k, v in changes.items() if current[k] != v}
     if not diff:
         return current
@@ -387,6 +397,7 @@ def patch_rework(
     current = _rework(db, rework_id=rework_id, workspace_id=workspace_id)
     if current["status"] != "open":
         raise Conflict("REWORK_NOT_OPEN")
+    require_columns(changes, _REWORK_COLUMNS)
     diff = {k: v for k, v in changes.items() if current[k] != v}
     if not diff:
         return current

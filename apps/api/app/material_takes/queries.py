@@ -17,6 +17,7 @@ from ..auth.sessions import AuthUser
 from ..catalog.queries import MATERIAL_TABLE_BY_TYPE, assert_material_in_workspace
 from ..edit_log import write_edit_log
 from ..items.queries import assert_item_content_unlocked
+from ..sql_columns import require_columns
 from .generation import generate_lines, generated_signature
 
 _CENT = Decimal("0.01")
@@ -219,11 +220,18 @@ def _line(db: Session, take_id: int, line_id: int) -> dict:
     return dict(r)
 
 
+# Columns patch_line may write (the fields of PatchLineIn); interpolated into UPDATE ... SET.
+_LINE_COLUMNS = frozenset({
+    "material_type", "material_id", "description", "unit", "qty", "wastage_pct", "note",
+})
+
+
 def patch_line(db: Session, take_id: int, line_id: int, workspace_id: int, actor: AuthUser,
                changes: dict) -> None:
     t = _draft(db, take_id, workspace_id, actor)
     actor_id = actor.id
     old = _line(db, take_id, line_id)
+    require_columns(changes, _LINE_COLUMNS)
     if old["source"] == "generated":
         # A generated line's material and unit are the generator's answer.
         for k in ("material_type", "material_id", "description", "unit"):
