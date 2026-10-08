@@ -185,7 +185,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **IA is fixed: 6 primary tabs** `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook` (the `List` tab *is* the Cutlist module, Q474) plus admin-only `/it`. New top-level surfaces go on the **secondary strip**: `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`. The strip hides a tab when `can(me, module, "read")` is false; the API's 403 is the real control.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand.**
 - Design tokens live once in `globals.css` (`@theme inline`) and `lib/tokens.ts`. **Do not invent colours** — use `bg-h-*`, `text-h-*`, `border-h-line`. Inter for UI, JetBrains Mono (`.h-mono`) for part #, PO #, ETAs, money. No `tailwind.config.ts`.
-- **Money and quantities arrive as JSON strings** (Pydantic `Decimal`). Type them `string` in `lib/*-types.ts`; typing `number` compiles then throws at `toFixed`.
+- **Money and quantities backed by a Pydantic `Decimal` arrive as JSON strings.** Type them `string` in `lib/*-types.ts`; typing `number` compiles then throws at `toFixed`. A field the API declares `float` or `int` (e.g. `unit_cost`/`qty` in `lib/pm-types.ts`, from `hardware_lines`) arrives as a JSON number and is typed `number`. Check the Pydantic type, not the name.
 - **JSX whitespace trap:** text that continues onto a second line after a `{…}` or element loses its leading space. Use a template string or `{" "}`.
 - A selection with a live input beside it must change **synchronously** (local state + `history.replaceState`); do not call `history.replaceState` right after `router.refresh()` for an id not yet in the refreshed list.
 
