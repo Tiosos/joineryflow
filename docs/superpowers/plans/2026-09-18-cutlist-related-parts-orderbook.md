@@ -975,6 +975,11 @@ hand-edited predicates.
       the one task in this plan that cannot be completed from the tree alone;
       everything it would verify (Q540's number preservation) is pinned by
       `0027`'s migration tests against synthetic rows in the meantime.
+      → **Update 2026-10-08: first slice built.** The user supplied a Tracking 2.0
+      export for one project, and `app/importers/tracking_grid.py` imports it keeping
+      both FileMaker numbers (Q540); the dry run on the real file inserted cleanly.
+      Still open: running it against the user's own database, and the other
+      FileMaker layouts. See `docs/sub-projects/09-e3-pilot-data-import.md`.
 
 ## 3. Sequencing
 

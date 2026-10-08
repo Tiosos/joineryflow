@@ -102,6 +102,8 @@ _ITEM_COLS = """
     i.var_boq,
     i.contractor_id,
     c.full_name                                     AS contractor_name,
+    f.code                                          AS factory_code,
+    i.tg_solid                                      AS tg_solid,
     i.total_amount,
     i.site_measure_notes,
     i.floor_plan,
@@ -201,6 +203,7 @@ def list_items_for_project(
                  LIMIT 1
             ) obook ON true
             LEFT JOIN app_user c ON c.id = i.contractor_id
+            LEFT JOIN factory f ON f.factory_id = i.factory_id
             WHERE i.project_id = :pid
               AND {_WORKSPACE_FILTER}
               AND i.deleted = :deleted
@@ -314,6 +317,8 @@ def list_items_for_project(
                 "var_boq": r["var_boq"] or "BOQ",
                 "contractor_id": r["contractor_id"],
                 "contractor_name": r["contractor_name"],
+                "factory_code": r["factory_code"],
+                "tg_solid": bool(r["tg_solid"]),
                 "total_amount": r["total_amount"],
                 "site_measure_notes": r["site_measure_notes"],
                 "site_measure_attachment_id": r["site_measure_attachment_id"],

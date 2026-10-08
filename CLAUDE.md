@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0052` (head `0052_item_soft_delete`) |
+| `db/` | Alembic migrations `0001`→`0053` (head `0053_factory_tg_solid_legacy_ref`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
@@ -196,6 +196,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Terminology pins:** `Stage` = site location (`items.stage`, still written, Q435); `Zone` = sub-division of Stage; `lifecycle_stage`/`stage_key` = the production milestones (`REQ SM LISTED DOWN CNC EDGED PAINTED MADE DEL INST`, plus `PACKING` as a Shop Floor stage since `0039`) — **never use bare "stage" for these**; `Status` = record state (`CLEAR VOID NOTE! LIVE APPROVED HOLD`); `Status Symbol` = drafter-only UI flag.
 - **Cutlist owns the production workflow** (Q412). Shop Floor keys on `(cutlist_id, stage_key)`. `item_stages` stays per-item as a *projection* fanned out on completion (Q439/Q562); undo reverses the whole cutlist (Q446); a late-linked item gets no backfill (Q539). DEL/INST are not Shop Floor stages (Q561).
 - **Items are soft-deleted** (`items.deleted`, `cutlist.deleted`, `0052`): `DELETE /items/{id}` flags the item, its related parts and its cutlist (once no live item is left in it); `POST /items/{id}/restore` (manager/admin) undoes it; a related part is soft-deleted the same way (`DELETE /related-parts/{id}`) and cannot be restored while its parent is deleted (`409 PARENT_DELETED`). A Hard Lock refuses the delete (`409 HARD_LOCKED`). A deleted item answers 404 everywhere. **Every SQL string that reads `items` or `cutlist` takes `row_types.not_deleted` / `live_joinery_items`** (`tests/test_items_deleted_filter.py` fails on one that does not); the only readers of deleted rows are `restore_item` and Tracking's Deleted list (`?deleted=true`).
+- **Factories** (`factory`, `items.factory_id`, `0053`) are a per-workspace lookup of where work is made (`TG`, `SI`…); not users, no admin screen yet. `items.tg_solid` is a per-item tag, separate from `solid_surface_req`; `items.legacy_item_ref` keeps FileMaker's old id. Imported FileMaker numbers are kept as they are (`items.num`, `cutlist.cutlist_no`) and `joinery_number_seq` is moved past them (E3).
 - **Related parts** are `items` rows with `row_type='related_part'` + parent FK (one level only, DB-enforced). They never hold a cutlist number (Q417), share the parent's Group ID, and have no thread, take, QC or attachments (404). **Use `row_types.joinery_items_only(alias)`** — never a hand-written predicate.
 - **Area / Room** are real project-scoped tables, Room nested under Area; composite FK `items (area_id, room_id)`.
 - **CutPlan ≠ CutSchedule** (two entities). `/optimise` is a pure function (no writes); sheet stock is read, never consumed.
@@ -286,12 +287,15 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **Comments, mentions, notifications (`0042`, `0043`).** Threads on project, area, room, item, module and shop-drawing revision (Task/Change have no entities). One-level replies, @mentions by id, in-app bell only. Each type is gated by its own module.
 - **Counts and warnings.** `comment_count` rides existing payloads; deleting a module or CV-replace warns first (advisory, API unchanged).
 
+### Data migration (E3) — `09-e3-pilot-data-import.md`
+- **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered: modules, parts, hardware, drawings, QC and orders need their own exports.
+
 ### Audits and CI — `08-audits-and-ci.md`
 - **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; E3 pilot-data migration. Tracking's two disabled quick-filter chips (Tg Solid, Orders) are parked until the user builds them: see `docs/sub-projects/03-tracking-and-item-detail.md`.
+Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

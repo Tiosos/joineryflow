@@ -29,6 +29,15 @@ ALLOWED: dict[tuple[str, str], str] = {
         "keeps the cutlist reference of an item's existing orders current; the item was resolved by the caller",
     ("project_contracts/actual_costs.py", "FROM stage_completion_log scl"):
         "Actual Costs: labour already spent stays costed in the project total, even on a deleted cutlist (the per-item split skips deleted items)",
+    ("importers/tracking_grid.py", "SELECT i.num"):
+        "the importer's clash check: a deleted item still owns its `num` (unique), so it counts, and a "
+        "re-run must skip it rather than re-create it",
+    ("importers/tracking_grid.py", "SELECT c.cutlist_no"):
+        "the importer's clash check on cutlist numbers: a deleted cutlist still owns its number",
+    ("importers/tracking_grid.py", "SELECT cutlist_id FROM cutlist"):
+        "a re-run reuses the cutlist row of the same number, deleted or not",
+    ("importers/tracking_grid.py", "SELECT setval"):
+        "the shared number sequence must clear every number ever used, deleted rows included",
     ("related_parts/queries.py", "FROM items i"):
         "`_PART_FROM`: a bare fragment; `get_related_part` and `list_for_parent` add `NOT i.deleted`",
 }

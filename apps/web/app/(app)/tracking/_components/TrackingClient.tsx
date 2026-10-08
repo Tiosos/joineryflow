@@ -97,6 +97,7 @@ export function TrackingClient({
         case "installed":
           return Boolean(it.stages.INST?.done_date);
         case "tgsolid":
+          return Boolean(it.tg_solid);
         case "orders":
           return false;
       }
@@ -240,7 +241,7 @@ export function TrackingClient({
         <Chip label="My Entries" active={quick === "my"} onClick={() => setQuick(quick === "my" ? null : "my")} disabled={!me} />
         <Chip label="Deleted" active={deletedView} onClick={toggleDeletedView} title="Show this project's deleted items" />
         <Chip label="Void" active={quick === "void"} onClick={() => setQuick(quick === "void" ? null : "void")} />
-        <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} disabled title="Backend field not exposed" />
+        <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} title="Items tagged Tg Solid" />
         <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} disabled title="Backend wiring pending" />
         <span className="mx-1 h-4 w-px bg-h-line" />
         <Chip label="Overdue" tone="bad" active={quick === "overdue"} onClick={() => setQuick(quick === "overdue" ? null : "overdue")} />
