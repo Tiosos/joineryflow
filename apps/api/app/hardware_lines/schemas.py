@@ -20,7 +20,7 @@ class HardwareCatalogRow(BaseModel):
     name: str
     supplier: str | None
     unit_cost: float | None
-    qty: float
+    qty: int
 
 
 class HardwareCatalogOut(BaseModel):
