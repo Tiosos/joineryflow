@@ -175,28 +175,30 @@ function TakeTable({ take, editable, lockReason, busy, act, onApprove }: {
           </div>
         )}
       </header>
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs uppercase tracking-wide text-h-muted">
-          <tr>
-            <th className="px-3 py-1.5">Material</th>
-            <th className="px-3 py-1.5 text-right">Generated</th>
-            <th className="px-3 py-1.5 text-right">Wastage %</th>
-            <th className="px-3 py-1.5 text-right">Qty</th>
-            <th className="px-3 py-1.5">Unit</th>
-            <th className="px-3 py-1.5">Note</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {take.lines.map((l) => (
-            <LineRow key={l.line_id} line={l} takeId={take.take_id} editable={editable}
-              lockReason={lockReason} act={act} />
-          ))}
-          {take.lines.length === 0 && (
-            <tr><td colSpan={7} className="px-3 py-2 text-h-muted">No lines — this item has no parts or hardware.</td></tr>
-          )}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-h-muted">
+            <tr>
+              <th className="px-3 py-1.5">Material</th>
+              <th className="px-3 py-1.5 text-right">Generated</th>
+              <th className="px-3 py-1.5 text-right">Wastage %</th>
+              <th className="px-3 py-1.5 text-right">Qty</th>
+              <th className="px-3 py-1.5">Unit</th>
+              <th className="px-3 py-1.5">Note</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {take.lines.map((l) => (
+              <LineRow key={l.line_id} line={l} takeId={take.take_id} editable={editable}
+                lockReason={lockReason} act={act} />
+            ))}
+            {take.lines.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-2 text-h-muted">No lines — this item has no parts or hardware.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       {editable && (
         <form className="flex flex-wrap items-end gap-2 border-t border-h-line px-3 py-2"
           onSubmit={(e) => {

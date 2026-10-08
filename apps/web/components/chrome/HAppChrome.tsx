@@ -32,7 +32,10 @@ export function HAppChrome({ user, sidebar, children }: HAppChromeProps) {
       {!editorMode && <TabStrip user={user} />}
       <div className="flex">
         {renderSidebar && sidebar}
-        <main className="flex-1 p-6">{children}</main>
+        {/* The item editor needs `min-w-0`: a wide Cutlist or Material Take table would otherwise stretch
+            <main> past the window and push the header's Delete and close buttons off-screen. The tables
+            scroll inside their own box instead. */}
+        <main className={editorMode ? "min-w-0 flex-1 p-6" : "flex-1 p-6"}>{children}</main>
       </div>
     </div>
   );

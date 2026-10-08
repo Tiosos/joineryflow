@@ -54,8 +54,8 @@ It never touches `joinery_number_seq` (sequences are not transactional; a dry ru
 | `ListerName` / `Assembler` | `items.lister` / `items.assembler` (free text, as exported: usernames and full names are not normalised, and the Tracking *Lister* column, which shows `cutlist_owner_id`, is left empty) |
 | `_Contractor` | `factory` + `items.factory_id` |
 | `Tag_TgSolidItem` | `items.tg_solid` |
-| `Notes` | `items.estimator_notes` (**assumed**, see below) |
-| `DWG_RoomFloorPlan` / `DWG_FullDrawingPlan` / `DWG_DetailPlan` | `floor_plan` / `rls` / `joiery_details` (**assumed**, see below) |
+| `Notes` | `items.estimator_notes` (**confirmed by the user, 2026-10-08**) |
+| `DWG_RoomFloorPlan` / `DWG_FullDrawingPlan` / `DWG_DetailPlan` | `floor_plan` / `rls` / `joiery_details` (**confirmed by the user, 2026-10-08**, after seeing where RLS sits in the item editor) |
 | `Date_ReqOnSite` | `item_stages` **REQ `due_date`** |
 | `Date_SiteMeasured`, `_Listed`, `_SentDown`, `_MachinedCompleted`, `_Edged`, `_Painted`, `_Made`, `_Delivered`, `_Installed` | `item_stages` **`done_date`** for `SM`, `LISTED`, `DOWN`, `CNC`, `EDGED`, `PAINTED`, `MADE`, `DEL`, `INST` |
 | `Date_Optimized` | not imported (counted in the report) |
@@ -70,8 +70,10 @@ No `stage_completion_log` / `worker_assignment` rows are written, so imported wo
 - 35 room-number clashes: one `(area, room number)` carries different descriptions (e.g. one number for two different rooms); the first description names the Room, each item keeps its own `rm_desc`.
 - 32 date-order oddities (made after delivered, delivered after installed); 2 rows with stage/level `VARIES`.
 
-## Still to confirm with the user (assumptions made, easy to change in `STAGE_DATES` / `build_plan`)
-`Notes` → `estimator_notes`; `DWG_FullDrawingPlan` → `rls` (the item editor's "RLS" field); whether `Lister` should also map to a user (`cutlist_owner_id`) once the real user names are known.
+## Still to confirm with the user
+Nothing is open in the mapping. (`Notes` → `estimator_notes` and `DWG_FullDrawingPlan` → `rls` were confirmed 2026-10-08.) One
+thing deliberately left for later: `ListerName` is kept as free text; it can also set a user (`cutlist_owner_id`) once the real
+user names are known.
 
 ## Known, unchanged
 `projects.name` is `UNIQUE` across **all** workspaces (a `0001` artefact); importing a project whose name already exists elsewhere fails with that constraint. Not touched here.
