@@ -200,7 +200,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Related parts** are `items` rows with `row_type='related_part'` + parent FK (one level only, DB-enforced). They never hold a cutlist number (Q417), share the parent's Group ID, and have no thread, take, QC or attachments (404). **Use `row_types.joinery_items_only(alias)`** — never a hand-written predicate.
 - **Area / Room** are real project-scoped tables, Room nested under Area; composite FK `items (area_id, room_id)`.
 - **CutPlan ≠ CutSchedule** (two entities). `/optimise` is a pure function (no writes); sheet stock is read, never consumed.
-- **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace is not used by the v1 UI.
+- **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace was **retired** in October 2026 (code kept as reference in `legacy/procurement_v0/`, not mounted).
 - **Order coverage is per (quote line, material)** in `estimate_line_material_order` (row = ordered or ordered by hand; no row = pending). `estimate_line.orders_generated_at` / `orders_dismissed_*` are **derived** from it (`_refresh_line_state`) for a line that references catalog materials, and written directly only for a line with none. Never write the line columns for a materials line by hand.
 - **Estimating:** `locked_at` (set once at `MGMT_APPROVAL → SUBMITTED`) is the "frozen" gate; the 12-stage tender lifecycle replaced the old six states; `advance()` is the only forward action (`/send` is retired). Cost columns are snapshotted. `current_value` of contracts is computed on read.
 - **Material Take:** generated, then person-owned; approved takes are immutable (new version = n+1); boards are fractional sheets per item, rounded up once over the project (Q586).
@@ -210,7 +210,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - **ProjectHardwareCatalog** is a project-scoped link layer: item hardware lines reference materials *through* it (log-only governance, every add/remove audited). `ProcurementBatch → Allocations → item_hardware_line_id` answers "is this item blocked on a material?" as one join.
 - **Three apps, one database:** Project Information Management (Drafter/PM/CEO; Project → Item → Module → Part + HardwareLine + lifecycle), Shop Floor Ops, Cabinet Vision integration layer. Drafter is the authoritative data-entry point.
-- **Legacy `/procurement/*`** (orders, budget, approvals; ported from `legacy/procurement_api.py`) is workspace-scoped through the project-or-vendor join (`_PO_WORKSPACE_EXISTS`); `create_order` / `submit_for_approval` validate every foreign id.
+- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile still reads `approval_workflows` and is **frozen** until a proper approvals flow is built (see *Still open*). Reference: `legacy/procurement_v0/README.md`.
 
 ## 8. API conventions
 
@@ -281,7 +281,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **PO generation from a won quote (`0041`, `0048`, `0049`, `0051`).** Groups materials by live default supplier, one draft PO per supplier per run. Coverage is **per material** (`estimate_line_material_order`): a material with a supplier orders now, one without stays pending; each can be marked "ordered by hand" with a required note (whole-line button covers all pending ones); a line is done when none is pending. Estimators can link a missing supplier from the dialog.
 - **Catalog supplier link.** `default_supplier_id` editable in the grid, at create, via bulk import (exact-name match) and CV Create-new.
 - **Orderbook editing + guards.** Header and line editing with field versions; `Cancelled`/`Delivered` orders are read-only except `status`; `OrderOut.locked` is server-computed; status/priority/category/vendor/project validated.
-- **Legacy `/procurement/*` (`0045`–`0047`).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.
+- **Legacy `/procurement/*` (`0045`–`0047`, retired Oct 2026).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.
 
 ### Comments — `07-comments.md`
 - **Comments, mentions, notifications (`0042`, `0043`).** Threads on project, area, room, item, module and shop-drawing revision (Task/Change have no entities). One-level replies, @mentions by id, in-app bell only. Each type is gated by its own module.
@@ -295,7 +295,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
+Legacy procurement approvals: re-build properly and re-wire the dashboard `pending_approvals` tile (frozen since the `/procurement/*` retirement, `legacy/procurement_v0/`). Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

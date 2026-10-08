@@ -2929,92 +2929,6 @@ def main() -> None:
                 {"o": _po_id, "m": _slab_mid},
             )
 
-            # A cost centre carrying one Commitment for that order, and the
-            # supplier's quote attached to it (PO attachments live in the
-            # shared file store). Built through the legacy procurement query
-            # functions so the rows are the ones the API reads.
-            from app.files.seed_helper import put_seed_file as _put_po_file
-            from app.procurement import queries as _proc
-
-            _cc_id = s.execute(
-                text(
-                    """
-                    INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
-                    VALUES (:w, 'GEN', 'General', EXTRACT(year FROM now())::int, 50000)
-                    ON CONFLICT (workspace_id, code) DO UPDATE SET name = EXCLUDED.name
-                    RETURNING cost_center_id
-                    """
-                ),
-                {"w": workspace_id},
-            ).scalar()
-            _proc.commit_budget(s, _po_id, _cc_id, 3551.00)
-            _quote_pdf = _ASSETS / "sample_drawings" / "kitchen-base-run.pdf"
-            _quote_blob = _put_po_file(
-                s, workspace_id=workspace_id, workspace_slug="hartwood-joinery",
-                app_user_id=mina_id, path=_quote_pdf,
-            )
-            _proc.insert_attachment(
-                s, po_id=_po_id, attachment_type="PDF", file_name="supplier-quote.pdf",
-                file_size_bytes=_quote_pdf.stat().st_size, file_blob_id=_quote_blob,
-                uploaded_by=mina_id,
-            )
-
-            # Two more orders for the legacy approval queue (/procurement/approvals): one
-            # still awaiting the seeded admin, one already rejected by them (so
-            # /approvals/history has a row). Neither carries an item or project, so no
-            # cutlist or Tracking view shows them. Delete-then-insert on a marker, so a
-            # re-run neither duplicates them nor trips the workflow's FK.
-            _approval_mark = "Seeded demo order, awaiting approval."
-            _decided_mark = "Seeded demo order, rejected."
-            _admin_id = s.execute(
-                text("SELECT id FROM app_user WHERE workspace_id = :w AND auth_role = 'admin'"
-                     " ORDER BY id LIMIT 1"),
-                {"w": workspace_id},
-            ).scalar()
-            for _mark in (_approval_mark, _decided_mark):
-                s.execute(
-                    text("DELETE FROM approval_workflows WHERE po_id IN"
-                         " (SELECT po_id FROM purchase_orders WHERE internal_comments = :m)"),
-                    {"m": _mark},
-                )
-                s.execute(text("DELETE FROM purchase_orders WHERE internal_comments = :m"),
-                          {"m": _mark})
-
-            def _seed_approval_order(mark: str, description: str) -> int:
-                return s.execute(
-                    text(
-                        """
-                        INSERT INTO purchase_orders (
-                            po_number, vendor_id, requester_id, description, category,
-                            status, priority, quantity, unit_of_measure, unit_cost,
-                            total_amount, internal_comments)
-                        VALUES (
-                            'PO-' || EXTRACT(year FROM now())::int || '-' ||
-                                lpad(nextval('po_number_seq')::text, 4, '0'),
-                            :v, :req, :d, 'Board', 'Draft', 'Medium',
-                            3, 'roll', 96.00, 288.00, :m)
-                        RETURNING po_id
-                        """
-                    ),
-                    {"v": _vendor_id, "req": mina_id, "d": description, "m": mark},
-                ).scalar()
-
-            _approval_po = _seed_approval_order(_approval_mark, "Edge banding, 3 rolls")
-            _proc.submit_for_approval(s, _approval_po, _admin_id)
-
-            # The decided one goes through the same steps as POST /approvals/{id}/decide.
-            _decided_po = _seed_approval_order(_decided_mark, "Edge banding, 2 rolls")
-            _proc.submit_for_approval(s, _decided_po, _admin_id)
-            _decided_wf = s.execute(
-                text("SELECT workflow_id FROM approval_workflows WHERE po_id = :p"),
-                {"p": _decided_po},
-            ).scalar()
-            _proc.update_po_status(s, _decided_po, "Rejected", from_status="Pending")
-            _proc.update_workflow_decision(s, _decided_wf, "Rejected", "Seeded: wrong supplier.")
-            _proc.append_changelog(
-                s, _decided_po, f"Rejected by approver #{_admin_id}", _admin_id
-            )
-
             # A pending Controlled-Lock request, so /lock-requests has a row to approve or
             # reject. TRT-014's K-103 is seeded locked by its owner (noa); a save by anyone
             # else is held as a request instead of applied, which is exactly what this does
@@ -3039,8 +2953,7 @@ def main() -> None:
             print(
                 "seeded #10 cutlist/orderbook: 1 shared cutlist (3 items, "
                 "1 fanned-out DOWN completion, 1 late joiner) + 2 related "
-                f"parts + supplier {_vendor_name!r} + 1 purchase order "
-                "(with a cost centre commitment and an attached quote)"
+                f"parts + supplier {_vendor_name!r} + 1 purchase order"
             )
 
         # ------------------------------------------------------------------

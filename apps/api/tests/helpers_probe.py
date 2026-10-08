@@ -37,7 +37,6 @@ BODY_OVERRIDES = {
     ("PATCH", "/samples/{sid}"): {"title": "x"},
     ("PATCH", "/users/{uid}"): {"full_name": "x"},
     ("POST", "/items/{iid}/qc/rework"): {"kind": "internal"},
-    ("POST", "/procurement/approvals/{workflow_id}/decide"): {"decision": "approve"},
     ("POST", "/suppliers/{vendor_id}/materials"): {"material_table": "board_materials"},
 }
 
@@ -73,7 +72,7 @@ PERMISSION_GROUP_OPS = (
 
 # Deleting these removes rows other deletes need, so they run last, children first.
 DELETE_PARENTS = ("/parts/{pid}", "/modules/{mid}", "/items/{id}", "/cutlists/{cid}",
-                   "/orders/{po_id}", "/procurement/orders/{po_id}", "/cut-plans/{plan_id}",
+                   "/orders/{po_id}", "/cut-plans/{plan_id}",
                    "/batches/{bid}", "/permission-groups/{gid}")
 
 
@@ -238,7 +237,7 @@ FIELD_KIND = {
     "item_ids": "item",
     "file_blob_id": "file_blob", "photo_file_blob_id": "file_blob",
     "sketch_file_blob_id": "file_blob",
-    "customer_id": "customer", "cost_center_id": "cost_center", "cut_plan_id": "cut_plan",
+    "customer_id": "customer", "cut_plan_id": "cut_plan",
     "area_id": "area", "room_id": "room",
     "board_material_id": "board_material", "material_id": "board_material",
     "target_material_id": "board_material", "source_id": "hardware_material",
@@ -261,7 +260,6 @@ def rows_of_a(db, wid: int) -> dict[str, int]:
                 " WHERE p.workspace_id = :w AND i.row_type = 'joinery_item' ORDER BY i.item_id LIMIT 1",
         "file_blob": "SELECT file_blob_id FROM file_blob WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "customer": "SELECT customer_id FROM customer WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
-        "cost_center": "SELECT cost_center_id FROM cost_centers WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "cut_plan": "SELECT id FROM cut_plan WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "area": "SELECT a.area_id FROM area a JOIN projects p ON p.project_id = a.project_id"
                 " WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
@@ -307,9 +305,6 @@ def rows_of_b(db, wid: int, uid: int) -> dict[str, int]:
             " RETURNING file_blob_id"),
         "customer": one("INSERT INTO customer(workspace_id, name) VALUES (:w, 'B customer')"
                         " RETURNING customer_id"),
-        "cost_center": one(
-            "INSERT INTO cost_centers(workspace_id, code, name, fiscal_year, budget_amount)"
-            " VALUES (:w, 'BCC', 'B cost centre', 2026, 1) RETURNING cost_center_id"),
         "cut_plan": one("INSERT INTO cut_plan(workspace_id, project_id, name) VALUES (:w, :p, 'B plan')"
                         " RETURNING id", p=project),
         "area": area,

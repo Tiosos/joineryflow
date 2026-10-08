@@ -24,7 +24,6 @@ from .material_takes.routes import router as material_takes_router
 from .notifications.routes import router as notifications_router
 from .orders.routes import router as orders_router
 from .printing.routes import router as printing_router
-from .procurement.routes import router as proc_router
 from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
 from .procurement_v1.batches.routes import router as proc_v1_batches_router
 from .procurement_v1.materials.routes import router as proc_v1_materials_router
@@ -71,7 +70,6 @@ app.include_router(ws_router)
 app.include_router(users_router)
 app.include_router(me_router)
 app.include_router(team_router)
-app.include_router(proc_router)
 app.include_router(proc_v1_materials_router)
 app.include_router(proc_v1_batches_router)
 app.include_router(proc_v1_alloc_router)
