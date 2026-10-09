@@ -1,62 +1,99 @@
 import { test, expect, type Page } from "@playwright/test";
 import { login } from "./helpers";
 
-const BUYER = "mina.klee@hartwood.test"; // purchase officer: raises orders, sets the limit
-const PM = "rin.park@hartwood.test"; // manager: approves
+const BUYER = "mina.klee@hartwood.test"; // purchase officer: reviews and decides pending orders
+const PM = "rin.park@hartwood.test"; // manager: may decide too
+const DRAFTER = "noa.lindqvist@hartwood.test"; // may raise and edit orders, not decide them
 
 async function switchTo(page: Page, email: string) {
   await page.context().clearCookies();
   await login(page, email);
 }
 
-/** An order over the default limit, made through the API; its own, so a re-run finds only it. */
+/** An order made through the API (it starts Pending); its own, so a re-run finds only it. */
 async function newOrder(page: Page, total: string) {
   const suppliers = await (await page.request.get("/api/suppliers")).json();
   const vendor = (suppliers.suppliers ?? suppliers.vendors ?? suppliers)[0];
   const r = await page.request.post("/api/orders", {
-    data: { vendor_id: vendor.vendor_id, description: `Approval e2e ${Date.now()}`, total_amount: total },
+    data: { vendor_id: vendor.vendor_id, description: `Decision e2e ${Date.now()}`, total_amount: total },
   });
   expect(r.ok()).toBe(true);
   return (await r.json()) as { po_id: number; po_number: string };
 }
 
-test("an order over the limit is requested by one person and approved by another", async ({ page }) => {
+test("a new order is Pending and the purchase officer approves it against a budget", async ({ page }) => {
   await login(page, BUYER);
+  const code = `D${Date.now()}`.slice(-12);
+  const made = await page.request.post("/api/cost-centers", { data: { code, name: "Decision e2e", budget_amount: "10000" } });
+  expect(made.ok()).toBe(true);
+  const { cost_center_id: ccId } = (await made.json()) as { cost_center_id: number };
   const order = await newOrder(page, "3000.00");
   try {
+    expect(((await (await page.request.get(`/api/orders/${order.po_id}`)).json()) as { status: string }).status).toBe("Pending");
     await page.goto(`/orderbook?order=${order.po_number}`);
-    await expect(page.getByTestId("order-approval")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("order-status-select")).toHaveValue("Pending", { timeout: 15_000 });
 
-    // The budget the approval commits against: the seeded cost centre.
+    // The budget the order commits against once it is Approved.
     await expect(async () => {
-      await page.getByTestId("order-cost-centre").selectOption({ label: "GEN General" });
-      await expect(page.getByTestId("order-cost-centre")).toHaveValue(/\d+/, { timeout: 2_000 });
+      await page.getByTestId("order-cost-centre").selectOption({ value: String(ccId) });
+      await expect(page.getByTestId("order-cost-centre")).toHaveValue(String(ccId), { timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
 
-    // Not selectable as a plain status, and requesting it is the way in.
-    await expect(page.getByTestId("order-status-select").locator('option[value="Approved"]')).toBeDisabled();
-    await expect(async () => {
-      await page.getByTestId("order-request-approval").click();
-      await expect(page.getByTestId("order-approval-pending")).toBeVisible({ timeout: 2_000 });
-    }).toPass({ timeout: 20_000 });
-
-    // The requester gets no Approve button.
-    await expect(page.getByTestId("order-approve")).toHaveCount(0);
-
-    // The project manager approves it.
-    await switchTo(page, PM);
-    await page.goto(`/orderbook?order=${order.po_number}`);
-    await page.getByTestId("order-approval-note").fill("Within budget");
-    await page.getByTestId("order-approve").click();
-    await expect(page.getByTestId("order-approved-by")).toContainText("Approved by Rin Park");
-    await expect(page.getByTestId("order-approved-by")).toContainText("Within budget");
+    await page.getByTestId("order-status-select").selectOption("Approved");
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $3000.00");
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("remaining $7000.00");
 
     // The commitment is posted, so the order's cost centre can no longer move.
     await page.getByTestId("order-cost-centre").selectOption({ label: "None" });
     await expect(page.getByText("already posted against this cost centre")).toBeVisible();
+
+    // Moving it out of Approved gives the budget back.
+    await page.getByTestId("order-status-select").selectOption("Hold");
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
+  } finally {
+    await page.request.delete(`/api/orders/${order.po_id}`); // cancels it: puts back what the spec added
+    await page.request.patch(`/api/cost-centers/${ccId}`, { data: { is_active: false } });
+  }
+});
+
+test("rejecting an order asks for a reason, which stays on the order", async ({ page }) => {
+  await login(page, BUYER);
+  const order = await newOrder(page, "800.00");
+  try {
+    await page.goto(`/orderbook?order=${order.po_number}`);
+    await expect(page.getByTestId("order-status-select")).toHaveValue("Pending", { timeout: 15_000 });
+    await expect(async () => {
+      await page.getByTestId("order-status-select").selectOption("Rejected");
+      await expect(page.getByTestId("order-reject-form")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(page.getByTestId("order-reject-confirm")).toBeDisabled();   // no reason yet
+    await page.getByTestId("order-reject-note").fill("Supplier is not on our list");
+    await page.getByTestId("order-reject-confirm").click();
+    await expect(page.getByTestId("order-status-select")).toHaveValue("Rejected");
+    await expect(page.getByTestId("order-rejection-note")).toContainText("Supplier is not on our list");
+  } finally {
+    await page.request.delete(`/api/orders/${order.po_id}`);
+  }
+});
+
+test("a drafter can raise and edit an order but not approve or reject it", async ({ page }) => {
+  await login(page, BUYER);
+  const order = await newOrder(page, "800.00");
+  try {
+    await switchTo(page, DRAFTER);
+    await page.goto(`/orderbook?order=${order.po_number}`);
+    const select = page.getByTestId("order-status-select");
+    await expect(select).toHaveValue("Pending", { timeout: 15_000 });
+    await expect(select.locator('option[value="Approved"]')).toBeDisabled();
+    await expect(select.locator('option[value="Rejected"]')).toBeDisabled();
+    await expect(select.locator('option[value="Hold"]')).toBeEnabled();
+    // the API says the same
+    const r = await page.request.patch(`/api/orders/${order.po_id}`, { data: { status: "Approved" } });
+    expect(r.status()).toBe(403);
   } finally {
     await switchTo(page, BUYER);
-    await page.request.delete(`/api/orders/${order.po_id}`); // cancels it: puts back what the spec added
+    await page.request.delete(`/api/orders/${order.po_id}`);
   }
 });
 
@@ -112,7 +149,7 @@ test("the order panel shows its cost centre's budget against what is committed",
   const made = await page.request.post("/api/cost-centers", { data: { code, name: "Figures e2e", budget_amount: "1000" } });
   expect(made.ok()).toBe(true);
   const { cost_center_id: ccId } = (await made.json()) as { cost_center_id: number };
-  const order = await newOrder(page, "400.00");   // under the limit: needs no approval
+  const order = await newOrder(page, "400.00");   // never approved: only its cost is booked
   try {
     const set = await page.request.patch(`/api/orders/${order.po_id}`, { data: { cost_center_id: ccId } });
     expect(set.ok()).toBe(true);
@@ -130,24 +167,5 @@ test("the order panel shows its cost centre's budget against what is committed",
     // No way to delete one: switch it off so it stays out of every order's selector.
     await switchTo(page, BUYER);
     await page.request.patch(`/api/cost-centers/${ccId}`, { data: { is_active: false } });
-  }
-});
-
-test("a purchase officer can change the approval limit", async ({ page }) => {
-  await login(page, BUYER);
-  await page.goto("/orderbook");
-  const limit = page.getByTestId("approval-limit");
-  await expect(limit).toContainText("need approval", { timeout: 15_000 });
-  const before = (await page.request.get("/api/order-settings").then(r => r.json())).approval_threshold as string;
-  try {
-    await expect(async () => {
-      await page.getByTestId("approval-limit-edit").click();
-      await expect(page.getByTestId("approval-limit-input")).toBeVisible({ timeout: 2_000 });
-    }).toPass({ timeout: 20_000 });
-    await page.getByTestId("approval-limit-input").fill("5000");
-    await page.getByTestId("approval-limit-save").click();
-    await expect(limit).toContainText("$5000.00");
-  } finally {
-    await page.request.put("/api/order-settings", { data: { approval_threshold: before } });
   }
 });

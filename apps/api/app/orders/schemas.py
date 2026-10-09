@@ -33,13 +33,10 @@ OrderStatus = Literal[
 ]
 OrderPriority = Literal["High", "Medium", "Low", "Next", "Hold", "Quote"]
 
-# An order needs approval when its total is above this (until a purchase officer sets the
-# workspace's own limit in `workspace_order_setting`) or its `requires_approval` flag is set.
-# The same figure is the migration's column default.
-DEFAULT_APPROVAL_THRESHOLD = Decimal("2000")
-# The statuses that mean "waiting for / given / refused approval". For an order that needs
-# approval they are reached only through the approval routes, never a plain status PATCH.
-APPROVAL_STATUSES = frozenset({"Pending", "Approved", "Rejected"})
+# The statuses only a purchase officer, manager or admin (the `orderbook:approve` grant) may set,
+# or move an order out of: the decision on a Pending order. Any sign-off beyond that is outside
+# the software. Rejected needs a reason (`rejection_note`).
+DECISION_STATUSES = frozenset({"Approved", "Rejected"})
 
 
 class OrderLineOut(BaseModel):
@@ -114,23 +111,12 @@ class OrderOut(BaseModel):
     # §L Q511/Q512 — field-level optimistic concurrency.
     field_versions: dict[str, int] = {}
 
-    # PO approval (migration 0054). `needs_approval` is computed in SQL from the total, the
-    # workspace's limit and the PM flag, so the web never copies the rule.
-    requires_approval: bool = False
-    needs_approval: bool = False
-    # The cost centre an approval's budget commitment is posted against (optional, Q563).
+    # The cost centre an Approved order commits its total against (optional, Q563).
     cost_center_id: int | None = None
     cost_center_code: str | None = None
     cost_center_name: str | None = None
-    approval_requested_by: int | None = None
-    approval_requested_at: datetime | None = None
-    approval_requested_by_name: str | None = None
-    approval_decided_by: int | None = None
-    approval_decided_by_name: str | None = None
-    approval_decided_at: datetime | None = None
-    approval_note: str | None = None
-    # What the last approval approved; a later rise above it sends the order back (0055).
-    approved_total: Decimal | None = None
+    # Why the order was rejected; set only while its status is Rejected (0056).
+    rejection_note: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -212,8 +198,8 @@ class PatchOrderIn(BaseModel):
     notes: str | None = None
     internal_comments: str | None = None
     attributes: dict | None = None
-    # The project manager's flag: this order needs approval whatever its total (manager/admin only).
-    requires_approval: bool | None = None
+    # Required with status "Rejected", refused otherwise (the reason the order was rejected).
+    rejection_note: str | None = Field(default=None, max_length=2000)
     # Optional; an explicit null clears it. Another workspace's, or an inactive, one is a 404.
     cost_center_id: int | None = None
     # §L Q511/Q512 — optional expected versions, read from a prior GET's
@@ -225,25 +211,12 @@ class PatchOrderIn(BaseModel):
     # Runs only for a field the caller supplied (defaults are not validated),
     # so it rejects an explicit `null` and leaves an omitted field alone —
     # and, unlike a model-level validator, the 422 names the field.
-    @field_validator("vendor_id", "description", "category", "status", "priority", "requires_approval")
+    @field_validator("vendor_id", "description", "category", "status", "priority")
     @classmethod
     def _no_null(cls, v, info: ValidationInfo):
         if v is None:
             raise ValueError(f"{info.field_name} cannot be null")
         return v
-
-
-class ApprovalDecisionIn(BaseModel):
-    """`note` is required to reject (the route says so with a stable code), optional to approve."""
-    note: str | None = Field(default=None, max_length=2000)
-
-
-class ApprovalLimitIn(BaseModel):
-    approval_threshold: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
-
-
-class ApprovalLimitOut(BaseModel):
-    approval_threshold: Decimal
 
 
 class CostCentreIn(BaseModel):

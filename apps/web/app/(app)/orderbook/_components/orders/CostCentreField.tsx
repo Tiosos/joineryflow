@@ -5,7 +5,7 @@ import { ErrorLine } from "./ErrorLine";
 import { CostCentreFigures } from "./CostCentreFigures";
 import { Field } from "./Field";
 
-/** The order's optional cost centre: the budget an approval's Commitment is posted against. */
+/** The order's optional cost centre: the budget an Approved order's total is committed against. */
 export function CostCentreField({
   value, label, costCentres, canEdit, onSave, error,
 }: {

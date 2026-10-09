@@ -1,4 +1,5 @@
 """An order that is cancelled or delivered gives its budget Commitment back (orders/budget.py).
+(The commitment itself is posted and kept in step while the order is Approved: test_order_decision.py.)
 
 The ledger is `budget_transactions`; `v_budget_utilisation` sums Commitment, Expenditure and Release
 (a Release is negative). Cancelled: release the outstanding Commitment. Delivered: post the order's
@@ -52,8 +53,7 @@ def _approved_order(ws, total="2500.00", cost_centre=True) -> int:
     o = ws["buyer"].post("/orders", json={"vendor_id": ws["vendor"], "description": "o", "total_amount": total}).json()
     if cost_centre:
         ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": ws["cc"]})
-    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
-    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert ws["manager"].patch(f"/orders/{o['po_id']}", json={"status": "Approved"}).status_code == 200
     return o["po_id"]
 
 
@@ -90,13 +90,14 @@ def test_delivering_again_after_a_reopen_does_not_double_count(ws):
 
 def test_the_expenditure_is_the_total_at_delivery(ws):
     po = _approved_order(ws, "2500.00")
-    ws["buyer"].patch(f"/orders/{po}", json={"total_amount": "2300.00"})
+    ws["buyer"].patch(f"/orders/{po}", json={"total_amount": "2300.00"})   # the commitment follows: -200
     ws["buyer"].patch(f"/orders/{po}", json={"status": "Delivered"})
     # what was committed is released; what was spent is the delivered total
-    assert _ledger(po) == [("Commitment", "2500.00"), ("Expenditure", "2300.00"), ("Release", "-2500.00")]
+    assert _ledger(po) == [("Commitment", "2500.00"), ("Release", "-200.00"),
+                           ("Expenditure", "2300.00"), ("Release", "-2300.00")]
 
 
-def test_an_order_with_a_cost_centre_but_no_approval_gets_only_the_expenditure(ws):
+def test_an_order_with_a_cost_centre_that_was_never_approved_gets_only_the_expenditure(ws):
     o = ws["buyer"].post("/orders", json={"vendor_id": ws["vendor"], "description": "small", "total_amount": "300.00"}).json()
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": ws["cc"]})
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"status": "Delivered"})

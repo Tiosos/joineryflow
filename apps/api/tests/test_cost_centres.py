@@ -1,6 +1,6 @@
 """Cost centres, in very small scale: list + create, and one optional field on an order.
 
-An approval's budget Commitment is posted against the order's cost centre (migration 0054 /
+An Approved order's budget Commitment is posted against its cost centre (orders/budget.py,
 docs/sub-projects/06-orders-procurement.md); an order needs none (Q563).
 """
 import pytest
@@ -91,8 +91,7 @@ def test_approving_commits_against_the_chosen_cost_centre_and_then_it_cannot_mov
     other_cc = _make(ws["buyer"], code="SPARE")
     o = _order(ws["buyer"], ws, "2500.00")
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
-    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
-    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert ws["manager"].patch(f"/orders/{o['po_id']}", json={"status": "Approved"}).status_code == 200
     committed = _sql("SELECT count(*) || ':' || sum(amount) || ':' || min(cost_center_id) FROM budget_transactions"
                      " WHERE po_id = :o AND transaction_type = 'Commitment'", o=o["po_id"])
     assert committed == f"1:2500.00:{cc['cost_center_id']}"
@@ -135,8 +134,7 @@ def test_a_rename_is_allowed_after_budget_rows_are_posted(ws):
     cc = _make(ws["buyer"])
     o = _order(ws["buyer"], ws, "2500.00")
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
-    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
-    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert ws["manager"].patch(f"/orders/{o['po_id']}", json={"status": "Approved"}).status_code == 200
     assert _sql("SELECT count(*) FROM budget_transactions WHERE po_id = :o", o=o["po_id"]) == 1
     assert _patch(ws["buyer"], cc, name="Renamed").status_code == 200
 
@@ -146,7 +144,6 @@ def test_deactivating_hides_it_from_new_orders_but_leaves_the_orders_that_use_it
     o = _order(ws["buyer"], ws, "2500.00")
     other = _order(ws["buyer"], ws)
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
-    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
     assert _patch(ws["buyer"], cc, is_active=False).json()["is_active"] is False
 
     # the list still carries it (so it can be switched back on), marked inactive
@@ -157,7 +154,7 @@ def test_deactivating_hides_it_from_new_orders_but_leaves_the_orders_that_use_it
     assert (r.status_code, r.json()["detail"]["code"]) == (404, "COST_CENTER_NOT_FOUND")
     # ... but the order that already has it keeps it, and its approval still commits against it
     assert ws["buyer"].get(f"/orders/{o['po_id']}").json()["cost_center_code"] == "GEN"
-    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert ws["manager"].patch(f"/orders/{o['po_id']}", json={"status": "Approved"}).status_code == 200
     assert _sql("SELECT min(cost_center_id) FROM budget_transactions WHERE po_id = :o", o=o["po_id"]) \
         == cc["cost_center_id"]
 
@@ -189,8 +186,7 @@ def test_cost_centre_patch_refuses_nulls_unknown_and_other_workspaces_ids(ws):
 def _approved_on(ws, cc, total):
     o = _order(ws["buyer"], ws, total)
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
-    assert ws["buyer"].post(f"/orders/{o['po_id']}/approval/request").status_code == 200
-    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert ws["manager"].patch(f"/orders/{o['po_id']}", json={"status": "Approved"}).status_code == 200
     return o["po_id"]
 
 
@@ -206,7 +202,7 @@ def test_figures_follow_the_ledger_through_approve_deliver_and_cancel(ws):
     a = _approved_on(ws, cc, "2500.00")          # approving commits the order's total
     assert _figures(ws["manager"]) == ("10000.00", "2500.00", "0.00", "7500.00")
 
-    small = _order(ws["buyer"], ws, "300.00")    # needs no approval: only the cost is booked
+    small = _order(ws["buyer"], ws, "300.00")    # never approved: only the cost is booked
     ws["buyer"].patch(f"/orders/{small['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
     assert ws["buyer"].patch(f"/orders/{small['po_id']}", json={"status": "Delivered"}).status_code == 200
     assert _figures(ws["manager"]) == ("10000.00", "2500.00", "300.00", "7200.00")

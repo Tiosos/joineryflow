@@ -324,9 +324,9 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     ).mappings().first()
     deliveries_week_count = int(deliveries_week_row["cnt"]) if deliveries_week_row else 0
 
-    # metric 4: pending_approvals — orders awaiting approval (status 'Pending').
-    # The legacy approval_workflows table is no longer written (the /procurement/*
-    # routes were retired), so the count reads the order's own status.
+    # metric 4: pending_approvals — orders waiting for the purchase officer's decision (status
+    # 'Pending': every order added in the Orderbook starts there). The key is kept for the
+    # API's sake; the legacy approval_workflows table is no longer written.
     pending_approvals_row = db.execute(
         text(
             f"""
@@ -361,7 +361,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
         ),
         MetricCard(
             key="pending_approvals",
-            label="Pending Approvals",
+            label="Pending Orders",
             value=pending_approvals_count,
             href="/orderbook?status=Pending",
         ),
