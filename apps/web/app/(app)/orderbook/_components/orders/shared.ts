@@ -59,25 +59,10 @@ export function fieldErrorMessage(res: Response, body: unknown, field: string): 
   // not a {code} object, matching every other 404 in this module — so it's
   // the HTTP status, not a code, that identifies it here.
   if (res.status === 404) return "Order not found";
-  if (code === "APPROVAL_ROUTE_REQUIRED") return "This order needs approval — use the Approval section below";
-  if (code === "APPROVAL_REQUIRED") return "This order needs approval before it can be delivered";
+  if (code === "DECISION_FORBIDDEN") return "Only a purchase officer, manager or admin can approve or reject an order";
+  if (code === "REJECTION_NOTE_REQUIRED") return "Say why the order is rejected";
+  if (code === "REJECTION_NOTE_NOT_APPLICABLE") return "A rejection note only goes with the Rejected status";
   if (code === "COST_CENTER_LOCKED") return "A budget commitment is already posted against this cost centre, so it cannot be changed";
   if (code === "COST_CENTER_NOT_FOUND") return "That cost centre is not available";
-  if (code === "APPROVAL_FLAG_FORBIDDEN") return "Only a manager or admin can flag an order for approval";
   return `Save failed (${res.status})`;
-}
-
-const APPROVAL_MESSAGES: Record<string, string> = {
-  NOT_REQUIRED: "This order does not need approval",
-  NOT_REQUESTABLE: "Only a Draft or Rejected order can be sent for approval",
-  NOT_PENDING: "This order is no longer waiting for approval — reload",
-  SELF_APPROVAL: "You requested this order, so someone else must approve it",
-  NOTE_REQUIRED: "Say why in the note to reject",
-};
-
-export function approvalErrorMessage(res: Response, body: unknown): string {
-  const code = (body as { detail?: { code?: string } } | null)?.detail?.code;
-  if (code && APPROVAL_MESSAGES[code]) return APPROVAL_MESSAGES[code];
-  if (res.status === 403) return "You are not allowed to do that";
-  return `Failed (${res.status})`;
 }

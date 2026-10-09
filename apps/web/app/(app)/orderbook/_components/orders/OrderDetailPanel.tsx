@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { can } from "@/lib/permissions";
 import type { CostCentre, CreateOrderLineIn, OrderDetail as OrderDetailType, PatchOrderLineIn } from "@/lib/orders-types";
 import { STATUSES, PRIORITIES, statusClasses, money, qty, orderLocked, lockedMessage, fieldErrorMessage } from "./shared";
-import { ApprovalSection } from "./ApprovalSection";
 import { CostCentreField } from "./CostCentreField";
 import { ErrorLine } from "./ErrorLine";
 import { Field } from "./Field";
@@ -14,16 +13,20 @@ import { BlurTextArea } from "./BlurTextArea";
 import { LinesSection } from "./LinesSection";
 
 export function OrderDetailPanel({
-  poId, canEdit, onChanged, threshold, meId, canApprove, canFlag, costCentres,
+  poId, canEdit, onChanged, canApprove, costCentres,
 }: {
   poId: number; canEdit: boolean; onChanged: () => void;
-  threshold: string | null; meId: number | null; canApprove: boolean; canFlag: boolean;
+  /** The purchase officer, manager or admin: may set Approved / Rejected or move an order out of them. */
+  canApprove: boolean;
   costCentres: CostCentre[];
 }) {
   const [order, setOrder] = useState<OrderDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Choosing Rejected asks for the reason first; the status is not sent until it is given.
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
 
   const refetch = useCallback(() => {
     setLoading(true);
@@ -44,7 +47,7 @@ export function OrderDetailPanel({
   // `false`/return, the same as a non-2xx response, not an unhandled
   // rejection that leaves the caller believing nothing happened.
 
-  async function patchField(field: string, value: unknown): Promise<boolean> {
+  async function patchField(field: string, value: unknown, extra?: Record<string, unknown>): Promise<boolean> {
     if (!order) return false;
     setErrors(e => ({ ...e, [field]: "" }));
     try {
@@ -56,6 +59,7 @@ export function OrderDetailPanel({
         // conflict rather than a silent overwrite.
         body: JSON.stringify({
           [field]: value,
+          ...extra,
           expected_versions: { [field]: order.field_versions?.[field] ?? 0 },
         }),
       });
@@ -197,20 +201,21 @@ export function OrderDetailPanel({
         {canEdit ? (
           <select
             value={order.status}
-            onChange={e => void patchField("status", e.target.value)}
+            onChange={e => {
+              if (e.target.value === "Rejected") { setRejecting(true); return; }
+              void patchField("status", e.target.value);
+            }}
+            // Once an order is Approved or Rejected only a decider (purchase officer, manager, admin)
+            // may move it on; the API refuses anyone else.
+            disabled={!canApprove && (order.status === "Approved" || order.status === "Rejected")}
             data-testid="order-status-select"
             className={`rounded border-0 px-1.5 py-0.5 text-[10px] ${statusClasses(order.status)}`}
           >
             {STATUSES.map(s => (
-              // Pending / Approved / Rejected on an order that needs approval are reached
-              // through the Approval section, and Delivered waits for Approved; the API refuses both here.
               <option
                 key={s}
                 value={s}
-                disabled={
-                  order.needs_approval && s !== order.status &&
-                  (["Pending", "Approved", "Rejected"].includes(s) || (s === "Delivered" && order.status !== "Approved"))
-                }
+                disabled={!canApprove && (s === "Approved" || s === "Rejected") && s !== order.status}
               >
                 {s}
               </option>
@@ -236,17 +241,49 @@ export function OrderDetailPanel({
       </div>
       {errors.status && <ErrorLine msg={errors.status} />}
       {errors.priority && <ErrorLine msg={errors.priority} />}
-      {errors.requires_approval && <ErrorLine msg={errors.requires_approval} />}
-      <ApprovalSection
-        order={order}
-        threshold={threshold}
-        meId={meId}
-        canRequest={canEdit}
-        canApprove={canApprove}
-        canFlag={canFlag && canEdit}
-        onFlag={flag => void patchField("requires_approval", flag)}
-        onChanged={updated => { setOrder(updated); setErrors({}); onChanged(); }}
-      />
+      {rejecting && (
+        <div data-testid="order-reject-form" className="mb-3 rounded border border-h-line bg-h-bg p-2">
+          <label className="mb-1 block text-[10px] uppercase tracking-wide text-h-muted" htmlFor="reject-note">
+            Why is this order rejected?
+          </label>
+          <textarea
+            id="reject-note"
+            value={rejectNote}
+            onChange={e => setRejectNote(e.target.value)}
+            rows={2}
+            data-testid="order-reject-note"
+            className="w-full rounded border border-h-line bg-h-surface px-1.5 py-1 text-h-ink"
+          />
+          <div className="mt-1 flex gap-2">
+            <button
+              type="button"
+              data-testid="order-reject-confirm"
+              disabled={!rejectNote.trim()}
+              onClick={async () => {
+                if (await patchField("status", "Rejected", { rejection_note: rejectNote.trim() })) {
+                  setRejecting(false);
+                  setRejectNote("");
+                }
+              }}
+              className="rounded border border-h-line bg-h-surface px-2 py-0.5 hover:text-h-ink disabled:opacity-50"
+            >
+              Reject order
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRejecting(false); setRejectNote(""); }}
+              className="rounded border border-h-line bg-h-surface px-2 py-0.5 text-h-muted hover:text-h-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {order.status === "Rejected" && order.rejection_note && (
+        <p data-testid="order-rejection-note" className="mb-3 rounded border border-h-line bg-h-bg px-2 py-1.5 text-h-muted">
+          Rejected: <span className="text-h-ink">{order.rejection_note}</span>
+        </p>
+      )}
       {canEdit && frozen && (
         <p
           data-testid="order-frozen-banner"

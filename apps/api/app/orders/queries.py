@@ -30,10 +30,9 @@ from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
 from ..sql_columns import require_columns
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
-from .budget import settle_on_close
+from .budget import settle_on_close, sync_commitment
 from .schemas import (
-    APPROVAL_STATUSES,
-    DEFAULT_APPROVAL_THRESHOLD,
+    DECISION_STATUSES,
     FROZEN_STATUSES,
     CreateOrderIn,
     CreateOrderLineIn,
@@ -57,7 +56,7 @@ _ORDER_WORKSPACE = """
     )
 """
 
-_ORDER_COLS = f"""
+_ORDER_COLS = """
     po.po_id, po.po_number, po.order_number, po.supplier_ref_no,
     po.status, po.priority,
     po.vendor_id, v.name AS vendor_name,
@@ -68,22 +67,14 @@ _ORDER_COLS = f"""
     po.required_date, po.date_ordered, po.due_date,
     po.notes, po.internal_comments, po.attributes,
     po.created_at, po.updated_at, po.field_versions,
-    po.requires_approval, po.approval_requested_by, po.approval_requested_at,
-    po.approval_decided_by, po.approval_decided_at, po.approval_note, po.approved_total,
-    rq.full_name AS approval_requested_by_name, dc.full_name AS approval_decided_by_name,
-    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name,
-    (po.requires_approval
-     OR COALESCE(po.total_amount, 0) > COALESCE(wos.approval_threshold, {DEFAULT_APPROVAL_THRESHOLD})
-    ) AS needs_approval
+    po.rejection_note,
+    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name
 """
 
 _ORDER_FROM = """
     FROM purchase_orders po
     LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
     LEFT JOIN items   i ON i.item_id   = po.item_id
-    LEFT JOIN workspace_order_setting wos ON wos.workspace_id = v.workspace_id
-    LEFT JOIN app_user rq ON rq.id = po.approval_requested_by
-    LEFT JOIN app_user dc ON dc.id = po.approval_decided_by
     LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
 """
 
@@ -105,7 +96,7 @@ _PATCHABLE = frozenset({
     "order_number", "supplier_ref_no", "location", "product_code",
     "product_description", "quantity", "unit_of_measure", "unit_cost",
     "total_amount", "required_date", "date_ordered", "due_date",
-    "notes", "internal_comments", "attributes", "requires_approval", "cost_center_id",
+    "notes", "internal_comments", "attributes", "rejection_note", "cost_center_id",
 })
 
 
@@ -114,15 +105,6 @@ def open_orders_sql(alias: str) -> str:
     "Open POs" tile and the Orders list's `?status=open` both use it, so the tile's number is the
     number of rows its link shows."""
     return f"{alias}.status NOT IN ('Delivered', 'Cancelled', 'Rejected')"
-
-
-def get_approval_threshold(db: Session, *, workspace_id: int):
-    """The workspace's approval limit; the default when a purchase officer has not set one."""
-    value = db.execute(
-        text("SELECT approval_threshold FROM workspace_order_setting WHERE workspace_id = :w"),
-        {"w": workspace_id},
-    ).scalar()
-    return DEFAULT_APPROVAL_THRESHOLD if value is None else value
 
 
 def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
@@ -449,7 +431,7 @@ def create_order(
         text(
             """
             INSERT INTO purchase_orders (
-                po_number, vendor_id, requester_id, description, category,
+                po_number, status, vendor_id, requester_id, description, category,
                 item_id, project_id, project_name, location, cutlist_no,
                 order_number, supplier_ref_no, priority,
                 product_code, product_description,
@@ -459,6 +441,7 @@ def create_order(
             VALUES (
                 'PO-' || EXTRACT(year FROM now())::int || '-' ||
                     lpad(nextval('po_number_seq')::text, 4, '0'),
+                'Pending',
                 :vendor, :actor, :descr, :cat,
                 :item, :proj, :proj_name, :loc, :cutlist,
                 :order_no, :supp_ref, :prio,
@@ -501,15 +484,18 @@ def create_order(
 
 
 def patch_order(
-    db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int
+    db: Session, *, po_id: int, workspace_id: int, payload: PatchOrderIn, actor_id: int,
+    can_decide: bool = False,
 ) -> tuple[str, dict | None]:
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
     'COST_CENTER_NOT_FOUND' (`data` is {cost_center_id}) | 'COST_CENTER_LOCKED' (a
-    budget row is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
-    that needs approval) | 'APPROVAL_REQUIRED' (`data` is {status}: Delivered on an order that
-    needs approval and is not Approved) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
+    budget row is already posted against the current one) | 'DECISION_FORBIDDEN' (`data` is
+    {status}: setting an order Approved or Rejected, or moving it out of either, needs
+    `can_decide`, the `orderbook:approve` grant) | 'REJECTION_NOTE_REQUIRED' (Rejected without a
+    note) | 'REJECTION_NOTE_NOT_APPLICABLE' (a note with a status other than Rejected) |
+    'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
@@ -558,26 +544,30 @@ def patch_order(
         blocked = sorted(set(fields) - {"status"})
         if blocked:
             return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
-    # Pending / Approved / Rejected on an order that needs approval are reached through the
-    # approval routes only (`orders.approval`): a status PATCH would skip the approver, the
-    # segregation rule and the budget commitment. "Needs" is judged on the order as this PATCH
-    # would leave it, so setting the flag or the total in the same call cannot sidestep it.
-    if fields.get("status") in APPROVAL_STATUSES and fields["status"] != current["status"]:
-        total = fields["total_amount"] if "total_amount" in fields else current["total_amount"]
-        would_need = fields.get("requires_approval", current["requires_approval"]) or (
-            (total or 0) > get_approval_threshold(db, workspace_id=workspace_id)
-        )
-        if would_need:
-            return "APPROVAL_ROUTE_REQUIRED", {"status": fields["status"]}
-    # An order that needs approval is delivered only once it is Approved: delivery books the
-    # Expenditure, so a Draft, Pending or Rejected one would reach the ledger unapproved.
-    if fields.get("status") == "Delivered" and current["status"] != "Delivered":
-        total = fields["total_amount"] if "total_amount" in fields else current["total_amount"]
-        if fields.get("requires_approval", current["requires_approval"]) or (
-            (total or 0) > get_approval_threshold(db, workspace_id=workspace_id)
-        ):
-            if current["status"] != "Approved":
-                return "APPROVAL_REQUIRED", {"status": current["status"]}
+    # The decision on an order (Approved / Rejected) is a purchase officer's, manager's or admin's:
+    # the `orderbook:approve` grant, checked by the route. It covers setting either status and
+    # moving an order out of one, so a drafter cannot quietly un-approve an order (which would
+    # release its budget). Any further sign-off happens outside the software.
+    new_status = fields.get("status", current["status"])
+    status_changes = new_status != current["status"]
+    if status_changes and not can_decide and (
+        new_status in DECISION_STATUSES or current["status"] in DECISION_STATUSES
+    ):
+        return "DECISION_FORBIDDEN", {"status": new_status}
+    # A rejection carries its reason (shown to whoever raised the order); it is cleared when the
+    # order leaves Rejected, and refused on any other status.
+    if new_status == "Rejected":
+        note = (fields.get("rejection_note") or "").strip() or None
+        if note is None and (status_changes or "rejection_note" in fields):
+            return "REJECTION_NOTE_REQUIRED", None
+        if "rejection_note" in fields:
+            fields["rejection_note"] = note
+    elif fields.get("rejection_note") is not None:
+        return "REJECTION_NOTE_NOT_APPLICABLE", None
+    elif status_changes and current["rejection_note"] is not None:
+        fields["rejection_note"] = None
+    elif "rejection_note" in fields:
+        fields.pop("rejection_note")
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.
@@ -633,13 +623,13 @@ def patch_order(
         event="order.update", target=str(po_id),
         payload={"fields": sorted(fields), "po_number": current["po_number"]},
     )
-    if "total_amount" in fields:  # a header-only order: its total is set directly
-        _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id,
-                             old_total=current["total_amount"])
     updated = get_order(db, po_id=po_id, workspace_id=workspace_id)
     if fields.get("status") in ("Cancelled", "Delivered") and fields["status"] != current["status"]:
         settle_on_close(db, order=updated, workspace_id=workspace_id, actor_id=actor_id,
                         delivered=fields["status"] == "Delivered")
+    elif {"status", "total_amount", "cost_center_id"} & set(fields):
+        # the commitment follows the order: its total while Approved, nothing otherwise
+        sync_commitment(db, order=updated, workspace_id=workspace_id, actor_id=actor_id)
     return "OK", updated
 
 
@@ -737,40 +727,10 @@ def _recompute_total_amount(db: Session, *, po_id: int) -> None:
     return row["total_amount"]
 
 
-def _send_back_if_raised(
-    db: Session, *, po_id: int, workspace_id: int, actor_id: int, old_total
-) -> None:
-    """An Approved order whose total has just gone up goes back to Pending, requested by whoever
-    raised it, so a different approver signs off on the new figure.
-
-    "Raised" means above what was approved (`approved_total`), or, for an order approved freely
-    (no recorded approval) that now needs one because the rise took it over the limit, above its
-    previous total. A fall, or a rise within what was approved, leaves it Approved. The Commitment
-    already posted stays; approving again tops it up (`approval._commit_budget`)."""
+def _sync_budget(db: Session, *, po_id: int, workspace_id: int, actor_id: int) -> None:
+    """A line change moved the order's total: an Approved order's commitment follows it."""
     order = get_order(db, po_id=po_id, workspace_id=workspace_id)
-    new_total = order["total_amount"] or 0
-    if order["status"] != "Approved" or not order["needs_approval"] or new_total <= (old_total or 0):
-        return
-    approved = order["approved_total"]
-    if approved is not None and new_total <= approved:
-        return
-    note = f"Total raised from {old_total or 0} to {new_total} after approval"
-    versions = bump_field_versions(order.get("field_versions"), ["status"])
-    db.execute(
-        text(
-            "UPDATE purchase_orders SET status = 'Pending', approval_requested_by = :u,"
-            " approval_requested_at = now(), approval_decided_by = NULL, approval_decided_at = NULL,"
-            " approval_note = :n, field_versions = CAST(:fv AS jsonb), updated_at = now()"
-            " WHERE po_id = :o"
-        ),
-        {"u": actor_id, "n": note, "fv": json.dumps(versions), "o": po_id},
-    )
-    write_audit(
-        db, workspace_id=workspace_id, actor_id=actor_id, event="order.approval.reopened",
-        target=str(po_id),
-        payload={"po_number": order["po_number"], "from_total": str(old_total or 0),
-                 "to_total": str(new_total), "approved_total": str(approved) if approved is not None else None},
-    )
+    sync_commitment(db, order=order, workspace_id=workspace_id, actor_id=actor_id)
 
 
 def add_line(
@@ -808,8 +768,8 @@ def add_line(
          "mid": payload.material_id,
          "a": json.dumps(payload.attributes or {})},
     )
-    old_total = _recompute_total_amount(db, po_id=po_id)
-    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
+    _recompute_total_amount(db, po_id=po_id)
+    _sync_budget(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -856,8 +816,8 @@ def patch_line(
     )
     if result.rowcount == 0:
         return None
-    old_total = _recompute_total_amount(db, po_id=po_id)
-    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
+    _recompute_total_amount(db, po_id=po_id)
+    _sync_budget(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -880,8 +840,8 @@ def remove_line(
     )
     if result.rowcount == 0:
         return None
-    old_total = _recompute_total_amount(db, po_id=po_id)
-    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
+    _recompute_total_amount(db, po_id=po_id)
+    _sync_budget(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,

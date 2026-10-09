@@ -58,19 +58,8 @@ export interface OrderRow {
    *  `status`). The API enforces it; the UI only reads it to decide what to render. */
   locked: boolean;
 
-  /** PO approval. `needs_approval` is the server's answer (total over the workspace limit,
-   *  or the project manager's `requires_approval` flag); the UI only reads it. */
-  requires_approval: boolean;
-  needs_approval: boolean;
-  approval_requested_by: number | null;
-  approval_requested_by_name: string | null;
-  approval_requested_at: string | null;
-  approval_decided_by: number | null;
-  approval_decided_by_name: string | null;
-  approval_decided_at: string | null;
-  approval_note: string | null;
-  /** What the last approval approved (Decimal, so a string); a rise above it sends the order back. */
-  approved_total: string | null;
+  /** Why the order was rejected; set only while its status is Rejected. */
+  rejection_note: string | null;
 
   cost_center_id: number | null;
   cost_center_code: string | null;
