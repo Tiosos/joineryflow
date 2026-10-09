@@ -18,6 +18,8 @@ from pydantic import (
     model_validator,
 )
 
+from ..schema_guards import no_null
+
 
 # The values `purchase_orders_status_check` / `purchase_orders_priority_check`
 # allow (migration 0002). Hand-kept copies: `test_the_accepted_statuses_are_
@@ -250,11 +252,19 @@ class CostCentreIn(BaseModel):
     budget_amount: Decimal = Field(default=Decimal(0), ge=0, max_digits=15, decimal_places=2)
 
 
+class PatchCostCentreIn(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=20)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+    reject_null = no_null("code", "name", "is_active")
+
+
 class CostCentreOut(BaseModel):
     cost_center_id: int
     code: str
     name: str
     budget_amount: Decimal
+    is_active: bool = True
 
 
 class CostCentreListOut(BaseModel):

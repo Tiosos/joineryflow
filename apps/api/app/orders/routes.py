@@ -25,6 +25,7 @@ from .schemas import (
     CostCentreIn,
     CostCentreListOut,
     CostCentreOut,
+    PatchCostCentreIn,
     CreateOrderIn,
     CreateOrderLineIn,
     OrderDetailOut,
@@ -359,6 +360,28 @@ def create_cost_centre_route(
         db, workspace_id=user.workspace_id, actor_id=user.id,
         code=payload.code, name=payload.name, budget_amount=payload.budget_amount)
     if row is None:
+        raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
+    db.commit()
+    return row
+
+
+@router.patch("/cost-centers/{cost_center_id}", response_model=CostCentreOut)
+def patch_cost_centre_route(
+    cost_center_id: int,
+    payload: PatchCostCentreIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    """Rename or (de)activate: the same people who add one. Orders that already use it are left as
+    they are; an inactive one just cannot be chosen on an order again."""
+    if user.auth_role not in ("purchase_officer", "admin"):
+        raise HTTPException(403, {"code": "COST_CENTRE_FORBIDDEN"})
+    code, row = q.patch_cost_centre(
+        db, cost_center_id=cost_center_id, workspace_id=user.workspace_id,
+        actor_id=user.id, changes=payload.model_dump(exclude_unset=True))
+    if code == "NOT_FOUND":
+        raise HTTPException(404, "cost centre not found")
+    if code == "EXISTS":
         raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
     db.commit()
     return row

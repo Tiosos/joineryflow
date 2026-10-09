@@ -7,6 +7,7 @@ import type { CostCentre, OrderRow } from "@/lib/orders-types";
 import { STATUSES, money } from "./orders/shared";
 import { OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
+import { CostCentreManager } from "./orders/CostCentreManager";
 
 /**
  * Orderbook's Orders tab — the commercial layer over `purchase_orders` (Q505).
@@ -71,6 +72,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const [costCentres, setCostCentres] = useState<CostCentre[]>([]);
   const [ccForm, setCcForm] = useState<{ code: string; name: string; budget: string } | null>(null);
   const [ccErr, setCcErr] = useState<string | null>(null);
+  const [ccManage, setCcManage] = useState(false);
 
   useEffect(() => {
     fetch("/api/cost-centers", { cache: "no-store" })
@@ -151,7 +153,11 @@ export function OrdersClient({ me }: { me: Me | null }) {
         </span>
         {canSetLimit && (
           <span data-testid="cost-centres" className="ml-auto flex items-center gap-1.5 text-xs text-h-muted">
-            {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}
+            {costCentres.filter(c => c.is_active).length} cost centre{costCentres.filter(c => c.is_active).length === 1 ? "" : "s"}
+            <button type="button" data-testid="cost-centre-manage" onClick={() => setCcManage(m => !m)}
+              className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">
+              {ccManage ? "Done" : "Edit"}
+            </button>
             {ccForm === null ? (
               <button type="button" data-testid="cost-centre-add"
                 onClick={() => setCcForm({ code: "", name: "", budget: "" })}
@@ -217,6 +223,14 @@ export function OrdersClient({ me }: { me: Me | null }) {
           </button>
         )}
       </div>
+
+      {canSetLimit && ccManage && (
+        <CostCentreManager
+          costCentres={costCentres}
+          onChanged={u => setCostCentres(list =>
+            list.map(c => (c.cost_center_id === u.cost_center_id ? u : c)).sort((a, b) => a.code.localeCompare(b.code)))}
+        />
+      )}
 
       {err && <p className="text-sm text-[#b4443d]">Could not load orders: {err}</p>}
 

@@ -83,6 +83,7 @@ export interface CostCentre {
   code: string;
   name: string;
   budget_amount: string;
+  is_active: boolean;
 }
 
 export interface OrderListOut {

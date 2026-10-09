@@ -27,7 +27,7 @@ export function CostCentreField({
         className="h-mono w-full rounded border border-h-line bg-h-bg px-1 py-0.5 text-h-ink"
       >
         <option value="">None</option>
-        {costCentres.map(c => <option key={c.cost_center_id} value={c.cost_center_id}>{c.code} {c.name}</option>)}
+        {costCentres.filter(c => c.is_active || c.cost_center_id === value).map(c => <option key={c.cost_center_id} value={c.cost_center_id}>{c.code} {c.name}{c.is_active ? "" : " (inactive)"}</option>)}
       </select>
       {error && <ErrorLine msg={error} />}
     </div>

@@ -71,6 +71,36 @@ test("a purchase officer sees the cost-centre admin on the Orders tab", async ({
   // Adding one is covered by the API tests: there is no way to remove it again.
 });
 
+test("a purchase officer renames a cost centre and switches it off", async ({ page }) => {
+  await login(page, BUYER);
+  // Its own cost centre (the code is unique to the run). There is no way to delete one, so it is
+  // left switched off at the end, which keeps it out of every order's selector.
+  const code = `E${Date.now()}`.slice(-12);
+  const made = await page.request.post("/api/cost-centers", { data: { code, name: "Typo name" } });
+  expect(made.ok()).toBe(true);
+  const { cost_center_id: id } = (await made.json()) as { cost_center_id: number };
+  const read = async () =>
+    ((await (await page.request.get("/api/cost-centers")).json()).cost_centers as
+      { cost_center_id: number; name: string; is_active: boolean }[]).find(c => c.cost_center_id === id)!;
+
+  await page.goto("/orderbook");
+  await expect(async () => {
+    await page.getByTestId("cost-centre-manage").click();
+    await expect(page.getByTestId("cost-centre-manager")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+
+  const row = page.getByTestId("cost-centre-manager").locator("li").filter({
+    has: page.locator(`input[data-testid="cost-centre-edit-code"][value="${code}"]`),
+  });
+  await row.getByTestId("cost-centre-edit-name").fill("Fixed name");
+  await row.getByTestId("cost-centre-edit-save").click();
+  await expect.poll(async () => (await read()).name).toBe("Fixed name");
+
+  await row.getByTestId("cost-centre-toggle").click();
+  await expect.poll(async () => (await read()).is_active).toBe(false);
+  await expect(row).toContainText("inactive");
+});
+
 test("a purchase officer can change the approval limit", async ({ page }) => {
   await login(page, BUYER);
   await page.goto("/orderbook");
