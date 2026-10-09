@@ -30,6 +30,8 @@ from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from .schemas import (
+    APPROVAL_STATUSES,
+    DEFAULT_APPROVAL_THRESHOLD,
     FROZEN_STATUSES,
     CreateOrderIn,
     CreateOrderLineIn,
@@ -53,7 +55,7 @@ _ORDER_WORKSPACE = """
     )
 """
 
-_ORDER_COLS = """
+_ORDER_COLS = f"""
     po.po_id, po.po_number, po.order_number, po.supplier_ref_no,
     po.status, po.priority,
     po.vendor_id, v.name AS vendor_name,
@@ -63,13 +65,19 @@ _ORDER_COLS = """
     po.quantity, po.unit_of_measure, po.unit_cost, po.total_amount, po.currency,
     po.required_date, po.date_ordered, po.due_date,
     po.notes, po.internal_comments, po.attributes,
-    po.created_at, po.updated_at, po.field_versions
+    po.created_at, po.updated_at, po.field_versions,
+    po.requires_approval, po.approval_requested_by, po.approval_requested_at,
+    po.approval_decided_by, po.approval_decided_at, po.approval_note,
+    (po.requires_approval
+     OR COALESCE(po.total_amount, 0) > COALESCE(wos.approval_threshold, {DEFAULT_APPROVAL_THRESHOLD})
+    ) AS needs_approval
 """
 
 _ORDER_FROM = """
     FROM purchase_orders po
     LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
     LEFT JOIN items   i ON i.item_id   = po.item_id
+    LEFT JOIN workspace_order_setting wos ON wos.workspace_id = v.workspace_id
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -90,8 +98,17 @@ _PATCHABLE = frozenset({
     "order_number", "supplier_ref_no", "location", "product_code",
     "product_description", "quantity", "unit_of_measure", "unit_cost",
     "total_amount", "required_date", "date_ordered", "due_date",
-    "notes", "internal_comments", "attributes",
+    "notes", "internal_comments", "attributes", "requires_approval",
 })
+
+
+def get_approval_threshold(db: Session, *, workspace_id: int):
+    """The workspace's approval limit; the default when a purchase officer has not set one."""
+    value = db.execute(
+        text("SELECT approval_threshold FROM workspace_order_setting WHERE workspace_id = :w"),
+        {"w": workspace_id},
+    ).scalar()
+    return DEFAULT_APPROVAL_THRESHOLD if value is None else value
 
 
 def list_categories(db: Session) -> list[dict]:
@@ -370,7 +387,8 @@ def patch_order(
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
-    'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
+    'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
+    that needs approval) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
@@ -419,6 +437,17 @@ def patch_order(
         blocked = sorted(set(fields) - {"status"})
         if blocked:
             return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
+    # Pending / Approved / Rejected on an order that needs approval are reached through the
+    # approval routes only (`orders.approval`): a status PATCH would skip the approver, the
+    # segregation rule and the budget commitment. "Needs" is judged on the order as this PATCH
+    # would leave it, so setting the flag or the total in the same call cannot sidestep it.
+    if fields.get("status") in APPROVAL_STATUSES and fields["status"] != current["status"]:
+        total = fields["total_amount"] if "total_amount" in fields else current["total_amount"]
+        would_need = fields.get("requires_approval", current["requires_approval"]) or (
+            (total or 0) > get_approval_threshold(db, workspace_id=workspace_id)
+        )
+        if would_need:
+            return "APPROVAL_ROUTE_REQUIRED", {"status": fields["status"]}
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.

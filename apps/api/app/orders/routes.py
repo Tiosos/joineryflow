@@ -16,7 +16,11 @@ from ..auth.sessions import AuthUser
 from ..catalog.queries import MaterialNotFound
 from ..db import get_db
 from . import queries as q
+from . import approval
 from .schemas import (
+    ApprovalDecisionIn,
+    ApprovalLimitIn,
+    ApprovalLimitOut,
     CategoryOut,
     CreateOrderIn,
     CreateOrderLineIn,
@@ -138,12 +142,17 @@ def patch_order_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    # The flag is the project manager's call.
+    if "requires_approval" in payload.model_fields_set and user.auth_role not in ("manager", "admin"):
+        raise HTTPException(403, {"code": "APPROVAL_FLAG_FORBIDDEN"})
     code, order = q.patch_order(
         db, po_id=po_id, workspace_id=user.workspace_id,
         payload=payload, actor_id=user.id,
     )
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
+    if code == "APPROVAL_ROUTE_REQUIRED":
+        raise HTTPException(409, {"code": "APPROVAL_ROUTE_REQUIRED", **order})
     if code == "ORDER_LOCKED":
         raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
     if code == "VENDOR_NOT_FOUND":
@@ -242,3 +251,78 @@ def remove_line_route(
         raise HTTPException(404, "order or line not found")
     db.commit()
     return order
+
+
+# ── Approval ─────────────────────────────────────────────────────────────────
+
+_APPROVAL_ERRORS = {
+    "NOT_REQUIRED": 409, "NOT_REQUESTABLE": 409, "NOT_PENDING": 409,
+    "SELF_APPROVAL": 409, "NOTE_REQUIRED": 422,
+}
+
+
+def _approval_result(db: Session, code: str, data: dict | None):
+    if code == "NOT_FOUND":
+        raise HTTPException(404, "order not found")
+    if code in _APPROVAL_ERRORS:
+        raise HTTPException(_APPROVAL_ERRORS[code], {"code": code, **(data or {})})
+    db.commit()
+    return data
+
+
+@router.post("/orders/{po_id}/approval/request", response_model=OrderDetailOut)
+def request_approval_route(
+    po_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.request_approval(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id))
+
+
+@router.post("/orders/{po_id}/approval/approve", response_model=OrderDetailOut)
+def approve_order_route(
+    po_id: int,
+    payload: ApprovalDecisionIn,
+    user: AuthUser = Depends(require_permission("orderbook", "approve")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.decide(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
+        approve=True, note=payload.note))
+
+
+@router.post("/orders/{po_id}/approval/reject", response_model=OrderDetailOut)
+def reject_order_route(
+    po_id: int,
+    payload: ApprovalDecisionIn,
+    user: AuthUser = Depends(require_permission("orderbook", "approve")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.decide(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
+        approve=False, note=payload.note))
+
+
+@router.get("/order-settings", response_model=ApprovalLimitOut)
+def get_order_settings(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"approval_threshold": q.get_approval_threshold(db, workspace_id=user.workspace_id)}
+
+
+@router.put("/order-settings", response_model=ApprovalLimitOut)
+def put_order_settings(
+    payload: ApprovalLimitIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    """The approval limit is a purchase officer's to set (admin may too)."""
+    if user.auth_role not in ("purchase_officer", "admin"):
+        raise HTTPException(403, {"code": "APPROVAL_LIMIT_FORBIDDEN"})
+    amount = approval.set_approval_threshold(
+        db, workspace_id=user.workspace_id, amount=payload.approval_threshold, actor_id=user.id)
+    db.commit()
+    return {"approval_threshold": amount}
+
