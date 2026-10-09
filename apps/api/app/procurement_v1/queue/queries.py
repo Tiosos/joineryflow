@@ -10,7 +10,8 @@ Material name enrichment is a second-pass per-type lookup. All six material
 catalog tables expose a `description` column; `equipment_hire` uses `hire_id`
 as its PK while the other five use `material_id`.
 """
-from typing import Any
+from datetime import date, timedelta
+from typing import Any, Literal
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -36,6 +37,19 @@ _STATUS_CASE = (
     "  ELSE 'OPEN' "
     "END"
 )
+
+
+EtaFilter = Literal["overdue", "this_week"]
+
+
+def eta_filter_sql(kind: EtaFilter, alias: str) -> str:
+    """The batches the home dashboard's `overdue` / `deliveries_this_week` tiles count,
+    as one predicate over `alias` (binds :today and :week_end). The tile and the queue
+    link both use it, so the number on the tile is the number of rows the link shows."""
+    if kind == "overdue":
+        return f"{alias}.eta_date < :today AND {alias}.received_date IS NULL"
+    return (f"{alias}.eta_date BETWEEN :today AND :week_end "
+            f"AND {alias}.received_date IS NULL")
 
 
 def _enrich_names(db: Session, rows: list[dict]) -> list[dict]:
@@ -67,6 +81,7 @@ def queue(
     status: str | None = None,
     supplier: str | None = None,
     project_id: int | None = None,
+    eta: EtaFilter | None = None,
 ) -> list[dict]:
     sql = (
         "SELECT pb.batch_id, pb.project_id, p.project_code, p.name AS project_name, "
@@ -87,6 +102,11 @@ def queue(
     if project_id:
         sql += " AND pb.project_id = :pid"
         params["pid"] = project_id
+    if eta:
+        today = date.today()
+        sql += f" AND {eta_filter_sql(eta, 'pb')}"
+        params["today"] = today
+        params["week_end"] = today + timedelta(days=7)
     sql += (
         " ORDER BY pb.supplier NULLS LAST, "
         "         COALESCE(pb.eta_date, pb.ordered_date, pb.created_at::date)"

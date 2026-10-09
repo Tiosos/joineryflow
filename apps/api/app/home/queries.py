@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.sessions import AuthUser
+from ..procurement_v1.queue.queries import eta_filter_sql
 from ..row_types import live_joinery_items
 from .schemas import (
     DeliveryToday,
@@ -287,8 +288,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             SELECT COUNT(*) AS cnt
             FROM procurement_batches b
             WHERE {_BATCH_WORKSPACE_EXISTS}
-              AND b.eta_date < :today
-              AND b.received_date IS NULL
+              AND {eta_filter_sql("overdue", "b")}
             """
         ),
         {"wid": wid, "today": today},
@@ -316,8 +316,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             SELECT COUNT(*) AS cnt
             FROM procurement_batches b
             WHERE {_BATCH_WORKSPACE_EXISTS}
-              AND b.eta_date BETWEEN :today AND :week_end
-              AND b.received_date IS NULL
+              AND {eta_filter_sql("this_week", "b")}
             """
         ),
         {"wid": wid, "today": today, "week_end": week_end},
@@ -345,7 +344,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             key="overdue",
             label="Overdue Deliveries",
             value=overdue_count,
-            href="/orderbook?filter=overdue",
+            href="/orderbook?tab=queue&eta=overdue",
         ),
         MetricCard(
             key="open_pos",
@@ -357,7 +356,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             key="deliveries_this_week",
             label="Deliveries This Week",
             value=deliveries_week_count,
-            href="/orderbook?filter=this_week",
+            href="/orderbook?tab=queue&eta=this_week",
         ),
         MetricCard(
             key="pending_approvals",
