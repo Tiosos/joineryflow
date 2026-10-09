@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { can, type Me } from "@/lib/permissions";
 import type { OrderRow } from "@/lib/orders-types";
-import { STATUSES } from "./orders/shared";
+import { STATUSES, money } from "./orders/shared";
 import { OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
 
@@ -60,6 +60,32 @@ export function OrdersClient({ me }: { me: Me | null }) {
 
   const selectedRow = rows.find(r => r.po_number === selected) ?? null;
   const canEdit = can(me, "orderbook", "write");
+  const canApprove = can(me, "orderbook", "approve");
+  // The project manager's flag is a manager/admin call; the limit is a purchase officer's (or admin's).
+  const canFlag = me?.auth_role === "manager" || me?.auth_role === "admin";
+  const canSetLimit = me?.auth_role === "purchase_officer" || me?.auth_role === "admin";
+  const [threshold, setThreshold] = useState<string | null>(null);
+  const [limitEdit, setLimitEdit] = useState<string | null>(null);
+  const [limitErr, setLimitErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/order-settings", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then((b: { approval_threshold: string } | null) => setThreshold(b?.approval_threshold ?? null))
+      .catch(() => setThreshold(null));
+  }, []);
+
+  async function saveLimit() {
+    setLimitErr(null);
+    const res = await fetch("/api/order-settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ approval_threshold: limitEdit }),
+    }).catch(() => null);
+    if (!res || !res.ok) { setLimitErr("Could not save the limit"); return; }
+    setThreshold(((await res.json()) as { approval_threshold: string }).approval_threshold);
+    setLimitEdit(null);
+  }
 
   function setParam(k: string, v: string) {
     const next = new URLSearchParams(params.toString());
@@ -92,6 +118,37 @@ export function OrdersClient({ me }: { me: Me | null }) {
         <span className="text-xs text-h-muted">
           {loading ? "Loading…" : `${rows.length} order${rows.length === 1 ? "" : "s"}`}
         </span>
+        {threshold != null && (
+          <span data-testid="approval-limit" className="ml-auto flex items-center gap-1.5 text-xs text-h-muted">
+            Orders over <span className="h-mono text-h-ink">{money(threshold, null)}</span> need approval
+            {canSetLimit && limitEdit === null && (
+              <button
+                type="button"
+                data-testid="approval-limit-edit"
+                onClick={() => setLimitEdit(threshold)}
+                className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink"
+              >
+                Change
+              </button>
+            )}
+            {canSetLimit && limitEdit !== null && (
+              <>
+                <input
+                  value={limitEdit}
+                  onChange={e => setLimitEdit(e.target.value)}
+                  inputMode="decimal"
+                  data-testid="approval-limit-input"
+                  className="h-mono w-24 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink"
+                />
+                <button type="button" data-testid="approval-limit-save" onClick={() => void saveLimit()}
+                  className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Save</button>
+                <button type="button" onClick={() => { setLimitEdit(null); setLimitErr(null); }}
+                  className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Cancel</button>
+              </>
+            )}
+            {limitErr && <span className="text-[#b4443d]">{limitErr}</span>}
+          </span>
+        )}
         {selected && (
           <button
             type="button"
@@ -159,6 +216,10 @@ export function OrdersClient({ me }: { me: Me | null }) {
           poId={selectedRow.po_id}
           canEdit={canEdit}
           onChanged={fetchRows}
+          threshold={threshold}
+          meId={me?.id ?? null}
+          canApprove={canApprove}
+          canFlag={canFlag}
         />
       )}
     </div>

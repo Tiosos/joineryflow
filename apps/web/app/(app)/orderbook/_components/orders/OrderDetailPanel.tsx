@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { can } from "@/lib/permissions";
 import type { CreateOrderLineIn, OrderDetail as OrderDetailType, PatchOrderLineIn } from "@/lib/orders-types";
 import { STATUSES, PRIORITIES, statusClasses, money, qty, orderLocked, lockedMessage, fieldErrorMessage } from "./shared";
+import { ApprovalSection } from "./ApprovalSection";
 import { ErrorLine } from "./ErrorLine";
 import { Field } from "./Field";
 import { EditableField } from "./EditableField";
@@ -12,8 +13,11 @@ import { BlurTextArea } from "./BlurTextArea";
 import { LinesSection } from "./LinesSection";
 
 export function OrderDetailPanel({
-  poId, canEdit, onChanged,
-}: { poId: number; canEdit: boolean; onChanged: () => void }) {
+  poId, canEdit, onChanged, threshold, meId, canApprove, canFlag,
+}: {
+  poId: number; canEdit: boolean; onChanged: () => void;
+  threshold: string | null; meId: number | null; canApprove: boolean; canFlag: boolean;
+}) {
   const [order, setOrder] = useState<OrderDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -195,7 +199,17 @@ export function OrderDetailPanel({
             data-testid="order-status-select"
             className={`rounded border-0 px-1.5 py-0.5 text-[10px] ${statusClasses(order.status)}`}
           >
-            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            {STATUSES.map(s => (
+              // Pending / Approved / Rejected on an order that needs approval are reached
+              // through the Approval section; the API refuses them here.
+              <option
+                key={s}
+                value={s}
+                disabled={order.needs_approval && s !== order.status && ["Pending", "Approved", "Rejected"].includes(s)}
+              >
+                {s}
+              </option>
+            ))}
           </select>
         ) : (
           <span className={`rounded px-1.5 py-0.5 text-[10px] ${statusClasses(order.status)}`}>
@@ -217,6 +231,17 @@ export function OrderDetailPanel({
       </div>
       {errors.status && <ErrorLine msg={errors.status} />}
       {errors.priority && <ErrorLine msg={errors.priority} />}
+      {errors.requires_approval && <ErrorLine msg={errors.requires_approval} />}
+      <ApprovalSection
+        order={order}
+        threshold={threshold}
+        meId={meId}
+        canRequest={canEdit}
+        canApprove={canApprove}
+        canFlag={canFlag && canEdit}
+        onFlag={flag => void patchField("requires_approval", flag)}
+        onChanged={updated => { setOrder(updated); setErrors({}); onChanged(); }}
+      />
       {canEdit && frozen && (
         <p
           data-testid="order-frozen-banner"

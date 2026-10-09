@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0053` (head `0053_factory_tg_solid_legacy_ref`) |
+| `db/` | Alembic migrations `0001`→`0054` (head `0054_po_approval`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
@@ -174,7 +174,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Live source of truth is the DB engine** (`auth/rbac_engine.py`, groups + memberships, migration `0037`). `MATRIX` in `auth/permissions.py` is the readable record and the **fallback only for a user with zero memberships**. A user with ≥1 membership is fully DB-governed; an empty result is a real "no".
 - `require_permission(module, action, project_param=None)`; most call sites check workspace-wide grants only. Project-scoped memberships are honoured only where `project_param` is passed. `/auth/me`, Global Search and comment routes use **workspace-wide grants only** (a user with only project-scoped memberships sees nothing there).
 - Adding a module needs **both** a `MATRIX` entry **and** a migration inserting `group_module_grant` rows for existing workspaces.
-- Per-object rules (`require_drafter()`, not-uploader-approves, creator-or-manager, 5-min undo) live in route handlers, not the engine (Q472 not built). Drafter is PM-parity on `orderbook`, `shop_dwgs`, `isample`, `catalog`, `cut_floor`.
+- Per-object rules (`require_drafter()`, not-uploader-approves, creator-or-manager, 5-min undo) live in route handlers, not the engine (Q472 not built). Drafter is PM-parity on `orderbook` (**except `approve`**: PO approval is purchase officer, manager and admin, `0054`), `shop_dwgs`, `isample`, `catalog`, `cut_floor`.
 - Every authenticated mutation writes `audit_log` (`auth/audit.py`); item-scoped mutations also write `item_edit_log` in the same transaction.
 - `jtbd_role` is display-only; nothing branches on it.
 
@@ -210,7 +210,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - **ProjectHardwareCatalog** is a project-scoped link layer: item hardware lines reference materials *through* it (log-only governance, every add/remove audited). `ProcurementBatch → Allocations → item_hardware_line_id` answers "is this item blocked on a material?" as one join.
 - **Three apps, one database:** Project Information Management (Drafter/PM/CEO; Project → Item → Module → Part + HardwareLine + lifecycle), Shop Floor Ops, Cabinet Vision integration layer. Drafter is the authoritative data-entry point.
-- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile now counts `purchase_orders` with `status = 'Pending'` (links to `/orderbook?status=Pending`); real PO approval is not built yet (see *Still open* and `docs/sub-projects/06-orders-procurement.md`). Reference: `legacy/procurement_v0/README.md`.
+- **PO approval (`0054`)**: an order needs approval above the workspace limit (`workspace_order_setting`, default 2000, set by a purchase officer/admin) or when manager/admin set `purchase_orders.requires_approval`. `needs_approval` is computed in SQL (`_ORDER_COLS`); the web reads it. For such an order `Pending`/`Approved`/`Rejected` are reached only through `POST /orders/{id}/approval/request|approve|reject` (`orders/approval.py`); a status PATCH is refused `409 APPROVAL_ROUTE_REQUIRED`. One approval; approver ≠ requester; reject needs a note. Approving posts a `Commitment` against `purchase_orders.cost_center_id` and skips when there is none. **No v1 route or screen sets a cost centre yet**, so today no commitment is ever posted.
+- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile counts `Pending` orders (`/orderbook?status=Pending`); the Overdue / This Week tiles open the Delivery queue with `?eta=`. Reference: `legacy/procurement_v0/README.md`.
 
 ## 8. API conventions
 
@@ -295,7 +296,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-PO approval flow (decided Oct 2026, not built): see `docs/sub-projects/06-orders-procurement.md` § *PO approval — decisions and open points*. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
+PO approval: cost centres (nothing sets `purchase_orders.cost_center_id` or manages `cost_centers`, so the approval commitment never fires), release of a commitment on cancel/delivery, and the `open_pos` tile link (`?status=open` matches nothing). See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

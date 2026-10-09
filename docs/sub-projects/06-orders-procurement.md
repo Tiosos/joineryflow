@@ -1528,23 +1528,33 @@
   - A material that appears in both a part row and a hardware row of one line is one material (same key) with one state.
   - Any `estimating:approve` user can undo anyone's per-material dismissal.
 
-## PO approval — decisions and open points (October 2026)
+## PO approval (October 2026) — built, with decisions and open points
 
-Context: the legacy `/procurement/*` approval routes were retired (code in `legacy/procurement_v0/`). On v1 orders any holder of `orderbook:write` can set `status` to `Approved` directly, and no route checks `orderbook:approve`. Plan V1 says nothing about PO approval beyond configurable thresholds for price-source evidence.
+Context: the legacy `/procurement/*` approval routes were retired (code in `legacy/procurement_v0/`). Before this, any holder of `orderbook:write` could set an order's `status` to `Approved` directly, no approver was recorded, and no order route checked `orderbook:approve`. Plan V1 says nothing about PO approval beyond configurable thresholds for price-source evidence.
 
-**Step 1 — built.** The home dashboard's `pending_approvals` tile counts orders with `status = 'Pending'` (workspace-scoped) and links to `/orderbook?status=Pending`. It used to count `approval_workflows` rows, which nothing writes now, and its old link `?filter=pending_approvals` was never read by the Orderbook page. The `overdue` ("Overdue Deliveries") and `deliveries_this_week` tiles count procurement *batches*, so their links now open the Delivery queue with a new `eta` filter (`/orderbook?tab=queue&eta=overdue|this_week`); the tile and the queue share one predicate (`procurement_v1.queue.queries.eta_filter_sql`), so the number on the tile is the number of rows the link shows. **Known, not changed:** the `open_pos` tile still links to `/orderbook?status=open`, but the Orders list matches `status` exactly, so `open` returns no rows.
+**Decided by the product owner:**
+- An order needs approval when its total is **above an amount** (currently **2000**, one value for the whole workspace, **a purchase officer can change it**) or when the **project manager flags the order**. Every other order skips approval.
+- **One approval is enough.** Approvers: **purchase officer, manager and admin** (not the drafter; the drafter's unused `orderbook:approve` grant was removed, in `permissions.MATRIX` and, by migration, from existing workspaces).
+- Approving **posts a budget commitment against a cost centre**; an order with **no cost centre just skips that step**.
+- No real data existed in `approval_workflows` (its table stays, Q435, and is no longer written).
 
-**Decided by the product owner (answers to the design questions):**
-- No real data in `approval_workflows`, so no data to preserve there (the legacy tables themselves stay, Q435).
-- Approvers: drafter, purchase officer and manager.
-- Only some orders need approval: those **above an amount**, or those the **project manager flags** as special. Everything else skips approval.
-- **One approval is enough** (no chain).
-- **Budget commitments must be tied to approval.**
+**Built (`0054`):**
+- Columns on `purchase_orders`: `requires_approval` (the PM flag, manager/admin only), `approval_requested_by/at`, `approval_decided_by/at`, `approval_note`; table `workspace_order_setting.approval_threshold`.
+- `needs_approval` is computed in SQL beside the other order columns; the web reads it. The comparison is strictly *above* the limit.
+- `POST /orders/{id}/approval/request` (Draft or Rejected → Pending, needs `orderbook:write`), `/approve`, `/reject` (Pending only, `orderbook:approve`; the approver may not be the requester; a rejection needs a note). `GET/PUT /order-settings` (the PUT is purchase officer or admin).
+- For an order that needs approval, `Pending`/`Approved`/`Rejected` can no longer be set by a plain status PATCH: `409 APPROVAL_ROUTE_REQUIRED`, judged on the order as the PATCH would leave it (so setting the flag or the total in the same call cannot sidestep it). Orders that do not need approval keep their free status.
+- Every step writes `audit_log` (`order.approval.request|approve|reject`, `order.approval_limit.set`).
+- UI: an Approval section in the order detail panel (request, approve/reject with a note, the PM flag) and an "Orders over $X need approval" control on the Orders tab; the dashboard tile counts `Pending` orders.
 
-**Open — needs an answer before step 2 (Rule Zero):**
-- The threshold: how much, per workspace or global, and who can change it.
-- How the PM flags an order or item as needing approval (a flag on the order, on the item, or on the line).
-- Cost centres: the `cost_centers` / `budget_transactions` tables still exist and are empty; confirm whether an approved order should post a commitment against a cost centre (the old flow did), and what happens for an order with no cost centre.
-- The sixth question in the owner's reply was left blank.
-- Whether `admin` may approve (the stated list names three roles).
+**Assumptions I made (flip them if wrong):**
+- "Project manager" for the flag means the `manager` and `admin` roles, not the project's own `pm_id`.
+- The approver may not be the person who requested approval (the same rule as shop drawings and iSample); in a one-approver workspace an admin must then approve a purchase officer's order.
+- The limit is per workspace (not global across workspaces), and an admin may change it too.
+- The reply to the last design question said "drafter and purchase officer and manager", then "change only purchase officer and manager and admin"; the second is taken as the current list.
 
+**Open:**
+- **Cost centres.** `purchase_orders.cost_center_id` exists, but no v1 route or screen sets it and nothing manages `cost_centers`, so approving never finds a cost centre and the commitment is never posted today (the code path is tested by setting the column directly). Needs a small cost-centre admin and a selector on the order.
+- A commitment is not released if an approved order is later cancelled or delivered (the legacy flow released it).
+- An order approved at one total can have its lines edited upwards afterwards; it is not sent back to Pending.
+- `Delivered` is not blocked for an unapproved order that needs approval.
+- The `open_pos` tile links to `/orderbook?status=open`, but the Orders list matches `status` exactly, so `open` returns no rows. (The Overdue / This Week tiles now open the Delivery queue with an `eta` filter.)

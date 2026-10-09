@@ -118,7 +118,9 @@ class OrderOut(BaseModel):
     needs_approval: bool = False
     approval_requested_by: int | None = None
     approval_requested_at: datetime | None = None
+    approval_requested_by_name: str | None = None
     approval_decided_by: int | None = None
+    approval_decided_by_name: str | None = None
     approval_decided_at: datetime | None = None
     approval_note: str | None = None
 

@@ -68,6 +68,7 @@ _ORDER_COLS = f"""
     po.created_at, po.updated_at, po.field_versions,
     po.requires_approval, po.approval_requested_by, po.approval_requested_at,
     po.approval_decided_by, po.approval_decided_at, po.approval_note,
+    rq.full_name AS approval_requested_by_name, dc.full_name AS approval_decided_by_name,
     (po.requires_approval
      OR COALESCE(po.total_amount, 0) > COALESCE(wos.approval_threshold, {DEFAULT_APPROVAL_THRESHOLD})
     ) AS needs_approval
@@ -78,6 +79,8 @@ _ORDER_FROM = """
     LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
     LEFT JOIN items   i ON i.item_id   = po.item_id
     LEFT JOIN workspace_order_setting wos ON wos.workspace_id = v.workspace_id
+    LEFT JOIN app_user rq ON rq.id = po.approval_requested_by
+    LEFT JOIN app_user dc ON dc.id = po.approval_decided_by
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
