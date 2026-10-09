@@ -182,3 +182,72 @@ def test_cost_centre_patch_refuses_nulls_unknown_and_other_workspaces_ids(ws):
     # an edit is audited with what it changed
     assert _patch(ws["buyer"], cc, name="Audited").status_code == 200
     assert _sql("SELECT count(*) FROM audit_log WHERE event = 'cost_centre.update'") == 1
+
+
+# ── Budget figures (information only) ────────────────────────────────────────
+
+def _approved_on(ws, cc, total):
+    o = _order(ws["buyer"], ws, total)
+    ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    assert ws["buyer"].post(f"/orders/{o['po_id']}/approval/request").status_code == 200
+    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    return o["po_id"]
+
+
+def _figures(c, code="GEN"):
+    row = next(x for x in c.get("/cost-centers").json()["cost_centers"] if x["code"] == code)
+    return tuple(row[k] for k in ("budget_amount", "committed", "spent", "remaining"))
+
+
+def test_figures_follow_the_ledger_through_approve_deliver_and_cancel(ws):
+    cc = _make(ws["buyer"], budget="10000")
+    assert _figures(ws["manager"]) == ("10000.00", "0.00", "0.00", "10000.00")   # a reader sees them too
+
+    a = _approved_on(ws, cc, "2500.00")          # approving commits the order's total
+    assert _figures(ws["manager"]) == ("10000.00", "2500.00", "0.00", "7500.00")
+
+    small = _order(ws["buyer"], ws, "300.00")    # needs no approval: only the cost is booked
+    ws["buyer"].patch(f"/orders/{small['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    assert ws["buyer"].patch(f"/orders/{small['po_id']}", json={"status": "Delivered"}).status_code == 200
+    assert _figures(ws["manager"]) == ("10000.00", "2500.00", "300.00", "7200.00")
+
+    # delivering the approved one turns its commitment into spend, counted once
+    assert ws["buyer"].patch(f"/orders/{a}", json={"status": "Delivered"}).status_code == 200
+    assert _figures(ws["manager"]) == ("10000.00", "0.00", "2800.00", "7200.00")
+
+    b = _approved_on(ws, cc, "2100.00")          # cancelling releases what it held
+    assert _figures(ws["manager"])[1:] == ("2100.00", "2800.00", "5100.00")
+    assert ws["buyer"].delete(f"/orders/{b}").status_code == 204
+    assert _figures(ws["manager"]) == ("10000.00", "0.00", "2800.00", "7200.00")
+
+
+def test_going_over_budget_is_shown_as_a_negative_remainder_and_blocks_nothing(ws):
+    cc = _make(ws["buyer"], budget="1000")
+    _approved_on(ws, cc, "2500.00")              # still approves: the budget only informs
+    assert _figures(ws["manager"]) == ("1000.00", "2500.00", "0.00", "-1500.00")
+
+
+def test_a_purchase_officer_edits_the_budget_and_the_figures_follow(ws):
+    cc = _make(ws["buyer"], budget="1000")
+    _approved_on(ws, cc, "2500.00")
+    r = _patch(ws["buyer"], cc, budget_amount="4000.50")
+    assert r.status_code == 200, r.text
+    assert (r.json()["budget_amount"], r.json()["remaining"]) == ("4000.50", "1500.50")
+    r = ws["manager"].patch(f"/cost-centers/{cc['cost_center_id']}", json={"budget_amount": "1"})
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "COST_CENTRE_FORBIDDEN")
+    assert _patch(ws["buyer"], cc, budget_amount="-1").status_code == 422
+    r = _patch(ws["buyer"], cc, budget_amount=None)
+    assert r.status_code == 422 and "budget_amount" in r.text
+    assert _sql("SELECT payload->'budget_amount'->>'to' FROM audit_log"
+                " WHERE event = 'cost_centre.update'") == "4000.50"
+
+
+def test_figures_are_per_cost_centre_and_per_workspace(ws):
+    mine = _make(ws["buyer"], code="MINE", budget="500")
+    _make(ws["buyer"], code="OTHER", budget="900")
+    _approved_on(ws, mine, "2500.00")
+    assert _figures(ws["manager"], "MINE")[1] == "2500.00"
+    assert _figures(ws["manager"], "OTHER") == ("900.00", "0.00", "0.00", "900.00")
+    stranger, _wid, _uid = login("purchase_officer", prefix="cc5")
+    theirs = _make(stranger, code="MINE", budget="77")
+    assert _figures(stranger, "MINE") == ("77.00", "0.00", "0.00", "77.00") and theirs["committed"] == "0.00"

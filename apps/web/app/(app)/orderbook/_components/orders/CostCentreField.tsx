@@ -2,6 +2,7 @@
 
 import type { CostCentre } from "@/lib/orders-types";
 import { ErrorLine } from "./ErrorLine";
+import { CostCentreFigures } from "./CostCentreFigures";
 import { Field } from "./Field";
 
 /** The order's optional cost centre: the budget an approval's Commitment is posted against. */
@@ -16,7 +17,15 @@ export function CostCentreField({
   onSave: (id: number | null) => Promise<boolean>;
   error?: string;
 }) {
-  if (!canEdit) return <Field label="Cost centre" value={label} mono />;
+  const current = costCentres.find(c => c.cost_center_id === value);
+  if (!canEdit) {
+    return (
+      <div>
+        <Field label="Cost centre" value={label} mono />
+        {current && <CostCentreFigures cc={current} />}
+      </div>
+    );
+  }
   return (
     <div>
       <dt className="text-[10px] uppercase tracking-wide text-h-muted">Cost centre</dt>
@@ -29,6 +38,7 @@ export function CostCentreField({
         <option value="">None</option>
         {costCentres.filter(c => c.is_active || c.cost_center_id === value).map(c => <option key={c.cost_center_id} value={c.cost_center_id}>{c.code} {c.name}{c.is_active ? "" : " (inactive)"}</option>)}
       </select>
+      {current && <CostCentreFigures cc={current} />}
       {error && <ErrorLine msg={error} />}
     </div>
   );

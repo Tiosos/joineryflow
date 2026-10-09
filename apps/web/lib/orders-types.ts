@@ -84,6 +84,10 @@ export interface CostCentre {
   name: string;
   budget_amount: string;
   is_active: boolean;
+  /** From the budget ledger: what approved orders still hold, what delivered ones cost, the rest. */
+  committed: string;
+  spent: string;
+  remaining: string;
 }
 
 export interface OrderListOut {

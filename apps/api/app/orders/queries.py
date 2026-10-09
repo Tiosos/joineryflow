@@ -133,13 +133,33 @@ def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -
     ).first() is not None
 
 
-def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
+# A cost centre with what the ledger says about it. A Release is stored negative, so committed
+# (still outstanding) is Commitment + Release; spent is Expenditure. The same sums
+# `v_budget_utilisation` makes, split in two. An Adjustment is not counted, like the view.
+_COST_CENTRE_SELECT = """
+    SELECT cc.cost_center_id, cc.code, cc.name, cc.budget_amount,
+           cc.is_active IS NOT FALSE AS is_active,
+           COALESCE(SUM(bt.amount) FILTER (WHERE bt.transaction_type IN ('Commitment', 'Release')), 0)::numeric(15, 2)
+               AS committed,
+           COALESCE(SUM(bt.amount) FILTER (WHERE bt.transaction_type = 'Expenditure'), 0)::numeric(15, 2) AS spent
+    FROM cost_centers cc
+    LEFT JOIN budget_transactions bt ON bt.cost_center_id = cc.cost_center_id
+    WHERE cc.workspace_id = :w {extra}
+    GROUP BY cc.cost_center_id
+    ORDER BY cc.code
+"""
+
+
+def _cost_centre_rows(db: Session, *, workspace_id: int, cost_center_id: int | None = None) -> list[dict]:
     rows = db.execute(
-        text("SELECT cost_center_id, code, name, budget_amount, is_active IS NOT FALSE AS is_active"
-             " FROM cost_centers WHERE workspace_id = :w ORDER BY code"),
-        {"w": workspace_id},
+        text(_COST_CENTRE_SELECT.format(extra="" if cost_center_id is None else "AND cc.cost_center_id = :c")),
+        {"w": workspace_id, "c": cost_center_id},
     ).mappings().all()
-    return [dict(r) for r in rows]
+    return [{**r, "remaining": r["budget_amount"] - r["committed"] - r["spent"]} for r in rows]
+
+
+def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
+    return _cost_centre_rows(db, workspace_id=workspace_id)
 
 
 def create_cost_centre(
@@ -152,7 +172,7 @@ def create_cost_centre(
             INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
             VALUES (:w, :c, :n, EXTRACT(year FROM now())::int, :b)
             ON CONFLICT (workspace_id, code) DO NOTHING
-            RETURNING cost_center_id, code, name, budget_amount, is_active IS NOT FALSE AS is_active
+            RETURNING cost_center_id, code, name
             """
         ),
         {"w": workspace_id, "c": code.strip(), "n": name.strip(), "b": budget_amount},
@@ -163,16 +183,16 @@ def create_cost_centre(
         db, workspace_id=workspace_id, actor_id=actor_id, event="cost_centre.create",
         target=str(row["cost_center_id"]), payload={"code": row["code"], "name": row["name"]},
     )
-    return dict(row)
+    return _cost_centre_rows(db, workspace_id=workspace_id, cost_center_id=row["cost_center_id"])[0]
 
 
-_COST_CENTRE_COLUMNS = frozenset({"code", "name", "is_active"})
+_COST_CENTRE_COLUMNS = frozenset({"code", "name", "is_active", "budget_amount"})
 
 
 def patch_cost_centre(
     db: Session, *, cost_center_id: int, workspace_id: int, actor_id: int, changes: dict
 ) -> tuple[str, dict | None]:
-    """Rename and/or (de)activate. Codes: 'OK' | 'NOT_FOUND' | 'EXISTS' (the code is taken).
+    """Rename, (de)activate and/or change the budget. Codes: 'OK' | 'NOT_FOUND' | 'EXISTS' (the code is taken).
 
     Orders keep their cost centre by id, so a rename shows on them at once and a deactivation
     leaves them as they are: it only stops the cost centre being chosen on an order again."""
@@ -185,28 +205,27 @@ def patch_cost_centre(
         return "NOT_FOUND", None
     changes = {
         k: (v.strip() if isinstance(v, str) else v) for k, v in changes.items()
-        if k in ("code", "name", "is_active") and v != current[k]
+        if k in _COST_CENTRE_COLUMNS and v != current[k]
     }
     if not changes:
-        return "OK", dict(current)
+        return "OK", _cost_centre_rows(db, workspace_id=workspace_id, cost_center_id=cost_center_id)[0]
     if "code" in changes and db.execute(
         text("SELECT 1 FROM cost_centers WHERE workspace_id = :w AND code = :c"),
         {"w": workspace_id, "c": changes["code"]},
     ).first():
         return "EXISTS", None
     require_columns(changes, _COST_CENTRE_COLUMNS)
-    row = db.execute(
+    db.execute(
         text("UPDATE cost_centers SET " + ", ".join(f"{k} = :{k}" for k in changes)
-             + " WHERE cost_center_id = :c RETURNING cost_center_id, code, name, budget_amount,"
-             " is_active IS NOT FALSE AS is_active"),
+             + " WHERE cost_center_id = :c"),
         {**changes, "c": cost_center_id},
-    ).mappings().one()
+    )
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id, event="cost_centre.update",
         target=str(cost_center_id),
-        payload={k: {"from": current[k], "to": v} for k, v in changes.items()},
+        payload={k: {"from": str(current[k]), "to": str(v)} for k, v in changes.items()},
     )
-    return "OK", dict(row)
+    return "OK", _cost_centre_rows(db, workspace_id=workspace_id, cost_center_id=cost_center_id)[0]
 
 
 def list_categories(db: Session) -> list[dict]:
