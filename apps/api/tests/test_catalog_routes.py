@@ -382,3 +382,26 @@ def test_purchase_officer_cannot_write_catalog():
     }).status_code == 403
     assert c.patch(f"/catalog/board-materials/{mid}", json={"description": "X"}).status_code == 403
     assert c.post(f"/catalog/board-materials/{mid}/archive").status_code == 403
+
+
+# ── Only validation errors are reported as bad input ─────────────────────────
+
+def test_a_bug_inside_validation_is_a_server_error_not_a_bad_row(monkeypatch):
+    """Bulk, create and patch used to catch `Exception` around `model_validate`, so a bug in
+    a schema (here a RuntimeError) came back as a per-row error or a 422 instead of a 500."""
+    from app.catalog.schemas import CreateBoardIn, PatchBoardIn
+
+    c, wid, _uid = _login()
+    mid = _seed_board(wid, code="BX", sku="SKU-BX")
+
+    def boom(cls, *a, **k):
+        raise RuntimeError("schema bug")
+
+    monkeypatch.setattr(CreateBoardIn, "model_validate", classmethod(boom))
+    monkeypatch.setattr(PatchBoardIn, "model_validate", classmethod(boom))
+    with pytest.raises(RuntimeError):
+        c.post("/catalog/board-materials/bulk", json={"rows": [{"code": "B1", "description": "x"}]})
+    with pytest.raises(RuntimeError):
+        c.post("/catalog/board-materials", json={"code": "B2", "description": "x"})
+    with pytest.raises(RuntimeError):
+        c.patch(f"/catalog/board-materials/{mid}", json={"description": "y"})

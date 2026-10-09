@@ -37,7 +37,6 @@ BODY_OVERRIDES = {
     ("PATCH", "/samples/{sid}"): {"title": "x"},
     ("PATCH", "/users/{uid}"): {"full_name": "x"},
     ("POST", "/items/{iid}/qc/rework"): {"kind": "internal"},
-    ("POST", "/procurement/approvals/{workflow_id}/decide"): {"decision": "approve"},
     ("POST", "/suppliers/{vendor_id}/materials"): {"material_table": "board_materials"},
 }
 
@@ -73,7 +72,7 @@ PERMISSION_GROUP_OPS = (
 
 # Deleting these removes rows other deletes need, so they run last, children first.
 DELETE_PARENTS = ("/parts/{pid}", "/modules/{mid}", "/items/{id}", "/cutlists/{cid}",
-                   "/orders/{po_id}", "/procurement/orders/{po_id}", "/cut-plans/{plan_id}",
+                   "/orders/{po_id}", "/cut-plans/{plan_id}",
                    "/batches/{bid}", "/permission-groups/{gid}")
 
 

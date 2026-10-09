@@ -14,6 +14,7 @@ interface Props {
     supplier?: string;
     project_id?: string;
     order?: string;
+    eta?: string;
   };
   me: Me | null;
 }
@@ -33,6 +34,7 @@ export function OrderbookTabs({ initial, me }: Props) {
     // the other would silently hide rows.
     qs.delete("status");
     qs.delete("supplier");
+    qs.delete("eta");
     const s = qs.toString();
     router.push(s ? `/orderbook?${s}` : "/orderbook");
   }

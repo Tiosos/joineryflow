@@ -118,13 +118,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0053` (head `0053_factory_tg_solid_legacy_ref`) |
+| `db/` | Alembic migrations `0001`→`0055` (head `0055_po_approved_total`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
 | `tests/e2e/` | Playwright specs (31 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
-| `docs/superpowers/` | Older specs + plans (read `plans/README.md` first) |
+| `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
 
 Plan V1 is the **roadmap**, not a description of the tree (Q433); shipped behaviour may change only behind data-preserving migrations (Q435). `docs/plan-v1/ALIGNMENT.md` maps it onto the code — **read its §3 before building anything from Plan V1**. Three decisions deliberately depart from Plan V1's prose and must not be "fixed": **Q499** (PM confirmation of the Material Summary is advisory), **Q513** (no rollback of change states), **Q527** (fixed KPI catalogue).
@@ -174,7 +174,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Live source of truth is the DB engine** (`auth/rbac_engine.py`, groups + memberships, migration `0037`). `MATRIX` in `auth/permissions.py` is the readable record and the **fallback only for a user with zero memberships**. A user with ≥1 membership is fully DB-governed; an empty result is a real "no".
 - `require_permission(module, action, project_param=None)`; most call sites check workspace-wide grants only. Project-scoped memberships are honoured only where `project_param` is passed. `/auth/me`, Global Search and comment routes use **workspace-wide grants only** (a user with only project-scoped memberships sees nothing there).
 - Adding a module needs **both** a `MATRIX` entry **and** a migration inserting `group_module_grant` rows for existing workspaces.
-- Per-object rules (`require_drafter()`, not-uploader-approves, creator-or-manager, 5-min undo) live in route handlers, not the engine (Q472 not built). Drafter is PM-parity on `orderbook`, `shop_dwgs`, `isample`, `catalog`, `cut_floor`.
+- Per-object rules (`require_drafter()`, not-uploader-approves, creator-or-manager, 5-min undo) live in route handlers, not the engine (Q472 not built). Drafter is PM-parity on `orderbook` (**except `approve`**: PO approval is purchase officer, manager and admin, `0054`), `shop_dwgs`, `isample`, `catalog`, `cut_floor`.
 - Every authenticated mutation writes `audit_log` (`auth/audit.py`); item-scoped mutations also write `item_edit_log` in the same transaction.
 - `jtbd_role` is display-only; nothing branches on it.
 
@@ -185,7 +185,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **IA is fixed: 6 primary tabs** `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook` (the `List` tab *is* the Cutlist module, Q474) plus admin-only `/it`. New top-level surfaces go on the **secondary strip**: `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`. The strip hides a tab when `can(me, module, "read")` is false; the API's 403 is the real control.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand.**
 - Design tokens live once in `globals.css` (`@theme inline`) and `lib/tokens.ts`. **Do not invent colours** — use `bg-h-*`, `text-h-*`, `border-h-line`. Inter for UI, JetBrains Mono (`.h-mono`) for part #, PO #, ETAs, money. No `tailwind.config.ts`.
-- **Money and quantities arrive as JSON strings** (Pydantic `Decimal`). Type them `string` in `lib/*-types.ts`; typing `number` compiles then throws at `toFixed`.
+- **Money and quantities backed by a Pydantic `Decimal` arrive as JSON strings.** Type them `string` in `lib/*-types.ts`; typing `number` compiles then throws at `toFixed`. A field the API declares `float` or `int` (e.g. `unit_cost`/`qty` in `lib/pm-types.ts`, from `hardware_lines`) arrives as a JSON number and is typed `number`. Check the Pydantic type, not the name.
 - **JSX whitespace trap:** text that continues onto a second line after a `{…}` or element loses its leading space. Use a template string or `{" "}`.
 - A selection with a live input beside it must change **synchronously** (local state + `history.replaceState`); do not call `history.replaceState` right after `router.refresh()` for an id not yet in the refreshed list.
 
@@ -200,7 +200,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Related parts** are `items` rows with `row_type='related_part'` + parent FK (one level only, DB-enforced). They never hold a cutlist number (Q417), share the parent's Group ID, and have no thread, take, QC or attachments (404). **Use `row_types.joinery_items_only(alias)`** — never a hand-written predicate.
 - **Area / Room** are real project-scoped tables, Room nested under Area; composite FK `items (area_id, room_id)`.
 - **CutPlan ≠ CutSchedule** (two entities). `/optimise` is a pure function (no writes); sheet stock is read, never consumed.
-- **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace is not used by the v1 UI.
+- **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace was **retired** in October 2026 (code kept as reference in `legacy/procurement_v0/`, not mounted).
 - **Order coverage is per (quote line, material)** in `estimate_line_material_order` (row = ordered or ordered by hand; no row = pending). `estimate_line.orders_generated_at` / `orders_dismissed_*` are **derived** from it (`_refresh_line_state`) for a line that references catalog materials, and written directly only for a line with none. Never write the line columns for a materials line by hand.
 - **Estimating:** `locked_at` (set once at `MGMT_APPROVAL → SUBMITTED`) is the "frozen" gate; the 12-stage tender lifecycle replaced the old six states; `advance()` is the only forward action (`/send` is retired). Cost columns are snapshotted. `current_value` of contracts is computed on read.
 - **Material Take:** generated, then person-owned; approved takes are immutable (new version = n+1); boards are fractional sheets per item, rounded up once over the project (Q586).
@@ -210,7 +210,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - **ProjectHardwareCatalog** is a project-scoped link layer: item hardware lines reference materials *through* it (log-only governance, every add/remove audited). `ProcurementBatch → Allocations → item_hardware_line_id` answers "is this item blocked on a material?" as one join.
 - **Three apps, one database:** Project Information Management (Drafter/PM/CEO; Project → Item → Module → Part + HardwareLine + lifecycle), Shop Floor Ops, Cabinet Vision integration layer. Drafter is the authoritative data-entry point.
-- **Legacy `/procurement/*`** (orders, budget, approvals; ported from `legacy/procurement_api.py`) is workspace-scoped through the project-or-vendor join (`_PO_WORKSPACE_EXISTS`); `create_order` / `submit_for_approval` validate every foreign id.
+- **PO approval (`0054`)**: an order needs approval above the workspace limit (`workspace_order_setting`, default 2000, set by a purchase officer/admin) or when manager/admin set `purchase_orders.requires_approval`. `needs_approval` is computed in SQL (`_ORDER_COLS`); the web reads it. For such an order `Pending`/`Approved`/`Rejected` are reached only through `POST /orders/{id}/approval/request|approve|reject` (`orders/approval.py`); a status PATCH is refused `409 APPROVAL_ROUTE_REQUIRED`. One approval; approver ≠ requester; reject needs a note. An Approved order whose total is then **raised** (a line or header edit; above `approved_total`, or over the limit for a freely approved one) goes back to `Pending` with the editor as requester (`order.approval.reopened`); approving again tops the Commitment up (`0055`). Approving posts a `Commitment` against `purchase_orders.cost_center_id` and skips when there is none; cancelling releases it (a negative `Release` row) and delivering posts the order's total as an `Expenditure` and releases it (`orders/budget.py`, the legacy ledger convention; once per order, no cost centre = nothing). A cost centre is optional on an order (Q563): `GET/POST /cost-centers` (create: purchase officer/admin; no edit or delete yet) and `PATCH /orders/{id}` `{cost_center_id}` (must be this workspace's and active; frozen once any budget row is posted for the order, `409 COST_CENTER_LOCKED`). The seed makes one (`GEN`).
+- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile counts `Pending` orders (`/orderbook?status=Pending`); the Overdue / This Week tiles open the Delivery queue with `?eta=`, and the Open POs tile opens the Orders list with `?status=open` ("not Delivered, Cancelled or Rejected", `orders.queries.open_orders_sql`, shared with the tile). Reference: `legacy/procurement_v0/README.md`.
 
 ## 8. API conventions
 
@@ -281,7 +282,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **PO generation from a won quote (`0041`, `0048`, `0049`, `0051`).** Groups materials by live default supplier, one draft PO per supplier per run. Coverage is **per material** (`estimate_line_material_order`): a material with a supplier orders now, one without stays pending; each can be marked "ordered by hand" with a required note (whole-line button covers all pending ones); a line is done when none is pending. Estimators can link a missing supplier from the dialog.
 - **Catalog supplier link.** `default_supplier_id` editable in the grid, at create, via bulk import (exact-name match) and CV Create-new.
 - **Orderbook editing + guards.** Header and line editing with field versions; `Cancelled`/`Delivered` orders are read-only except `status`; `OrderOut.locked` is server-computed; status/priority/category/vendor/project validated.
-- **Legacy `/procurement/*` (`0045`–`0047`).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.
+- **Legacy `/procurement/*` (`0045`–`0047`, retired Oct 2026).** Cost-centre-less orders supported; deliver posts a `Release`; PATCH cannot bypass the workflow; PO attachments live in the shared file store with a download route.
 
 ### Comments — `07-comments.md`
 - **Comments, mentions, notifications (`0042`, `0043`).** Threads on project, area, room, item, module and shop-drawing revision (Task/Change have no entities). One-level replies, @mentions by id, in-app bell only. Each type is gated by its own module.
@@ -295,8 +296,8 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
+PO approval: cost centres can only be added (no rename, deactivate or budget reporting). See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 
-`docs/sub-projects/00-foundation-and-architecture.md` (the pre-reorganisation preamble, verbatim), `docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/superpowers/plans/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.
+`docs/sub-projects/00-foundation-and-architecture.md` (the pre-reorganisation preamble, verbatim), `docs/sub-projects/README.md` (index + the full old reference-docs list), `docs/plan-v1/{plan_v1,ALIGNMENT,OPEN-QUESTIONS}.md`, `docs/archive/README.md`, `legacy/product_spec.md`, `legacy/trackingv2.md`, `legacy/REFINEMENT_BACKLOG.md`.

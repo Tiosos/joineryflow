@@ -29,7 +29,10 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
+from .budget import settle_on_close
 from .schemas import (
+    APPROVAL_STATUSES,
+    DEFAULT_APPROVAL_THRESHOLD,
     FROZEN_STATUSES,
     CreateOrderIn,
     CreateOrderLineIn,
@@ -53,7 +56,7 @@ _ORDER_WORKSPACE = """
     )
 """
 
-_ORDER_COLS = """
+_ORDER_COLS = f"""
     po.po_id, po.po_number, po.order_number, po.supplier_ref_no,
     po.status, po.priority,
     po.vendor_id, v.name AS vendor_name,
@@ -63,13 +66,24 @@ _ORDER_COLS = """
     po.quantity, po.unit_of_measure, po.unit_cost, po.total_amount, po.currency,
     po.required_date, po.date_ordered, po.due_date,
     po.notes, po.internal_comments, po.attributes,
-    po.created_at, po.updated_at, po.field_versions
+    po.created_at, po.updated_at, po.field_versions,
+    po.requires_approval, po.approval_requested_by, po.approval_requested_at,
+    po.approval_decided_by, po.approval_decided_at, po.approval_note, po.approved_total,
+    rq.full_name AS approval_requested_by_name, dc.full_name AS approval_decided_by_name,
+    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name,
+    (po.requires_approval
+     OR COALESCE(po.total_amount, 0) > COALESCE(wos.approval_threshold, {DEFAULT_APPROVAL_THRESHOLD})
+    ) AS needs_approval
 """
 
 _ORDER_FROM = """
     FROM purchase_orders po
     LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
     LEFT JOIN items   i ON i.item_id   = po.item_id
+    LEFT JOIN workspace_order_setting wos ON wos.workspace_id = v.workspace_id
+    LEFT JOIN app_user rq ON rq.id = po.approval_requested_by
+    LEFT JOIN app_user dc ON dc.id = po.approval_decided_by
+    LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -90,8 +104,65 @@ _PATCHABLE = frozenset({
     "order_number", "supplier_ref_no", "location", "product_code",
     "product_description", "quantity", "unit_of_measure", "unit_cost",
     "total_amount", "required_date", "date_ordered", "due_date",
-    "notes", "internal_comments", "attributes",
+    "notes", "internal_comments", "attributes", "requires_approval", "cost_center_id",
 })
+
+
+def open_orders_sql(alias: str) -> str:
+    """Orders still on the book: not Delivered, Cancelled or Rejected. The home dashboard's
+    "Open POs" tile and the Orders list's `?status=open` both use it, so the tile's number is the
+    number of rows its link shows."""
+    return f"{alias}.status NOT IN ('Delivered', 'Cancelled', 'Rejected')"
+
+
+def get_approval_threshold(db: Session, *, workspace_id: int):
+    """The workspace's approval limit; the default when a purchase officer has not set one."""
+    value = db.execute(
+        text("SELECT approval_threshold FROM workspace_order_setting WHERE workspace_id = :w"),
+        {"w": workspace_id},
+    ).scalar()
+    return DEFAULT_APPROVAL_THRESHOLD if value is None else value
+
+
+def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"
+             " AND is_active IS NOT FALSE"),
+        {"c": cost_center_id, "w": workspace_id},
+    ).first() is not None
+
+
+def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
+    rows = db.execute(
+        text("SELECT cost_center_id, code, name, budget_amount FROM cost_centers"
+             " WHERE workspace_id = :w AND is_active IS NOT FALSE ORDER BY code"),
+        {"w": workspace_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def create_cost_centre(
+    db: Session, *, workspace_id: int, actor_id: int, code: str, name: str, budget_amount
+) -> dict | None:
+    """None when the code is taken in this workspace."""
+    row = db.execute(
+        text(
+            """
+            INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
+            VALUES (:w, :c, :n, EXTRACT(year FROM now())::int, :b)
+            ON CONFLICT (workspace_id, code) DO NOTHING
+            RETURNING cost_center_id, code, name, budget_amount
+            """
+        ),
+        {"w": workspace_id, "c": code.strip(), "n": name.strip(), "b": budget_amount},
+    ).mappings().first()
+    if row is None:
+        return None
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="cost_centre.create",
+        target=str(row["cost_center_id"]), payload={"code": row["code"], "name": row["name"]},
+    )
+    return dict(row)
 
 
 def list_categories(db: Session) -> list[dict]:
@@ -157,7 +228,9 @@ def list_orders_for_workspace(
     """
     where = [_ORDER_WORKSPACE]
     params: dict = {"w": workspace_id}
-    if status:
+    if status == "open":  # not a status: the tile's "still on the book" (see open_orders_sql)
+        where.append(open_orders_sql("po"))
+    elif status:
         where.append("po.status = :st")
         params["st"] = status
     if supplier:
@@ -370,7 +443,9 @@ def patch_order(
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
-    'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
+    'COST_CENTER_NOT_FOUND' (`data` is {cost_center_id}) | 'COST_CENTER_LOCKED' (a
+    budget row is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
+    that needs approval) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
@@ -419,6 +494,17 @@ def patch_order(
         blocked = sorted(set(fields) - {"status"})
         if blocked:
             return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
+    # Pending / Approved / Rejected on an order that needs approval are reached through the
+    # approval routes only (`orders.approval`): a status PATCH would skip the approver, the
+    # segregation rule and the budget commitment. "Needs" is judged on the order as this PATCH
+    # would leave it, so setting the flag or the total in the same call cannot sidestep it.
+    if fields.get("status") in APPROVAL_STATUSES and fields["status"] != current["status"]:
+        total = fields["total_amount"] if "total_amount" in fields else current["total_amount"]
+        would_need = fields.get("requires_approval", current["requires_approval"]) or (
+            (total or 0) > get_approval_threshold(db, workspace_id=workspace_id)
+        )
+        if would_need:
+            return "APPROVAL_ROUTE_REQUIRED", {"status": fields["status"]}
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.
@@ -428,6 +514,18 @@ def patch_order(
         return "VENDOR_NOT_FOUND", {"vendor_id": fields["vendor_id"]}
     if "category" in fields and not _category_exists(db, fields["category"]):
         return "UNKNOWN_CATEGORY", {"category": fields["category"]}
+    if "cost_center_id" in fields and fields["cost_center_id"] != current["cost_center_id"]:
+        if fields["cost_center_id"] is not None and not cost_centre_usable(
+            db, cost_center_id=fields["cost_center_id"], workspace_id=workspace_id
+        ):
+            return "COST_CENTER_NOT_FOUND", {"cost_center_id": fields["cost_center_id"]}
+        # A budget row (the approval's Commitment, a Release, an Expenditure) was posted against
+        # the old one; moving the order would leave it on the wrong cost centre.
+        if db.execute(
+            text("SELECT 1 FROM budget_transactions WHERE po_id = :o"),
+            {"o": po_id},
+        ).first():
+            return "COST_CENTER_LOCKED", {"cost_center_id": current["cost_center_id"]}
     if not fields:
         return "OK", current
 
@@ -462,7 +560,14 @@ def patch_order(
         event="order.update", target=str(po_id),
         payload={"fields": sorted(fields), "po_number": current["po_number"]},
     )
-    return "OK", get_order(db, po_id=po_id, workspace_id=workspace_id)
+    if "total_amount" in fields:  # a header-only order: its total is set directly
+        _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id,
+                             old_total=current["total_amount"])
+    updated = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    if fields.get("status") in ("Cancelled", "Delivered") and fields["status"] != current["status"]:
+        settle_on_close(db, order=updated, workspace_id=workspace_id, actor_id=actor_id,
+                        delivered=fields["status"] == "Delivered")
+    return "OK", updated
 
 
 def cancel_order(
@@ -493,6 +598,7 @@ def cancel_order(
         event="order.cancel", target=str(po_id),
         payload={"po_number": current["po_number"], "from_status": current["status"]},
     )
+    settle_on_close(db, order=current, workspace_id=workspace_id, actor_id=actor_id, delivered=False)
     return "OK"
 
 
@@ -546,7 +652,7 @@ def _recompute_total_amount(db: Session, *, po_id: int) -> None:
         {"o": po_id},
     ).mappings().one()
     if row["new_total"] == row["total_amount"]:
-        return
+        return None
     new_versions = bump_field_versions(row["field_versions"], ["total_amount"])
     db.execute(
         text(
@@ -554,6 +660,43 @@ def _recompute_total_amount(db: Session, *, po_id: int) -> None:
             " field_versions = CAST(:fv AS jsonb), updated_at = now() WHERE po_id = :o"
         ),
         {"o": po_id, "t": row["new_total"], "fv": json.dumps(new_versions)},
+    )
+    return row["total_amount"]
+
+
+def _send_back_if_raised(
+    db: Session, *, po_id: int, workspace_id: int, actor_id: int, old_total
+) -> None:
+    """An Approved order whose total has just gone up goes back to Pending, requested by whoever
+    raised it, so a different approver signs off on the new figure.
+
+    "Raised" means above what was approved (`approved_total`), or, for an order approved freely
+    (no recorded approval) that now needs one because the rise took it over the limit, above its
+    previous total. A fall, or a rise within what was approved, leaves it Approved. The Commitment
+    already posted stays; approving again tops it up (`approval._commit_budget`)."""
+    order = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    new_total = order["total_amount"] or 0
+    if order["status"] != "Approved" or not order["needs_approval"] or new_total <= (old_total or 0):
+        return
+    approved = order["approved_total"]
+    if approved is not None and new_total <= approved:
+        return
+    note = f"Total raised from {old_total or 0} to {new_total} after approval"
+    versions = bump_field_versions(order.get("field_versions"), ["status"])
+    db.execute(
+        text(
+            "UPDATE purchase_orders SET status = 'Pending', approval_requested_by = :u,"
+            " approval_requested_at = now(), approval_decided_by = NULL, approval_decided_at = NULL,"
+            " approval_note = :n, field_versions = CAST(:fv AS jsonb), updated_at = now()"
+            " WHERE po_id = :o"
+        ),
+        {"u": actor_id, "n": note, "fv": json.dumps(versions), "o": po_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="order.approval.reopened",
+        target=str(po_id),
+        payload={"po_number": order["po_number"], "from_total": str(old_total or 0),
+                 "to_total": str(new_total), "approved_total": str(approved) if approved is not None else None},
     )
 
 
@@ -592,7 +735,8 @@ def add_line(
          "mid": payload.material_id,
          "a": json.dumps(payload.attributes or {})},
     )
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -639,7 +783,8 @@ def patch_line(
     )
     if result.rowcount == 0:
         return None
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -662,7 +807,8 @@ def remove_line(
     )
     if result.rowcount == 0:
         return None
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,

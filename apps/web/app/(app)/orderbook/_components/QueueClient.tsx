@@ -10,7 +10,7 @@ import type { QueueRow } from "@/lib/procurement-types";
 
 const STATUSES = ["OPEN","IN_TRANSIT","DELIVERED","CANCELLED"] as const;
 
-interface Props { initial: { status?: string; supplier?: string; project_id?: string; }; }
+interface Props { initial: { status?: string; supplier?: string; project_id?: string; eta?: string; }; }
 
 export function QueueClient({ initial }: Props) {
   const router = useRouter();
@@ -19,15 +19,18 @@ export function QueueClient({ initial }: Props) {
   const [err, setErr]   = useState<string | null>(null);
   const status   = params.get("status")   ?? initial.status   ?? "";
   const supplier = params.get("supplier") ?? initial.supplier ?? "";
+  // The home dashboard's "Overdue Deliveries" / "Deliveries This Week" tiles link here.
+  const eta      = params.get("eta")      ?? initial.eta      ?? "";
 
   useEffect(() => {
     const qs = new URLSearchParams();
     if (status)   qs.set("status", status);
     if (supplier) qs.set("supplier", supplier);
+    if (eta)      qs.set("eta", eta);
     ProcFetch.queue(qs)
       .then(b => setRows(b.rows))
       .catch(e => setErr(String(e)));
-  }, [status, supplier]);
+  }, [status, supplier, eta]);
 
   function setParam(k: string, v: string) {
     const next = new URLSearchParams(params.toString());
@@ -54,6 +57,18 @@ export function QueueClient({ initial }: Props) {
           >
             <option value="">All</option>
             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-h-muted">ETA</span>
+          <select
+            value={eta}
+            onChange={e => setParam("eta", e.target.value)}
+            className="rounded border border-h-line bg-h-bg px-2 py-1"
+          >
+            <option value="">All</option>
+            <option value="overdue">Overdue</option>
+            <option value="this_week">Due this week</option>
           </select>
         </label>
         <input

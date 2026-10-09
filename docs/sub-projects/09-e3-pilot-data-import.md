@@ -1,6 +1,6 @@
 # E3: pilot-data import (FileMaker "Tracking 2.0" grid), first slice
 
-> Plan task **E3** (`docs/superpowers/plans/2026-09-18-cutlist-related-parts-orderbook.md`; Q436 / Q540: "migrate a copy of
+> Plan task **E3** (`docs/archive/2026-09-18-cutlist-related-parts-orderbook.md`; Q436 / Q540: "migrate a copy of
 > pilot data and confirm every item kept its recognisable number"). It was blocked on customer data until the user supplied a
 > **Tracking 2.0 export for one project** (one sheet, 626 rows, 37 columns). That export holds item headers only, so this slice
 > imports **items, cutlists, areas, rooms, stage dates, statuses and factories**. Modules, parts, hardware lines, drawings, QC,

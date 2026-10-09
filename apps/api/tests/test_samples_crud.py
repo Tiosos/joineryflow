@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from .helpers import log_in
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
 PDF_BYTES = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
@@ -56,8 +57,7 @@ def _seed(client, truncate_all, *, role: str = "drafter") -> dict:
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": "sm", "email": f"{role}@sm.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("sm", f"{role}@sm.test", client=client)
     return {"wid": wid, "uid": uid, "pid": pid}
 
 
@@ -145,7 +145,6 @@ def test_patch_by_non_creator_non_manager_returns_403(client, truncate_all):
     finally:
         s.close()
     client.cookies.clear()
-    r = client.post("/auth/login", json={"workspace_slug": "sm", "email": "ed@sm.test", "password": "pw"})
-    assert r.status_code == 200
+    log_in("sm", "ed@sm.test", client=client)
     r = client.patch(f"/samples/{sid}", json={"title": "Stolen"})
     assert r.status_code == 403

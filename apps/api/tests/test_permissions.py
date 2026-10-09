@@ -33,7 +33,7 @@ def test_matrix(role, module, action, expected):
     ("tracking",      "approve", True),
     ("list",          "write",   True),
     ("shop_dwgs",     "write",   True),
-    ("orderbook",     "approve", True),
+    ("orderbook",     "approve", False),
     ("it_management", "read",    False),
 ])
 def test_drafter_matrix(module, action, allowed):
@@ -41,10 +41,10 @@ def test_drafter_matrix(module, action, allowed):
 
 
 def test_drafter_orderbook_full_access():
-    """Drafter is elevated to PM parity for the orderbook module in
-    Procurement Workbench v1."""
+    """Drafter is PM parity for the orderbook module (Procurement Workbench v1) except
+    `approve`: PO approval is for purchase officer, manager and admin (migration 0054)."""
     from app.auth.permissions import MATRIX
-    assert MATRIX["drafter"]["orderbook"] == {"read", "write", "approve", "comment"}
+    assert MATRIX["drafter"]["orderbook"] == {"read", "write", "comment"}
 
 
 def test_drafter_shop_dwgs_full_access():

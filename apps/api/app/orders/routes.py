@@ -16,8 +16,15 @@ from ..auth.sessions import AuthUser
 from ..catalog.queries import MaterialNotFound
 from ..db import get_db
 from . import queries as q
+from . import approval
 from .schemas import (
+    ApprovalDecisionIn,
+    ApprovalLimitIn,
+    ApprovalLimitOut,
     CategoryOut,
+    CostCentreIn,
+    CostCentreListOut,
+    CostCentreOut,
     CreateOrderIn,
     CreateOrderLineIn,
     OrderDetailOut,
@@ -138,12 +145,21 @@ def patch_order_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
+    # The flag is the project manager's call.
+    if "requires_approval" in payload.model_fields_set and user.auth_role not in ("manager", "admin"):
+        raise HTTPException(403, {"code": "APPROVAL_FLAG_FORBIDDEN"})
     code, order = q.patch_order(
         db, po_id=po_id, workspace_id=user.workspace_id,
         payload=payload, actor_id=user.id,
     )
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
+    if code == "APPROVAL_ROUTE_REQUIRED":
+        raise HTTPException(409, {"code": "APPROVAL_ROUTE_REQUIRED", **order})
+    if code == "COST_CENTER_NOT_FOUND":
+        raise HTTPException(404, {"code": "COST_CENTER_NOT_FOUND", **order})
+    if code == "COST_CENTER_LOCKED":
+        raise HTTPException(409, {"code": "COST_CENTER_LOCKED", **order})
     if code == "ORDER_LOCKED":
         raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
     if code == "VENDOR_NOT_FOUND":
@@ -242,3 +258,106 @@ def remove_line_route(
         raise HTTPException(404, "order or line not found")
     db.commit()
     return order
+
+
+# ── Approval ─────────────────────────────────────────────────────────────────
+
+_APPROVAL_ERRORS = {
+    "NOT_REQUIRED": 409, "NOT_REQUESTABLE": 409, "NOT_PENDING": 409,
+    "SELF_APPROVAL": 409, "NOTE_REQUIRED": 422,
+}
+
+
+def _approval_result(db: Session, code: str, data: dict | None):
+    if code == "NOT_FOUND":
+        raise HTTPException(404, "order not found")
+    if code in _APPROVAL_ERRORS:
+        raise HTTPException(_APPROVAL_ERRORS[code], {"code": code, **(data or {})})
+    db.commit()
+    return data
+
+
+@router.post("/orders/{po_id}/approval/request", response_model=OrderDetailOut)
+def request_approval_route(
+    po_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.request_approval(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id))
+
+
+@router.post("/orders/{po_id}/approval/approve", response_model=OrderDetailOut)
+def approve_order_route(
+    po_id: int,
+    payload: ApprovalDecisionIn,
+    user: AuthUser = Depends(require_permission("orderbook", "approve")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.decide(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
+        approve=True, note=payload.note))
+
+
+@router.post("/orders/{po_id}/approval/reject", response_model=OrderDetailOut)
+def reject_order_route(
+    po_id: int,
+    payload: ApprovalDecisionIn,
+    user: AuthUser = Depends(require_permission("orderbook", "approve")),
+    db: Session = Depends(get_db),
+):
+    return _approval_result(db, *approval.decide(
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
+        approve=False, note=payload.note))
+
+
+@router.get("/order-settings", response_model=ApprovalLimitOut)
+def get_order_settings(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"approval_threshold": q.get_approval_threshold(db, workspace_id=user.workspace_id)}
+
+
+@router.put("/order-settings", response_model=ApprovalLimitOut)
+def put_order_settings(
+    payload: ApprovalLimitIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    """The approval limit is a purchase officer's to set (admin may too)."""
+    if user.auth_role not in ("purchase_officer", "admin"):
+        raise HTTPException(403, {"code": "APPROVAL_LIMIT_FORBIDDEN"})
+    amount = approval.set_approval_threshold(
+        db, workspace_id=user.workspace_id, amount=payload.approval_threshold, actor_id=user.id)
+    db.commit()
+    return {"approval_threshold": amount}
+
+
+# ── Cost centres (the budget an approval commits against; optional on an order, Q563) ──
+
+@router.get("/cost-centers", response_model=CostCentreListOut)
+def list_cost_centres_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"cost_centers": q.list_cost_centres(db, workspace_id=user.workspace_id)}
+
+
+@router.post("/cost-centers", response_model=CostCentreOut, status_code=201)
+def create_cost_centre_route(
+    payload: CostCentreIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    """A purchase officer's (or an admin's) to add, like the approval limit."""
+    if user.auth_role not in ("purchase_officer", "admin"):
+        raise HTTPException(403, {"code": "COST_CENTRE_FORBIDDEN"})
+    row = q.create_cost_centre(
+        db, workspace_id=user.workspace_id, actor_id=user.id,
+        code=payload.code, name=payload.name, budget_amount=payload.budget_amount)
+    if row is None:
+        raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
+    db.commit()
+    return row
+

@@ -25,6 +25,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 
 def _sql(sql: str, params: dict | None = None):
@@ -70,9 +71,7 @@ def _workspace(roles=("editor", "manager", "drafter", "viewer", "purchase_office
 
 def _client(ws: dict, role: str) -> TestClient:
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"],
-                                    "email": f"{role}@{ws['slug']}.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(ws["slug"], f"{role}@{ws['slug']}.test", client=c)
     return c
 
 

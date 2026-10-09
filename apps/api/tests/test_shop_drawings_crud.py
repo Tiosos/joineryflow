@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from .helpers import log_in
 
 
 PDF_BYTES = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
@@ -49,8 +50,7 @@ def _setup(client, role: str = "drafter") -> dict:
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": "hartwood", "email": f"{role}@hw.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("hartwood", f"{role}@hw.test", client=client)
     return {"wid": wid, "uid": uid, "pid": pid}
 
 
@@ -129,8 +129,7 @@ def test_archive_drawing_moves_it_to_archive_subtab(client):
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": "hartwood", "email": "drafter@hw.test", "password": "pw"})
-    assert r.status_code == 200
+    log_in("hartwood", "drafter@hw.test", client=client)
     r3 = client.post(f"/shop-drawings/{did}/archive")
     assert r3.status_code == 204, r3.text
     r4 = client.get(f"/projects/{ids['pid']}/shop-drawings", params={"subtab": "archive"})

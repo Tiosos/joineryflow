@@ -45,13 +45,8 @@ EXCLUDED_OPS = {
 OP_QUERY = {("GET", "/comments"): ({"object_type": "project"}, {"object_id": "project"})}
 
 # Where "any row of that kind" is not enough: the filter must name a row that the listed
-# rows actually carry (the seeded purchase order's vendor and requester).
-A_ROW_QUERIES = {
-    ("GET", "/procurement/orders", "vendor_id"): "SELECT vendor_id FROM purchase_orders ORDER BY 1 LIMIT 1",
-    ("GET", "/procurement/orders", "requester_id"): "SELECT requester_id FROM purchase_orders ORDER BY 1 LIMIT 1",
-    ("GET", "/procurement/orders/filter/my-orders", "requester_id"):
-        "SELECT requester_id FROM purchase_orders ORDER BY 1 LIMIT 1",
-}
+# rows actually carry. (Empty since legacy /procurement/* was retired.)
+A_ROW_QUERIES: dict[tuple[str, str, str], str] = {}
 
 # (METHOD, path template, parameter) pairs that cannot be probed, with the reason.
 NOT_PROBED: dict[tuple[str, str, str], str] = {}

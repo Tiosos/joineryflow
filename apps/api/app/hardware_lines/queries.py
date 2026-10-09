@@ -4,7 +4,7 @@ Schema notes:
 - project_hardware_catalog has no workspace_id column.
   Workspace scoping goes via project_id -> projects.pm_id -> app_user.workspace_id,
   mirroring the pattern in apps/api/app/items/queries.py.
-- project_hardware_catalog has no qty column. qty is returned as 1.0 (catalog-level
+- project_hardware_catalog has no qty column. qty is returned as 1 (catalog-level
   default; per-line qty lives on item_hardware_lines, not the catalog itself).
 - equipment_hire PK is hire_id (not material_id); handled in the UNION ALL CTE.
 - custom_made has vendor (not supplier); coalesced with default_supplier like
@@ -164,7 +164,7 @@ def list_catalog(
                 src.description                 AS name,
                 src.supplier,
                 src.unit_cost,
-                1.0::float                      AS qty
+                1::int                            AS qty
             FROM project_hardware_catalog phc
             LEFT JOIN src
                    ON src.mat_type = phc.material_type

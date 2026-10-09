@@ -4,8 +4,8 @@
 
 ## Tracking 2.0 (migration `0035`) — shipped
 
-> Design: `docs/superpowers/specs/2026-05-27-tracking-2-0-design.md`; plan:
-> `docs/superpowers/plans/2026-05-27-tracking-2-0.md`. Authored 2026-05-27 on
+> Design: `docs/archive/2026-05-27-tracking-2-0.md`; plan:
+> `docs/archive/2026-05-27-tracking-2-0.md`. Authored 2026-05-27 on
 > a separate branch, merged into `main` 2026-09-24 (commit `8ac99d5`) —
 > *after* #12, out of migration-number order relative to its own title.
 > **Numbering collision, noted once here for both this and the next
@@ -62,8 +62,8 @@
 
 ## Item & Project Detail 2.0 (migration `0036`) — shipped
 
-> Design: `docs/superpowers/specs/2026-05-27-item-project-detail-2-0-design.md`;
-> plan: `docs/superpowers/plans/2026-05-27-item-project-detail-2-0.md`. Same
+> Design: `docs/archive/2026-05-27-item-project-detail-2-0.md`;
+> plan: `docs/archive/2026-05-27-item-project-detail-2-0.md`. Same
 > authoring-vs-merge-order caveat as Tracking 2.0 above.
 
 - **Migration `0036`** adds `projects.closed_at`/`closed_by`;
@@ -158,7 +158,7 @@
   into a rename or an alias. The web `AttachmentsTab` still shows only the
   three Combined slots; `lib/print.ts` counts only those three so its
   "N of 3" label can't overflow when the new slots are bound via the API.
-- **Frontend shipped** (plan tasks T08–T12, `docs/superpowers/plans/
+- **Frontend shipped** (plan tasks T08–T12, `docs/archive/
   2026-05-27-item-project-detail-2-0.md`; each task's `→` note there records
   what was built and how it was verified):
   - `EditorTabs.tsx` now carries 8 tabs: `cutlist · hardware · board · take

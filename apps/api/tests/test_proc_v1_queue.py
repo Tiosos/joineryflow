@@ -150,3 +150,55 @@ def test_queue_filter_by_status():
     body = r.json()
     assert len(body["rows"]) == 2
     assert all(row["status"] == "IN_TRANSIT" for row in body["rows"])
+
+
+# ── ETA filter (the home dashboard tiles link here) ──────────────────────────
+
+
+def _seed_eta_batches(*, p1: int, mat: int) -> None:
+    """Overdue, due-this-week, due-later, and received-but-late batches under one project."""
+    db = SessionLocal()
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO procurement_batches
+                  (project_id, material_type, material_id, supplier, qty_ordered,
+                   ordered_date, eta_date, received_date)
+                VALUES
+                  (:p, 'HARDWARE', :m, 'Late',   1, CURRENT_DATE - 9, CURRENT_DATE - 2, NULL),
+                  (:p, 'HARDWARE', :m, 'Soon',   1, CURRENT_DATE,     CURRENT_DATE + 3, NULL),
+                  (:p, 'HARDWARE', :m, 'Later',  1, CURRENT_DATE,     CURRENT_DATE + 30, NULL),
+                  (:p, 'HARDWARE', :m, 'Landed', 1, CURRENT_DATE - 9, CURRENT_DATE - 2, CURRENT_DATE - 1)
+                """
+            ),
+            {"p": p1, "m": mat},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_queue_eta_filters_match_the_dashboard_tiles():
+    """?eta=overdue / ?eta=this_week return exactly the batches the purchase officer's
+    'Overdue Deliveries' / 'Deliveries This Week' tiles count (a received batch is neither)."""
+    c, wid, uid = _login("purchase_officer")
+    p1, _p2, mat = _seed_two_projects_one_material(wid=wid, uid=uid)
+    _seed_eta_batches(p1=p1, mat=mat)
+
+    overdue = c.get("/procurement-queue?eta=overdue").json()["rows"]
+    this_week = c.get("/procurement-queue?eta=this_week").json()["rows"]
+    assert [r["supplier"] for r in overdue] == ["Late"]
+    assert [r["supplier"] for r in this_week] == ["Soon"]
+    assert len(c.get("/procurement-queue").json()["rows"]) == 4
+
+    tiles = {m["key"]: m for m in c.get("/home/dashboard").json()["metrics"]}
+    assert tiles["overdue"]["value"] == len(overdue)
+    assert tiles["deliveries_this_week"]["value"] == len(this_week)
+    assert tiles["overdue"]["href"] == "/orderbook?tab=queue&eta=overdue"
+    assert tiles["deliveries_this_week"]["href"] == "/orderbook?tab=queue&eta=this_week"
+
+
+def test_queue_eta_rejects_an_unknown_value():
+    c, _wid, _uid = _login("manager")
+    assert c.get("/procurement-queue?eta=yesterday").status_code == 422

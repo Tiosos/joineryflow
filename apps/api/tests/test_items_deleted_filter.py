@@ -18,7 +18,7 @@ HIDES = re.compile(r"live_joinery_items|not_deleted|\bdeleted\b|_JOINERY_I(?:TEM
 ALLOWED: dict[tuple[str, str], str] = {
     ("cutlists/queries.py", "DELETE FROM cutlist"):
         "the explicit cutlist-delete route, after `_cutlist_row` (filtered) resolved the id",
-    ("items/queries.py", "SELECT status FROM items"):
+    ("items/_q_status.py", "SELECT status FROM items"):
         "reads the previous status of an item `_item_row` / the bulk existence check just resolved",
     ("material_takes/queries.py", "SELECT 1 FROM items WHERE item_id"):
         "row lock taken after `_item` (filtered) resolved the item",

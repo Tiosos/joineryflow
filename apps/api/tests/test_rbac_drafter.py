@@ -61,10 +61,11 @@ def test_require_drafter_matrix(role, expected):
     assert c.post("/draft", cookies={"jf_session": tok}).status_code == expected
 
 
-def test_drafter_matrix_orderbook_write_and_approve():
+def test_drafter_matrix_orderbook_write_but_not_approve():
+    """PO approval is for purchase officer, manager and admin (decided Oct 2026, migration 0054)."""
     from app.auth.permissions import MATRIX
     assert "write"   in MATRIX["drafter"]["orderbook"]
-    assert "approve" in MATRIX["drafter"]["orderbook"]
+    assert "approve" not in MATRIX["drafter"]["orderbook"]
 
 
 def test_drafter_matrix_shop_dwgs_write_and_approve():

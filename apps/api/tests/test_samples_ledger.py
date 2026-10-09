@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from .helpers import log_in
 
 
 @pytest.fixture
@@ -40,8 +41,7 @@ def _seed(client, truncate_all) -> dict:
         s.commit()
     finally:
         s.close()
-    r = client.post("/auth/login", json={"workspace_slug": "lg", "email": "d@lg.test", "password": "pw"})
-    assert r.status_code == 200
+    log_in("lg", "d@lg.test", client=client)
     return {"wid": wid, "uid": uid, "pid": pid}
 
 

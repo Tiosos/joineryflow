@@ -8,7 +8,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .conftest import truncate_fixture
-from .helpers import login
+from .helpers import login, log_in
 
 
 _cleanup = truncate_fixture()
@@ -58,11 +58,7 @@ def test_admin_lists_users_with_reserved_tld_email():
     finally:
         db.close()
     c = TestClient(app)
-    r = c.post(
-        "/auth/login",
-        json={"workspace_slug": slug, "email": f"admin-{suffix}@hartwood.test", "password": "pw"},
-    )
-    assert r.status_code == 200, r.text
+    log_in(slug, f"admin-{suffix}@hartwood.test", client=c)
 
     r = c.get("/users")
     assert r.status_code == 200, r.text

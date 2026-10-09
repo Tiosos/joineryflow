@@ -27,6 +27,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .helpers_material_take import _cleanup, _item, _sql, _workspace  # noqa: F401
+from .helpers import log_in
 
 
 
@@ -46,8 +47,7 @@ def _user(wid: int, role: str, name: str = "U") -> tuple[TestClient, int]:
                w=wid, e=email, n=name, p=hash_password("pw"), r=role)
     slug = _sql("SELECT slug FROM workspace WHERE id = :w", w=wid)
     c = TestClient(app)
-    assert c.post("/auth/login", json={"workspace_slug": slug, "email": email,
-                                       "password": "pw"}).status_code == 200
+    log_in(slug, email, client=c)
     return c, uid
 
 

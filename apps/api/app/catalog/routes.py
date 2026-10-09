@@ -12,6 +12,7 @@ All gated by ("catalog", action). Workspace isolation via
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -210,7 +211,7 @@ def bulk_import_route(
     for i, raw in enumerate(body.rows):
         try:
             v = schema_cls.model_validate(raw).model_dump()
-        except Exception as e:
+        except ValidationError as e:
             errors.append(BulkRowError(row_index=i, error=str(e)))
             continue
         validated_rows.append(v)
@@ -290,7 +291,7 @@ def create_catalog_row_route(
     }[type_]
     try:
         validated = schema_cls.model_validate(payload).model_dump()
-    except Exception as e:
+    except ValidationError as e:
         raise HTTPException(422, str(e))
     _require_supplier(db, validated.get("default_supplier_id"), user.workspace_id)
     try:
@@ -325,7 +326,7 @@ def patch_catalog_row_route(
     }[type_]
     try:
         model = schema_cls.model_validate(payload)
-    except Exception as e:
+    except ValidationError as e:
         raise HTTPException(422, str(e))
     validated = model.model_dump(exclude_none=True)
     # Everything else drops a null; for these three (nullable columns) null clears.

@@ -23,6 +23,7 @@ export default async function Page({
     supplier?: string;
     project_id?: string;
     order?: string;
+    eta?: string;
   }>;
 }) {
   const sp = await searchParams;

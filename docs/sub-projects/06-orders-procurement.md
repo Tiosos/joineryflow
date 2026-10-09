@@ -1527,3 +1527,42 @@
   - **Per-material dismissal is allowed only on lines handed over at Convert** and while the revision is converted, like the line verb.
   - A material that appears in both a part row and a hardware row of one line is one material (same key) with one state.
   - Any `estimating:approve` user can undo anyone's per-material dismissal.
+
+## PO approval (October 2026) — built, with decisions and open points
+
+Context: the legacy `/procurement/*` approval routes were retired (code in `legacy/procurement_v0/`). Before this, any holder of `orderbook:write` could set an order's `status` to `Approved` directly, no approver was recorded, and no order route checked `orderbook:approve`. Plan V1 says nothing about PO approval beyond configurable thresholds for price-source evidence.
+
+**Decided by the product owner:**
+- An order needs approval when its total is **above an amount** (currently **2000**, one value for the whole workspace, **a purchase officer can change it**) or when the **project manager flags the order**. Every other order skips approval.
+- **One approval is enough.** Approvers: **purchase officer, manager and admin** (not the drafter; the drafter's unused `orderbook:approve` grant was removed, in `permissions.MATRIX` and, by migration, from existing workspaces).
+- Approving **posts a budget commitment against a cost centre**; an order with **no cost centre just skips that step**.
+- No real data existed in `approval_workflows` (its table stays, Q435, and is no longer written).
+
+**Built (`0054`):**
+- Columns on `purchase_orders`: `requires_approval` (the PM flag, manager/admin only), `approval_requested_by/at`, `approval_decided_by/at`, `approval_note`; table `workspace_order_setting.approval_threshold`.
+- `needs_approval` is computed in SQL beside the other order columns; the web reads it. The comparison is strictly *above* the limit.
+- `POST /orders/{id}/approval/request` (Draft or Rejected → Pending, needs `orderbook:write`), `/approve`, `/reject` (Pending only, `orderbook:approve`; the approver may not be the requester; a rejection needs a note). `GET/PUT /order-settings` (the PUT is purchase officer or admin).
+- For an order that needs approval, `Pending`/`Approved`/`Rejected` can no longer be set by a plain status PATCH: `409 APPROVAL_ROUTE_REQUIRED`, judged on the order as the PATCH would leave it (so setting the flag or the total in the same call cannot sidestep it). Orders that do not need approval keep their free status.
+- Every step writes `audit_log` (`order.approval.request|approve|reject`, `order.approval_limit.set`).
+- UI: an Approval section in the order detail panel (request, approve/reject with a note, the PM flag) and an "Orders over $X need approval" control on the Orders tab; the dashboard tile counts `Pending` orders.
+
+**Assumptions I made (flip them if wrong):**
+- "Project manager" for the flag means the `manager` and `admin` roles, not the project's own `pm_id`.
+- The approver may not be the person who requested approval (the same rule as shop drawings and iSample); in a one-approver workspace an admin must then approve a purchase officer's order.
+- The limit is per workspace (not global across workspaces), and an admin may change it too.
+- The reply to the last design question said "drafter and purchase officer and manager", then "change only purchase officer and manager and admin"; the second is taken as the current list.
+
+**Open:**
+- **Cost centres are minimal.** Built: list + create (`/cost-centers`, purchase officer/admin), an optional selector on the order (Q563 still holds: an order needs none), the seeded `GEN`, and a lock on moving an order's cost centre once its Commitment is posted. Not built: rename, deactivate, budget-vs-committed reporting, any cost-centre screen beyond the "Add" row on the Orders tab.
+- `Delivered` is not blocked for an unapproved order that needs approval.
+- _(Fixed.)_ The `open_pos` tile used to link to `/orderbook?status=open`, which matched nothing; `open` now means "not Delivered, Cancelled or Rejected" in the Orders list, using the same predicate as the tile (`orders.queries.open_orders_sql`), and the status filter has an "Open" option.
+
+**Cost centres (small build).** `cost_centers` is the FileMaker-era budget-holder table that Q563 kept "if §16 is ever scoped"; the approval commitment is the first use of it. `PATCH /orders/{id}` `{cost_center_id}` takes an active cost centre of the caller's workspace (`404 COST_CENTER_NOT_FOUND` otherwise, null clears it) and is refused once a Commitment exists for the order (`409 COST_CENTER_LOCKED`), so a budget row can never sit on a cost centre the order no longer names.
+
+**Releasing the commitment (built).** `orders/budget.py`, called when an order's status becomes `Cancelled` (the `DELETE /orders/{id}` route or a status PATCH) or `Delivered`:
+- *Cancelled*: the outstanding Commitment (commitments less earlier releases, read from the ledger, not from the order's total) is released with a negative `Release` row.
+- *Delivered*: the order's total at delivery is posted as an `Expenditure` and the outstanding Commitment is released, so `v_budget_utilisation` counts the money once. This is the legacy convention (`legacy/procurement_v0`), **confirmed by the user (October 2026)**: delivery books the Expenditure. Releasing without it would drop the spend from the budget altogether.
+- Needs a cost centre; without one nothing is posted. An order that was never approved but has a cost centre gets just the Expenditure on delivery. A second cancel or delivery posts nothing (and an order that already has an Expenditure gets no second one), so reopening and delivering again does not double count. Reopening a cancelled or delivered order does not re-commit.
+- Once any budget row exists for an order its cost centre is locked (`COST_CENTER_LOCKED`).
+
+**Raising an approved order's total (built, `0055`).** `purchase_orders.approved_total` records what the last approval approved. When a line add/edit/remove or a header `total_amount` PATCH raises the total of an `Approved` order that needs approval — above `approved_total`, or, for an order approved freely (no recorded approval) that the rise takes over the limit, above its previous total — the order goes back to `Pending`: the editor becomes the requester (so a different approver signs off), the decision is cleared, `approval_note` says "Total raised from X to Y after approval" (shown to the approver), and `order.approval.reopened` is audited. A fall, or a rise within what was approved, leaves it Approved; a Pending order stays Pending. Approving again posts only the **difference** as a further Commitment, so the ledger holds the new total once.

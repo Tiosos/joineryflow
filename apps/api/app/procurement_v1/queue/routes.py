@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...auth.rbac import require_permission
 from ...auth.sessions import AuthUser
 from ...db import get_db
-from .queries import queue
+from .queries import EtaFilter, queue
 from .schemas import QueueOut
 
 router = APIRouter(prefix="", tags=["procurement-v1"])
@@ -22,6 +22,7 @@ def get_queue(
     status: str | None = None,
     supplier: str | None = None,
     project_id: int | None = None,
+    eta: EtaFilter | None = None,
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
@@ -32,5 +33,6 @@ def get_queue(
             status=status,
             supplier=supplier,
             project_id=project_id,
+            eta=eta,
         )
     }

@@ -21,6 +21,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 
 
@@ -73,8 +74,7 @@ def ctx():
         s.close()
 
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": pw})
-    assert r.status_code == 200, r.text
+    log_in(slug, email, pw, client=c)
     return {"client": c, "pid": pid, "vendor": vendor,
             "parent": parent, "related": related, "wid": wid}
 
@@ -629,10 +629,7 @@ def test_line_routes_require_orderbook_write(ctx):
     finally:
         s.close()
     c2 = TestClient(app)
-    r = c2.post("/auth/login", json={
-        "workspace_slug": _workspace_slug(ctx["wid"]), "email": f"viewer-{suffix}@x.test", "password": "pw",
-    })
-    assert r.status_code == 200, r.text
+    log_in(_workspace_slug(ctx["wid"]), f"viewer-{suffix}@x.test", client=c2)
     assert c2.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}",
                     json={"quantity": "1"}).status_code == 403
     assert c2.delete(f"/orders/{ids['po_id']}/lines/{ids['line_id']}").status_code == 403
@@ -672,8 +669,7 @@ def _bootstrap_other_workspace_client() -> TestClient:
     finally:
         s.close()
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(slug, email, client=c)
     return c
 
 

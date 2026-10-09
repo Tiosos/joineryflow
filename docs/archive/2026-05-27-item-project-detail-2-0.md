@@ -1,0 +1,751 @@
+# Item & Project Detail 2.0
+
+> Merged from `specs/2026-05-27-item-project-detail-2-0-design.md`, `plans/2026-05-27-item-project-detail-2-0.md` (October 2026). Each part below is the original text, verbatim, with headings pushed down two levels; use `git log --follow` on the original paths for history. This is a record of intent at one moment, not a description of the current code: see `docs/sub-projects/` and `CLAUDE.md`.
+
+
+## Design spec
+
+### Item & Project Detail 2.0 — Design (sub-project #11)
+
+**Status:** Draft
+**Date:** 2026-05-27
+**Plan:** `docs/archive/2026-05-27-item-project-detail-2-0.md`
+**Driver:** Bill — legacy-parity roadmap from `pictures attached/`.
+
+#### 1. Why
+
+Sub-project #10 landed Tracking 2.0 (legacy-parity grid). The detail surfaces it links to are still light: the **Item editor** has cutlist/hardware/board/log/attachments but no **Actions** or **Query** tab, and stores `sketchup_file` / `cab_vision_file` as varchar paths instead of typed file_blob slots. The **Project page** at `/projects/[id]` doesn't exist as a standalone page (only a small read-only modal in tracking); legacy reference screenshots (`pictures attached/ProjectDetails_260417070953.jpeg`, `Dashboard_project*.jpeg`) show a much denser surface: site address, office vs site contacts, builder, classification, status pill, install date, total value, close-out button, lift access notes + sketch, and an accumulated labour-hours block.
+
+#11 closes those gaps. Importantly, **most of the project-level fields already exist** on the `projects` table from the original FileMaker port (`0001_tracking_port.py`): `builder`, `classification`, `site_street`, `site_suburb`, `site_postcode`, `site_state`, `tg_project_manager`, `tg_coordinator`, `status`, `installation_start`, `total_value`, `total_line_items`, `tg_solid`, `carell_pid`. They simply aren't surfaced in `ProjectOut` yet. Item enrichment fields (`floor_plan`, `rls`, `joiery_details`, `cutlist_printed`) similarly exist and need exposing.
+
+What's new (true additions):
+
+- **`projects.closed_at`** + **`projects.closed_by`** for close-out tracking.
+- **`project_contact(project_id, kind, position, name, email, mobile, notes)`** with `kind IN (office, site)`.
+- **`project_lift_access(project_id, notes, sketch_file_blob_id)`** — one row per project, optional sketch.
+- **`item_query(item_id, asked_by, answered_by, asked_at, answered_at, question, answer)`** for the Query tab.
+- **`item_document(item_id, file_blob_id, label, ordering)`** for the open Document Register.
+- Attachment kinds extended from `{cv_drawing, floor_plan, site_measure}` to `{sketchup, cabvision, floor_plan, site_measure}`. **`cv_drawing` stays in the CHECK as a legacy synonym** so existing rows + tests aren't broken.
+
+#### 2. Confirmed scope
+
+##### Item detail
+
+- New tab **Actions** — collection of one-click buttons:
+  - Print combined PDF (links to `/items/{id}/combined.pdf` — already exists).
+  - Print cutlist / hardware PDFs (already exist).
+  - Set status (opens existing `StatusPopup`).
+  - Mark REQ (writes `item_stages.REQ.done_date = today` via existing lifecycle endpoint).
+  - Jump to orderbook.
+  - Toggle Painting Req / Solid Surface Req / Cutlist Printed (calls existing PATCH).
+- New tab **Query** — free-text Q&A per item.
+  - List of all queries (newest first) with question, asker, asked_at; answer, answerer, answered_at.
+  - "Ask a question" form (any role with `list:read`).
+  - "Answer" button on each question (drafter+ / manager+).
+- Header flags: **Painting Req** / **Solid Surface Req** / **Cutlist Printed** — already booleans; expose as toggleable chips.
+- Reference fields: **Floor Plan** / **RLS** / **Joinery Details** — already varchar(64); expose via PATCH + a small "Refs" panel.
+- **AttachmentsTab** restructured:
+  - Slots: **SketchUp** (new), **CabVision** (new), **Floor Plan**, **Site Measure**.
+  - New **Document Register** below the named slots — open list via `POST /items/{iid}/documents`.
+  - PDF gate stays for named slots; Document Register accepts PDF/PNG/JPEG.
+
+##### Project detail
+
+- New page `/projects/[id]` (was: only `/projects/[id]/procurement/...` existed).
+- **Header strip**: project_code · name · status pill · builder · classification · install_start · total_value · close-out button (admin/manager only).
+- **Details panel** (left): site address (4 fields) + TG team + flags.
+- **Contacts panel** (centre): office + site contacts; "Add contact" link.
+- **Lift & access panel** (right): notes textarea + sketch upload (single file_blob slot).
+- **Labour hours card** (bottom): view returns zero today; wires live in #14.
+- Tracking modal gains "Open full project page →" footer link.
+
+##### RBAC
+
+No new modules. Reuse existing matrix:
+- `project_contact` + `project_lift_access`: `tracking:write` (manager/admin/drafter) for writes; `tracking:read` for reads.
+- `item_query`: `list:read` to ask + read; `list:write` to answer.
+- `item_document`: `list:write` for bind/unbind; `list:read` for list.
+- Close-out: admin/manager only.
+
+##### Workspace isolation
+
+All new tables join through `projects.workspace_id = :wid` per the post-`cc7ea11` pattern. Cross-workspace 404.
+
+#### 3. Schema changes — migration 0025
+
+```sql
+-- Project close-out
+ALTER TABLE projects
+  ADD COLUMN closed_at TIMESTAMPTZ NULL,
+  ADD COLUMN closed_by BIGINT NULL REFERENCES app_user(id) ON DELETE SET NULL;
+
+-- Project contacts (office + site)
+CREATE TABLE project_contact (
+  contact_id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  kind       VARCHAR(8) NOT NULL CHECK (kind IN ('office','site')),
+  position   VARCHAR(64),
+  name       VARCHAR(128) NOT NULL,
+  email      VARCHAR(255),
+  mobile     VARCHAR(32),
+  notes      TEXT,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by BIGINT REFERENCES app_user(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_project_contact_project ON project_contact (project_id, kind, sort_order);
+
+-- Project lift access (1 row per project)
+CREATE TABLE project_lift_access (
+  project_id           BIGINT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
+  notes                TEXT,
+  sketch_file_blob_id  BIGINT REFERENCES file_blob(file_blob_id) ON DELETE SET NULL,
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by           BIGINT REFERENCES app_user(id) ON DELETE SET NULL
+);
+
+-- Item Query Q&A
+CREATE TABLE item_query (
+  query_id      BIGSERIAL PRIMARY KEY,
+  item_id       BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+  asked_by      BIGINT NOT NULL REFERENCES app_user(id) ON DELETE SET NULL,
+  asked_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  question      TEXT NOT NULL,
+  answered_by   BIGINT REFERENCES app_user(id) ON DELETE SET NULL,
+  answered_at   TIMESTAMPTZ,
+  answer        TEXT
+);
+CREATE INDEX idx_item_query_item ON item_query (item_id, asked_at DESC);
+
+-- Item Document Register
+CREATE TABLE item_document (
+  document_id   BIGSERIAL PRIMARY KEY,
+  item_id       BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+  file_blob_id  BIGINT NOT NULL REFERENCES file_blob(file_blob_id),
+  label         VARCHAR(128),
+  sort_order    INT NOT NULL DEFAULT 0,
+  uploaded_by   BIGINT NOT NULL REFERENCES app_user(id) ON DELETE SET NULL,
+  uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_item_document_item ON item_document (item_id, sort_order);
+
+-- Extend attachment kinds
+ALTER TABLE item_attachment DROP CONSTRAINT IF EXISTS item_attachment_kind_check;
+ALTER TABLE item_attachment
+  ADD CONSTRAINT item_attachment_kind_check
+  CHECK (kind IN ('cv_drawing','sketchup','cabvision','floor_plan','site_measure'));
+
+-- Labour hours placeholder view (zero today)
+CREATE OR REPLACE VIEW project_labour_hours_view AS
+SELECT
+  p.project_id,
+  0::numeric AS site_install,
+  0::numeric AS assembly,
+  0::numeric AS administration
+FROM projects p;
+```
+
+#### 4. API surface
+
+##### 4.1 Project
+
+`GET /projects/{id}` — extend `ProjectOut` additively with builder, classification, address, TG team, flags, close-out fields, contacts, lift_access, labour_hours.
+
+`PATCH /projects/{id}` — extend with the new metadata fields.
+
+`POST /projects/{id}/close-out` — admin/manager only. Sets `closed_at = now()`, `closed_by = caller`, `status = 'Closed'`. 409 if already closed.
+
+`POST /projects/{id}/contacts` / `PATCH /contacts/{cid}` / `DELETE /contacts/{cid}`.
+
+`PUT /projects/{id}/lift-access` — upsert. `DELETE` to clear.
+
+##### 4.2 Item
+
+`GET /items/{iid}/queries`, `POST /items/{iid}/queries`, `POST /queries/{qid}/answer`, `PATCH /queries/{qid}/answer`.
+
+`GET /items/{iid}/documents`, `POST /items/{iid}/documents`, `DELETE /documents/{did}`, `PATCH /documents/{did}`.
+
+Item attachment `kind` path constraint expands to accept `sketchup`/`cabvision`.
+
+`PATCH /items/{iid}` extended to accept `floor_plan`, `rls`, `joiery_details`, `cutlist_printed`.
+
+##### 4.3 Audit events (new)
+
+- `project.close_out`
+- `project.contact.create|update|delete`
+- `project.lift_access.update`
+- `item.query.create|answer|edit_answer`
+- `item.document.bind|unbind|update`
+
+#### 5. Frontend
+
+##### Item editor
+
+- `EditorTabs.tsx`: add `actions` and `query`.
+- New `ActionsTab.tsx`: 6 large action buttons (print combined / cutlist / hardware, set status, mark REQ, jump to orderbook, flag toggles).
+- New `QueryTab.tsx`: Q&A list + "Ask" form.
+- `AttachmentsTab.tsx`: 4 slots in 2×2 grid + Document Register list below.
+- Header chips: Painting Req / Solid Surface Req / Cutlist Printed (click-to-toggle).
+- Refs panel: Floor Plan / RLS / Joinery Details (click-to-edit).
+
+##### Project page (new)
+
+- `/projects/[id]/page.tsx` — server component, 3-column layout.
+- Header strip with close-out button (gated).
+- Left: address + TG team.
+- Centre: contacts.
+- Right: lift access.
+- Footer: labour hours card.
+
+##### Tracking modal
+
+- Footer link "Open full project page →".
+
+#### 6. Seed
+
+- ALF-001 gets:
+  - Builder + classification + Melbourne site address.
+  - 4 office contacts + 2 site contacts.
+  - Lift access notes + a deterministic SVG-PDF sketch (reuses #5a helper).
+  - 2 item queries on item 1 (one answered, one open).
+  - 2 documents on item 1.
+- Idempotent.
+
+#### 7. Verification
+
+- `make migrate` clean.
+- `make test` — new files: `test_project_enrichment.py`, `test_project_contacts.py`, `test_item_queries.py`, `test_item_documents.py`. Happy path + RBAC deny + cross-workspace 404.
+- `make seed` idempotent.
+- Manual: `/projects/1` shows the 3-column layout; item editor's new tabs render; close-out works once.
+
+#### 8. Out of scope
+
+- Labour hours data is zero until MyHours (#14).
+- Threaded conversations on Query (v1 = single Q + single A).
+- Variations driven by `var_boq` (lands with #13).
+- Existing varchar(255) `sketchup_file` / `cab_vision_file` columns stay; future migration backfills + drops.
+- `cv_drawing` legacy kind stays as a synonym.
+
+#### 9. Open questions (defaults noted)
+
+- Close-out reversible? **Default: no in v1; manager+ can flip `status` via PATCH which auto-clears `closed_at/by`.**
+- Lift access — single sketch or multi-image? **Default: single sketch.**
+- Item documents — "category" field? **Default: free-text label only.**
+
+
+## Implementation plan
+
+### Item & Project Detail 2.0 — Implementation Plan (#11)
+
+> **Status: shipped.** Migration `0036_item_project_detail`. T01–T14 are all
+> done — backend, frontend, seed data and an e2e spec; current state lives
+> in `## Item & Project Detail 2.0` in `CLAUDE.md`. Only T15 (a full
+> `make up` smoke test) is partial — see its own `→` note. §9's re-open rule
+> is implemented as written, and PATCHing a project to `Closed` is refused
+> so close-out is the only way to close (user's decision, 2026-09-25).
+>
+> **Later change (2026-09-25):** T08–T13 below were fleshed out from stubs
+> into a full task breakdown before any frontend work started. Two drifts
+> surfaced while doing that, now folded into T08: `apps/web/lib/pm-types.ts`
+> was never updated for #10/#11's backend changes (`ItemOut`/`ProjectOut`
+> are missing fields the Python schemas have served for months), and
+> `apps/web/lib/attachments-types.ts` still lists 3 attachment kinds although
+> the backend has carried 5 since T07. Both are prerequisites for T09–T11,
+> not scope creep — building new UI against the stale types would either not
+> compile or silently drop data.
+> Departures from this doc: T06 records three choices where it was silent;
+> T07's attachment kinds are **five, purely additive** — `cv_drawing` is
+> *not* treated as a synonym, and the Combined PDF is unchanged (user's
+> decision, 2026-09-25). This doc's "PDF gate stays for named slots" is
+> also superseded: `sketchup` holds a native `.skp` and `cabvision` a
+> `.cvj`, which `/files` now accepts (same 25 MB cap). Design:
+> `docs/archive/2026-05-27-item-project-detail-2-0.md`.
+>
+> **Later change:** this doc's title says "#11" — free when written
+> (2026-05-27), but by the time this plan merged into `main` (2026-09-24,
+> commit `8ac99d5`) #11 had gone to Global Search. Go by the migration
+> number or merge date, not this label.
+
+**Spec:** `docs/archive/2026-05-27-item-project-detail-2-0.md`
+**Last updated:** 2026-05-27
+
+---
+
+#### T01 — Migration 0025
+
+**File:** `db/alembic/versions/0025_item_project_detail.py`
+
+- `projects.closed_at`, `closed_by`.
+- `project_contact`, `project_lift_access`, `item_query`, `item_document` tables.
+- Expand `item_attachment_kind_check` to add `sketchup`, `cabvision` (keep `cv_drawing`).
+- `project_labour_hours_view` (returns zero per project).
+
+**Acceptance:** `make migrate` clean.
+
+#### T02 — Project schemas + queries + endpoints
+
+**Files:** `apps/api/app/projects/{schemas,queries,routes}.py`
+
+- `ProjectOut` adds: builder, classification, site_street/suburb/postcode/state, tg_project_manager, tg_coordinator, tg_solid, carell_pid, total_line_items, closed_at, closed_by, closed_by_name, contacts, lift_access, labour_hours.
+- `PatchProjectIn` extends with the new metadata fields.
+- New `POST /projects/{id}/close-out` (admin/manager). 409 if already closed.
+
+**Acceptance:** existing project tests stay green.
+
+#### T03 — Project contacts module
+
+**File:** `apps/api/app/project_contacts/{__init__,queries,routes,schemas}.py`
+
+- POST/GET/PATCH/DELETE contacts.
+- `tracking:write` for writes.
+- Workspace isolation through project.
+
+#### T04 — Project lift access module
+
+**File:** `apps/api/app/project_lift_access/{__init__,queries,routes,schemas}.py`
+
+- PUT/GET/DELETE lift access.
+
+#### T05 — Item Query module
+
+**File:** `apps/api/app/item_queries/{__init__,queries,routes,schemas}.py`
+
+- GET list, POST ask, POST answer, PATCH edit-answer.
+- 409 if already answered (on first answer).
+
+#### T06 — Item Document Register module
+
+**File:** `apps/api/app/item_documents/{__init__,queries,routes,schemas}.py`
+
+- GET list, POST bind, DELETE unbind, PATCH relabel/reorder.
+
+#### T07 — Attachments + item PATCH expansion
+
+**Files:** `apps/api/app/item_attachments/routes.py`, `apps/api/app/items/{schemas,queries}.py`
+
+- Expand attachment `KindPath` regex to add sketchup + cabvision.
+- Extend `PatchItemIn` and `_PATCH_FIELD_MAP` with floor_plan, rls, joiery_details, cutlist_printed.
+
+#### T08 — Frontend/backend type sync (prerequisite, found while planning)
+
+**Files:** `apps/web/lib/pm-types.ts`, `apps/web/lib/attachments-types.ts`, `apps/web/lib/print.ts`
+
+`pm-types.ts` was never updated for #10/#11's backend changes. `ProjectOut`
+is missing every #11 field (`builder`, `classification`, `site_street/
+suburb/postcode/state`, `tg_project_manager`, `tg_coordinator`,
+`carell_pid`, `closed_at`/`closed_by`/`closed_by_name`, `contacts`,
+`lift_access`, `labour_hours`) and `PatchProjectIn` is missing their write
+counterparts. `ItemOut` is missing the Tracking 2.0 + #11 fields that
+`TrackingItemRow` already carries (`jid_code`, `jid_color`, `var_boq`,
+`contractor_id`/`contractor_name`, `total_amount`, `site_measure_notes`,
+`floor_plan`, `rls`, `joiery_details`, `cutlist_printed`) even though
+`apps/api/app/items/schemas.py`'s Python `ItemOut` has served them since
+migration `0036` — `GET /items/{id}` already returns them, the TS type just
+doesn't know it. `PatchItemIn` (TS) is missing the same write fields.
+Separately, `attachments-types.ts`'s `AttachmentKind` still lists only 3
+kinds; the backend (`item_attachments/schemas.py`) has carried 5 since T07.
+
+- Add the missing fields to `ProjectOut`, `PatchProjectIn`, `ItemOut`,
+  `PatchItemIn` in `pm-types.ts`, copied 1:1 from the Python schemas.
+  `total_amount` is a `Decimal` server-side → JSON string, matching the
+  existing note on `TrackingItemRow.total_amount`.
+- Add `ProjectContactOut`, `ProjectLiftAccessOut`, `ProjectLabourHoursOut`,
+  `CloseOutOut` interfaces (mirrors `apps/api/app/projects/schemas.py`).
+- Add `ItemQueryOut`, `CreateQueryIn`, `AnswerQueryIn` (mirrors
+  `apps/api/app/item_queries/schemas.py`).
+- Add `ItemDocumentOut`, `BindDocumentIn`, `PatchDocumentIn` (mirrors
+  `apps/api/app/item_documents/schemas.py`).
+- Widen `attachments-types.ts`: `AttachmentKind` → 5 values; `KIND_LABELS`
+  gains `sketchup: "SketchUp Model"`, `cabvision: "Cabinet Vision Job"`.
+  Keep `ATTACHMENT_KINDS` as the canonical all-5 order the bundle returns
+  (`queries.ALL_KINDS` server-side) and add a new
+  `COMBINED_PDF_KINDS: readonly AttachmentKind[] = ["cv_drawing",
+  "floor_plan", "site_measure"]`. Switch `print.ts`'s
+  `attachmentsCountLabel` / `combinedTooltip` to iterate `COMBINED_PDF_KINDS`
+  instead of `ATTACHMENT_KINDS` — otherwise widening `ATTACHMENT_KINDS`
+  silently breaks the "N of 3" Combined-PDF copy pinned by `CLAUDE.md` and
+  `test_print_combined_ignores_sketchup_and_cabvision`.
+
+**Acceptance:** web typecheck clean. No behaviour change — this only widens
+types the other tasks then use.
+
+> **→ Done (2026-09-25).** All four TS files updated as scoped; `npx tsc
+> --noEmit` and `pnpm run build` both clean. One deliberate scope pull-in
+> from T10: since `AttachmentsTab.tsx` already iterates `ATTACHMENT_KINDS`,
+> widening that constant to 5 immediately makes it render the SketchUp/
+> CabVision cards too — leaving `AttachmentSlotCard.tsx`'s file-picker
+> hardcoded to `.pdf` for those two would have been a live (if minor) UX
+> papercut, so its `accept` attribute was switched to a per-kind
+> `KIND_ACCEPT` map in this pass as well. T10 no longer needs that step —
+> only the optional "Used by Combined PDF" badge remains open there.
+
+#### T09 — Frontend: item editor — Actions tab, Query tab, reference fields
+
+**Files:** `apps/web/app/(app)/items/[id]/_components/{EditorTabs.tsx,
+ItemMetadataPanel.tsx}`; new `ActionsTab.tsx`, `QueryTab.tsx`; new
+`apps/web/lib/item-queries-fetch.ts`.
+
+RBAC (confirmed against `apps/api/app/auth/permissions.py`): asking a
+question needs `list:read` (every role including `viewer`); answering needs
+`list:write`, which is `{drafter, manager, admin, editor}` — **not** the
+narrower `{drafter, manager, admin}` set `AttachmentsTab`/`MaterialTakeTab`
+use, because those two additionally call `require_drafter()` server-side
+and `item_queries` does not. Define a distinct
+`CAN_ANSWER = new Set(["drafter","manager","admin","editor"])` rather than
+importing the narrower set.
+
+- `apps/web/lib/item-queries-fetch.ts` — `listQueries(itemId)`,
+  `askQuery(itemId, question)`, `answerQuery(qid, answer)`,
+  `editAnswer(qid, answer)`, thin `fetch("/api/...")` wrappers matching
+  `attachments-fetch.ts`'s shape (throw on non-2xx, surface `detail`).
+- `QueryTab.tsx` — list newest-first (question / asker / asked_at; answer /
+  answerer / answered_at when present); an "Ask a question" form open to
+  any reader; an inline "Answer" textarea+button per open question for
+  `CAN_ANSWER` roles, and an "Edit answer" affordance on already-answered
+  rows (`PATCH /queries/{qid}/answer`). Catch the 409 `ALREADY_ANSWERED`
+  from a race on the POST path and point the user at Edit instead.
+- `ActionsTab.tsx` — a grid of buttons:
+  - **Print Combined / Cutlist / Hardware PDF** — plain links via
+    `printUrl(itemId, kind)` from `lib/print.ts`, `target="_blank"`, same as
+    `EditorFooter.tsx` already does; reuse that helper, don't duplicate it.
+  - **Set status** — check whether the existing `StatusPopup` (Tracking
+    components) is decoupled enough to reuse; if it's coupled to
+    `TrackingClient`'s state, write a small standalone version here instead
+    of forcing a shared import.
+  - **Mark REQ done today** — `PATCH /items/{id}/lifecycle/REQ` with
+    `{done_date: <today, YYYY-MM-DD>}`.
+  - **Jump to Orderbook** — `ItemOut` carries no order reference today
+    (only `TrackingItemRow` does), so this can only link to
+    `/orderbook?project=<project_id>`, not a specific order row. Flag this
+    rather than fabricating a link — the design doc didn't anticipate
+    `ItemOut` lacking order fields.
+  - **Cutlist Printed** toggle — the design doc sketches this as a header
+    chip alongside Painting Req / Solid Surface Req. Those two **already
+    exist** as checkboxes in `ItemMetadataPanel.FIELDS`
+    (`ItemMetadataPanel.tsx:24-31`). Adding `cutlist_printed` there as one
+    more `BoolField` entry is simpler than a new header-chip component for
+    a single boolean, and keeps the three flags where a user already looks
+    — a deliberate simplification versus the design sketch, called out
+    rather than silently dropped.
+- Refs panel (**Floor Plan / RLS / Joinery Details**, all varchar(64)) —
+  same reasoning: three more `MetaField` entries in
+  `ItemMetadataPanel.FIELDS` (click-to-edit-on-blur, identical to
+  `level`/`description`) rather than a new panel component.
+- `EditorTabs.tsx` — add `"actions"` and `"query"` to `TABS`/`TAB_LABELS`,
+  render the two new components.
+
+**Acceptance:** manual — ask a question as a viewer, answer as a drafter,
+confirm the 409-then-edit path; toggle Cutlist Printed and confirm it goes
+through the Controlled Lock like every other field (a non-owner's toggle
+should show the same "Held for approval" message `ItemMetadataPanel`
+already shows, since it reuses the same `patchField` helper).
+
+> **→ Done (2026-09-25).** Built as scoped, with one dropped item and one
+> reuse found along the way:
+> - **No Print Combined/Cutlist/Hardware buttons in `ActionsTab`.**
+>   `EditorFooter.tsx` already renders all three, on every tab, at all
+>   times — duplicating them inside the Actions tab would just be the same
+>   three links shown twice. Dropped rather than copied from the design
+>   sketch.
+> - **`StatusPopup`** (from `tracking/_components/`) turned out to be fully
+>   decoupled from `TrackingClient`'s state (`itemId`/`onClose`/`onUpdated`
+>   props, fetches its own item) — reused directly instead of writing a
+>   second status-change UI.
+> - Verified with `tsc --noEmit` and `next build` only (no running
+>   DB/container in this environment) — the Controlled Lock / RBAC claims
+>   above are verified by reading `items/routes.py` and
+>   `auth/permissions.py`, not by exercising the live app. Manual
+>   click-through against `make up` still belongs in T15.
+
+#### T10 — Frontend: AttachmentsTab widened to 5 slots
+
+**Files:** `apps/web/app/(app)/items/[id]/_components/{AttachmentsTab.tsx,
+AttachmentSlotCard.tsx}`
+
+- `AttachmentsTab.tsx` — no change needed beyond T08's widened
+  `ATTACHMENT_KINDS`; it already does `ATTACHMENT_KINDS.map(...)`.
+- `AttachmentSlotCard.tsx` — the `<input type="file"
+  accept=".pdf,application/pdf">` is hardcoded; add a
+  `KIND_ACCEPT: Record<AttachmentKind, string>` map (`sketchup: ".skp"`,
+  `cabvision: ".cvj"`, the other three: `".pdf,application/pdf"`) and use
+  `KIND_ACCEPT[slot.kind]`. Cosmetic — the real gate is the server-side
+  signature+extension check in `item_attachments/queries.py::KIND_MIME` —
+  but it stops users picking the obviously-wrong file type.
+- Optional: badge the 3 Combined-relevant cards ("Used by Combined PDF")
+  via `COMBINED_PDF_KINDS.includes(slot.kind)`. Skip if it adds noticeable
+  layout complexity for 5 cards in the existing single-column list.
+
+**Acceptance:** `test_print_combined_ignores_sketchup_and_cabvision` and the
+other pinned print tests stay green untouched (backend-only, unaffected by
+this). Manual: 5 cards render; SketchUp/CabVision pickers filter to
+`.skp`/`.cvj`; Combined tooltip/count still reads "N of 3".
+
+> **→ Done (2026-09-25).** The `KIND_ACCEPT` map and the widened
+> `ATTACHMENT_KINDS` iteration were already pulled into T08 (see its own
+> `→ Done` note) — this pass added the one thing left: a small "Combined
+> PDF" pill on the 3 relevant `AttachmentSlotCard`s, driven by
+> `COMBINED_PDF_KINDS.includes(kind)` (computed once in `AttachmentsTab.tsx`
+> and passed down as a prop, rather than re-deriving it inside the card).
+> `tsc --noEmit` and `next build` clean; the backend print tests are
+> untouched by this (frontend-only change). Manual click-through against a
+> running app still belongs in T15.
+
+#### T11 — Frontend: project page `/projects/[id]`
+
+**Files:** new `apps/web/app/(app)/projects/[id]/page.tsx`, new
+`_components/{ProjectHeader,ProjectDetailsPanel,ProjectContactsPanel,
+ProjectLiftAccessPanel,ProjectLabourHoursCard}.tsx`, new
+`apps/web/lib/{project-contacts-fetch,project-lift-access-fetch}.ts`.
+
+`GET /projects/{id}` already returns `contacts`, `lift_access` and
+`labour_hours` embedded on `ProjectOut` (T02) — the page's initial
+server-side fetch needs only the one `fetchProject(id)` call, not three.
+Mutations go through the dedicated endpoints, then `router.refresh()` —
+same pattern as `ItemMetadataPanel.patchField`.
+
+RBAC is **not uniform across this page** — three different gates apply and
+must not be collapsed into one `canEdit`:
+- **Header/Details panel PATCH** (`builder`, `classification`, site
+  address, TG team) — the route hardcodes `manager`/`admin` only
+  (`apps/api/app/projects/routes.py:95`, a manual check, not the
+  `tracking:write` RBAC row). Gate on `me.auth_role in ("manager","admin")`.
+- **Contacts + lift access** — `tracking:write`, which per the matrix is
+  `{editor, drafter, manager, admin}`. Gate on
+  `can(me, "tracking", "write")` (already imported from `@/lib/session` in
+  `procurement/page.tsx`).
+- **Close-out** — admin/manager only (separate route check, same as
+  Details).
+
+Layout (server component `page.tsx` fetches and passes down, same shape as
+`items/[id]/page.tsx`):
+- **Header strip**: project_code · name · status pill · builder ·
+  classification · install_start · total_value · Close-out button
+  (hidden unless admin/manager; the 409 already-closed response surfaces as
+  a toast, not a crash).
+- **Details panel** (left): site_street/suburb/postcode/state,
+  tg_project_manager, tg_coordinator, tg_solid — click-to-edit fields in
+  the same style as `ItemMetadataPanel`, gated manager/admin.
+- **Contacts panel** (centre): office vs. site contacts (`kind`), "Add
+  contact" form, edit/delete per row — gated `tracking:write`.
+- **Lift & access panel** (right): notes textarea + single sketch upload
+  (`uploadFile` + `PUT /projects/{id}/lift-access`) — gated
+  `tracking:write`; sketch accepts PDF/PNG/JPEG (`project_lift_access/
+  routes.py` 415s otherwise).
+- **Labour hours card** (footer): renders `labour_hours.{site_install,
+  assembly,administration}`, all zero today — reuse the "not integrated
+  yet" framing `ProjectDetailModal.tsx`'s `HoursTable` already uses for the
+  TGPAY-sourced tables rather than inventing new copy.
+
+**Acceptance:** `/projects/{id}` renders for a real ALF-001 id; close-out
+works once then 409s on retry; a `viewer` sees the page with no edit
+affordances; a cross-workspace id 404s.
+
+> **→ Done (2026-09-25).** Built per the two decisions made before starting
+> (asked rather than assumed, since the design doc left both open):
+> - **Status stays a read-only pill** in the header — no Current/Hold
+>   selector was added on this page. The backend already supports reopening
+>   a closed project via a plain `PATCH {status}` (any non-"Closed" value
+>   clears `closed_at`/`closed_by`), but T11's own task list never asked for
+>   that control here, so it was left out rather than added silently.
+> - **`/projects` (the list page) now also links to the new page** — a
+>   "Details →" cell per row, alongside the existing name link to
+>   `/tracking?project_id=`. Without it the page had no entry point at all
+>   until T12 ships, and even then only from inside one modal.
+> One correctness point worth flagging for whoever touches
+> `project_lift_access` next: `PUT /projects/{id}/lift-access` is a full
+> overwrite, not a partial merge (confirmed by reading
+> `project_lift_access/queries.py::upsert_lift_access` — both columns are
+> set from the request body every time). `ProjectLiftAccessPanel.tsx` always
+> sends the current `notes` value alongside whichever field is actually
+> changing; a caller that PUTs only the field it means to change will
+> silently null out the other one.
+> Verified with `tsc --noEmit` and `next build` only — no running
+> DB/container in this environment, so the manual click-through (real
+> ALF-001 id, close-out-then-409, viewer read-only, cross-workspace 404)
+> still belongs in T15.
+
+#### T12 — Tracking modal → project page link
+
+**File:** `apps/web/app/(app)/tracking/_components/ProjectDetailModal.tsx`
+
+Add a footer link `<a href={`/projects/${project.id}`}>Open full project
+page →</a>` beside the existing "Read-only view..." footer text.
+`project.id` is already on `ProjectOut`.
+
+> **→ Done (2026-09-25).** Used `next/link`'s `Link` rather than a bare
+> `<a>`, matching every other in-app navigation link in this codebase
+> (`/projects/page.tsx`, etc.) — client-side nav instead of a full reload.
+> Also dropped "Edit project metadata from the admin tools" from the footer
+> sentence, since that vague phrase now has a concrete, linked destination
+> right next to it. `tsc --noEmit` and `next build` clean.
+
+#### T13 — Seed data
+
+**File:** `seed/hartwood_joinery.py` (new block after the existing `#12
+Material Take` block)
+
+Following the file's established idempotency convention (`DELETE FROM
+<table> WHERE project_id/item_id = :x` before re-inserting, since none of
+these four tables has a natural `ON CONFLICT` key except lift access):
+
+- `UPDATE projects SET builder=..., classification=..., site_street=...,
+  site_suburb=..., site_postcode=..., site_state=..., tg_project_manager=...,
+  tg_coordinator=... WHERE project_id = :alf` — a plain UPDATE is
+  inherently idempotent, no DELETE needed.
+- `project_contact`: `DELETE FROM project_contact WHERE project_id = :alf`
+  then insert 2 office + 2 site contacts.
+- `project_lift_access`: `ON CONFLICT (project_id) DO UPDATE` (the PK is
+  one row per project, so this is natural unlike the other three) — notes
+  text + a sketch bound through
+  `app.files.seed_helper.put_seed_file(s, workspace_id=..., workspace_slug=
+  "hartwood-joinery", app_user_id=_drafter_id, path=<one of the existing
+  fixture PDFs under seed/hartwood_joinery/sample_drawings/>)`.
+- `item_query`: `DELETE FROM item_query WHERE item_id = :item1` then insert
+  one answered + one open question on the first ALF-001 item, via
+  `app.item_queries.queries.create_query` / `.answer_query` directly (like
+  the `#12` block calls `material_takes.queries` functions) so the
+  audit/edit-log rows are real, not raw SQL.
+- `item_document`: `DELETE FROM item_document WHERE item_id = :item1` then
+  bind 2 documents via `app.item_documents.queries.bind_document`, reusing
+  the fixture PDFs `put_seed_file` already loads for shop drawings /
+  attachments — no new fixture files needed.
+
+**Acceptance:** `make seed` run twice back-to-back produces identical row
+counts; print a one-line summary matching the file's existing convention.
+
+> **→ Done (2026-09-25).** Built exactly as scoped, through the real query
+> functions (`app.projects.queries.patch_project`,
+> `app.project_contacts.queries.create_contact`,
+> `app.project_lift_access.queries.upsert_lift_access`,
+> `app.item_queries.queries.{create_query,answer_query}`,
+> `app.item_documents.queries.bind_document`) so the seeded rows carry real
+> `audit_log` / `item_edit_log` entries, matching the `#12` block's
+> precedent. Actor attribution follows the real RBAC split T11 traced:
+> project metadata / contacts use a resolved manager id, item queries and
+> documents use the drafter.
+>
+> **Actually verified against a live database**, not just read for
+> correctness — this environment has no Docker, but does have a local
+> PostgreSQL 16 + Python 3.12, matching the no-Docker path this file's dev
+> loop section documents. Migrated a scratch DB to head (`0036`), ran
+> `python -m seed.hartwood_joinery` twice back-to-back, and confirmed by
+> direct query: `project_contact` stays at 4 rows, `project_lift_access` at
+> 1, `item_query` at 2 (1 open / 1 answered), `item_document` at 2, and
+> `file_blob` does not grow on the second run (sha256 dedup in
+> `put_seed_file` works as expected) — no duplicate-row or constraint
+> errors on either run. Also ran the five directly-relevant backend test
+> files (`test_project_contacts`, `test_project_lift_access`,
+> `test_item_queries`, `test_item_documents`, `test_project_enrichment`) —
+> 40 passed. The full `make test` / `make e2e` suites were not run (out of
+> scope for a seed-only change, and `make` itself needs Docker); T15 is
+> still where a full click-through belongs.
+
+#### T14 — e2e coverage (new)
+
+**File:** new `tests/e2e/item_project_detail.spec.ts`
+
+Every other shipped sub-project has its own Playwright spec (see the
+`tests/e2e/` list in `CLAUDE.md`); this one doesn't yet. Minimal spec: log
+in as drafter, open an item, use the Query tab (ask + answer), use the
+Actions tab (toggle Cutlist Printed), confirm the Attachments tab renders 5
+slots, visit `/projects/{id}` and confirm the header/contacts/lift-access
+panels render and close-out works once. Keep it in the same
+non-idempotent-suite family as the others (re-seed between runs).
+
+> **→ Done (2026-09-25).** Three tests, following the file's own
+> `login`/`openFirstAlfredItem` local-helper convention (mirrors
+> `pdf_generation.spec.ts`) rather than a shared module:
+> 1. Query tab ask+answer, the reference fields + Cutlist Printed (now in
+>    the metadata panel, not a header chip — T09's deviation), Attachments
+>    widened to 5 slots, and opening the Actions tab's Set-status dialog.
+> 2. The project page reachable both from `/projects`'s "Details →" link and
+>    from the Tracking modal's "Open full project page →" link, with seeded
+>    contacts/lift-access text asserted.
+> 3. Close-out is **not visible at all** for a drafter — deliberately
+>    swapped from the draft's "close-out works once" plan text: actually
+>    clicking Close-out would durably flip ALF-001's `status` to `Closed`
+>    for every other spec that shares this Postgres instance within one
+>    `make e2e` run (no re-seed between specs in a single run), which is a
+>    materially different risk than the other suite's known non-idempotency
+>    (each of those re-mutates only its own domain data). Asserting the
+>    RBAC gate instead of performing the mutation is just as real a
+>    regression check and doesn't carry that risk.
+>
+> **Actually run against a live stack**, not just `--list`ed. This sandbox
+> has no `make e2e`/Docker, so: migrated the same scratch Postgres from T13
+> to head, ran `uvicorn app.main:app` and `next dev` directly (env vars
+> standing in for compose: `API_URL`, `FILE_STORE_ROOT`,
+> `NEXT_PUBLIC_PROCUREMENT_UI_READY=1`), and pointed Playwright at
+> `http://localhost:3000` with `launchOptions.executablePath` overridden to
+> `/opt/pw-browsers/chromium` (the pre-installed browser is a version older
+> than this repo's pinned `@playwright/test`, so the default lookup path
+> 404s — see the environment's own README on this).
+>
+> The first two runs caught real, worth-fixing bugs **in the test itself**,
+> not the app: an unscoped `getByText("CV Production Drawing", {exact:
+> true})` failed because T10's "Combined PDF" badge shares the same
+> heading, and an unscoped `getByRole("button", {name: "Close"})` was
+> ambiguous against `ItemHeader`'s unrelated "Close editor" button. Both
+> fixed by scoping the locator to the right container rather than loosening
+> the assertion. Final clean run (after re-seeding to undo the mutations
+> from debugging runs, exactly the non-idempotency this spec's own header
+> comment warns about): **3/3 passed.** Also re-ran `smoke.spec.ts`,
+> `pdf_generation.spec.ts` (both tests), `drafter_editor.spec.ts` and
+> `pm_workbench.spec.ts` against the same stack as a regression check on
+> shared components (`EditorTabs`, `ItemMetadataPanel`,
+> `ProjectDetailModal`) — all green. `material_take.spec.ts` failed on this
+> pass, but for a reason unrelated to this work: it hardcodes
+> `/projects/1/...`, and this scratch database's ALF-001 landed on
+> `project_id=2` because an earlier `pytest` run (T13's verification)
+> truncated and re-seeded the workspace once already — confirmed by direct
+> query, not a regression from anything in T08–T14.
+
+#### T15 — Smoke
+
+`make up && make migrate && make seed`. Click through: item editor's 8 tabs
+(cutlist/hardware/board/take/attachments/log/actions/query) all render;
+`/projects/{id}` shows the 3-column layout with real seeded data; the
+Tracking Project Details modal's footer link opens it.
+
+> **→ Partial (2026-09-25).** This sandbox has no Docker, so `make up`
+> itself (compose: db, meili, api, search-worker, web) couldn't run. Did
+> the equivalent within that limit — same scratch Postgres from T13/T14,
+> migrated to head, `uvicorn app.main:app` and `next dev` run directly (env
+> vars standing in for compose), then a manual click-through via two
+> throwaway Playwright scripts (not committed — this is a manual QA task,
+> not new test coverage; T14 already owns the committed spec):
+> - All 8 item editor tabs (T14 only exercised attachments/actions/query
+>   directly) render their expected content with no unexpected console
+>   errors. This surfaced one **pre-existing, unrelated** issue: `PartsGrid.
+>   tsx` (Cutlist tab, never touched by T08–T14) throws a React hydration
+>   warning from a stray whitespace text node under a `<tr>`. Recorded in
+>   `CLAUDE.md`, not fixed here — out of scope and not a regression.
+> - `/projects/{id}` renders the Details panel's real seeded values
+>   (site address, TG team) and the Labour Hours card, in addition to what
+>   T14 already checked (header, contacts, lift access, both entry points).
+> - Two screenshots (project page; item editor Attachments tab, 5 slots)
+>   sent to the user as visual confirmation, not just DOM assertions.
+>
+> Not covered: Meilisearch / search-worker (this sub-project doesn't touch
+> search), and the literal `make up` container topology — a real gap versus
+> the letter of this task, accepted because nothing in T08–T14 touches
+> infrastructure that a bare `uvicorn`/`next dev` pair doesn't already
+> exercise identically.
+
+---
+
+#### Dependencies
+
+```
+T01 ─┬─> T02 ─┬─> T03, T04
+     │        ├─> T05
+     │        ├─> T06
+     │        └─> T07
+     │
+     └─> T08 (type sync) ─┬─> T09 (item editor: Actions/Query/Refs)
+                           ├─> T10 (Attachments widen)
+                           └─> T11 (project page) ─> T12 (tracking modal link)
+     └─> T13 (seed — independent, parallel with T09–T12)
+
+T09, T10, T11, T12, T13 ─> T14 (e2e spec) ─> T15 (smoke, last)
+```

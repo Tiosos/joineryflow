@@ -23,6 +23,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 PDF_BYTES = b"%PDF-1.4\n%abc\n" + b"x" * 100 + b"\n%%EOF\n"
 
@@ -135,9 +136,7 @@ def _workspace() -> dict:
 
 def _client(ws: dict, role: str = "drafter") -> TestClient:
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"],
-                                    "email": f"{role}@{ws['slug']}.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(ws["slug"], f"{role}@{ws['slug']}.test", client=c)
     return c
 
 
@@ -412,9 +411,7 @@ def test_a_failure_part_way_leaves_no_half_made_copy(monkeypatch):
 
     monkeypatch.setattr(dq, "create_cutlist", boom)
     c = TestClient(app, raise_server_exceptions=False)
-    assert c.post("/auth/login", json={"workspace_slug": ws["slug"],
-                                       "email": f"drafter@{ws['slug']}.test",
-                                       "password": "pw"}).status_code == 200
+    log_in(ws["slug"], f"drafter@{ws['slug']}.test", client=c)
     items_before = _scalar("SELECT count(*) FROM items WHERE project_id=:p", {"p": ws["pid"]})
     modules_before = _scalar("SELECT count(*) FROM modules m JOIN items i USING(item_id)"
                              " WHERE i.project_id=:p", {"p": ws["pid"]})

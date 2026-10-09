@@ -21,6 +21,7 @@ from app.db import SessionLocal
 from app.main import app
 
 from .helpers_documents import _client, _sql, _upload, _workspace, reset_disk  # noqa: F401
+from .helpers import log_in
 
 
 @pytest.fixture
@@ -95,8 +96,7 @@ def _extra_user(ws: dict, role: str, name: str) -> tuple[TestClient, int]:
     finally:
         s.close()
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": ws["slug"], "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(ws["slug"], email, client=c)
     return c, uid
 
 

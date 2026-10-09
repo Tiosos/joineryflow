@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
+from .helpers import log_in
 
 
 @pytest.fixture
@@ -32,8 +33,7 @@ def client(truncate_all, tmp_path: Path, monkeypatch):
     finally:
         s.close()
     c = TestClient(app)
-    assert c.post("/auth/login", json={"workspace_slug": slug, "email": "d@la.test",
-                                       "password": "pw"}).status_code == 200
+    log_in(slug, "d@la.test", client=c)
     c.pid = pid
     yield c
     shutil.rmtree(tmp_path, ignore_errors=True)

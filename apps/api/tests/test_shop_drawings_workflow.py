@@ -301,9 +301,7 @@ def test_editor_cannot_add_revision(client):
 
     # Editor logs in and tries to add a revision.
     client.cookies.clear()
-    r = client.post("/auth/login",
-                    json={"workspace_slug": "hw", "email": "e@hw.test", "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in("hw", "e@hw.test", client=client)
     files = {"file": ("c.pdf", io.BytesIO(PDF_BYTES + b"\nx"), "application/pdf")}
     blob2 = client.post("/files", files=files).json()["file_blob_id"]
     r = client.post(f"/shop-drawings/{did}/revisions", json={"file_blob_id": blob2})

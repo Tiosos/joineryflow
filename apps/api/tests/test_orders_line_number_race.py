@@ -27,6 +27,7 @@ from app.db import SessionLocal
 from app.main import app
 from app.orders import queries as q
 from app.orders.schemas import CreateOrderLineIn
+from .helpers import log_in
 
 
 
@@ -61,8 +62,7 @@ def _bootstrap() -> dict:
     finally:
         s.close()
     c = TestClient(app)
-    r = c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"})
-    assert r.status_code == 200, r.text
+    log_in(slug, email, client=c)
     r = c.post("/orders", json={
         "vendor_id": vendor, "description": "widgets", "category": "Board",
     })
