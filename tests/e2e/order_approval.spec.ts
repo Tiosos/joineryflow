@@ -96,9 +96,41 @@ test("a purchase officer renames a cost centre and switches it off", async ({ pa
   await row.getByTestId("cost-centre-edit-save").click();
   await expect.poll(async () => (await read()).name).toBe("Fixed name");
 
+  await row.getByTestId("cost-centre-edit-budget").fill("1500");
+  await row.getByTestId("cost-centre-edit-save").click();
+  await expect(row.getByTestId("cost-centre-figures")).toContainText("Budget $1500.00");
+  await expect(row.getByTestId("cost-centre-figures")).toContainText("remaining $1500.00");
+
   await row.getByTestId("cost-centre-toggle").click();
   await expect.poll(async () => (await read()).is_active).toBe(false);
   await expect(row).toContainText("inactive");
+});
+
+test("the order panel shows its cost centre's budget against what is committed", async ({ page }) => {
+  await login(page, BUYER);
+  const code = `F${Date.now()}`.slice(-12);
+  const made = await page.request.post("/api/cost-centers", { data: { code, name: "Figures e2e", budget_amount: "1000" } });
+  expect(made.ok()).toBe(true);
+  const { cost_center_id: ccId } = (await made.json()) as { cost_center_id: number };
+  const order = await newOrder(page, "400.00");   // under the limit: needs no approval
+  try {
+    const set = await page.request.patch(`/api/orders/${order.po_id}`, { data: { cost_center_id: ccId } });
+    expect(set.ok()).toBe(true);
+    // A manager reads the Orderbook too, and sees the same figures.
+    await switchTo(page, PM);
+    await page.goto(`/orderbook?order=${order.po_number}`);
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("Budget $1000.00", { timeout: 15_000 });
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
+    // Delivering books the cost: the remainder drops, with nothing blocked.
+    await page.request.patch(`/api/orders/${order.po_id}`, { data: { status: "Delivered" } });
+    await page.reload();
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("spent $400.00");
+    await expect(page.getByTestId("cost-centre-figures")).toContainText("remaining $600.00");
+  } finally {
+    // No way to delete one: switch it off so it stays out of every order's selector.
+    await switchTo(page, BUYER);
+    await page.request.patch(`/api/cost-centers/${ccId}`, { data: { is_active: false } });
+  }
 });
 
 test("a purchase officer can change the approval limit", async ({ page }) => {

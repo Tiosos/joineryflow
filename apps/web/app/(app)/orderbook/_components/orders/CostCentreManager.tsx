@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CostCentre } from "@/lib/orders-types";
+import { CostCentreFigures } from "./CostCentreFigures";
 import { ErrorLine } from "./ErrorLine";
 
 /**
@@ -14,10 +15,10 @@ export function CostCentreManager({
   costCentres: CostCentre[];
   onChanged: (updated: CostCentre) => void;
 }) {
-  const [edit, setEdit] = useState<Record<number, { code: string; name: string }>>({});
+  const [edit, setEdit] = useState<Record<number, { code: string; name: string; budget: string }>>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
 
-  async function patch(id: number, body: { code?: string; name?: string; is_active?: boolean }) {
+  async function patch(id: number, body: { code?: string; name?: string; is_active?: boolean; budget_amount?: string }) {
     setErrors(e => ({ ...e, [id]: "" }));
     const res = await fetch(`/api/cost-centers/${id}`, {
       method: "PATCH",
@@ -39,8 +40,9 @@ export function CostCentreManager({
   return (
     <ul data-testid="cost-centre-manager" className="mb-2 space-y-1 text-xs">
       {costCentres.map(c => {
-        const draft = edit[c.cost_center_id] ?? { code: c.code, name: c.name };
-        const dirty = draft.code !== c.code || draft.name !== c.name;
+        const draft = edit[c.cost_center_id] ?? { code: c.code, name: c.name, budget: c.budget_amount };
+        const budgetOk = draft.budget.trim() !== "" && Number(draft.budget) >= 0;
+        const dirty = draft.code !== c.code || draft.name !== c.name || (budgetOk && Number(draft.budget) !== Number(c.budget_amount));
         return (
           <li key={c.cost_center_id}>
             <div className="flex items-center gap-1.5">
@@ -50,10 +52,14 @@ export function CostCentreManager({
               <input value={draft.name} data-testid="cost-centre-edit-name"
                 onChange={e => setEdit(m => ({ ...m, [c.cost_center_id]: { ...draft, name: e.target.value } }))}
                 className="w-40 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
+              <input value={draft.budget} data-testid="cost-centre-edit-budget" inputMode="decimal"
+                aria-label="Budget"
+                onChange={e => setEdit(m => ({ ...m, [c.cost_center_id]: { ...draft, budget: e.target.value } }))}
+                className="h-mono w-24 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
               {dirty && (
                 <button type="button" data-testid="cost-centre-edit-save"
-                  disabled={!draft.code.trim() || !draft.name.trim()}
-                  onClick={() => void patch(c.cost_center_id, { code: draft.code, name: draft.name })}
+                  disabled={!draft.code.trim() || !draft.name.trim() || !budgetOk}
+                  onClick={() => void patch(c.cost_center_id, { code: draft.code, name: draft.name, budget_amount: draft.budget })}
                   className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink disabled:opacity-50">Save</button>
               )}
               <button type="button" data-testid="cost-centre-toggle"
@@ -63,6 +69,7 @@ export function CostCentreManager({
               </button>
               {!c.is_active && <span className="text-h-muted">inactive</span>}
             </div>
+            <CostCentreFigures cc={c} />
             {errors[c.cost_center_id] && <ErrorLine msg={errors[c.cost_center_id]} />}
           </li>
         );

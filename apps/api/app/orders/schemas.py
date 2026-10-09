@@ -256,7 +256,8 @@ class PatchCostCentreIn(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=20)
     name: str | None = Field(default=None, min_length=1, max_length=100)
     is_active: bool | None = None
-    reject_null = no_null("code", "name", "is_active")
+    budget_amount: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    reject_null = no_null("code", "name", "is_active", "budget_amount")
 
 
 class CostCentreOut(BaseModel):
@@ -265,6 +266,11 @@ class CostCentreOut(BaseModel):
     name: str
     budget_amount: Decimal
     is_active: bool = True
+    # From the budget ledger (information only, nothing is blocked by it): `committed` is what
+    # approved orders still hold, `spent` what delivered ones cost, `remaining` the budget less both.
+    committed: Decimal = Decimal(0)
+    spent: Decimal = Decimal(0)
+    remaining: Decimal = Decimal(0)
 
 
 class CostCentreListOut(BaseModel):
