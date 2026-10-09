@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
+from .budget import settle_on_close
 from .schemas import (
     APPROVAL_STATUSES,
     DEFAULT_APPROVAL_THRESHOLD,
@@ -434,7 +435,7 @@ def patch_order(
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
     'COST_CENTER_NOT_FOUND' (`data` is {cost_center_id}) | 'COST_CENTER_LOCKED' (a
-    Commitment is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
+    budget row is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
     that needs approval) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
@@ -509,10 +510,10 @@ def patch_order(
             db, cost_center_id=fields["cost_center_id"], workspace_id=workspace_id
         ):
             return "COST_CENTER_NOT_FOUND", {"cost_center_id": fields["cost_center_id"]}
-        # The approval's Commitment was posted against the old one; moving the order would
-        # leave that budget row on the wrong cost centre.
+        # A budget row (the approval's Commitment, a Release, an Expenditure) was posted against
+        # the old one; moving the order would leave it on the wrong cost centre.
         if db.execute(
-            text("SELECT 1 FROM budget_transactions WHERE po_id = :o AND transaction_type = 'Commitment'"),
+            text("SELECT 1 FROM budget_transactions WHERE po_id = :o"),
             {"o": po_id},
         ).first():
             return "COST_CENTER_LOCKED", {"cost_center_id": current["cost_center_id"]}
@@ -550,7 +551,11 @@ def patch_order(
         event="order.update", target=str(po_id),
         payload={"fields": sorted(fields), "po_number": current["po_number"]},
     )
-    return "OK", get_order(db, po_id=po_id, workspace_id=workspace_id)
+    updated = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    if fields.get("status") in ("Cancelled", "Delivered") and fields["status"] != current["status"]:
+        settle_on_close(db, order=updated, workspace_id=workspace_id, actor_id=actor_id,
+                        delivered=fields["status"] == "Delivered")
+    return "OK", updated
 
 
 def cancel_order(
@@ -581,6 +586,7 @@ def cancel_order(
         event="order.cancel", target=str(po_id),
         payload={"po_number": current["po_number"], "from_status": current["status"]},
     )
+    settle_on_close(db, order=current, workspace_id=workspace_id, actor_id=actor_id, delivered=False)
     return "OK"
 
 
