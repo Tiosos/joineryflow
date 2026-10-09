@@ -101,3 +101,84 @@ def test_approving_commits_against_the_chosen_cost_centre_and_then_it_cannot_mov
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "COST_CENTER_LOCKED")
     # setting it to what it already is is not a move
     assert ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]}).status_code == 200
+
+
+# ── Rename and deactivate ────────────────────────────────────────────────────
+
+def _patch(c, cc, **body):
+    return c.patch(f"/cost-centers/{cc['cost_center_id']}", json=body)
+
+
+def test_a_purchase_officer_renames_a_cost_centre_and_orders_show_the_new_name(ws):
+    cc = _make(ws["buyer"], code="GNR", name="Genral")   # a typo
+    o = _order(ws["buyer"], ws)
+    ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    r = _patch(ws["buyer"], cc, code="GEN", name="General")
+    assert r.status_code == 200, r.text
+    assert (r.json()["code"], r.json()["name"], r.json()["is_active"]) == ("GEN", "General", True)
+    got = ws["buyer"].get(f"/orders/{o['po_id']}").json()
+    assert (got["cost_center_id"], got["cost_center_code"], got["cost_center_name"]) == (
+        cc["cost_center_id"], "GEN", "General")
+    r = ws["manager"].patch(f"/cost-centers/{cc['cost_center_id']}", json={"name": "X"})
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "COST_CENTRE_FORBIDDEN")
+
+
+def test_a_rename_cannot_take_a_code_already_used_in_the_workspace(ws):
+    a = _make(ws["buyer"], code="A")
+    _make(ws["buyer"], code="B")
+    r = _patch(ws["buyer"], a, code="B")
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "COST_CENTRE_EXISTS")
+    assert _patch(ws["buyer"], a, code="A", name="Same code, new name").status_code == 200  # its own code is fine
+
+
+def test_a_rename_is_allowed_after_budget_rows_are_posted(ws):
+    cc = _make(ws["buyer"])
+    o = _order(ws["buyer"], ws, "2500.00")
+    ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
+    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert _sql("SELECT count(*) FROM budget_transactions WHERE po_id = :o", o=o["po_id"]) == 1
+    assert _patch(ws["buyer"], cc, name="Renamed").status_code == 200
+
+
+def test_deactivating_hides_it_from_new_orders_but_leaves_the_orders_that_use_it(ws):
+    cc = _make(ws["buyer"])
+    o = _order(ws["buyer"], ws, "2500.00")
+    other = _order(ws["buyer"], ws)
+    ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    ws["buyer"].post(f"/orders/{o['po_id']}/approval/request")
+    assert _patch(ws["buyer"], cc, is_active=False).json()["is_active"] is False
+
+    # the list still carries it (so it can be switched back on), marked inactive
+    listed = ws["manager"].get("/cost-centers").json()["cost_centers"]
+    assert [(c["code"], c["is_active"]) for c in listed] == [("GEN", False)]
+    # it cannot be chosen on another order ...
+    r = ws["buyer"].patch(f"/orders/{other['po_id']}", json={"cost_center_id": cc["cost_center_id"]})
+    assert (r.status_code, r.json()["detail"]["code"]) == (404, "COST_CENTER_NOT_FOUND")
+    # ... but the order that already has it keeps it, and its approval still commits against it
+    assert ws["buyer"].get(f"/orders/{o['po_id']}").json()["cost_center_code"] == "GEN"
+    assert ws["manager"].post(f"/orders/{o['po_id']}/approval/approve", json={}).status_code == 200
+    assert _sql("SELECT min(cost_center_id) FROM budget_transactions WHERE po_id = :o", o=o["po_id"]) \
+        == cc["cost_center_id"]
+
+    assert _patch(ws["buyer"], cc, is_active=True).json()["is_active"] is True
+    assert ws["buyer"].patch(f"/orders/{other['po_id']}",
+                             json={"cost_center_id": cc["cost_center_id"]}).status_code == 200
+
+
+def test_cost_centre_patch_refuses_nulls_unknown_and_other_workspaces_ids(ws):
+    cc = _make(ws["buyer"])
+    for field in ("code", "name", "is_active"):
+        r = _patch(ws["buyer"], cc, **{field: None})
+        assert r.status_code == 422 and field in r.text, field
+    assert _patch(ws["buyer"], cc, code="").status_code == 422
+    other, _wid, _uid = login("purchase_officer", prefix="cc4")
+    theirs = _make(other)
+    r_foreign = ws["buyer"].patch(f"/cost-centers/{theirs['cost_center_id']}", json={"name": "Mine now"})
+    r_ghost = ws["buyer"].patch("/cost-centers/99999999", json={"name": "Mine now"})
+    assert (r_foreign.status_code, r_foreign.json()) == (r_ghost.status_code, r_ghost.json()) == (
+        404, {"detail": "cost centre not found"})
+    assert other.get("/cost-centers").json()["cost_centers"][0]["name"] == "General"
+    # an edit is audited with what it changed
+    assert _patch(ws["buyer"], cc, name="Audited").status_code == 200
+    assert _sql("SELECT count(*) FROM audit_log WHERE event = 'cost_centre.update'") == 1

@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
+from ..sql_columns import require_columns
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from .budget import settle_on_close
 from .schemas import (
@@ -134,8 +135,8 @@ def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -
 
 def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
     rows = db.execute(
-        text("SELECT cost_center_id, code, name, budget_amount FROM cost_centers"
-             " WHERE workspace_id = :w AND is_active IS NOT FALSE ORDER BY code"),
+        text("SELECT cost_center_id, code, name, budget_amount, is_active IS NOT FALSE AS is_active"
+             " FROM cost_centers WHERE workspace_id = :w ORDER BY code"),
         {"w": workspace_id},
     ).mappings().all()
     return [dict(r) for r in rows]
@@ -151,7 +152,7 @@ def create_cost_centre(
             INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
             VALUES (:w, :c, :n, EXTRACT(year FROM now())::int, :b)
             ON CONFLICT (workspace_id, code) DO NOTHING
-            RETURNING cost_center_id, code, name, budget_amount
+            RETURNING cost_center_id, code, name, budget_amount, is_active IS NOT FALSE AS is_active
             """
         ),
         {"w": workspace_id, "c": code.strip(), "n": name.strip(), "b": budget_amount},
@@ -163,6 +164,49 @@ def create_cost_centre(
         target=str(row["cost_center_id"]), payload={"code": row["code"], "name": row["name"]},
     )
     return dict(row)
+
+
+_COST_CENTRE_COLUMNS = frozenset({"code", "name", "is_active"})
+
+
+def patch_cost_centre(
+    db: Session, *, cost_center_id: int, workspace_id: int, actor_id: int, changes: dict
+) -> tuple[str, dict | None]:
+    """Rename and/or (de)activate. Codes: 'OK' | 'NOT_FOUND' | 'EXISTS' (the code is taken).
+
+    Orders keep their cost centre by id, so a rename shows on them at once and a deactivation
+    leaves them as they are: it only stops the cost centre being chosen on an order again."""
+    current = db.execute(
+        text("SELECT cost_center_id, code, name, budget_amount, is_active IS NOT FALSE AS is_active"
+             " FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w FOR UPDATE"),
+        {"c": cost_center_id, "w": workspace_id},
+    ).mappings().first()
+    if current is None:
+        return "NOT_FOUND", None
+    changes = {
+        k: (v.strip() if isinstance(v, str) else v) for k, v in changes.items()
+        if k in ("code", "name", "is_active") and v != current[k]
+    }
+    if not changes:
+        return "OK", dict(current)
+    if "code" in changes and db.execute(
+        text("SELECT 1 FROM cost_centers WHERE workspace_id = :w AND code = :c"),
+        {"w": workspace_id, "c": changes["code"]},
+    ).first():
+        return "EXISTS", None
+    require_columns(changes, _COST_CENTRE_COLUMNS)
+    row = db.execute(
+        text("UPDATE cost_centers SET " + ", ".join(f"{k} = :{k}" for k in changes)
+             + " WHERE cost_center_id = :c RETURNING cost_center_id, code, name, budget_amount,"
+             " is_active IS NOT FALSE AS is_active"),
+        {**changes, "c": cost_center_id},
+    ).mappings().one()
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="cost_centre.update",
+        target=str(cost_center_id),
+        payload={k: {"from": current[k], "to": v} for k, v in changes.items()},
+    )
+    return "OK", dict(row)
 
 
 def list_categories(db: Session) -> list[dict]:
