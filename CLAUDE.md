@@ -141,7 +141,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 ```
 
 - Login `http://localhost:3000/login` → `rin.park@hartwood.test` / `hartwood-dev` (any `*.hartwood.test` user). Health: `/api/health`.
-- `make test` TRUNCATEs `workspace`, `app_user`, `session`, `audit_log`, so re-run `make seed` afterwards.
+- `make test` runs pytest in parallel (`-n auto --dist loadfile`): each xdist worker builds its own `<db>_gwN` database (migrate + seed, in `conftest.py`), so your dev database is untouched. `make test-serial` runs one process against `DATABASE_URL` and TRUNCATEs `workspace`, `app_user`, `session`, `audit_log`, so re-run `make seed` afterwards.
 - Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest. The seed finds its sample files relative to itself, so `python -m seed.hartwood_joinery` works outside the container too.
 - `search-worker` runs with **no `--reload`** — restart it after editing `app/search/`.
 
