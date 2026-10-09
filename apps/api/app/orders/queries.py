@@ -68,7 +68,7 @@ _ORDER_COLS = f"""
     po.notes, po.internal_comments, po.attributes,
     po.created_at, po.updated_at, po.field_versions,
     po.requires_approval, po.approval_requested_by, po.approval_requested_at,
-    po.approval_decided_by, po.approval_decided_at, po.approval_note,
+    po.approval_decided_by, po.approval_decided_at, po.approval_note, po.approved_total,
     rq.full_name AS approval_requested_by_name, dc.full_name AS approval_decided_by_name,
     po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name,
     (po.requires_approval
@@ -560,6 +560,9 @@ def patch_order(
         event="order.update", target=str(po_id),
         payload={"fields": sorted(fields), "po_number": current["po_number"]},
     )
+    if "total_amount" in fields:  # a header-only order: its total is set directly
+        _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id,
+                             old_total=current["total_amount"])
     updated = get_order(db, po_id=po_id, workspace_id=workspace_id)
     if fields.get("status") in ("Cancelled", "Delivered") and fields["status"] != current["status"]:
         settle_on_close(db, order=updated, workspace_id=workspace_id, actor_id=actor_id,
@@ -649,7 +652,7 @@ def _recompute_total_amount(db: Session, *, po_id: int) -> None:
         {"o": po_id},
     ).mappings().one()
     if row["new_total"] == row["total_amount"]:
-        return
+        return None
     new_versions = bump_field_versions(row["field_versions"], ["total_amount"])
     db.execute(
         text(
@@ -657,6 +660,43 @@ def _recompute_total_amount(db: Session, *, po_id: int) -> None:
             " field_versions = CAST(:fv AS jsonb), updated_at = now() WHERE po_id = :o"
         ),
         {"o": po_id, "t": row["new_total"], "fv": json.dumps(new_versions)},
+    )
+    return row["total_amount"]
+
+
+def _send_back_if_raised(
+    db: Session, *, po_id: int, workspace_id: int, actor_id: int, old_total
+) -> None:
+    """An Approved order whose total has just gone up goes back to Pending, requested by whoever
+    raised it, so a different approver signs off on the new figure.
+
+    "Raised" means above what was approved (`approved_total`), or, for an order approved freely
+    (no recorded approval) that now needs one because the rise took it over the limit, above its
+    previous total. A fall, or a rise within what was approved, leaves it Approved. The Commitment
+    already posted stays; approving again tops it up (`approval._commit_budget`)."""
+    order = get_order(db, po_id=po_id, workspace_id=workspace_id)
+    new_total = order["total_amount"] or 0
+    if order["status"] != "Approved" or not order["needs_approval"] or new_total <= (old_total or 0):
+        return
+    approved = order["approved_total"]
+    if approved is not None and new_total <= approved:
+        return
+    note = f"Total raised from {old_total or 0} to {new_total} after approval"
+    versions = bump_field_versions(order.get("field_versions"), ["status"])
+    db.execute(
+        text(
+            "UPDATE purchase_orders SET status = 'Pending', approval_requested_by = :u,"
+            " approval_requested_at = now(), approval_decided_by = NULL, approval_decided_at = NULL,"
+            " approval_note = :n, field_versions = CAST(:fv AS jsonb), updated_at = now()"
+            " WHERE po_id = :o"
+        ),
+        {"u": actor_id, "n": note, "fv": json.dumps(versions), "o": po_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="order.approval.reopened",
+        target=str(po_id),
+        payload={"po_number": order["po_number"], "from_total": str(old_total or 0),
+                 "to_total": str(new_total), "approved_total": str(approved) if approved is not None else None},
     )
 
 
@@ -695,7 +735,8 @@ def add_line(
          "mid": payload.material_id,
          "a": json.dumps(payload.attributes or {})},
     )
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -742,7 +783,8 @@ def patch_line(
     )
     if result.rowcount == 0:
         return None
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
@@ -765,7 +807,8 @@ def remove_line(
     )
     if result.rowcount == 0:
         return None
-    _recompute_total_amount(db, po_id=po_id)
+    old_total = _recompute_total_amount(db, po_id=po_id)
+    _send_back_if_raised(db, po_id=po_id, workspace_id=workspace_id, actor_id=actor_id, old_total=old_total)
     db.flush()
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,

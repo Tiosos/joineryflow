@@ -98,6 +98,8 @@ export function ApprovalSection({
                 Waiting for approval — requested
                 {order.approval_requested_by_name ? ` by ${order.approval_requested_by_name}` : ""}.
               </p>
+              {/* Set when an approved order's total was raised and it was sent back. */}
+              {order.approval_note && <p data-testid="order-approval-reason" className="text-h-muted">{order.approval_note}</p>}
               {canApprove && mine && (
                 <p className="text-h-muted">You requested this order, so someone else must approve it.</p>
               )}

@@ -109,7 +109,10 @@ def decide(
         return "NOTE_REQUIRED", None
     _set_status(
         db, order=order, status="Approved" if approve else "Rejected",
-        extra_sql="approval_decided_by = :u, approval_decided_at = now(), approval_note = :n",
+        extra_sql=(
+            "approval_decided_by = :u, approval_decided_at = now(), approval_note = :n"
+            + (", approved_total = total_amount" if approve else "")
+        ),
         params={"u": actor_id, "n": note},
     )
     committed = _commit_budget(db, order=order, workspace_id=workspace_id, actor_id=actor_id) if approve else False
@@ -123,20 +126,29 @@ def decide(
 
 
 def _commit_budget(db: Session, *, order: dict, workspace_id: int, actor_id: int) -> bool:
-    """Post the order's total as a `Commitment` against its cost centre. No cost centre (or one
-    from another workspace, or a total that is not positive): nothing is posted."""
-    amount = order["total_amount"]
+    """Commit the order's total against its cost centre: what is not committed yet, so approving
+    again after the total went up tops the Commitment up rather than doubling it. No cost centre (or
+    one from another workspace, or nothing left to commit): nothing is posted."""
+    total = order["total_amount"]
     cc = db.execute(
         text("SELECT cost_center_id FROM purchase_orders WHERE po_id = :o"),
         {"o": order["po_id"]},
     ).scalar()
-    if cc is None or amount is None or amount <= 0:
+    if cc is None or total is None or total <= 0:
         return False
     in_workspace = db.execute(
         text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"),
         {"c": cc, "w": workspace_id},
     ).first()
     if in_workspace is None:
+        return False
+    committed = db.execute(
+        text("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions"
+             " WHERE po_id = :o AND transaction_type IN ('Commitment', 'Release')"),
+        {"o": order["po_id"]},
+    ).scalar()
+    amount = total - max(committed, 0)
+    if amount <= 0:
         return False
     db.execute(
         text(

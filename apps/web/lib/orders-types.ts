@@ -69,6 +69,8 @@ export interface OrderRow {
   approval_decided_by_name: string | null;
   approval_decided_at: string | null;
   approval_note: string | null;
+  /** What the last approval approved (Decimal, so a string); a rise above it sends the order back. */
+  approved_total: string | null;
 
   cost_center_id: number | null;
   cost_center_code: string | null;

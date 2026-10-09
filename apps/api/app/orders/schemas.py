@@ -127,6 +127,8 @@ class OrderOut(BaseModel):
     approval_decided_by_name: str | None = None
     approval_decided_at: datetime | None = None
     approval_note: str | None = None
+    # What the last approval approved; a later rise above it sends the order back (0055).
+    approved_total: Decimal | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
