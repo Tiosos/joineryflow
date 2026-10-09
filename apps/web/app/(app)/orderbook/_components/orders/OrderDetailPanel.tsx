@@ -203,11 +203,14 @@ export function OrderDetailPanel({
           >
             {STATUSES.map(s => (
               // Pending / Approved / Rejected on an order that needs approval are reached
-              // through the Approval section; the API refuses them here.
+              // through the Approval section, and Delivered waits for Approved; the API refuses both here.
               <option
                 key={s}
                 value={s}
-                disabled={order.needs_approval && s !== order.status && ["Pending", "Approved", "Rejected"].includes(s)}
+                disabled={
+                  order.needs_approval && s !== order.status &&
+                  (["Pending", "Approved", "Rejected"].includes(s) || (s === "Delivered" && order.status !== "Approved"))
+                }
               >
                 {s}
               </option>

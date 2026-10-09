@@ -156,6 +156,8 @@ def patch_order_route(
         raise HTTPException(404, "order not found")
     if code == "APPROVAL_ROUTE_REQUIRED":
         raise HTTPException(409, {"code": "APPROVAL_ROUTE_REQUIRED", **order})
+    if code == "APPROVAL_REQUIRED":
+        raise HTTPException(409, {"code": "APPROVAL_REQUIRED", **order})
     if code == "COST_CENTER_NOT_FOUND":
         raise HTTPException(404, {"code": "COST_CENTER_NOT_FOUND", **order})
     if code == "COST_CENTER_LOCKED":

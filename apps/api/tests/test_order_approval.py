@@ -159,6 +159,44 @@ def test_an_order_that_does_not_need_approval_keeps_its_free_status(ws):
     assert r.status_code == 200 and r.json()["status"] == "Approved"
 
 
+# ── Delivered needs the approval too ─────────────────────────────────────────
+
+def test_an_order_that_needs_approval_is_delivered_only_once_approved(ws):
+    o = _order(ws["buyer"], ws)
+    pid = o["po_id"]
+
+    def deliver():
+        return ws["buyer"].patch(f"/orders/{pid}", json={"status": "Delivered"})
+
+    for step in ("Draft", "Pending", "Rejected"):
+        if step == "Pending":
+            assert ws["buyer"].post(f"/orders/{pid}/approval/request").status_code == 200
+        if step == "Rejected":
+            r = ws["manager"].post(f"/orders/{pid}/approval/reject", json={"note": "no"})
+            assert r.status_code == 200, r.text
+        r = deliver()
+        assert (r.status_code, _code(r)) == (409, "APPROVAL_REQUIRED"), step
+        assert r.json()["detail"]["status"] == step
+        assert ws["buyer"].get(f"/orders/{pid}").json()["status"] == step
+
+    assert ws["buyer"].post(f"/orders/{pid}/approval/request").status_code == 200
+    assert ws["manager"].post(f"/orders/{pid}/approval/approve", json={}).status_code == 200
+    r = deliver()
+    assert r.status_code == 200 and r.json()["status"] == "Delivered"
+
+
+def test_the_flag_and_delivered_in_one_patch_cannot_sidestep_it(ws):
+    o = _order(ws["buyer"], ws, "10.00")
+    r = ws["manager"].patch(f"/orders/{o['po_id']}", json={"requires_approval": True, "status": "Delivered"})
+    assert (r.status_code, _code(r)) == (409, "APPROVAL_REQUIRED")
+
+
+def test_an_order_that_does_not_need_approval_is_delivered_freely(ws):
+    o = _order(ws["buyer"], ws, "10.00")
+    r = ws["buyer"].patch(f"/orders/{o['po_id']}", json={"status": "Delivered"})
+    assert r.status_code == 200 and r.json()["status"] == "Delivered"
+
+
 # ── Budget commitment ────────────────────────────────────────────────────────
 
 def _cost_centre(wid: int, code: str = "GEN") -> int:

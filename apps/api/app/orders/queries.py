@@ -445,7 +445,8 @@ def patch_order(
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
     'COST_CENTER_NOT_FOUND' (`data` is {cost_center_id}) | 'COST_CENTER_LOCKED' (a
     budget row is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
-    that needs approval) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
+    that needs approval) | 'APPROVAL_REQUIRED' (`data` is {status}: Delivered on an order that
+    needs approval and is not Approved) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
     current = get_order(db, po_id=po_id, workspace_id=workspace_id, for_update=True)
@@ -505,6 +506,15 @@ def patch_order(
         )
         if would_need:
             return "APPROVAL_ROUTE_REQUIRED", {"status": fields["status"]}
+    # An order that needs approval is delivered only once it is Approved: delivery books the
+    # Expenditure, so a Draft, Pending or Rejected one would reach the ledger unapproved.
+    if fields.get("status") == "Delivered" and current["status"] != "Delivered":
+        total = fields["total_amount"] if "total_amount" in fields else current["total_amount"]
+        if fields.get("requires_approval", current["requires_approval"]) or (
+            (total or 0) > get_approval_threshold(db, workspace_id=workspace_id)
+        ):
+            if current["status"] != "Approved":
+                return "APPROVAL_REQUIRED", {"status": current["status"]}
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.
