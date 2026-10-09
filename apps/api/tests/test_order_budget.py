@@ -90,10 +90,10 @@ def test_delivering_again_after_a_reopen_does_not_double_count(ws):
 
 def test_the_expenditure_is_the_total_at_delivery(ws):
     po = _approved_order(ws, "2500.00")
-    ws["buyer"].patch(f"/orders/{po}", json={"total_amount": "2700.00"})
+    ws["buyer"].patch(f"/orders/{po}", json={"total_amount": "2300.00"})
     ws["buyer"].patch(f"/orders/{po}", json={"status": "Delivered"})
     # what was committed is released; what was spent is the delivered total
-    assert _ledger(po) == [("Commitment", "2500.00"), ("Expenditure", "2700.00"), ("Release", "-2500.00")]
+    assert _ledger(po) == [("Commitment", "2500.00"), ("Expenditure", "2300.00"), ("Release", "-2500.00")]
 
 
 def test_an_order_with_a_cost_centre_but_no_approval_gets_only_the_expenditure(ws):
