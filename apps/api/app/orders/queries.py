@@ -108,6 +108,13 @@ _PATCHABLE = frozenset({
 })
 
 
+def open_orders_sql(alias: str) -> str:
+    """Orders still on the book: not Delivered, Cancelled or Rejected. The home dashboard's
+    "Open POs" tile and the Orders list's `?status=open` both use it, so the tile's number is the
+    number of rows its link shows."""
+    return f"{alias}.status NOT IN ('Delivered', 'Cancelled', 'Rejected')"
+
+
 def get_approval_threshold(db: Session, *, workspace_id: int):
     """The workspace's approval limit; the default when a purchase officer has not set one."""
     value = db.execute(
@@ -221,7 +228,9 @@ def list_orders_for_workspace(
     """
     where = [_ORDER_WORKSPACE]
     params: dict = {"w": workspace_id}
-    if status:
+    if status == "open":  # not a status: the tile's "still on the book" (see open_orders_sql)
+        where.append(open_orders_sql("po"))
+    elif status:
         where.append("po.status = :st")
         params["st"] = status
     if supplier:

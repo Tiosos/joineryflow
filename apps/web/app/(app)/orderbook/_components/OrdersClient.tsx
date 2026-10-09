@@ -133,6 +133,8 @@ export function OrdersClient({ me }: { me: Me | null }) {
           className="rounded border border-h-line bg-h-surface px-2 py-1 text-xs text-h-ink"
         >
           <option value="">All statuses</option>
+          {/* The dashboard's Open POs tile links here. */}
+          <option value="open">Open (not delivered, cancelled or rejected)</option>
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select

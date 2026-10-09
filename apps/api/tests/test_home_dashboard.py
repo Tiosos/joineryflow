@@ -432,3 +432,32 @@ def test_dashboard_editor_gets_editor_view_with_general_metrics():
     keys = {m["key"] for m in data["metrics"]}
     assert "overdue" in keys           # general/production card present
     assert "drafts_open" not in keys   # not the estimator set
+
+
+def test_open_pos_tile_link_shows_exactly_the_orders_it_counts():
+    """The tile links to /orderbook?status=open; the Orders list must treat `open` as "not
+    Delivered / Cancelled / Rejected" (it used to match a status literally called 'open')."""
+    c, wid, uid = _login(role="purchase_officer")
+    db = SessionLocal()
+    try:
+        vendor = db.execute(
+            text("INSERT INTO vendors(name, category, workspace_id) VALUES('V', 'Board', :w) RETURNING vendor_id"),
+            {"w": wid},
+        ).scalar()
+        for n, status in enumerate(["Draft", "Pending", "Approved", "Delivered", "Cancelled", "Rejected"]):
+            db.execute(
+                text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category, status)
+                        VALUES (:n, :v, :u, 'x', 'Board', :s)"""),
+                {"n": f"PO-OPEN-{n}", "v": vendor, "u": uid, "s": status},
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    tiles = {m["key"]: m for m in c.get("/home/dashboard").json()["metrics"]}
+    assert tiles["open_pos"]["href"] == "/orderbook?status=open"
+    listed = c.get("/orders?status=open").json()["orders"]
+    assert tiles["open_pos"]["value"] == len(listed) == 3
+    assert {o["status"] for o in listed} == {"Draft", "Pending", "Approved"}
+    # a real status still filters literally
+    assert [o["status"] for o in c.get("/orders?status=Delivered").json()["orders"]] == ["Delivered"]

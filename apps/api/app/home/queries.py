@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.sessions import AuthUser
+from ..orders.queries import open_orders_sql
 from ..procurement_v1.queue.queries import eta_filter_sql
 from ..row_types import live_joinery_items
 from .schemas import (
@@ -302,7 +303,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             SELECT COUNT(*) AS cnt
             FROM purchase_orders po
             WHERE {_PO_WORKSPACE_EXISTS}
-              AND po.status NOT IN ('Delivered', 'Cancelled', 'Rejected')
+              AND {open_orders_sql("po")}
             """
         ),
         {"wid": wid},
