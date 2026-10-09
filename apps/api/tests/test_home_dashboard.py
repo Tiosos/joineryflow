@@ -264,8 +264,8 @@ def test_dashboard_purchase_officer_metrics_shape():
 
 
 def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspaces():
-    """purchase_orders and approval_workflows have no workspace_id of their own;
-    open_pos and pending_approvals must still not count another workspace's rows."""
+    """purchase_orders has no workspace_id of its own; open_pos and pending_approvals
+    (orders with status 'Pending') must still not count another workspace's rows."""
     c, wid, uid = _login(role="purchase_officer")
     other_c, other_wid, other_uid = _login(role="purchase_officer")
 
@@ -276,14 +276,16 @@ def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspa
                  " VALUES('Mine', 'Board', :w) RETURNING vendor_id"),
             {"w": wid},
         ).scalar()
-        po = db.execute(
-            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category)
-                    VALUES ('PO-MINE-1', :v, :u, 'mine', 'Board') RETURNING po_id"""),
-            {"v": vendor, "u": uid},
-        ).scalar()
         db.execute(
-            text("INSERT INTO approval_workflows(po_id, approver_id) VALUES (:p, :u)"),
-            {"p": po, "u": uid},
+            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category, status)
+                    VALUES ('PO-MINE-1', :v, :u, 'mine', 'Board', 'Pending')"""),
+            {"v": vendor, "u": uid},
+        )
+        # An Approved order is open but not awaiting approval.
+        db.execute(
+            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category, status)
+                    VALUES ('PO-MINE-2', :v, :u, 'approved', 'Board', 'Approved')"""),
+            {"v": vendor, "u": uid},
         )
 
         other_vendor = db.execute(
@@ -291,22 +293,20 @@ def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspa
                  " VALUES('Other', 'Board', :w) RETURNING vendor_id"),
             {"w": other_wid},
         ).scalar()
-        other_po = db.execute(
-            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category)
-                    VALUES ('PO-OTHER-1', :v, :u, 'not mine', 'Board') RETURNING po_id"""),
-            {"v": other_vendor, "u": other_uid},
-        ).scalar()
         db.execute(
-            text("INSERT INTO approval_workflows(po_id, approver_id) VALUES (:p, :u)"),
-            {"p": other_po, "u": other_uid},
+            text("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, description, category, status)
+                    VALUES ('PO-OTHER-1', :v, :u, 'not mine', 'Board', 'Pending')"""),
+            {"v": other_vendor, "u": other_uid},
         )
         db.commit()
     finally:
         db.close()
 
     metrics = {m["key"]: m["value"] for m in c.get("/home/dashboard").json()["metrics"]}
-    assert metrics["open_pos"] == 1
+    assert metrics["open_pos"] == 2
     assert metrics["pending_approvals"] == 1
+    links = {m["key"]: m["href"] for m in c.get("/home/dashboard").json()["metrics"]}
+    assert links["pending_approvals"] == "/orderbook?status=Pending"
 
     other_metrics = {m["key"]: m["value"] for m in other_c.get("/home/dashboard").json()["metrics"]}
     assert other_metrics["open_pos"] == 1

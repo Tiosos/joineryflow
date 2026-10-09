@@ -210,7 +210,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 
 - **ProjectHardwareCatalog** is a project-scoped link layer: item hardware lines reference materials *through* it (log-only governance, every add/remove audited). `ProcurementBatch → Allocations → item_hardware_line_id` answers "is this item blocked on a material?" as one join.
 - **Three apps, one database:** Project Information Management (Drafter/PM/CEO; Project → Item → Module → Part + HardwareLine + lifecycle), Shop Floor Ops, Cabinet Vision integration layer. Drafter is the authoritative data-entry point.
-- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile still reads `approval_workflows` and is **frozen** until a proper approvals flow is built (see *Still open*). Reference: `legacy/procurement_v0/README.md`.
+- **Legacy `/procurement/*`** is retired and unmounted; its tables stay (Q435). The home dashboard's `pending_approvals` tile now counts `purchase_orders` with `status = 'Pending'` (links to `/orderbook?status=Pending`); real PO approval is not built yet (see *Still open* and `docs/sub-projects/06-orders-procurement.md`). Reference: `legacy/procurement_v0/README.md`.
 
 ## 8. API conventions
 
@@ -295,7 +295,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-Legacy procurement approvals: re-build properly and re-wire the dashboard `pending_approvals` tile (frozen since the `/procurement/*` retirement, `legacy/procurement_v0/`). Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
+PO approval flow (decided Oct 2026, not built): see `docs/sub-projects/06-orders-procurement.md` § *PO approval — decisions and open points*. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

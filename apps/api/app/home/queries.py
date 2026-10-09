@@ -7,9 +7,7 @@ Schema drift notes verified against live DB:
     TODO: add items.value column in a future migration when cost tracking lands.
   - purchase_orders.status valid values: Draft, Pending, Approved, Rejected,
     Delivered, Cancelled, Hold, Quote, Next. 'open' = NOT IN (Delivered, Cancelled, Rejected).
-  - approval_workflows.status valid values: Pending, Approved, Rejected, Skipped.
-  - Neither purchase_orders nor approval_workflows has a workspace_id column;
-    both reach one through purchase_orders.project_id -> projects.workspace_id,
+  - purchase_orders has no workspace_id column; it reaches one through purchase_orders.project_id -> projects.workspace_id,
     or (project_id IS NULL) through purchase_orders.vendor_id -> vendors.workspace_id
     (same _PO_WORKSPACE_EXISTS join apps/api/app/orders/queries.py uses).
   - stages table may be empty in fresh DB (seeded per-test in tests).
@@ -326,17 +324,16 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
     ).mappings().first()
     deliveries_week_count = int(deliveries_week_row["cnt"]) if deliveries_week_row else 0
 
-    # metric 4: pending_approvals — approval_workflows with status='Pending',
-    # scoped through the purchase_order it approves (approval_workflows has no
-    # workspace path of its own).
+    # metric 4: pending_approvals — orders awaiting approval (status 'Pending').
+    # The legacy approval_workflows table is no longer written (the /procurement/*
+    # routes were retired), so the count reads the order's own status.
     pending_approvals_row = db.execute(
         text(
             f"""
             SELECT COUNT(*) AS cnt
-            FROM approval_workflows aw
-            JOIN purchase_orders po ON po.po_id = aw.po_id
+            FROM purchase_orders po
             WHERE {_PO_WORKSPACE_EXISTS}
-              AND aw.status = 'Pending'
+              AND po.status = 'Pending'
             """
         ),
         {"wid": wid},
@@ -366,7 +363,7 @@ def _metrics_purchase_officer(db: Session, *, user: AuthUser, today: date) -> li
             key="pending_approvals",
             label="Pending Approvals",
             value=pending_approvals_count,
-            href="/orderbook?filter=pending_approvals",
+            href="/orderbook?status=Pending",
         ),
     ]
 

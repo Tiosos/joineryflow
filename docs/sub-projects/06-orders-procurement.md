@@ -1527,3 +1527,24 @@
   - **Per-material dismissal is allowed only on lines handed over at Convert** and while the revision is converted, like the line verb.
   - A material that appears in both a part row and a hardware row of one line is one material (same key) with one state.
   - Any `estimating:approve` user can undo anyone's per-material dismissal.
+
+## PO approval — decisions and open points (October 2026)
+
+Context: the legacy `/procurement/*` approval routes were retired (code in `legacy/procurement_v0/`). On v1 orders any holder of `orderbook:write` can set `status` to `Approved` directly, and no route checks `orderbook:approve`. Plan V1 says nothing about PO approval beyond configurable thresholds for price-source evidence.
+
+**Step 1 — built.** The home dashboard's `pending_approvals` tile counts orders with `status = 'Pending'` (workspace-scoped) and links to `/orderbook?status=Pending`. It used to count `approval_workflows` rows, which nothing writes now, and its old link `?filter=pending_approvals` was never read by the Orderbook page. The `overdue` and `this_week` tiles still link with `?filter=…`, which the page also ignores (not changed).
+
+**Decided by the product owner (answers to the design questions):**
+- No real data in `approval_workflows`, so no data to preserve there (the legacy tables themselves stay, Q435).
+- Approvers: drafter, purchase officer and manager.
+- Only some orders need approval: those **above an amount**, or those the **project manager flags** as special. Everything else skips approval.
+- **One approval is enough** (no chain).
+- **Budget commitments must be tied to approval.**
+
+**Open — needs an answer before step 2 (Rule Zero):**
+- The threshold: how much, per workspace or global, and who can change it.
+- How the PM flags an order or item as needing approval (a flag on the order, on the item, or on the line).
+- Cost centres: the `cost_centers` / `budget_transactions` tables still exist and are empty; confirm whether an approved order should post a commitment against a cost centre (the old flow did), and what happens for an order with no cost centre.
+- The sixth question in the owner's reply was left blank.
+- Whether `admin` may approve (the stated list names three roles).
+

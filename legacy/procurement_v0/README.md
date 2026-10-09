@@ -10,9 +10,7 @@ Left in place on purpose:
 
 - The nine legacy tables (`cost_centers`, `approval_workflows`, `budget_transactions`, …)
   and their migrations (Q435: data-preserving).
-- The home dashboard's `pending_approvals` tile still counts `approval_workflows` rows.
-  With the routes gone nothing moves a row out of `Pending`, so the number is **frozen**.
-  A fresh `make seed` no longer creates approval rows, so it reads 0 there.
+- The home dashboard's `pending_approvals` tile no longer reads `approval_workflows`: it counts orders with `status = 'Pending'`. A real approval flow is designed but not built (`docs/sub-projects/06-orders-procurement.md`).
 
 To bring it back, build it properly rather than re-mounting this: copy what you need into
 `apps/api/app/<new package>`, give it workspace-scoped tests, and wire the tile to it.
