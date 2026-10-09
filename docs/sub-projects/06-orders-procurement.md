@@ -1561,7 +1561,7 @@ Context: the legacy `/procurement/*` approval routes were retired (code in `lega
 
 **Releasing the commitment (built).** `orders/budget.py`, called when an order's status becomes `Cancelled` (the `DELETE /orders/{id}` route or a status PATCH) or `Delivered`:
 - *Cancelled*: the outstanding Commitment (commitments less earlier releases, read from the ledger, not from the order's total) is released with a negative `Release` row.
-- *Delivered*: the order's total at delivery is posted as an `Expenditure` and the outstanding Commitment is released, so `v_budget_utilisation` counts the money once. This is the legacy convention (`legacy/procurement_v0`), **my reading of "release on delivery"**: releasing without the Expenditure would drop the spend from the budget altogether. Say if you want the Release only.
+- *Delivered*: the order's total at delivery is posted as an `Expenditure` and the outstanding Commitment is released, so `v_budget_utilisation` counts the money once. This is the legacy convention (`legacy/procurement_v0`), **confirmed by the user (October 2026)**: delivery books the Expenditure. Releasing without it would drop the spend from the budget altogether.
 - Needs a cost centre; without one nothing is posted. An order that was never approved but has a cost centre gets just the Expenditure on delivery. A second cancel or delivery posts nothing (and an order that already has an Expenditure gets no second one), so reopening and delivering again does not double count. Reopening a cancelled or delivered order does not re-commit.
 - Once any budget row exists for an order its cost centre is locked (`COST_CENTER_LOCKED`).
 
