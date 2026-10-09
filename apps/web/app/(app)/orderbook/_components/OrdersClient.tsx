@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { can, type Me } from "@/lib/permissions";
-import type { OrderRow } from "@/lib/orders-types";
+import type { CostCentre, OrderRow } from "@/lib/orders-types";
 import { STATUSES, money } from "./orders/shared";
 import { OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
@@ -68,6 +68,35 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const [limitEdit, setLimitEdit] = useState<string | null>(null);
   const [limitErr, setLimitErr] = useState<string | null>(null);
 
+  const [costCentres, setCostCentres] = useState<CostCentre[]>([]);
+  const [ccForm, setCcForm] = useState<{ code: string; name: string; budget: string } | null>(null);
+  const [ccErr, setCcErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/cost-centers", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then((b: { cost_centers: CostCentre[] } | null) => setCostCentres(b?.cost_centers ?? []))
+      .catch(() => setCostCentres([]));
+  }, []);
+
+  async function addCostCentre() {
+    if (!ccForm) return;
+    setCcErr(null);
+    const res = await fetch("/api/cost-centers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: ccForm.code, name: ccForm.name, budget_amount: ccForm.budget || "0" }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
+      const body = res ? await res.json().catch(() => null) : null;
+      setCcErr(body?.detail?.code === "COST_CENTRE_EXISTS" ? "That code is already used" : "Could not add the cost centre");
+      return;
+    }
+    const created = (await res.json()) as CostCentre;
+    setCostCentres(list => [...list, created].sort((a, b) => a.code.localeCompare(b.code)));
+    setCcForm(null);
+  }
+
   useEffect(() => {
     fetch("/api/order-settings", { cache: "no-store" })
       .then(r => (r.ok ? r.json() : null))
@@ -118,8 +147,35 @@ export function OrdersClient({ me }: { me: Me | null }) {
         <span className="text-xs text-h-muted">
           {loading ? "Loading…" : `${rows.length} order${rows.length === 1 ? "" : "s"}`}
         </span>
+        {canSetLimit && (
+          <span data-testid="cost-centres" className="ml-auto flex items-center gap-1.5 text-xs text-h-muted">
+            {costCentres.length} cost centre{costCentres.length === 1 ? "" : "s"}
+            {ccForm === null ? (
+              <button type="button" data-testid="cost-centre-add"
+                onClick={() => setCcForm({ code: "", name: "", budget: "" })}
+                className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Add</button>
+            ) : (
+              <>
+                <input value={ccForm.code} onChange={e => setCcForm({ ...ccForm, code: e.target.value })}
+                  placeholder="Code" data-testid="cost-centre-code"
+                  className="h-mono w-20 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
+                <input value={ccForm.name} onChange={e => setCcForm({ ...ccForm, name: e.target.value })}
+                  placeholder="Name" data-testid="cost-centre-name"
+                  className="w-32 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
+                <input value={ccForm.budget} onChange={e => setCcForm({ ...ccForm, budget: e.target.value })}
+                  placeholder="Budget" inputMode="decimal"
+                  className="h-mono w-24 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
+                <button type="button" data-testid="cost-centre-save" onClick={() => void addCostCentre()}
+                  className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Save</button>
+                <button type="button" onClick={() => { setCcForm(null); setCcErr(null); }}
+                  className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Cancel</button>
+              </>
+            )}
+            {ccErr && <span className="text-[#b4443d]">{ccErr}</span>}
+          </span>
+        )}
         {threshold != null && (
-          <span data-testid="approval-limit" className="ml-auto flex items-center gap-1.5 text-xs text-h-muted">
+          <span data-testid="approval-limit" className="flex items-center gap-1.5 text-xs text-h-muted">
             Orders over <span className="h-mono text-h-ink">{money(threshold, null)}</span> need approval
             {canSetLimit && limitEdit === null && (
               <button
@@ -220,6 +276,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
           meId={me?.id ?? null}
           canApprove={canApprove}
           canFlag={canFlag}
+          costCentres={costCentres}
         />
       )}
     </div>

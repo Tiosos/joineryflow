@@ -27,6 +27,12 @@ test("an order over the limit is requested by one person and approved by another
     await page.goto(`/orderbook?order=${order.po_number}`);
     await expect(page.getByTestId("order-approval")).toBeVisible({ timeout: 15_000 });
 
+    // The budget the approval commits against: the seeded cost centre.
+    await expect(async () => {
+      await page.getByTestId("order-cost-centre").selectOption({ label: "GEN General" });
+      await expect(page.getByTestId("order-cost-centre")).toHaveValue(/\d+/, { timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+
     // Not selectable as a plain status, and requesting it is the way in.
     await expect(page.getByTestId("order-status-select").locator('option[value="Approved"]')).toBeDisabled();
     await expect(async () => {
@@ -44,10 +50,25 @@ test("an order over the limit is requested by one person and approved by another
     await page.getByTestId("order-approve").click();
     await expect(page.getByTestId("order-approved-by")).toContainText("Approved by Rin Park");
     await expect(page.getByTestId("order-approved-by")).toContainText("Within budget");
+
+    // The commitment is posted, so the order's cost centre can no longer move.
+    await page.getByTestId("order-cost-centre").selectOption({ label: "None" });
+    await expect(page.getByText("already posted against this cost centre")).toBeVisible();
   } finally {
     await switchTo(page, BUYER);
     await page.request.delete(`/api/orders/${order.po_id}`); // cancels it: puts back what the spec added
   }
+});
+
+test("a purchase officer sees the cost-centre admin on the Orders tab", async ({ page }) => {
+  await login(page, BUYER);
+  await page.goto("/orderbook");
+  await expect(page.getByTestId("cost-centres")).toContainText("cost centre", { timeout: 15_000 });
+  await expect(async () => {
+    await page.getByTestId("cost-centre-add").click();
+    await expect(page.getByTestId("cost-centre-code")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  // Adding one is covered by the API tests: there is no way to remove it again.
 });
 
 test("a purchase officer can change the approval limit", async ({ page }) => {

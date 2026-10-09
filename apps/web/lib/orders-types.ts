@@ -69,6 +69,18 @@ export interface OrderRow {
   approval_decided_by_name: string | null;
   approval_decided_at: string | null;
   approval_note: string | null;
+
+  cost_center_id: number | null;
+  cost_center_code: string | null;
+  cost_center_name: string | null;
+}
+
+/** Pydantic `Decimal`, so the budget arrives as a string. */
+export interface CostCentre {
+  cost_center_id: number;
+  code: string;
+  name: string;
+  budget_amount: string;
 }
 
 export interface OrderListOut {

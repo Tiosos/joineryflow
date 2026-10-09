@@ -116,6 +116,10 @@ class OrderOut(BaseModel):
     # workspace's limit and the PM flag, so the web never copies the rule.
     requires_approval: bool = False
     needs_approval: bool = False
+    # The cost centre an approval's budget commitment is posted against (optional, Q563).
+    cost_center_id: int | None = None
+    cost_center_code: str | None = None
+    cost_center_name: str | None = None
     approval_requested_by: int | None = None
     approval_requested_at: datetime | None = None
     approval_requested_by_name: str | None = None
@@ -206,6 +210,8 @@ class PatchOrderIn(BaseModel):
     attributes: dict | None = None
     # The project manager's flag: this order needs approval whatever its total (manager/admin only).
     requires_approval: bool | None = None
+    # Optional; an explicit null clears it. Another workspace's, or an inactive, one is a 404.
+    cost_center_id: int | None = None
     # §L Q511/Q512 — optional expected versions, read from a prior GET's
     # `field_versions`. A named field whose version has moved on is a 409
     # FIELD_CONFLICT rather than a silent overwrite; omitting it (or a field)
@@ -234,6 +240,23 @@ class ApprovalLimitIn(BaseModel):
 
 class ApprovalLimitOut(BaseModel):
     approval_threshold: Decimal
+
+
+class CostCentreIn(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+    name: str = Field(min_length=1, max_length=100)
+    budget_amount: Decimal = Field(default=Decimal(0), ge=0, max_digits=15, decimal_places=2)
+
+
+class CostCentreOut(BaseModel):
+    cost_center_id: int
+    code: str
+    name: str
+    budget_amount: Decimal
+
+
+class CostCentreListOut(BaseModel):
+    cost_centers: list[CostCentreOut]
 
 
 class CreateOrderLineIn(BaseModel):

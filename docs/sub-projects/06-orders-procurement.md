@@ -1553,8 +1553,10 @@ Context: the legacy `/procurement/*` approval routes were retired (code in `lega
 - The reply to the last design question said "drafter and purchase officer and manager", then "change only purchase officer and manager and admin"; the second is taken as the current list.
 
 **Open:**
-- **Cost centres.** `purchase_orders.cost_center_id` exists, but no v1 route or screen sets it and nothing manages `cost_centers`, so approving never finds a cost centre and the commitment is never posted today (the code path is tested by setting the column directly). Needs a small cost-centre admin and a selector on the order.
+- **Cost centres are minimal.** Built: list + create (`/cost-centers`, purchase officer/admin), an optional selector on the order (Q563 still holds: an order needs none), the seeded `GEN`, and a lock on moving an order's cost centre once its Commitment is posted. Not built: rename, deactivate, budget-vs-committed reporting, any cost-centre screen beyond the "Add" row on the Orders tab.
 - A commitment is not released if an approved order is later cancelled or delivered (the legacy flow released it).
 - An order approved at one total can have its lines edited upwards afterwards; it is not sent back to Pending.
 - `Delivered` is not blocked for an unapproved order that needs approval.
 - The `open_pos` tile links to `/orderbook?status=open`, but the Orders list matches `status` exactly, so `open` returns no rows. (The Overdue / This Week tiles now open the Delivery queue with an `eta` filter.)
+
+**Cost centres (small build).** `cost_centers` is the FileMaker-era budget-holder table that Q563 kept "if §16 is ever scoped"; the approval commitment is the first use of it. `PATCH /orders/{id}` `{cost_center_id}` takes an active cost centre of the caller's workspace (`404 COST_CENTER_NOT_FOUND` otherwise, null clears it) and is refused once a Commitment exists for the order (`409 COST_CENTER_LOCKED`), so a budget row can never sit on a cost centre the order no longer names.

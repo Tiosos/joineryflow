@@ -60,6 +60,8 @@ export function fieldErrorMessage(res: Response, body: unknown, field: string): 
   // the HTTP status, not a code, that identifies it here.
   if (res.status === 404) return "Order not found";
   if (code === "APPROVAL_ROUTE_REQUIRED") return "This order needs approval — use the Approval section below";
+  if (code === "COST_CENTER_LOCKED") return "A budget commitment is already posted against this cost centre, so it cannot be changed";
+  if (code === "COST_CENTER_NOT_FOUND") return "That cost centre is not available";
   if (code === "APPROVAL_FLAG_FORBIDDEN") return "Only a manager or admin can flag an order for approval";
   return `Save failed (${res.status})`;
 }

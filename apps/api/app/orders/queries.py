@@ -69,6 +69,7 @@ _ORDER_COLS = f"""
     po.requires_approval, po.approval_requested_by, po.approval_requested_at,
     po.approval_decided_by, po.approval_decided_at, po.approval_note,
     rq.full_name AS approval_requested_by_name, dc.full_name AS approval_decided_by_name,
+    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name,
     (po.requires_approval
      OR COALESCE(po.total_amount, 0) > COALESCE(wos.approval_threshold, {DEFAULT_APPROVAL_THRESHOLD})
     ) AS needs_approval
@@ -81,6 +82,7 @@ _ORDER_FROM = """
     LEFT JOIN workspace_order_setting wos ON wos.workspace_id = v.workspace_id
     LEFT JOIN app_user rq ON rq.id = po.approval_requested_by
     LEFT JOIN app_user dc ON dc.id = po.approval_decided_by
+    LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -101,7 +103,7 @@ _PATCHABLE = frozenset({
     "order_number", "supplier_ref_no", "location", "product_code",
     "product_description", "quantity", "unit_of_measure", "unit_cost",
     "total_amount", "required_date", "date_ordered", "due_date",
-    "notes", "internal_comments", "attributes", "requires_approval",
+    "notes", "internal_comments", "attributes", "requires_approval", "cost_center_id",
 })
 
 
@@ -112,6 +114,47 @@ def get_approval_threshold(db: Session, *, workspace_id: int):
         {"w": workspace_id},
     ).scalar()
     return DEFAULT_APPROVAL_THRESHOLD if value is None else value
+
+
+def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
+    return db.execute(
+        text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"
+             " AND is_active IS NOT FALSE"),
+        {"c": cost_center_id, "w": workspace_id},
+    ).first() is not None
+
+
+def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
+    rows = db.execute(
+        text("SELECT cost_center_id, code, name, budget_amount FROM cost_centers"
+             " WHERE workspace_id = :w AND is_active IS NOT FALSE ORDER BY code"),
+        {"w": workspace_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def create_cost_centre(
+    db: Session, *, workspace_id: int, actor_id: int, code: str, name: str, budget_amount
+) -> dict | None:
+    """None when the code is taken in this workspace."""
+    row = db.execute(
+        text(
+            """
+            INSERT INTO cost_centers (workspace_id, code, name, fiscal_year, budget_amount)
+            VALUES (:w, :c, :n, EXTRACT(year FROM now())::int, :b)
+            ON CONFLICT (workspace_id, code) DO NOTHING
+            RETURNING cost_center_id, code, name, budget_amount
+            """
+        ),
+        {"w": workspace_id, "c": code.strip(), "n": name.strip(), "b": budget_amount},
+    ).mappings().first()
+    if row is None:
+        return None
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="cost_centre.create",
+        target=str(row["cost_center_id"]), payload={"code": row["code"], "name": row["name"]},
+    )
+    return dict(row)
 
 
 def list_categories(db: Session) -> list[dict]:
@@ -390,7 +433,8 @@ def patch_order(
     """Returns (code, data). Codes: 'OK' | 'NOT_FOUND' | 'FIELD_CONFLICT' (§L
     Q511/Q512 — `data` is the conflicts dict, not the order, in that case) |
     'ORDER_LOCKED' (`data` is {status, blocked_fields} — see `FROZEN_STATUSES`) |
-    'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
+    'COST_CENTER_NOT_FOUND' (`data` is {cost_center_id}) | 'COST_CENTER_LOCKED' (a
+    Commitment is already posted against the current one) | 'APPROVAL_ROUTE_REQUIRED' (`data` is {status}: Pending/Approved/Rejected on an order
     that needs approval) | 'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
@@ -460,6 +504,18 @@ def patch_order(
         return "VENDOR_NOT_FOUND", {"vendor_id": fields["vendor_id"]}
     if "category" in fields and not _category_exists(db, fields["category"]):
         return "UNKNOWN_CATEGORY", {"category": fields["category"]}
+    if "cost_center_id" in fields and fields["cost_center_id"] != current["cost_center_id"]:
+        if fields["cost_center_id"] is not None and not cost_centre_usable(
+            db, cost_center_id=fields["cost_center_id"], workspace_id=workspace_id
+        ):
+            return "COST_CENTER_NOT_FOUND", {"cost_center_id": fields["cost_center_id"]}
+        # The approval's Commitment was posted against the old one; moving the order would
+        # leave that budget row on the wrong cost centre.
+        if db.execute(
+            text("SELECT 1 FROM budget_transactions WHERE po_id = :o AND transaction_type = 'Commitment'"),
+            {"o": po_id},
+        ).first():
+            return "COST_CENTER_LOCKED", {"cost_center_id": current["cost_center_id"]}
     if not fields:
         return "OK", current
 

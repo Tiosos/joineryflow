@@ -2929,6 +2929,14 @@ def main() -> None:
                 {"o": _po_id, "m": _slab_mid},
             )
 
+            # One cost centre, made through the query the API uses, so the PO approval flow has
+            # a budget to commit against (an order needs none; Q563). Idempotent on the code.
+            from app.orders.queries import create_cost_centre as _create_cost_centre
+            _create_cost_centre(
+                s, workspace_id=workspace_id, actor_id=mina_id,
+                code="GEN", name="General", budget_amount=50000,
+            )
+
             # A pending Controlled-Lock request, so /lock-requests has a row to approve or
             # reject. TRT-014's K-103 is seeded locked by its owner (noa); a save by anyone
             # else is held as a request instead of applied, which is exactly what this does

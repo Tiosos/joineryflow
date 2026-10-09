@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { can } from "@/lib/permissions";
-import type { CreateOrderLineIn, OrderDetail as OrderDetailType, PatchOrderLineIn } from "@/lib/orders-types";
+import type { CostCentre, CreateOrderLineIn, OrderDetail as OrderDetailType, PatchOrderLineIn } from "@/lib/orders-types";
 import { STATUSES, PRIORITIES, statusClasses, money, qty, orderLocked, lockedMessage, fieldErrorMessage } from "./shared";
 import { ApprovalSection } from "./ApprovalSection";
+import { CostCentreField } from "./CostCentreField";
 import { ErrorLine } from "./ErrorLine";
 import { Field } from "./Field";
 import { EditableField } from "./EditableField";
@@ -13,10 +14,11 @@ import { BlurTextArea } from "./BlurTextArea";
 import { LinesSection } from "./LinesSection";
 
 export function OrderDetailPanel({
-  poId, canEdit, onChanged, threshold, meId, canApprove, canFlag,
+  poId, canEdit, onChanged, threshold, meId, canApprove, canFlag, costCentres,
 }: {
   poId: number; canEdit: boolean; onChanged: () => void;
   threshold: string | null; meId: number | null; canApprove: boolean; canFlag: boolean;
+  costCentres: CostCentre[];
 }) {
   const [order, setOrder] = useState<OrderDetailType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -281,6 +283,14 @@ export function OrderDetailPanel({
         />
         <Field label="Unit cost" value={order.unit_cost != null ? money(order.unit_cost, order.currency) : null} mono />
         <Field label="Total" value={order.total_amount != null ? money(order.total_amount, order.currency) : null} mono />
+        <CostCentreField
+          value={order.cost_center_id}
+          label={order.cost_center_code ? `${order.cost_center_code} ${order.cost_center_name ?? ""}`.trim() : null}
+          costCentres={costCentres}
+          canEdit={canEditFields}
+          onSave={id => patchField("cost_center_id", id)}
+          error={errors.cost_center_id}
+        />
         <EditableDateField
           label="Required by"
           value={order.required_date}

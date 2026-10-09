@@ -22,6 +22,9 @@ from .schemas import (
     ApprovalLimitIn,
     ApprovalLimitOut,
     CategoryOut,
+    CostCentreIn,
+    CostCentreListOut,
+    CostCentreOut,
     CreateOrderIn,
     CreateOrderLineIn,
     OrderDetailOut,
@@ -153,6 +156,10 @@ def patch_order_route(
         raise HTTPException(404, "order not found")
     if code == "APPROVAL_ROUTE_REQUIRED":
         raise HTTPException(409, {"code": "APPROVAL_ROUTE_REQUIRED", **order})
+    if code == "COST_CENTER_NOT_FOUND":
+        raise HTTPException(404, {"code": "COST_CENTER_NOT_FOUND", **order})
+    if code == "COST_CENTER_LOCKED":
+        raise HTTPException(409, {"code": "COST_CENTER_LOCKED", **order})
     if code == "ORDER_LOCKED":
         raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
     if code == "VENDOR_NOT_FOUND":
@@ -325,4 +332,32 @@ def put_order_settings(
         db, workspace_id=user.workspace_id, amount=payload.approval_threshold, actor_id=user.id)
     db.commit()
     return {"approval_threshold": amount}
+
+
+# ── Cost centres (the budget an approval commits against; optional on an order, Q563) ──
+
+@router.get("/cost-centers", response_model=CostCentreListOut)
+def list_cost_centres_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"cost_centers": q.list_cost_centres(db, workspace_id=user.workspace_id)}
+
+
+@router.post("/cost-centers", response_model=CostCentreOut, status_code=201)
+def create_cost_centre_route(
+    payload: CostCentreIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    """A purchase officer's (or an admin's) to add, like the approval limit."""
+    if user.auth_role not in ("purchase_officer", "admin"):
+        raise HTTPException(403, {"code": "COST_CENTRE_FORBIDDEN"})
+    row = q.create_cost_centre(
+        db, workspace_id=user.workspace_id, actor_id=user.id,
+        code=payload.code, name=payload.name, budget_amount=payload.budget_amount)
+    if row is None:
+        raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
+    db.commit()
+    return row
 
