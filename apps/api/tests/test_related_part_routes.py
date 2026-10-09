@@ -359,12 +359,13 @@ def test_related_parts_sort_directly_beneath_their_parent(ctx):
 # ── C4: the O/BOOK sub-tab's columns (Q425) ──────────────────────────────────
 
 
-def test_obook_columns_show_a_draft_order_the_reference_column_hides(ctx):
+def test_obook_columns_show_a_new_order_the_reference_column_hides(ctx):
     """Q425 vs Q567 — the two order fields answer different questions.
 
     `issued_order_no` is the Q417 reference and stays empty until the order is
     actually sent. The O/BOOK columns show the latest order in ANY state,
-    because a Draft raised a moment ago is exactly what that sub-tab is for.
+    because an order raised a moment ago (it starts Pending, 0056) is exactly what that
+    sub-tab is for.
     """
     part = _create(ctx).json()["item_id"]
     po = ctx["drafter"].post("/orders", json={
@@ -375,7 +376,7 @@ def test_obook_columns_show_a_draft_order_the_reference_column_hides(ctx):
     row = _row(_tracking_rows(ctx), part)
     assert row["issued_order_no"] is None, "not issued — the reference stays blank"
     assert row["order_no"] == po["po_number"], "but the O/BOOK columns show it"
-    assert row["order_status"] == "Draft"
+    assert row["order_status"] == "Pending"
     assert row["order_supplier"] == "Metalworks"
     assert row["order_po_id"] == po["po_id"]
 

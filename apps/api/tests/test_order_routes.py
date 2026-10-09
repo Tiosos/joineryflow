@@ -676,6 +676,11 @@ def _bootstrap_other_workspace_client() -> TestClient:
 # ── Frozen orders: Cancelled / Delivered are read-only except `status` ───────
 
 
+def _status_body(status: str) -> dict:
+    """A status PATCH body: Rejected carries its reason (0056), the other statuses need none."""
+    return {"status": status, **({"rejection_note": "not needed"} if status == "Rejected" else {})}
+
+
 def _freeze(ctx: dict, po_id: int, status: str) -> None:
     """Move an order to a frozen status by the deliberate route: Cancelled via
     the soft-cancel DELETE, anything else by the status-only header PATCH."""
@@ -762,7 +767,7 @@ def test_locked_flag_is_true_exactly_for_cancelled_and_delivered(ctx, status):
         "vendor_id": ctx["vendor"], "description": "materials", "category": "Board",
     }).json()
     po_id = po["po_id"]
-    assert c.patch(f"/orders/{po_id}", json={"status": status}).status_code == 200
+    assert c.patch(f"/orders/{po_id}", json=_status_body(status)).status_code == 200
 
     expected = status in {"Cancelled", "Delivered"}
     detail = c.get(f"/orders/{po_id}").json()
@@ -803,7 +808,7 @@ def test_frozen_orders_may_move_between_frozen_statuses(ctx):
 def test_other_statuses_stay_editable(ctx, status):
     ids = _make_order_with_line(ctx)
     c = ctx["client"]
-    assert c.patch(f"/orders/{ids['po_id']}", json={"status": status}).status_code == 200
+    assert c.patch(f"/orders/{ids['po_id']}", json=_status_body(status)).status_code == 200
     r = c.patch(f"/orders/{ids['po_id']}/lines/{ids['line_id']}", json={"quantity": "5"})
     assert r.status_code == 200, r.text
     assert c.patch(f"/orders/{ids['po_id']}", json={"notes": "ok"}).status_code == 200
@@ -945,7 +950,7 @@ def test_the_accepted_priorities_are_exactly_the_databases():
 ])
 def test_patch_accepts_every_status_the_database_allows(ctx, status):
     ids = _make_order_with_line(ctx)
-    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"status": status})
+    r = ctx["client"].patch(f"/orders/{ids['po_id']}", json=_status_body(status))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == status
 
