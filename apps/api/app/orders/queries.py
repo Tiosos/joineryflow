@@ -68,7 +68,11 @@ _ORDER_COLS = """
     po.notes, po.internal_comments, po.attributes,
     po.created_at, po.updated_at, po.field_versions,
     po.rejection_note,
-    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name
+    po.cost_center_id, cc.code AS cost_center_code, cc.name AS cost_center_name,
+    po.requester_id, ru.full_name AS requester_name, po.requested_date, po.arrived_date,
+    po.stock_tracked, po.gst_applicable, po.gst_included_in_price, po.gst_amount, po.grand_total,
+    po.line_item_comments, po.changelog, po.product_website,
+    EXISTS (SELECT 1 FROM po_attachments pa WHERE pa.po_id = po.po_id) AS has_attachment
 """
 
 _ORDER_FROM = """
@@ -76,6 +80,7 @@ _ORDER_FROM = """
     LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
     LEFT JOIN items   i ON i.item_id   = po.item_id
     LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
+    LEFT JOIN app_user ru ON ru.id = po.requester_id
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -97,6 +102,8 @@ _PATCHABLE = frozenset({
     "product_description", "quantity", "unit_of_measure", "unit_cost",
     "total_amount", "required_date", "date_ordered", "due_date",
     "notes", "internal_comments", "attributes", "rejection_note", "cost_center_id",
+    "arrived_date", "stock_tracked", "gst_applicable", "gst_included_in_price",
+    "line_item_comments", "product_website",
 })
 
 
@@ -299,6 +306,41 @@ def list_orders_for_workspace(
     return [dict(r) for r in rows]
 
 
+def cost_breakdown(
+    db: Session, *, workspace_id: int, project_id: int | None = None,
+) -> list[dict]:
+    """Material cost by order type: one group per category with its order count, total and orders,
+    over every order in the workspace (or one project's). Cancelled and Rejected orders are left
+    out (their money is not spent); an order with no total counts as 0."""
+    where = [_ORDER_WORKSPACE, "po.status NOT IN ('Cancelled', 'Rejected')"]
+    params: dict = {"w": workspace_id}
+    if project_id is not None:
+        where.append("po.project_id = :pid")
+        params["pid"] = project_id
+    rows = db.execute(
+        text(
+            "SELECT po.po_id, po.po_number, po.status, po.category, oc.label AS category_label,"
+            " v.name AS vendor_name, po.description, po.product_code,"
+            " COALESCE(po.total_amount, 0) AS total_amount, po.currency"
+            f" {_ORDER_FROM} JOIN order_category oc ON oc.category_key = po.category"
+            f" WHERE {' AND '.join(where)} ORDER BY oc.sort_order, oc.category_key, po.po_id"
+        ),
+        params,
+    ).mappings().all()
+    groups: dict[str, dict] = {}
+    for r in rows:
+        g = groups.setdefault(r["category"], {
+            "category": r["category"], "label": r["category_label"],
+            "order_count": 0, "total": 0, "orders": [],
+        })
+        g["order_count"] += 1
+        g["total"] += r["total_amount"]
+        g["orders"].append({k: r[k] for k in (
+            "po_id", "po_number", "status", "vendor_name", "description", "product_code",
+            "total_amount", "currency")})
+    return list(groups.values())
+
+
 def list_orders_for_project(
     db: Session, *, project_id: int, workspace_id: int
 ) -> list[dict] | None:
@@ -372,7 +414,7 @@ def _vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> b
     ).first() is not None
 
 
-def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
+def project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
     return db.execute(
         text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
         {"p": project_id, "w": workspace_id},
@@ -404,7 +446,7 @@ def create_order(
         return "UNKNOWN_CATEGORY", None
     # An explicit project must be this workspace's; the item-derived one already is
     # (it is resolved through the item's own workspace join below).
-    if payload.project_id is not None and not _project_in_workspace(
+    if payload.project_id is not None and not project_in_workspace(
         db, project_id=payload.project_id, workspace_id=workspace_id
     ):
         return "PROJECT_NOT_FOUND", None

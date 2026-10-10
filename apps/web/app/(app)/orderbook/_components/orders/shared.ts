@@ -19,12 +19,27 @@ export function statusClasses(status: string): string {
   }
 }
 
+/** "2026-02-16" -> "16/02/2026", the way the old Orderbook shows dates. */
+export function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return d && m && y ? `${d}/${m}/${y}` : iso;
+}
+
 /** Decimal arrives as a string (see `orders-types.ts`), so parse before formatting. */
 export function money(v: string | null, currency: string | null): string {
   if (v == null) return "—";
   const n = Number(v);
   if (Number.isNaN(n)) return v;
   return `${currency ? `${currency} ` : "$"}${n.toFixed(2)}`;
+}
+
+/** A Decimal string without the extra zeros the database pads it with, but never under 2 places:
+ *  "1850.0000" -> "1850.00", "0.1250" -> "0.125". */
+export function dec2(v: string | null): string | null {
+  if (v == null) return null;
+  const [i, f = ""] = v.split(".");
+  return `${i}.${f.replace(/0+$/, "").padEnd(2, "0")}`;
 }
 
 /** Trims Decimal's trailing zeros: "1.000" reads as "1". */

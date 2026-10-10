@@ -1,11 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { ProjectOut } from "@/lib/pm-types";
+import { ProjectBudgetTab } from "./ProjectBudgetTab";
 
 interface Props {
   project: ProjectOut | null;
   onClose: () => void;
+  /** Manager and admin only: the Budget tab. The API enforces it too (`BUDGET_FORBIDDEN`). */
+  canSeeBudget: boolean;
 }
 
 /**
@@ -14,19 +18,46 @@ interface Props {
  * (Q476 keeps this modal rather than a separate window; `/projects/[id]` stays
  * as the full page, since Q409 makes them two views of one record).
  *
+ * **Budget** is a fifth tab, offered to managers and admins only: the project's material cost by
+ * order type, with the labour hours below it.
+ *
  * The other three are shown disabled rather than hidden, so the window's real
  * shape stays visible: **Cars and OH&S** wait on Q550 and **Scope** on Q572 —
  * nothing in this repo or the reference mock says what any of the three holds.
  */
 const TABS = [
   { key: "stats", label: "Project stats", blocked: null },
+  { key: "budget", label: "Budget", blocked: null },
   { key: "cars", label: "Cars", blocked: "Q550" },
   { key: "ohs", label: "OH&S", blocked: "Q550" },
   { key: "scope", label: "Scope", blocked: "Q572" },
 ] as const;
 
-export function ProjectDetailModal({ project, onClose }: Props) {
+export function ProjectDetailModal({ project, onClose, canSeeBudget }: Props) {
+  const [tab, setTab] = useState<"stats" | "budget">("stats");
+  useEffect(() => setTab("stats"), [project?.id]);
   if (!project) return null;
+
+  const hours = (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <HoursTable
+        title="Admin stats"
+        rows={[
+          "Project manage",
+          "Shop drawing",
+          "Procuring",
+          "Meetings",
+          "Listing",
+          "Document control",
+          "Listing reworks",
+        ]}
+      />
+      <HoursTable
+        title="Production / install"
+        rows={["Assembly hours", "Site install hours"]}
+      />
+    </div>
+  );
 
   return (
     <div
@@ -58,20 +89,24 @@ export function ProjectDetailModal({ project, onClose }: Props) {
         </header>
 
         <div className="flex gap-1 border-b border-h-line px-5 py-2">
-          {TABS.map((t) => (
+          {TABS.filter((t) => t.key !== "budget" || canSeeBudget).map((t) => (
             <button
               key={t.key}
               type="button"
               disabled={t.blocked != null}
+              onClick={() => { if (t.key === "stats" || t.key === "budget") setTab(t.key); }}
+              data-testid={`project-tab-${t.key}`}
               title={
                 t.blocked
                   ? `Awaiting the customer's definition of this tab (${t.blocked})`
                   : undefined
               }
               className={`rounded px-2.5 py-1 text-[11px] font-medium ${
-                t.blocked == null
-                  ? "bg-h-accent text-white"
-                  : "text-h-muted opacity-40"
+                t.blocked != null
+                  ? "text-h-muted opacity-40"
+                  : t.key === tab
+                    ? "bg-h-accent text-white"
+                    : "text-h-ink hover:bg-h-bg"
               }`}
             >
               {t.label}
@@ -79,72 +114,61 @@ export function ProjectDetailModal({ project, onClose }: Props) {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-4 p-5">
-          <Field label="Project code">
-            <span className="font-mono text-sm">{project.project_code}</span>
-          </Field>
-          <Field label="Status">{project.status ?? "—"}</Field>
-          <Field label="Project manager">{project.pm_name ?? "—"}</Field>
-          <Field label="Install start">
-            <span className="font-mono tabular-nums">
-              {project.install_start ?? "—"}
-            </span>
-          </Field>
-          <Field label="Item count">
-            <span className="font-mono tabular-nums">{project.item_count}</span>
-          </Field>
-          <Field label="Total value">
-            <span className="font-mono tabular-nums">
-              {project.total_value == null
-                ? "—"
-                : project.total_value.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "AUD",
-                    maximumFractionDigits: 0,
-                  })}
-            </span>
-          </Field>
-          <Field label="Favourite">{project.is_favourite ? "Yes ★" : "No"}</Field>
-          <Field label="Created">
-            <span className="font-mono tabular-nums">
-              {project.created_at?.slice(0, 10) ?? "—"}
-            </span>
-          </Field>
-          {/* The rest of the mock's meta tiles — all real columns. */}
-          <Field label="Created by">{project.created_by ?? "—"}</Field>
-          <Field label="TG Solid">
-            {project.tg_solid == null ? "—" : project.tg_solid ? "✓" : "—"}
-          </Field>
-          <Field label="Total line items">
-            <span className="font-mono tabular-nums">
-              {project.total_line_items ?? "—"}
-            </span>
-          </Field>
-        </div>
+        {tab === "budget" && canSeeBudget ? (
+          <ProjectBudgetTab projectId={project.id} hours={hours} />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 p-5">
+              <Field label="Project code">
+                <span className="font-mono text-sm">{project.project_code}</span>
+              </Field>
+              <Field label="Status">{project.status ?? "—"}</Field>
+              <Field label="Project manager">{project.pm_name ?? "—"}</Field>
+              <Field label="Install start">
+                <span className="font-mono tabular-nums">
+                  {project.install_start ?? "—"}
+                </span>
+              </Field>
+              <Field label="Item count">
+                <span className="font-mono tabular-nums">{project.item_count}</span>
+              </Field>
+              <Field label="Total value">
+                <span className="font-mono tabular-nums">
+                  {project.total_value == null
+                    ? "—"
+                    : project.total_value.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "AUD",
+                        maximumFractionDigits: 0,
+                      })}
+                </span>
+              </Field>
+              <Field label="Favourite">{project.is_favourite ? "Yes ★" : "No"}</Field>
+              <Field label="Created">
+                <span className="font-mono tabular-nums">
+                  {project.created_at?.slice(0, 10) ?? "—"}
+                </span>
+              </Field>
+              {/* The rest of the mock's meta tiles — all real columns. */}
+              <Field label="Created by">{project.created_by ?? "—"}</Field>
+              <Field label="TG Solid">
+                {project.tg_solid == null ? "—" : project.tg_solid ? "✓" : "—"}
+              </Field>
+              <Field label="Total line items">
+                <span className="font-mono tabular-nums">
+                  {project.total_line_items ?? "—"}
+                </span>
+              </Field>
+            </div>
 
-        {/* Q571: the mock's two hours tables come from TGPAY, an external
-            payroll system. Nothing in this schema records hours — there is no
-            time_record table, which #8 put explicitly out of scope — so the
-            rows are shown with their labels and no values. Blank because the
-            integration does not exist, not because the data is missing. */}
-        <div className="grid gap-4 border-t border-h-line p-5 sm:grid-cols-2">
-          <HoursTable
-            title="Admin stats"
-            rows={[
-              "Project manage",
-              "Shop drawing",
-              "Procuring",
-              "Meetings",
-              "Listing",
-              "Document control",
-              "Listing reworks",
-            ]}
-          />
-          <HoursTable
-            title="Production / install"
-            rows={["Assembly hours", "Site install hours"]}
-          />
-        </div>
+            {/* Q571: the mock's two hours tables come from TGPAY, an external
+                payroll system. Nothing in this schema records hours — there is no
+                time_record table, which #8 put explicitly out of scope — so the
+                rows are shown with their labels and no values. Blank because the
+                integration does not exist, not because the data is missing. */}
+            <div className="border-t border-h-line p-5">{hours}</div>
+          </>
+        )}
 
         <footer className="flex items-center justify-between gap-4 border-t border-h-line bg-h-bg px-5 py-3 text-[11px] text-h-muted">
           <span>
