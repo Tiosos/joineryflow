@@ -1,6 +1,9 @@
 services:
   db:
     image: postgres:16
+    # Dev/test speed: no disk syncs. A crash can lose recent writes, so never
+    # copy these flags to a database that holds real data.
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

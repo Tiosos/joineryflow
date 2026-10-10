@@ -1,7 +1,49 @@
 import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
+
+
+def _provision_xdist_database(worker: str) -> None:
+    """Give an xdist worker its own database and point DATABASE_URL at it.
+
+    Tests TRUNCATE shared tables, so workers cannot share one database. Each
+    worker (`gw0`, `gw1`...) rebuilds `<db>_<worker>` from scratch (migrate +
+    seed, a few seconds), then `app.config` / `app.db` read the new URL when
+    the test modules import them. This runs at conftest import time, before
+    any `app` import, which is what makes that work. Without xdist nothing
+    here runs and the suite uses DATABASE_URL as before.
+    """
+    base = make_url(os.environ["DATABASE_URL"])
+    name = f"{base.database}_{worker}"
+    admin = create_engine(base.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    with admin.connect() as c:
+        c.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        c.execute(text(f'CREATE DATABASE "{name}"'))
+    admin.dispose()
+    url = base.set(database=name).render_as_string(hide_password=False)
+    os.environ["DATABASE_URL"] = url
+
+    # Repo checkout: <root>/db, <root>/seed. API container: /db, /code/seed.
+    # Walk upwards instead of counting parents: /code/tests has only two.
+    parents = Path(__file__).resolve().parents
+    root = next(p for p in parents if (p / "seed").is_dir())
+    db_dir = next(d for d in [*(p / "db" for p in parents), Path("/db")]
+                  if (d / "alembic.ini").is_file())
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"],
+                   cwd=db_dir, env=os.environ, check=True, capture_output=True)
+    subprocess.run([sys.executable, "-m", "seed.hartwood_joinery"],
+                   cwd=root, env={**os.environ, "PYTHONPATH": str(root)},
+                   check=True, capture_output=True)
+
+
+if os.environ.get("PYTEST_XDIST_WORKER"):
+    _provision_xdist_database(os.environ["PYTEST_XDIST_WORKER"])
 
 
 def pytest_runtest_setup(item):

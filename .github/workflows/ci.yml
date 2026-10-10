@@ -57,7 +57,7 @@ jobs:
         run: docker compose exec -T api python -m seed.hartwood_joinery
 
       - name: Run pytest
-        run: docker compose exec -T api pytest -q
+        run: docker compose exec -T api pytest -q -n auto --dist loadfile
 
       - name: Dump compose logs on failure
         if: failure()
