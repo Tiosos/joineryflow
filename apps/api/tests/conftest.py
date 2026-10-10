@@ -29,10 +29,12 @@ def _provision_xdist_database(worker: str) -> None:
     url = base.set(database=name).render_as_string(hide_password=False)
     os.environ["DATABASE_URL"] = url
 
-    here = Path(__file__).resolve()
     # Repo checkout: <root>/db, <root>/seed. API container: /db, /code/seed.
-    root = next(p for p in (here.parents[3], here.parents[1]) if (p / "seed").is_dir())
-    db_dir = next(p for p in (here.parents[3] / "db", Path("/db")) if (p / "alembic.ini").is_file())
+    # Walk upwards instead of counting parents: /code/tests has only two.
+    parents = Path(__file__).resolve().parents
+    root = next(p for p in parents if (p / "seed").is_dir())
+    db_dir = next(d for d in [*(p / "db" for p in parents), Path("/db")]
+                  if (d / "alembic.ini").is_file())
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"],
                    cwd=db_dir, env=os.environ, check=True, capture_output=True)
     subprocess.run([sys.executable, "-m", "seed.hartwood_joinery"],
