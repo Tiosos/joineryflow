@@ -87,12 +87,13 @@ export interface CostCentre {
   cost_center_id: number;
   code: string;
   name: string;
-  budget_amount: string;
   is_active: boolean;
-  /** From the budget ledger: what approved orders still hold, what delivered ones cost, the rest. */
-  committed: string;
-  spent: string;
-  remaining: string;
+  /** The budget and the ledger figures (what approved orders still hold, what delivered ones cost,
+   *  the rest) come only for a manager or admin; for anyone else the API leaves them out. */
+  budget_amount?: string;
+  committed?: string;
+  spent?: string;
+  remaining?: string;
 }
 
 /** `GET /orders/cost-breakdown` and `GET /projects/{id}/budget`: material cost by order type. */

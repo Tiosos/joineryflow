@@ -190,9 +190,31 @@ def _approved_on(ws, cc, total):
     return o["po_id"]
 
 
+_FIGURES = ("budget_amount", "committed", "spent", "remaining")
+
+
 def _figures(c, code="GEN"):
     row = next(x for x in c.get("/cost-centers").json()["cost_centers"] if x["code"] == code)
-    return tuple(row[k] for k in ("budget_amount", "committed", "spent", "remaining"))
+    return tuple(row[k] for k in _FIGURES)
+
+
+def test_the_budget_figures_are_for_managers_and_admins_only(ws):
+    cc = _make(ws["buyer"], budget="1000")
+    _approved_on(ws, cc, "250.00")
+    admin, _ = login_same_workspace(ws["wid"], "admin")
+    drafter, _ = login_same_workspace(ws["wid"], "drafter")
+    for who in ("manager", "admin"):
+        c = ws["manager"] if who == "manager" else admin
+        assert _figures(c) == ("1000.00", "250.00", "0.00", "750.00")
+    for c in (ws["buyer"], drafter):
+        rows = c.get("/cost-centers").json()["cost_centers"]
+        assert [r["code"] for r in rows] == ["GEN"]
+        assert not set(rows[0]) & set(_FIGURES)          # left out, not sent as zeros
+    # the purchase officer's create and rename replies leave them out too
+    made = ws["buyer"].post("/cost-centers", json={"code": "B2", "name": "B2", "budget_amount": "5"})
+    assert made.status_code == 201 and not set(made.json()) & set(_FIGURES)
+    renamed = _patch(ws["buyer"], made.json(), name="B2 renamed")
+    assert renamed.status_code == 200 and not set(renamed.json()) & set(_FIGURES)
 
 
 def test_figures_follow_the_ledger_through_approve_deliver_and_cancel(ws):
@@ -228,7 +250,8 @@ def test_a_purchase_officer_edits_the_budget_and_the_figures_follow(ws):
     _approved_on(ws, cc, "2500.00")
     r = _patch(ws["buyer"], cc, budget_amount="4000.50")
     assert r.status_code == 200, r.text
-    assert (r.json()["budget_amount"], r.json()["remaining"]) == ("4000.50", "1500.50")
+    assert not set(r.json()) & set(_FIGURES)      # the purchase officer's own reply carries no figures
+    assert _figures(ws["manager"])[0::3] == ("4000.50", "1500.50")
     r = ws["manager"].patch(f"/cost-centers/{cc['cost_center_id']}", json={"budget_amount": "1"})
     assert (r.status_code, r.json()["detail"]["code"]) == (403, "COST_CENTRE_FORBIDDEN")
     assert _patch(ws["buyer"], cc, budget_amount="-1").status_code == 422
@@ -244,6 +267,7 @@ def test_figures_are_per_cost_centre_and_per_workspace(ws):
     _approved_on(ws, mine, "2500.00")
     assert _figures(ws["manager"], "MINE")[1] == "2500.00"
     assert _figures(ws["manager"], "OTHER") == ("900.00", "0.00", "0.00", "900.00")
-    stranger, _wid, _uid = login("purchase_officer", prefix="cc5")
-    theirs = _make(stranger, code="MINE", budget="77")
-    assert _figures(stranger, "MINE") == ("77.00", "0.00", "0.00", "77.00") and theirs["committed"] == "0.00"
+    stranger, swid, _uid = login("purchase_officer", prefix="cc5")
+    _make(stranger, code="MINE", budget="77")
+    stranger_manager, _ = login_same_workspace(swid, "manager")
+    assert _figures(stranger_manager, "MINE") == ("77.00", "0.00", "0.00", "77.00")

@@ -10,12 +10,19 @@ async function switchTo(page: Page, email: string) {
   await login(page, email);
 }
 
-/** What the ledger holds for a cost centre. The Orderbook no longer shows it (the budget is for
- *  managers and admins, in Tracking > Info), but the commitment is still posted and followed. */
+/** What the ledger holds for a cost centre. The Orderbook does not show it and the API sends the
+ *  figures only to managers and admins, so this reads them as a manager in a session of its own. */
 async function committed(page: Page, ccId: number) {
-  const list = (await (await page.request.get("/api/cost-centers")).json()).cost_centers as
-    { cost_center_id: number; committed: string }[];
-  return Number(list.find(c => c.cost_center_id === ccId)!.committed);
+  const ctx = await page.context().browser()!.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    const mgr = await ctx.newPage();
+    await login(mgr, PM);
+    const list = (await (await mgr.request.get("/api/cost-centers")).json()).cost_centers as
+      { cost_center_id: number; committed: string }[];
+    return Number(list.find(c => c.cost_center_id === ccId)!.committed);
+  } finally {
+    await ctx.close();
+  }
 }
 
 /** An order made through the API (it starts Pending); its own, so a re-run finds only it. */

@@ -291,15 +291,26 @@ def remove_line_route(
 
 # ── Cost centres (the budget an Approved order commits against; optional on an order, Q563) ──
 
-@router.get("/cost-centers", response_model=CostCentreListOut)
+_BUDGET_FIELDS = ("budget_amount", "committed", "spent", "remaining")
+
+
+def _for_viewer(row: dict, user: AuthUser) -> dict:
+    """The budget is for managers and admins (October 2026): everyone else gets the cost centre
+    without its figures."""
+    if user.auth_role in ("manager", "admin"):
+        return row
+    return {k: v for k, v in row.items() if k not in _BUDGET_FIELDS}
+
+@router.get("/cost-centers", response_model=CostCentreListOut, response_model_exclude_none=True)
 def list_cost_centres_route(
     user: AuthUser = Depends(require_permission("orderbook", "read")),
     db: Session = Depends(get_db),
 ):
-    return {"cost_centers": q.list_cost_centres(db, workspace_id=user.workspace_id)}
+    return {"cost_centers": [
+        _for_viewer(r, user) for r in q.list_cost_centres(db, workspace_id=user.workspace_id)]}
 
 
-@router.post("/cost-centers", response_model=CostCentreOut, status_code=201)
+@router.post("/cost-centers", response_model=CostCentreOut, status_code=201, response_model_exclude_none=True)
 def create_cost_centre_route(
     payload: CostCentreIn,
     user: AuthUser = Depends(require_permission("orderbook", "write")),
@@ -314,10 +325,10 @@ def create_cost_centre_route(
     if row is None:
         raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
     db.commit()
-    return row
+    return _for_viewer(row, user)
 
 
-@router.patch("/cost-centers/{cost_center_id}", response_model=CostCentreOut)
+@router.patch("/cost-centers/{cost_center_id}", response_model=CostCentreOut, response_model_exclude_none=True)
 def patch_cost_centre_route(
     cost_center_id: int,
     payload: PatchCostCentreIn,
@@ -336,5 +347,5 @@ def patch_cost_centre_route(
     if code == "EXISTS":
         raise HTTPException(409, {"code": "COST_CENTRE_EXISTS"})
     db.commit()
-    return row
+    return _for_viewer(row, user)
 
