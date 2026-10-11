@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { can, type Me } from "@/lib/permissions";
-import type { CostCentre, OrderRow } from "@/lib/orders-types";
+import type { CostCentre, OrderCategory, OrderRow } from "@/lib/orders-types";
 import { STATUSES } from "./orders/shared";
-import { OrderRowView } from "./orders/OrderRowView";
+import { COLUMNS, OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
 import { CostCentreManager } from "./orders/CostCentreManager";
+import { CostBreakdownModal } from "./CostBreakdownModal";
 
 /**
  * Orderbook's Orders tab — the commercial layer over `purchase_orders` (Q505).
@@ -21,11 +22,29 @@ import { CostCentreManager } from "./orders/CostCentreManager";
  * into view and opens its detail panel, which is the "locate the order" half
  * the link could not deliver while this page rendered batches.
  *
- * The detail panel is editable (`orderbook:write`) — the PATCH-editing UI
- * `PatchOrderIn` / `field_versions` had carried since §L with nothing to
- * drive them, now that PO generation (a Won Quote) creates real multi-line
- * orders with nothing else to correct or approve them.
+ * The detail is a pop-up (the old Orderbook's Details window) and is editable
+ * (`orderbook:write`) — the PATCH-editing UI `PatchOrderIn` / `field_versions` had
+ * carried since §L with nothing to drive them, now that PO generation (a Won
+ * Quote) creates real multi-line orders with nothing else to correct or approve them.
+ *
+ * The list follows the old screen: orders grouped under their type, its columns, and a
+ * row of filter buttons. Of those buttons, Due / Over Due / Arrived / My Orders are
+ * built; RTO, TBO, New, Supplier and Po are shown disabled until what they filter is
+ * confirmed.
  */
+
+/** The old screen's filter buttons; `view` in the URL holds the one that is on. */
+const VIEWS = [
+  { key: "due", label: "Due", hint: "Due in the next 7 days, not yet arrived" },
+  { key: "overdue", label: "Over Due", hint: "Due date has passed, not yet arrived" },
+  { key: "arrived", label: "Arrived", hint: "Has an arrived date" },
+  { key: "mine", label: "My Orders", hint: "Orders you requested" },
+] as const;
+const UNCONFIRMED = ["RTO", "TBO", "New", "Supplier", "Po"] as const;
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 export function OrdersClient({ me }: { me: Me | null }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -37,6 +56,11 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const supplier = params.get("supplier") ?? "";
   // Q418: the number Tracking sent us here with.
   const selected = params.get("order") ?? "";
+  const view = params.get("view") ?? "";
+  const [categories, setCategories] = useState<OrderCategory[]>([]);
+  const [costOpen, setCostOpen] = useState(false);
+  const today = useMemo(() => ymd(new Date()), []);
+  const weekAhead = useMemo(() => ymd(new Date(Date.now() + 7 * 86_400_000)), []);
 
   const fetchRows = useCallback(() => {
     const qs = new URLSearchParams();
@@ -59,6 +83,34 @@ export function OrdersClient({ me }: { me: Me | null }) {
     [rows],
   );
 
+  useEffect(() => {
+    fetch("/api/order-categories", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : []))
+      .then((b: OrderCategory[]) => setCategories(b))
+      .catch(() => setCategories([]));
+  }, []);
+
+  const shown = useMemo(() => rows.filter(r => {
+    const open = !["Delivered", "Cancelled", "Rejected"].includes(r.status);
+    if (view === "due") return open && !r.arrived_date && !!r.due_date && r.due_date >= today && r.due_date <= weekAhead;
+    if (view === "overdue") return open && !r.arrived_date && !!r.due_date && r.due_date < today;
+    if (view === "arrived") return !!r.arrived_date;
+    if (view === "mine") return r.requester_id === me?.id;
+    return true;
+  }), [rows, view, today, weekAhead, me]);
+
+  // Grouped under the order type, in the lookup's order; a type the lookup no longer lists goes last.
+  const groups = useMemo(() => {
+    const order = new Map(categories.map((c, i) => [c.category_key, i]));
+    const by = new Map<string, { label: string; rows: OrderRow[] }>();
+    for (const r of shown) {
+      const g = by.get(r.category) ?? { label: categories.find(c => c.category_key === r.category)?.label ?? r.category, rows: [] };
+      g.rows.push(r);
+      by.set(r.category, g);
+    }
+    return [...by.entries()].sort(([a], [b]) => (order.get(a) ?? 1e6) - (order.get(b) ?? 1e6)).map(([key, g]) => ({ key, ...g }));
+  }, [shown, categories]);
+
   const selectedRow = rows.find(r => r.po_number === selected) ?? null;
   const canEdit = can(me, "orderbook", "write");
   const canApprove = can(me, "orderbook", "approve");
@@ -66,7 +118,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const canManageCostCentres = me?.auth_role === "purchase_officer" || me?.auth_role === "admin";
 
   const [costCentres, setCostCentres] = useState<CostCentre[]>([]);
-  const [ccForm, setCcForm] = useState<{ code: string; name: string; budget: string } | null>(null);
+  const [ccForm, setCcForm] = useState<{ code: string; name: string } | null>(null);
   const [ccErr, setCcErr] = useState<string | null>(null);
   const [ccManage, setCcManage] = useState(false);
 
@@ -86,7 +138,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
     const res = await fetch("/api/cost-centers", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: ccForm.code, name: ccForm.name, budget_amount: ccForm.budget || "0" }),
+      body: JSON.stringify({ code: ccForm.code, name: ccForm.name }),
     }).catch(() => null);
     if (!res || !res.ok) {
       const body = res ? await res.json().catch(() => null) : null;
@@ -129,10 +181,14 @@ export function OrdersClient({ me }: { me: Me | null }) {
           {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-xs text-h-muted">
-          {loading ? "Loading…" : `${rows.length} order${rows.length === 1 ? "" : "s"}`}
+          {loading ? "Loading…" : `${shown.length} order${shown.length === 1 ? "" : "s"}`}
         </span>
+        <button type="button" data-testid="cost-centre-breakdown-open" onClick={() => setCostOpen(true)}
+          className="ml-auto rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink hover:bg-h-surface">
+          Cost centre
+        </button>
         {canManageCostCentres && (
-          <span data-testid="cost-centres" className="ml-auto flex items-center gap-1.5 text-xs text-h-muted">
+          <span data-testid="cost-centres" className="flex items-center gap-1.5 text-xs text-h-muted">
             {costCentres.filter(c => c.is_active).length} cost centre{costCentres.filter(c => c.is_active).length === 1 ? "" : "s"}
             <button type="button" data-testid="cost-centre-manage" onClick={() => setCcManage(m => !m)}
               className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">
@@ -140,7 +196,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
             </button>
             {ccForm === null ? (
               <button type="button" data-testid="cost-centre-add"
-                onClick={() => setCcForm({ code: "", name: "", budget: "" })}
+                onClick={() => setCcForm({ code: "", name: "" })}
                 className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Add</button>
             ) : (
               <>
@@ -150,9 +206,6 @@ export function OrdersClient({ me }: { me: Me | null }) {
                 <input value={ccForm.name} onChange={e => setCcForm({ ...ccForm, name: e.target.value })}
                   placeholder="Name" data-testid="cost-centre-name"
                   className="w-32 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
-                <input value={ccForm.budget} onChange={e => setCcForm({ ...ccForm, budget: e.target.value })}
-                  placeholder="Budget" inputMode="decimal"
-                  className="h-mono w-24 rounded border border-h-line bg-h-bg px-1.5 py-0.5 text-h-ink" />
                 <button type="button" data-testid="cost-centre-save" onClick={() => void addCostCentre()}
                   className="rounded border border-h-line bg-h-bg px-1.5 py-0.5 hover:text-h-ink">Save</button>
                 <button type="button" onClick={() => { setCcForm(null); setCcErr(null); }}
@@ -171,6 +224,34 @@ export function OrdersClient({ me }: { me: Me | null }) {
             Clear selection ({selected})
           </button>
         )}
+      </div>
+
+      <div data-testid="orders-view-filters" className="flex flex-wrap items-center gap-1.5 text-xs">
+        {UNCONFIRMED.map(label => (
+          <button key={label} type="button" disabled
+            title="Not built: what this filter shows is not confirmed yet"
+            className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted opacity-40">
+            {label}
+          </button>
+        ))}
+        <span className="mx-1 h-4 border-l border-h-line" />
+        {VIEWS.map(v => (
+          <button key={v.key} type="button" title={v.hint} data-testid={`orders-view-${v.key}`}
+            aria-pressed={view === v.key}
+            onClick={() => setParam("view", view === v.key ? "" : v.key)}
+            className={`rounded border px-2.5 py-1 ${
+              view === v.key
+                ? "border-h-accent bg-h-accent text-white"
+                : "border-h-line bg-h-bg text-h-ink hover:bg-h-surface"
+            }`}>
+            {v.label}
+          </button>
+        ))}
+        <button type="button" data-testid="orders-view-clear"
+          onClick={() => router.push(selected ? `/orderbook?order=${encodeURIComponent(selected)}` : "/orderbook")}
+          className="ml-1 rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted hover:text-h-ink">
+          Clear
+        </button>
       </div>
 
       {canManageCostCentres && ccManage && (
@@ -196,38 +277,41 @@ export function OrdersClient({ me }: { me: Me | null }) {
       )}
 
       <div className="overflow-x-auto rounded border border-h-line">
-        <table className="w-full min-w-[980px] border-collapse text-xs">
+        <table className="w-full min-w-[1500px] border-collapse text-xs">
           <thead className="bg-h-surface text-left text-[10px] uppercase tracking-wide text-h-muted">
             <tr>
-              <th className="px-2 py-1.5">Order #</th>
-              <th className="px-2 py-1.5">Supplier</th>
-              <th className="px-2 py-1.5">Description</th>
-              <th className="px-2 py-1.5">Project</th>
-              <th className="px-2 py-1.5">Cutlist no.</th>
-              <th className="px-2 py-1.5">Status</th>
-              <th className="px-2 py-1.5">Ordered</th>
-              <th className="px-2 py-1.5">ETA</th>
-              <th className="px-2 py-1.5 text-right">Total</th>
+              {COLUMNS.map(c => <th key={c} className="px-2 py-1.5">{c}</th>)}
             </tr>
           </thead>
-          <tbody>
-            {rows.length === 0 && !loading ? (
+          {shown.length === 0 && !loading ? (
+            <tbody>
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-h-muted">
+                <td colSpan={COLUMNS.length} className="px-4 py-8 text-center text-h-muted">
                   No orders yet.
                 </td>
               </tr>
-            ) : (
-              rows.map(r => (
-                <OrderRowView
-                  key={r.po_id}
-                  row={r}
-                  selected={r.po_number === selected}
-                  onSelect={() => setParam("order", r.po_number === selected ? "" : r.po_number)}
-                />
-              ))
-            )}
-          </tbody>
+            </tbody>
+          ) : (
+            groups.map(g => (
+              <tbody key={g.key} data-testid="order-group">
+                <tr>
+                  <th colSpan={COLUMNS.length}
+                    className="border-t border-h-line bg-h-bg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-h-ink">
+                    {g.label}
+                  </th>
+                </tr>
+                {g.rows.map(r => (
+                  <OrderRowView
+                    key={r.po_id}
+                    row={r}
+                    today={today}
+                    selected={r.po_number === selected}
+                    onSelect={() => setParam("order", r.po_number === selected ? "" : r.po_number)}
+                  />
+                ))}
+              </tbody>
+            ))
+          )}
         </table>
       </div>
 
@@ -237,10 +321,14 @@ export function OrdersClient({ me }: { me: Me | null }) {
           poId={selectedRow.po_id}
           canEdit={canEdit}
           onChanged={() => { fetchRows(); loadCostCentres(); }}
+          onClose={() => setParam("order", "")}
           canApprove={canApprove}
           costCentres={costCentres}
+          categories={categories}
         />
       )}
+
+      {costOpen && <CostBreakdownModal onClose={() => setCostOpen(false)} />}
     </div>
   );
 }

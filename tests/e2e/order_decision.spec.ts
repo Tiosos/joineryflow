@@ -10,6 +10,14 @@ async function switchTo(page: Page, email: string) {
   await login(page, email);
 }
 
+/** What the ledger holds for a cost centre. The Orderbook no longer shows it (the budget is for
+ *  managers and admins, in Tracking > Info), but the commitment is still posted and followed. */
+async function committed(page: Page, ccId: number) {
+  const list = (await (await page.request.get("/api/cost-centers")).json()).cost_centers as
+    { cost_center_id: number; committed: string }[];
+  return Number(list.find(c => c.cost_center_id === ccId)!.committed);
+}
+
 /** An order made through the API (it starts Pending); its own, so a re-run finds only it. */
 async function newOrder(page: Page, total: string) {
   const suppliers = await (await page.request.get("/api/suppliers")).json();
@@ -38,11 +46,11 @@ test("a new order is Pending and the purchase officer approves it against a budg
       await page.getByTestId("order-cost-centre").selectOption({ value: String(ccId) });
       await expect(page.getByTestId("order-cost-centre")).toHaveValue(String(ccId), { timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
+    expect(await committed(page, ccId)).toBe(0);
+    await expect(page.getByTestId("cost-centre-figures")).toHaveCount(0);   // no budget figures in the Orderbook
 
     await page.getByTestId("order-status-select").selectOption("Approved");
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $3000.00");
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("remaining $7000.00");
+    await expect.poll(() => committed(page, ccId)).toBe(3000);
 
     // The commitment is posted, so the order's cost centre can no longer move.
     await page.getByTestId("order-cost-centre").selectOption({ label: "None" });
@@ -50,7 +58,7 @@ test("a new order is Pending and the purchase officer approves it against a budg
 
     // Moving it out of Approved gives the budget back.
     await page.getByTestId("order-status-select").selectOption("Hold");
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
+    await expect.poll(() => committed(page, ccId)).toBe(0);
   } finally {
     await page.request.delete(`/api/orders/${order.po_id}`); // cancels it: puts back what the spec added
     await page.request.patch(`/api/cost-centers/${ccId}`, { data: { is_active: false } });
@@ -133,39 +141,32 @@ test("a purchase officer renames a cost centre and switches it off", async ({ pa
   await row.getByTestId("cost-centre-edit-save").click();
   await expect.poll(async () => (await read()).name).toBe("Fixed name");
 
-  await row.getByTestId("cost-centre-edit-budget").fill("1500");
-  await row.getByTestId("cost-centre-edit-save").click();
-  await expect(row.getByTestId("cost-centre-figures")).toContainText("Budget $1500.00");
-  await expect(row.getByTestId("cost-centre-figures")).toContainText("remaining $1500.00");
+  await expect(row.getByTestId("cost-centre-edit-budget")).toHaveCount(0);   // no budget amount to set here
 
   await row.getByTestId("cost-centre-toggle").click();
   await expect.poll(async () => (await read()).is_active).toBe(false);
   await expect(row).toContainText("inactive");
 });
 
-test("the order panel shows its cost centre's budget against what is committed", async ({ page }) => {
+test("the order pop-up shows its cost centre but no budget figures, to anyone", async ({ page }) => {
   await login(page, BUYER);
   const code = `F${Date.now()}`.slice(-12);
-  const made = await page.request.post("/api/cost-centers", { data: { code, name: "Figures e2e", budget_amount: "1000" } });
+  const made = await page.request.post("/api/cost-centers", { data: { code, name: "Figures e2e" } });
   expect(made.ok()).toBe(true);
   const { cost_center_id: ccId } = (await made.json()) as { cost_center_id: number };
-  const order = await newOrder(page, "400.00");   // never approved: only its cost is booked
+  const order = await newOrder(page, "400.00");
   try {
     const set = await page.request.patch(`/api/orders/${order.po_id}`, { data: { cost_center_id: ccId } });
     expect(set.ok()).toBe(true);
-    // A manager reads the Orderbook too, and sees the same figures.
     await switchTo(page, PM);
     await page.goto(`/orderbook?order=${order.po_number}`);
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("Budget $1000.00", { timeout: 15_000 });
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("committed $0.00");
-    // Delivering books the cost: the remainder drops, with nothing blocked.
-    await page.request.patch(`/api/orders/${order.po_id}`, { data: { status: "Delivered" } });
-    await page.reload();
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("spent $400.00");
-    await expect(page.getByTestId("cost-centre-figures")).toContainText("remaining $600.00");
+    await expect(page.getByTestId("order-cost-centre")).toHaveValue(String(ccId), { timeout: 15_000 });
+    await expect(page.getByTestId("order-detail")).not.toContainText("remaining");
+    await expect(page.getByTestId("cost-centre-figures")).toHaveCount(0);
   } finally {
     // No way to delete one: switch it off so it stays out of every order's selector.
     await switchTo(page, BUYER);
+    await page.request.delete(`/api/orders/${order.po_id}`);
     await page.request.patch(`/api/cost-centers/${ccId}`, { data: { is_active: false } });
   }
 });

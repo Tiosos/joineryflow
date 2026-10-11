@@ -363,6 +363,7 @@ export function TrackingClient({
       <ProjectDetailModal
         project={projectModalOpen ? project : null}
         onClose={() => setProjectModalOpen(false)}
+        canSeeBudget={me?.auth_role === "manager" || me?.auth_role === "admin"}
       />
       <StatusPopup
         itemId={statusPopupId}

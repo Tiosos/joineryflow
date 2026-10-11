@@ -2937,6 +2937,55 @@ def main() -> None:
                 code="GEN", name="General", budget_amount=50000,
             )
 
+            # Demo orders for the Orderbook list and pop-up: one or two in each order type, made
+            # up (no real supplier, project or product). They go through the query functions the
+            # API uses, so the audit rows are real; the marker in `internal_comments` makes a
+            # re-run drop and re-make them. They have no item, so no item-scoped view shows them.
+            from app.orders.queries import create_order as _create_order, patch_order as _patch_order
+            from app.orders.schemas import CreateOrderIn as _CreateOrderIn, PatchOrderIn as _PatchOrderIn
+            _DEMO = "Seeded demo order (Orderbook list)"
+            s.execute(
+                text("DELETE FROM purchase_orders WHERE internal_comments LIKE :m AND project_id = :p"),
+                {"m": _DEMO + "%", "p": alf_pid},
+            )
+            _demo_vendors = [r[0] for r in s.execute(
+                text("SELECT vendor_id FROM vendors WHERE workspace_id = :w ORDER BY vendor_id LIMIT 3"),
+                {"w": workspace_id}).all()]
+            if _demo_vendors:
+                def _v(i): return _demo_vendors[i % len(_demo_vendors)]
+                _demo_orders = [
+                    # (category, description, vendor, qty, unit cost, priority, required offset,
+                    #  ordered offset, due offset, attributes, line item comment)
+                    ("Acoustic", "2800 X 1200 X 24 Echopanel Sage 580", 0, 15, 430, "Hold", -20, None, None,
+                     {"board_length": "2800", "board_width": "1200", "board_thickness": "24",
+                      "colour": "Echopanel Sage 580"}, None),
+                    ("Acoustic", "2750 X 1100 X 12 Echopanel Navy Longitude 365", 0, 4, 215, "Next", 9, None, None,
+                     {"board_length": "2750", "board_width": "1100", "board_thickness": "12",
+                      "colour": "Echopanel Navy 365", "finish": "Longitude"}, None),
+                    ("Benchtop", "Pcs:(1) 3000 X 800 X 25 White Chem Resistant", 1, 1, 1850, "Next", 18, -3, 12,
+                     {"bench_length": "3000", "bench_width": "800", "bench_thickness": "25", "bench_pcs": "1",
+                      "colour": "White Chem Resistant", "underside": "Aquaban", "edge_details": "10/10",
+                      "laminate_supplier": "Demo Laminates", "finish": "Natural", "laminate_code": "200",
+                      "joins": "0", "shp": True}, "Front 10/10, lh side 1mm ABS"),
+                    ("Contractor", "1.2mm grade 316 stainless steel benchtop with lip, splashback and sink",
+                     2, 2, 3551, "Next", 26, None, None, {}, "With mixer cutout"),
+                    ("Board", "Demo melamine board, 2400 x 1200 x 16", 0, 30, 62, "Medium", 14, -2, 7, {}, None),
+                ]
+                for (_cat, _descr, _vi, _qty, _cost, _prio, _req, _ord, _due, _attrs, _lic) in _demo_orders:
+                    _code, _o = _create_order(
+                        s, workspace_id=workspace_id, actor_id=mina_id,
+                        payload=_CreateOrderIn(
+                            vendor_id=_v(_vi), description=_descr, category=_cat, project_id=alf_pid,
+                            location="Level 3 fit-out", priority=_prio, quantity=_qty, unit_cost=_cost,
+                            total_amount=_qty * _cost, attributes=_attrs, internal_comments=_DEMO))
+                    assert _code == "OK", _code
+                    _extra = {"required_date": date.today() + timedelta(days=_req), "line_item_comments": _lic}
+                    if _ord is not None:
+                        _extra["date_ordered"] = date.today() + timedelta(days=_ord)
+                        _extra["due_date"] = date.today() + timedelta(days=_due)
+                    _patch_order(s, po_id=_o["po_id"], workspace_id=workspace_id, actor_id=mina_id,
+                                 payload=_PatchOrderIn(**_extra), can_decide=True)
+
             # A pending Controlled-Lock request, so /lock-requests has a row to approve or
             # reject. TRT-014's K-103 is seeded locked by its owner (noa); a save by anyone
             # else is held as a request instead of applied, which is exactly what this does

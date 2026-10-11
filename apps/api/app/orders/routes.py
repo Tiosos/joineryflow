@@ -20,6 +20,7 @@ from . import queries as q
 from .schemas import (
     CategoryOut,
     CostCentreIn,
+    CostBreakdownOut,
     CostCentreListOut,
     CostCentreOut,
     PatchCostCentreIn,
@@ -29,6 +30,7 @@ from .schemas import (
     OrderListOut,
     PatchOrderIn,
     PatchOrderLineIn,
+    ProjectBudgetOut,
 )
 
 router = APIRouter(tags=["orders"])
@@ -69,6 +71,33 @@ def list_workspace_orders_route(
             q=search,
         )
     }
+
+
+@router.get("/orders/cost-breakdown", response_model=CostBreakdownOut)
+def cost_breakdown_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    """The Orderbook's Cost centre pop-up: cost by order type over every order.
+    Declared before `/orders/{po_id}` for the same reason as `/orders` above."""
+    groups = q.cost_breakdown(db, workspace_id=user.workspace_id)
+    return {"groups": groups, "total": sum(g["total"] for g in groups)}
+
+
+@router.get("/projects/{pid}/budget", response_model=ProjectBudgetOut)
+def project_budget_route(
+    pid: int,
+    user: AuthUser = Depends(require_permission("tracking", "read")),
+    db: Session = Depends(get_db),
+):
+    """Tracking > Info > Budget: one project's material cost by order type. Managers and admins
+    only (the budget is for project managers and above); another workspace's project is a 404."""
+    if user.auth_role not in ("manager", "admin"):
+        raise HTTPException(403, {"code": "BUDGET_FORBIDDEN"})
+    if not q.project_in_workspace(db, project_id=pid, workspace_id=user.workspace_id):
+        raise HTTPException(404, "project not found")
+    groups = q.cost_breakdown(db, workspace_id=user.workspace_id, project_id=pid)
+    return {"groups": groups, "total": sum(g["total"] for g in groups), "labour_hours": None}
 
 
 @router.get("/projects/{pid}/orders", response_model=OrderListOut)
