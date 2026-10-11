@@ -121,6 +121,22 @@ export interface CostBreakdown {
   total: string;
 }
 
+/** `GET /suppliers`: the supplier record the Orderbook's Supplier list shows and edits. */
+export interface SupplierRecord {
+  vendor_id: number;
+  name: string;
+  category: string;
+  status: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  address: string | null;
+  payment_terms: string | null;
+}
+
+/** The statuses `vendors_status_check` allows. */
+export const SUPPLIER_STATUSES = ["Active", "Inactive", "Under Review", "Blacklisted"] as const;
+
 export interface OrderCategory {
   category_key: string;
   label: string;

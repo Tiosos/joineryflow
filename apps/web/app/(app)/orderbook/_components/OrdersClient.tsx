@@ -9,6 +9,8 @@ import { COLUMNS, OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
 import { CostCentreManager } from "./orders/CostCentreManager";
 import { CostBreakdownModal } from "./CostBreakdownModal";
+import { NewOrderDialog } from "./NewOrderDialog";
+import { SupplierListModal } from "./SupplierListModal";
 
 /**
  * Orderbook's Orders tab — the commercial layer over `purchase_orders` (Q505).
@@ -27,20 +29,21 @@ import { CostBreakdownModal } from "./CostBreakdownModal";
  * carried since §L with nothing to drive them, now that PO generation (a Won
  * Quote) creates real multi-line orders with nothing else to correct or approve them.
  *
- * The list follows the old screen: orders grouped under their type, its columns, and a
- * row of filter buttons. Of those buttons, Due / Over Due / Arrived / My Orders are
- * built; RTO, TBO, New, Supplier and Po are shown disabled until what they filter is
- * confirmed.
+ * The list follows the old screen: orders grouped under their type, its columns, and a row of
+ * buttons. RTO / TBO / Due / Over Due / Arrived / My Orders filter the loaded list; New opens the
+ * new-order form, Supplier the supplier list; Po stays disabled until what it should print is
+ * decided (the same open question as the pop-up's Create PO!).
  */
 
 /** The old screen's filter buttons; `view` in the URL holds the one that is on. */
 const VIEWS = [
+  { key: "rto", label: "RTO", hint: "Ready to order: Approved, not yet ordered" },
+  { key: "tbo", label: "TBO", hint: "To be ordered: still open, not yet ordered" },
   { key: "due", label: "Due", hint: "Due in the next 7 days, not yet arrived" },
   { key: "overdue", label: "Over Due", hint: "Due date has passed, not yet arrived" },
   { key: "arrived", label: "Arrived", hint: "Has an arrived date" },
   { key: "mine", label: "My Orders", hint: "Orders you requested" },
 ] as const;
-const UNCONFIRMED = ["RTO", "TBO", "New", "Supplier", "Po"] as const;
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -59,6 +62,8 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const view = params.get("view") ?? "";
   const [categories, setCategories] = useState<OrderCategory[]>([]);
   const [costOpen, setCostOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
   const today = useMemo(() => ymd(new Date()), []);
   const weekAhead = useMemo(() => ymd(new Date(Date.now() + 7 * 86_400_000)), []);
 
@@ -92,6 +97,8 @@ export function OrdersClient({ me }: { me: Me | null }) {
 
   const shown = useMemo(() => rows.filter(r => {
     const open = !["Delivered", "Cancelled", "Rejected"].includes(r.status);
+    if (view === "rto") return r.status === "Approved" && !r.date_ordered;
+    if (view === "tbo") return open && !r.date_ordered;
     if (view === "due") return open && !r.arrived_date && !!r.due_date && r.due_date >= today && r.due_date <= weekAhead;
     if (view === "overdue") return open && !r.arrived_date && !!r.due_date && r.due_date < today;
     if (view === "arrived") return !!r.arrived_date;
@@ -227,15 +234,33 @@ export function OrdersClient({ me }: { me: Me | null }) {
       </div>
 
       <div data-testid="orders-view-filters" className="flex flex-wrap items-center gap-1.5 text-xs">
-        {UNCONFIRMED.map(label => (
-          <button key={label} type="button" disabled
-            title="Not built: what this filter shows is not confirmed yet"
-            className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted opacity-40">
-            {label}
-          </button>
-        ))}
+        {(["rto", "tbo"] as const).map(k => {
+          const v = VIEWS.find(x => x.key === k)!;
+          return (
+            <button key={k} type="button" title={v.hint} data-testid={`orders-view-${k}`}
+              aria-pressed={view === k} onClick={() => setParam("view", view === k ? "" : k)}
+              className={`rounded border px-2.5 py-1 ${
+                view === k ? "border-h-accent bg-h-accent text-white" : "border-h-line bg-h-bg text-h-ink hover:bg-h-surface"}`}>
+              {v.label}
+            </button>
+          );
+        })}
+        {canEdit && (
+          <button type="button" data-testid="orders-new" onClick={() => setNewOpen(true)}
+            className="rounded bg-[#e4574f] px-3 py-1 font-semibold text-white hover:opacity-90">New</button>
+        )}
+        <button type="button" data-testid="orders-view-clear"
+          onClick={() => router.push(selected ? `/orderbook?order=${encodeURIComponent(selected)}` : "/orderbook")}
+          className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted hover:text-h-ink">
+          Clear
+        </button>
+        <button type="button" data-testid="orders-suppliers" onClick={() => setSuppliersOpen(true)}
+          className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-ink hover:bg-h-surface">Supplier</button>
+        <button type="button" disabled data-testid="orders-po"
+          title="Not built yet: what Po should print is not decided"
+          className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted opacity-40">Po</button>
         <span className="mx-1 h-4 border-l border-h-line" />
-        {VIEWS.map(v => (
+        {VIEWS.filter(v => v.key !== "rto" && v.key !== "tbo").map(v => (
           <button key={v.key} type="button" title={v.hint} data-testid={`orders-view-${v.key}`}
             aria-pressed={view === v.key}
             onClick={() => setParam("view", view === v.key ? "" : v.key)}
@@ -247,11 +272,6 @@ export function OrdersClient({ me }: { me: Me | null }) {
             {v.label}
           </button>
         ))}
-        <button type="button" data-testid="orders-view-clear"
-          onClick={() => router.push(selected ? `/orderbook?order=${encodeURIComponent(selected)}` : "/orderbook")}
-          className="ml-1 rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted hover:text-h-ink">
-          Clear
-        </button>
       </div>
 
       {canManageCostCentres && ccManage && (
@@ -329,6 +349,21 @@ export function OrdersClient({ me }: { me: Me | null }) {
       )}
 
       {costOpen && <CostBreakdownModal onClose={() => setCostOpen(false)} />}
+      {newOpen && (
+        <NewOrderDialog
+          categories={categories}
+          onClose={() => setNewOpen(false)}
+          onCreated={poNumber => { setNewOpen(false); fetchRows(); setParam("order", poNumber); }}
+        />
+      )}
+      {suppliersOpen && (
+        <SupplierListModal
+          categories={categories}
+          canEdit={canEdit}
+          onClose={() => setSuppliersOpen(false)}
+          onChanged={fetchRows}
+        />
+      )}
     </div>
   );
 }

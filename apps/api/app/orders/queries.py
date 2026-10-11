@@ -478,7 +478,9 @@ def create_order(
                 order_number, supplier_ref_no, priority,
                 product_code, product_description,
                 quantity, unit_of_measure, unit_cost, total_amount,
-                required_date, notes, internal_comments, attributes
+                required_date, notes, internal_comments, attributes,
+                stock_tracked, gst_applicable, gst_included_in_price,
+                line_item_comments, product_website
             )
             VALUES (
                 'PO-' || EXTRACT(year FROM now())::int || '-' ||
@@ -489,7 +491,8 @@ def create_order(
                 :order_no, :supp_ref, :prio,
                 :pcode, :pdescr,
                 :qty, :uom, :ucost, :total,
-                :req_date, :notes, :internal, CAST(:attrs AS jsonb)
+                :req_date, :notes, :internal, CAST(:attrs AS jsonb),
+                :stock, :gst, :gst_inc, :lic, :site
             )
             RETURNING po_id
             """
@@ -506,6 +509,9 @@ def create_order(
             "total": payload.total_amount, "req_date": payload.required_date,
             "notes": payload.notes, "internal": payload.internal_comments,
             "attrs": json.dumps(payload.attributes or {}),
+            "stock": payload.stock_tracked, "gst": payload.gst_applicable,
+            "gst_inc": payload.gst_included_in_price, "lic": payload.line_item_comments,
+            "site": payload.product_website,
         },
     ).scalar()
     db.flush()

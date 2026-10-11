@@ -44,8 +44,8 @@ test("the Orders list is grouped by order type, with the old columns and filter 
     await expect(page.getByTestId("order-group").filter({ hasText: "Board" })
       .locator('[data-testid="order-row"]', { hasText: `Layout fine ${stamp}` })).toHaveCount(1);
 
-    // The buttons whose meaning is not confirmed are there but off.
-    await expect(page.getByTestId("orders-view-filters").getByRole("button", { name: "RTO" })).toBeDisabled();
+    // Po is there but off until what it prints is decided.
+    await expect(page.getByTestId("orders-po")).toBeDisabled();
 
     await expect(async () => {
       await page.getByTestId("orders-view-overdue").click();
@@ -167,4 +167,115 @@ test("Tracking > Info has a Budget tab for a manager, with the project's materia
     await login(page, PM);
     for (const o of [o1, o2]) await page.request.delete(`/api/orders/${o.po_id}`);
   }
+});
+
+test("RTO shows Approved orders not yet ordered and TBO every open one not yet ordered", async ({ page }) => {
+  await login(page, BUYER);
+  const stamp = Date.now();
+  const pending = await newOrder(page, { description: `Rto pending ${stamp}` });
+  const approved = await newOrder(page, { description: `Rto approved ${stamp}` });
+  const ordered = await newOrder(page, { description: `Rto ordered ${stamp}` });
+  try {
+    expect((await page.request.patch(`/api/orders/${approved.po_id}`, { data: { status: "Approved" } })).ok()).toBe(true);
+    expect((await page.request.patch(`/api/orders/${ordered.po_id}`,
+      { data: { status: "Approved", date_ordered: day(-1) } })).ok()).toBe(true);
+    const row = (name: string) => page.locator('[data-testid="order-row"]', { hasText: `${name} ${stamp}` });
+    await page.goto("/orderbook");
+    await expect(row("Rto pending")).toHaveCount(1, { timeout: 15_000 });
+
+    await expect(async () => {
+      await page.getByTestId("orders-view-rto").click();
+      await expect(page.getByTestId("orders-view-rto")).toHaveAttribute("aria-pressed", "true", { timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(row("Rto approved")).toHaveCount(1);
+    await expect(row("Rto pending")).toHaveCount(0);       // not decided yet
+    await expect(row("Rto ordered")).toHaveCount(0);       // already ordered
+
+    await page.getByTestId("orders-view-tbo").click();
+    await expect(row("Rto pending")).toHaveCount(1);
+    await expect(row("Rto approved")).toHaveCount(1);
+    await expect(row("Rto ordered")).toHaveCount(0);
+  } finally {
+    for (const o of [pending, approved, ordered]) await page.request.delete(`/api/orders/${o.po_id}`);
+  }
+});
+
+test("New opens the order form and Create order saves a Pending order", async ({ page }) => {
+  await login(page, BUYER);
+  const stamp = Date.now();
+  const name = `New order ${stamp}`;
+  await page.goto("/orderbook");
+  await expect(async () => {
+    await page.getByTestId("orders-new").click();
+    await expect(page.getByTestId("new-order-dialog")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+
+  // a supplier and a description are needed
+  await page.getByTestId("new-order-create").click();
+  await expect(page.getByTestId("new-order-error")).toContainText("supplier");
+
+  const supplier = page.getByTestId("new-order-supplier");
+  await expect(supplier.locator("option")).not.toHaveCount(1, { timeout: 15_000 });
+  await supplier.selectOption({ index: 1 });
+  await page.getByTestId("new-order-category").selectOption("Acoustic");
+  await page.getByLabel("New order").getByRole("textbox").first().fill(name);   // Description
+  await page.getByTestId("new-order-qty").fill("2");
+  await page.getByTestId("new-order-qty").blur();                                // fields apply on leaving them
+  await page.getByTestId("new-order-cost").fill("10");
+  await page.getByTestId("new-order-cost").blur();
+  await expect(page.getByTestId("new-order-total")).toHaveValue("20.00");        // follows qty x cost
+  await page.getByTestId("order-attr-colour").fill("Navy");
+  await page.getByTestId("new-order-create").click();      // straight from typing: the click leaves the field first
+
+  // it opens in the order pop-up, Pending, with what was typed
+  await expect(page.getByTestId("order-detail")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("order-status-select")).toHaveValue("Pending");
+  const po = (await page.getByTestId("order-detail").locator("h2").innerText()).trim();
+  try {
+    const list = (await (await page.request.get("/api/orders")).json()).orders as
+      { po_number: string; po_id: number; description: string; category: string; total_amount: string;
+        attributes: { colour?: string } }[];
+    const made = list.find(o => o.po_number === po)!;
+    expect(made.description).toBe(name);
+    expect(made.category).toBe("Acoustic");
+    expect(Number(made.total_amount)).toBe(20);
+    expect(made.attributes.colour).toBe("Navy");
+  } finally {
+    const list = (await (await page.request.get("/api/orders")).json()).orders as { po_number: string; po_id: number }[];
+    const made = list.find(o => o.po_number === po);
+    if (made) await page.request.delete(`/api/orders/${made.po_id}`);
+  }
+});
+
+test("Supplier opens the supplier list: add a supplier and edit its details and status", async ({ page }) => {
+  await login(page, BUYER);
+  const stamp = Date.now();
+  const name = `Supplier e2e ${stamp}`;
+  const read = async () =>
+    ((await (await page.request.get(`/api/suppliers?q=${encodeURIComponent(name)}`)).json()).suppliers as
+      { vendor_id: number; name: string; status: string; contact_phone: string | null; payment_terms: string | null }[])[0];
+  await page.goto("/orderbook");
+  await expect(async () => {
+    await page.getByTestId("orders-suppliers").click();
+    await expect(page.getByTestId("supplier-modal")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+
+  await page.getByTestId("supplier-add").click();
+  await page.getByTestId("supplier-name").fill(name);
+  await page.getByTestId("supplier-save").click();
+  await expect.poll(async () => (await read())?.name).toBe(name);
+  try {
+    const row = page.getByTestId("supplier-row").filter({ hasText: name });
+    await expect(row).toHaveCount(1);
+    await row.getByTestId("supplier-edit").click();
+    await page.getByTestId("supplier-form").getByLabel("Phone").fill("0400 000 000");
+    await page.getByTestId("supplier-form").getByLabel("Payment terms").fill("30 days EOM");
+    await page.getByTestId("supplier-save").click();
+    await expect.poll(async () => (await read()).payment_terms).toBe("30 days EOM");
+    expect((await read()).contact_phone).toBe("0400 000 000");
+  } finally {
+    // a supplier cannot be deleted: switch it off so it leaves every picker
+    await page.request.patch(`/api/suppliers/${(await read()).vendor_id}`, { data: { status: "Inactive" } });
+  }
+  expect((await read()).status).toBe("Inactive");
 });
