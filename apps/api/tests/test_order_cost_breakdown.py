@@ -119,3 +119,20 @@ def test_new_order_fields_round_trip(ws):
     assert b["gst_amount"] == "0.00" and b["grand_total"] == "2580.00"
     for field in ("stock_tracked", "gst_applicable", "gst_included_in_price"):
         assert c.patch(f"/orders/{o['po_id']}", json={field: None}).status_code == 422
+
+
+def test_new_order_saves_the_pop_up_fields_in_one_call(ws):
+    r = ws["buyer"].post("/orders", json={
+        "vendor_id": ws["vendor"], "description": "Benchtop", "category": "Benchtop",
+        "stock_tracked": True, "gst_included_in_price": True, "total_amount": "100.00",
+        "line_item_comments": "Front 10/10", "product_website": "https://example.test/p",
+        "attributes": {"bench_length": "3000", "shp": True}})
+    assert r.status_code == 201, r.text
+    o = r.json()
+    assert o["status"] == "Pending" and o["stock_tracked"] is True
+    assert (o["gst_applicable"], o["gst_included_in_price"]) == (True, True)
+    assert o["gst_amount"] == "0.00" and o["grand_total"] == "100.00"
+    assert (o["line_item_comments"], o["product_website"]) == ("Front 10/10", "https://example.test/p")
+    assert o["attributes"] == {"bench_length": "3000", "shp": True}
+    plain = ws["buyer"].post("/orders", json={"vendor_id": ws["vendor"], "description": "x"}).json()
+    assert (plain["stock_tracked"], plain["gst_applicable"], plain["gst_included_in_price"]) == (False, True, False)

@@ -179,6 +179,13 @@ class CreateOrderIn(BaseModel):
     notes: str | None = None
     internal_comments: str | None = None
     attributes: dict = Field(default_factory=dict)
+    # The order pop-up's other fields, so New order saves in one call (the database defaults
+    # are stock_tracked false, GST applicable true, GST not included).
+    stock_tracked: bool = False
+    gst_applicable: bool = True
+    gst_included_in_price: bool = False
+    line_item_comments: str | None = None
+    product_website: str | None = Field(default=None, max_length=500)
 
 
 class PatchOrderIn(BaseModel):
