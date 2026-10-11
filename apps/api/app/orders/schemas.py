@@ -262,13 +262,15 @@ class CostCentreOut(BaseModel):
     cost_center_id: int
     code: str
     name: str
-    budget_amount: Decimal
     is_active: bool = True
+    # The budget is for managers and admins: for anyone else these four are left out of the reply
+    # (the routes use `response_model_exclude_none`), never sent as zeros.
+    budget_amount: Decimal | None = None
     # From the budget ledger (information only, nothing is blocked by it): `committed` is what
     # approved orders still hold, `spent` what delivered ones cost, `remaining` the budget less both.
-    committed: Decimal = Decimal(0)
-    spent: Decimal = Decimal(0)
-    remaining: Decimal = Decimal(0)
+    committed: Decimal | None = None
+    spent: Decimal | None = None
+    remaining: Decimal | None = None
 
 
 class CostCentreListOut(BaseModel):
