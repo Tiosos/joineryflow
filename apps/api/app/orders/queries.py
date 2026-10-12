@@ -439,7 +439,8 @@ def create_order(
     actor_id: int,
 ) -> tuple[str, dict | None]:
     """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None) |
-    ('UNKNOWN_CATEGORY', None) | ('PROJECT_NOT_FOUND', None)."""
+    ('UNKNOWN_CATEGORY', None) | ('PROJECT_NOT_FOUND', None) |
+    ('PROJECT_ITEM_MISMATCH', None) (an explicit project other than the item's own)."""
     if not _vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
         return "VENDOR_NOT_FOUND", None
     if not _category_exists(db, payload.category):
@@ -462,6 +463,8 @@ def create_order(
         )
         if item is None:
             return "ITEM_NOT_FOUND", None
+        if project_id is not None and project_id != item["project_id"]:
+            return "PROJECT_ITEM_MISMATCH", None
         # Q427: carried over, not asked for. An explicit value still wins.
         project_id = project_id or item["project_id"]
         project_name = project_name or item["project_name"]

@@ -15,7 +15,7 @@ from app.db import SessionLocal
 from .conftest import truncate_fixture
 from .helpers import login, login_same_workspace
 
-_cleanup = truncate_fixture("budget_transactions", "cost_centers", "purchase_orders", "vendors")
+_cleanup = truncate_fixture("budget_transactions", "cost_centers", "purchase_orders", "vendors", "items", "projects")
 
 
 def _sql(sql: str, **p):
@@ -125,3 +125,20 @@ def test_cost_centre_refuses_a_blank_code_or_name_and_trims_the_rest(ws):
     assert c.patch(f"/cost-centers/{cid}", json={"code": "  "}).status_code == 422
     assert c.patch(f"/cost-centers/{cid}", json={"name": " "}).status_code == 422
     assert c.patch(f"/cost-centers/{cid}", json={"name": " Renamed "}).json()["name"] == "Renamed"
+
+
+# ── 6. an item's order cannot name another project ──
+
+def test_an_order_for_an_item_refuses_a_project_that_is_not_the_items(ws):
+    pid_a = _sql("INSERT INTO projects(project_code, name, workspace_id)"
+                 " VALUES ('RV-A', 'A', :w) RETURNING project_id", w=ws["wid"])
+    pid_b = _sql("INSERT INTO projects(project_code, name, workspace_id)"
+                 " VALUES ('RV-B', 'B', :w) RETURNING project_id", w=ws["wid"])
+    item = _sql("INSERT INTO items(num, project_id, description, status, stage)"
+                " VALUES (nextval('joinery_number_seq'), :p, 'unit', 'CLEAR', 'Block B')"
+                " RETURNING item_id", p=pid_a)
+    body = {"vendor_id": ws["vendor"], "description": "o", "item_id": item}
+    bad = ws["buyer"].post("/orders", json={**body, "project_id": pid_b})
+    assert (bad.status_code, _code(bad)) == (409, "PROJECT_ITEM_MISMATCH")
+    ok = ws["buyer"].post("/orders", json={**body, "project_id": pid_a})
+    assert ok.status_code == 201, ok.text

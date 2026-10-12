@@ -14,12 +14,14 @@ export function ProjectBudgetTab({ projectId, hours }: { projectId: number; hour
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    let current = true; // a quick switch must not let the old project's answer land
     setData(null);
     setErr(null);
     fetch(`/api/projects/${projectId}/budget`, { cache: "no-store" })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((b: CostBreakdown) => setData(b))
-      .catch(e => setErr(String(e)));
+      .then((b: CostBreakdown) => { if (current) setData(b); })
+      .catch(e => { if (current) setErr(String(e)); });
+    return () => { current = false; };
   }, [projectId]);
 
   return (
@@ -30,7 +32,7 @@ export function ProjectBudgetTab({ projectId, hours }: { projectId: number; hour
         {!err && !data && <p className="text-xs text-h-muted">Loading…</p>}
         {data && (data.groups.length === 0
           ? <p className="text-xs text-h-muted">No orders on this project yet.</p>
-          : <div className="overflow-hidden rounded border border-h-line"><CostBreakdownTable data={data} /></div>)}
+          : <div className="overflow-hidden rounded border border-h-line"><CostBreakdownTable key={projectId} data={data} /></div>)}
       </section>
       <section>
         <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">Labour hours</h3>

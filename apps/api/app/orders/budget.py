@@ -5,14 +5,16 @@ Release together (a Release is stored negative, migration 0046). An order commit
 it is **Approved** (`sync_commitment`: the commitment follows the order, so an edit to the total or
 a move out of Approved posts the difference), and when it leaves the book:
 
-- **Cancelled**: the order's outstanding Commitment is released (a negative `Release` row).
+- **Cancelled**: the order's outstanding Commitment is released (a negative `Release` row); if it
+  was Delivered, its spend is taken back too (a negative `Expenditure`, so the cost centre's
+  `spent` nets to 0 and a later re-delivery posts the total again).
 - **Delivered**: the real cost is posted as an `Expenditure` (the order's total at delivery) and
   the outstanding Commitment is released, so the same money is not counted twice.
 
 Both need the order to have a cost centre and are no-ops without one (Q563). Outstanding is
 read from the ledger (commitments less earlier releases), not from the order's total, which may
 have moved since approval. Nothing is posted twice: a second cancel/delivery finds nothing
-outstanding, and an order that already has an Expenditure gets no second one.
+outstanding, and an order whose net Expenditure is still positive gets no second one.
 """
 from __future__ import annotations
 
@@ -22,6 +24,15 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+
+
+def _spent(db: Session, po_id: int) -> Decimal:
+    """What the order has spent: its Expenditure rows net of any reversal."""
+    return db.execute(
+        text("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions"
+             " WHERE po_id = :o AND transaction_type = 'Expenditure'"),
+        {"o": po_id},
+    ).scalar()
 
 
 def sync_commitment(db: Session, *, order: dict, workspace_id: int, actor_id: int) -> Decimal:
@@ -41,10 +52,7 @@ def sync_commitment(db: Session, *, order: dict, workspace_id: int, actor_id: in
         {"c": cc, "w": workspace_id},
     ).first():
         return Decimal(0)
-    if db.execute(
-        text("SELECT 1 FROM budget_transactions WHERE po_id = :o AND transaction_type = 'Expenditure'"),
-        {"o": order["po_id"]},
-    ).first():
+    if _spent(db, order["po_id"]) > 0:
         return Decimal(0)
     total = order["total_amount"] or Decimal(0)
     target = total if order["status"] == "Approved" and total > 0 else Decimal(0)
@@ -107,12 +115,14 @@ def settle_on_close(
         )
 
     total = order["total_amount"]
-    if delivered and total is not None and total > 0 and not db.execute(
-        text("SELECT 1 FROM budget_transactions WHERE po_id = :o AND transaction_type = 'Expenditure'"),
-        {"o": order["po_id"]},
-    ).first():
+    spent = _spent(db, order["po_id"])
+    if delivered and total is not None and total > 0 and spent <= 0:
         post(total, "Expenditure", "PO delivered")
         posted["expenditure"] = total
+    elif not delivered and spent > 0:
+        # Cancelling a delivered order takes its spend back: a negative Expenditure nets it to 0.
+        post(-spent, "Expenditure", "PO cancelled after delivery")
+        posted["expenditure"] = -spent
 
     outstanding = db.execute(
         text(
