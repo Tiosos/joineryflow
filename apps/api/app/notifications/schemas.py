@@ -21,9 +21,24 @@ class NotificationOut(BaseModel):
     url: str | None = None
 
 
+class OrderWaitingOut(BaseModel):
+    po_id: int
+    po_number: str
+    description: str | None = None
+    vendor_name: str | None = None
+    requester_name: str | None = None
+    created_at: datetime
+    url: str
+
+
 class NotificationListOut(BaseModel):
     notifications: list[NotificationOut]
     unread_count: int
+    # Purchase officers only: orders still Pending, newest first (at most 20) and how many in all.
+    # Derived on read, so there is nothing to mark read: an order leaves when it is decided.
+    # Left out of the reply (route uses `response_model_exclude_unset`) for everyone else.
+    orders_waiting: list[OrderWaitingOut] = []
+    orders_waiting_count: int = 0
 
 
 class ReadAllOut(BaseModel):

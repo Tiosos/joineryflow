@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notificationsApi } from "@/lib/comments-fetch";
-import type { NotificationOut } from "@/lib/comments-types";
+import type { NotificationOut, OrderWaiting } from "@/lib/comments-types";
 
 const POLL_MS = 60_000;
 const PREVIEW = 6;
@@ -23,12 +23,18 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<NotificationOut[]>([]);
+  const [waiting, setWaiting] = useState<OrderWaiting[]>([]);
+  const [waitingCount, setWaitingCount] = useState(0);
+  // Orders waiting for a decision count on the badge too; they have no read state.
+  const badge = unread + waitingCount;
 
   const refresh = useCallback(async () => {
     try {
       const r = await notificationsApi.list({ limit: PREVIEW });
       setUnread(r.unread_count);
       setItems(r.notifications);
+      setWaiting(r.orders_waiting ?? []);
+      setWaitingCount(r.orders_waiting_count ?? 0);
     } catch {
       // A failed poll keeps the last known state; the next tick retries.
     }
@@ -69,7 +75,7 @@ export function NotificationBell() {
     <div ref={boxRef} className="relative">
       <button
         type="button"
-        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-label={badge > 0 ? `Notifications, ${badge} unread` : "Notifications"}
         aria-expanded={open}
         data-testid="notification-bell"
         onClick={() => {
@@ -79,12 +85,12 @@ export function NotificationBell() {
         className="relative rounded px-2 py-1 text-sm text-h-muted hover:text-h-ink"
       >
         <span aria-hidden>🔔</span>
-        {unread > 0 && (
+        {badge > 0 && (
           <span
             data-testid="notification-count"
             className="absolute -right-1 -top-1 min-w-4 rounded-full bg-h-accent px-1 text-center text-[10px] font-semibold leading-4 text-white"
           >
-            {unread > 99 ? "99+" : unread}
+            {badge > 99 ? "99+" : badge}
           </span>
         )}
       </button>
@@ -102,9 +108,41 @@ export function NotificationBell() {
               </button>
             )}
           </div>
-          {items.length === 0 ? (
+          {waitingCount > 0 && (
+            <div data-testid="orders-waiting" className="border-b border-h-line">
+              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
+                {`Orders waiting for your decision (${waitingCount})`}
+              </div>
+              <ul>
+                {waiting.slice(0, PREVIEW).map((o) => (
+                  <li key={o.po_id}>
+                    <Link
+                      href={o.url}
+                      onClick={() => setOpen(false)}
+                      data-testid="order-waiting"
+                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
+                    >
+                      <span className="h-mono">{o.po_number}</span>
+                      <span className="text-xs text-h-muted">
+                        {` · ${o.vendor_name ?? "no supplier"}${o.requester_name ? ` · ${o.requester_name}` : ""}`}
+                      </span>
+                      <span className="block truncate text-xs text-h-muted">{o.description}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/orderbook?status=Pending"
+                onClick={() => setOpen(false)}
+                className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
+              >
+                All pending orders
+              </Link>
+            </div>
+          )}
+          {items.length === 0 && waitingCount === 0 ? (
             <p className="px-3 py-4 text-sm text-h-muted">Nothing yet.</p>
-          ) : (
+          ) : items.length === 0 ? null : (
             <ul>
               {items.map((n) => (
                 <li key={n.notification_id}>

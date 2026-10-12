@@ -1630,3 +1630,12 @@ An independent review of PRs 98-100 found eleven things; the first five are fixe
 10. Orders are AUD only (customer's answer): the cost-breakdown column reads "Cost (AUD)"; no multi-currency handling.
 11. The cost-breakdown group rows have a focusable button (`aria-expanded`), so Enter / Space opens and closes them.
 Tests: `test_order_review_fixes.py` (6), `test_order_budget.py` (7), and in `orderbook_layout.spec.ts` the keyboard step of the breakdown spec and the midnight spec (both fail on the old build).
+
+
+## Orders waiting for a decision (October 2026)
+
+Asked first; the answers are **settled decisions**: only the **purchase officer role** is told (not every holder of `orderbook:approve`: a manager or admin sees nothing extra); an order is waiting when it is **created `Pending` or moved back to `Pending`** (a `Draft` is not); it **clears when it is decided or cancelled** (not when opened).
+
+Built as a *derived* list, not as stored notifications: `GET /notifications` carries `orders_waiting` (newest 20, with `po_number`, supplier, requester, a link to `/orderbook?order=`) and `orders_waiting_count` for a purchase officer who can read the Orderbook (`orders.queries.orders_waiting_for_decision`). The `notification` table stays comment-only (`0042`, `comment_id NOT NULL`), no migration. Because "clears when decided" is exactly "status is no longer Pending", deriving it cannot go stale and needs no read state; the cost is that opening an order does not dismiss it. The bell badge adds the count to the unread comment notifications and lists the waiting orders above them, `/notifications` has the same section, and "All pending orders" opens the Orders list filtered to `Pending`.
+
+Tests: `test_orders_waiting_notification.py` (all fail against the old code) and `orders_waiting.spec.ts`.
