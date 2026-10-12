@@ -112,3 +112,25 @@ def test_nothing_is_posted_without_a_cost_centre_or_a_commitment(ws):
     ws["buyer"].patch(f"/orders/{o['po_id']}", json={"cost_center_id": ws["cc"]})
     ws["buyer"].delete(f"/orders/{o['po_id']}")  # cancelled with nothing committed
     assert _ledger(o["po_id"]) == []
+
+
+# ── cancelling a delivered order takes its spend back (October 2026 review, finding 7) ──
+
+def test_cancelling_a_delivered_order_reverses_its_expenditure(ws):
+    po = _approved_order(ws)
+    ws["buyer"].patch(f"/orders/{po}", json={"status": "Delivered"})
+    assert ws["buyer"].patch(f"/orders/{po}", json={"status": "Cancelled"}).status_code == 200
+    assert _ledger(po)[-1] == ("Expenditure", "-2500.00")
+    spent = _sql("SELECT COALESCE(SUM(amount), 0)::text FROM budget_transactions"
+                 " WHERE cost_center_id = :c AND transaction_type = 'Expenditure'", c=ws["cc"])
+    assert spent == "0.00"
+
+
+def test_delivering_again_after_cancelling_a_delivery_spends_the_total_again(ws):
+    po = _approved_order(ws)
+    ws["buyer"].patch(f"/orders/{po}", json={"status": "Delivered"})
+    ws["buyer"].patch(f"/orders/{po}", json={"status": "Cancelled"})
+    ws["buyer"].patch(f"/orders/{po}", json={"status": "Delivered"})
+    spent = _sql("SELECT SUM(amount)::text FROM budget_transactions"
+                 " WHERE po_id = :o AND transaction_type = 'Expenditure'", o=po)
+    assert spent == "2500.00"

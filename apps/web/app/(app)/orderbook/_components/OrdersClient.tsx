@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { can, type Me } from "@/lib/permissions";
 import type { CostCentre, OrderCategory, OrderRow } from "@/lib/orders-types";
@@ -64,19 +64,30 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const [costOpen, setCostOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [suppliersOpen, setSuppliersOpen] = useState(false);
-  const today = useMemo(() => ymd(new Date()), []);
-  const weekAhead = useMemo(() => ymd(new Date(Date.now() + 7 * 86_400_000)), []);
+  // "Today" moves on at midnight, so Due / Over Due stay right on a page left open overnight.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const next = new Date(now);
+    next.setHours(24, 0, 1, 0);
+    const t = setTimeout(() => setNow(new Date()), next.getTime() - now.getTime());
+    return () => clearTimeout(t);
+  }, [now]);
+  const today = useMemo(() => ymd(now), [now]);
+  const weekAhead = useMemo(() => ymd(new Date(now.getTime() + 7 * 86_400_000)), [now]);
+  // Only the newest list request may write the rows: a slower, older answer is dropped.
+  const latest = useRef(0);
 
   const fetchRows = useCallback(() => {
     const qs = new URLSearchParams();
     if (status) qs.set("status", status);
     if (supplier) qs.set("supplier", supplier);
+    const mine = ++latest.current;
     setLoading(true);
     return fetch(`/api/orders${qs.toString() ? `?${qs}` : ""}`, { cache: "no-store" })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(b => { setRows(b.orders); setErr(null); })
-      .catch(e => setErr(String(e)))
-      .finally(() => setLoading(false));
+      .then(b => { if (mine === latest.current) { setRows(b.orders); setErr(null); } })
+      .catch(e => { if (mine === latest.current) setErr(String(e)); })
+      .finally(() => { if (mine === latest.current) setLoading(false); });
   }, [status, supplier]);
 
   useEffect(() => {

@@ -21,7 +21,7 @@ export function CostBreakdownTable({ data }: { data: CostBreakdown }) {
         <tr>
           <th className="px-2 py-1.5">Material type</th>
           <th className="px-2 py-1.5 text-right">Orders</th>
-          <th className="px-2 py-1.5 text-right">Cost</th>
+          <th className="px-2 py-1.5 text-right">Cost (AUD)</th>
         </tr>
       </thead>
       {data.groups.map(g => {
@@ -30,12 +30,14 @@ export function CostBreakdownTable({ data }: { data: CostBreakdown }) {
           <tbody key={g.category} data-testid="cost-breakdown-group">
             <tr
               onClick={() => toggle(g.category)}
-              aria-expanded={open}
               className="cursor-pointer border-t border-h-line bg-h-bg font-medium text-h-ink hover:bg-h-surface"
             >
               <td className="px-2 py-1.5">
-                <span className="mr-1.5 inline-block w-3 text-h-muted">{open ? "▾" : "▸"}</span>
-                {g.label}
+                {/* the button makes the row reachable by keyboard; its click bubbles to the row */}
+                <button type="button" aria-expanded={open} className="text-left">
+                  <span className="mr-1.5 inline-block w-3 text-h-muted">{open ? "▾" : "▸"}</span>
+                  {g.label}
+                </button>
               </td>
               <td className="px-2 py-1.5 text-right h-mono">{g.order_count}</td>
               <td className="px-2 py-1.5 text-right h-mono">{money(g.total)}</td>

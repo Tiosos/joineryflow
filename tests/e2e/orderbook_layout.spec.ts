@@ -123,6 +123,13 @@ test("the Cost centre button opens a collapsible breakdown by material type, ope
     await group.getByRole("row").first().click();                    // and open again
     await expect(group).toContainText(a.po_number);
     await expect(page.getByTestId("cost-breakdown-total")).toBeVisible();
+    // the keyboard works the group too: its button is focusable and Enter collapses it
+    const toggle = group.getByRole("button").first();
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(group).not.toContainText(a.po_number);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("cost-breakdown-modal")).toContainText("Cost (AUD)");
   } finally {
     await page.context().clearCookies();
     await login(page, BUYER);
@@ -310,5 +317,26 @@ test("switching the order type in the New form leaves the old type's fields out 
     expect(made.attributes).toEqual({});       // the Benchtop 'underside' was not carried over
   } finally {
     await page.request.delete(`/api/orders/${made.po_id}`);
+  }
+});
+
+test("a page left open overnight moves Due orders to Over Due at midnight", async ({ page }) => {
+  const stamp = Date.now();
+  await login(page, BUYER);
+  const o = await newOrder(page, { description: `Midnight ${stamp}`, category: "Board", total_amount: "5.00" });
+  try {
+    expect((await page.request.patch(`/api/orders/${o.po_id}`,
+      { data: { due_date: day(0), date_ordered: day(-3) } })).ok()).toBe(true);
+    // the browser's clock starts a minute before local midnight, then runs past it
+    const midnight = new Date(); midnight.setHours(24, 0, 0, 0);
+    await page.clock.install({ time: new Date(midnight.getTime() - 60_000) });
+    await page.goto("/orderbook?view=overdue");
+    const row = page.locator('[data-testid="order-row"]', { hasText: `Midnight ${stamp}` });
+    await expect(page.getByTestId("orders-view-overdue")).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+    await expect(row).toHaveCount(0);                               // due today: not over due yet
+    await page.clock.runFor(120_000);
+    await expect(row).toHaveCount(1);                               // after midnight it is
+  } finally {
+    await page.request.delete(`/api/orders/${o.po_id}`);
   }
 });
