@@ -279,3 +279,36 @@ test("Supplier opens the supplier list: add a supplier and edit its details and 
   }
   expect((await read()).status).toBe("Inactive");
 });
+
+test("switching the order type in the New form leaves the old type's fields out of the order", async ({ page }) => {
+  await login(page, BUYER);
+  const name = `Type switch ${Date.now()}`;
+  await page.goto("/orderbook");
+  await expect(async () => {
+    await page.getByTestId("orders-new").click();
+    await expect(page.getByTestId("new-order-dialog")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  const supplier = page.getByTestId("new-order-supplier");
+  await expect(supplier.locator("option")).not.toHaveCount(1, { timeout: 15_000 });
+  await supplier.selectOption({ index: 1 });
+  await page.getByLabel("New order").getByRole("textbox").first().fill(name);   // Description
+
+  // fill a Benchtop-only field, then change to a type that has none of its own
+  await page.getByTestId("new-order-category").selectOption("Benchtop");
+  await page.getByTestId("order-attr-underside").fill("Aquaban");
+  await page.getByTestId("order-attr-underside").blur();
+  await page.getByTestId("new-order-category").selectOption("Contractor");
+  await expect(page.getByTestId("order-attr-underside")).toHaveCount(0);
+  await page.getByTestId("new-order-create").click();
+
+  await expect(page.getByTestId("order-detail")).toBeVisible({ timeout: 15_000 });
+  const po = (await page.getByTestId("order-detail").locator("h2").innerText()).trim();
+  const list = (await (await page.request.get("/api/orders")).json()).orders as
+    { po_number: string; po_id: number; attributes: Record<string, unknown> }[];
+  const made = list.find(o => o.po_number === po)!;
+  try {
+    expect(made.attributes).toEqual({});       // the Benchtop 'underside' was not carried over
+  } finally {
+    await page.request.delete(`/api/orders/${made.po_id}`);
+  }
+});

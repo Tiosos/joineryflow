@@ -7,11 +7,12 @@ accepting one from a caller would let it drift.
 """
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
     Field,
+    StringConstraints,
     ValidationInfo,
     computed_field,
     field_validator,
@@ -206,13 +207,14 @@ class PatchOrderIn(BaseModel):
     category: str | None = None
     status: OrderStatus | None = None
     priority: OrderPriority | None = None
-    order_number: str | None = None
-    supplier_ref_no: str | None = None
-    location: str | None = None
-    product_code: str | None = None
+    # The same limits `CreateOrderIn` has, i.e. the column sizes: a longer value was a raw 500.
+    order_number: str | None = Field(default=None, max_length=50)
+    supplier_ref_no: str | None = Field(default=None, max_length=100)
+    location: str | None = Field(default=None, max_length=255)
+    product_code: str | None = Field(default=None, max_length=100)
     product_description: str | None = None
     quantity: Decimal | None = None
-    unit_of_measure: str | None = None
+    unit_of_measure: str | None = Field(default=None, max_length=50)
     unit_cost: Decimal | None = None
     total_amount: Decimal | None = None
     required_date: date | None = None
@@ -226,7 +228,7 @@ class PatchOrderIn(BaseModel):
     gst_applicable: bool | None = None
     gst_included_in_price: bool | None = None
     line_item_comments: str | None = None
-    product_website: str | None = None
+    product_website: str | None = Field(default=None, max_length=500)
     # Required with status "Rejected", refused otherwise (the reason the order was rejected).
     rejection_note: str | None = Field(default=None, max_length=2000)
     # Optional; an explicit null clears it. Another workspace's, or an inactive, one is a 404.
@@ -251,15 +253,21 @@ class PatchOrderIn(BaseModel):
         return v
 
 
+# Trimmed before the length check, so a code or name of only spaces is refused (a space passed
+# `min_length=1` and was then stripped to an empty string).
+CostCentreCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+CostCentreName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
 class CostCentreIn(BaseModel):
-    code: str = Field(min_length=1, max_length=20)
-    name: str = Field(min_length=1, max_length=100)
+    code: CostCentreCode
+    name: CostCentreName
     budget_amount: Decimal = Field(default=Decimal(0), ge=0, max_digits=15, decimal_places=2)
 
 
 class PatchCostCentreIn(BaseModel):
-    code: str | None = Field(default=None, min_length=1, max_length=20)
-    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: CostCentreCode | None = None
+    name: CostCentreName | None = None
     is_active: bool | None = None
     budget_amount: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
     reject_null = no_null("code", "name", "is_active", "budget_amount")

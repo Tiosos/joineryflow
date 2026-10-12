@@ -214,12 +214,16 @@ def cancel_order_route(
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
-    """Soft-cancel, matching #4's batch semantics — a second cancel is a 409."""
+    """Soft-cancel, matching #4's batch semantics — a second cancel is a 409. Cancelling an Approved
+    or Rejected order is the decision holders' call, like any move out of those statuses."""
     code = q.cancel_order(
-        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id
+        db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
+        can_decide="approve" in effective_actions(db, user, "orderbook", None),
     )
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")
+    if code == "DECISION_FORBIDDEN":
+        raise HTTPException(403, {"code": "DECISION_FORBIDDEN", "status": "Cancelled"})
     if code == "ALREADY_CANCELLED":
         raise HTTPException(409, {"code": "ALREADY_CANCELLED"})
     db.commit()
