@@ -22,6 +22,16 @@ export function hasTypeFields(category: string): boolean {
   return category === "Acoustic" || category === "Benchtop";
 }
 
+const ACOUSTIC_SIZE = ["board_length", "board_width", "board_thickness"];
+const BENCHTOP_SIZE = ["bench_length", "bench_width", "bench_thickness", "bench_pcs"];
+
+/** The `attributes` keys this order type owns, so a form can drop what another type left behind. */
+export function typeFieldKeys(category: string): string[] {
+  if (category === "Acoustic") return [...ACOUSTIC_SIZE, ...ACOUSTIC.map(([k]) => k)];
+  if (category === "Benchtop") return [...BENCHTOP_SIZE, ...BENCHTOP.map(([k]) => k), "shp"];
+  return [];
+}
+
 export function OrderTypeFields({ category, attributes, canEdit, onSave }: {
   category: string;
   attributes: Record<string, unknown>;

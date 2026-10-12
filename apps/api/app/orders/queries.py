@@ -682,9 +682,12 @@ def patch_order(
 
 
 def cancel_order(
-    db: Session, *, po_id: int, workspace_id: int, actor_id: int
+    db: Session, *, po_id: int, workspace_id: int, actor_id: int, can_decide: bool = False
 ) -> str:
-    """Soft-cancel, matching #4's batch rule. 'OK' | 'NOT_FOUND' | 'ALREADY_CANCELLED'.
+    """Soft-cancel, matching #4's batch rule. 'OK' | 'NOT_FOUND' | 'ALREADY_CANCELLED' |
+    'DECISION_FORBIDDEN' (the order is Approved or Rejected and the caller lacks `can_decide`, the
+    `orderbook:approve` grant: cancelling moves it out of the decision exactly like a status PATCH,
+    which `patch_order` refuses for the same caller). Leaving Rejected clears `rejection_note`.
 
     Cancelling is a status change like any header PATCH of `status`, and it is
     one of the two ways into a frozen state, so it takes the same row lock and
@@ -697,10 +700,12 @@ def cancel_order(
         return "NOT_FOUND"
     if current["status"] == "Cancelled":
         return "ALREADY_CANCELLED"
+    if current["status"] in DECISION_STATUSES and not can_decide:
+        return "DECISION_FORBIDDEN"
     new_versions = bump_field_versions(current.get("field_versions"), ["status"])
     db.execute(
-        text("UPDATE purchase_orders SET status = 'Cancelled', updated_at = now(),"
-             " field_versions = CAST(:fv AS jsonb) WHERE po_id = :o"),
+        text("UPDATE purchase_orders SET status = 'Cancelled', rejection_note = NULL,"
+             " updated_at = now(), field_versions = CAST(:fv AS jsonb) WHERE po_id = :o"),
         {"o": po_id, "fv": json.dumps(new_versions)},
     )
     db.flush()

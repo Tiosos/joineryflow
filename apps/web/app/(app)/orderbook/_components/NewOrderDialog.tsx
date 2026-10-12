@@ -6,7 +6,7 @@ import type { SupplierOption } from "@/lib/catalog-types";
 import type { OrderCategory } from "@/lib/orders-types";
 import { PRIORITIES } from "./orders/shared";
 import { AreaRow, CheckRow, Row, SelectRow, TextRow } from "./orders/DetailRows";
-import { OrderTypeFields } from "./orders/OrderTypeFields";
+import { OrderTypeFields, typeFieldKeys } from "./orders/OrderTypeFields";
 
 type Draft = {
   vendor_id: string; category: string; description: string; project_id: string; location: string;
@@ -86,6 +86,9 @@ export function NewOrderDialog({
     if (!draft.description.trim()) { setFormErr("Describe what is being ordered"); return; }
     setSaving(true);
     const project = projects.find(p => String(p.id) === draft.project_id);
+    // The type's own fields only: switching type hides the old ones, which must not be saved.
+    const keep = typeFieldKeys(draft.category);
+    const attributes = Object.fromEntries(Object.entries(draft.attributes).filter(([k]) => keep.includes(k)));
     const text = (v: string) => (v.trim() === "" ? null : v.trim());
     const res = await fetch("/api/orders", {
       method: "POST",
@@ -102,7 +105,7 @@ export function NewOrderDialog({
         quantity: text(draft.quantity), unit_of_measure: text(draft.unit_of_measure),
         unit_cost: text(draft.unit_cost), total_amount: text(draft.total_amount),
         stock_tracked: draft.stock_tracked, gst_applicable: draft.gst_applicable,
-        gst_included_in_price: draft.gst_included_in_price, attributes: draft.attributes,
+        gst_included_in_price: draft.gst_included_in_price, attributes,
       }),
     }).catch(() => null);
     setSaving(false);

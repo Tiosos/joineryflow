@@ -6,6 +6,7 @@ legacy `/procurement/vendors*` endpoints.
 """
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 from ..schema_guards import no_null
@@ -51,14 +52,16 @@ class PatchSupplierIn(BaseModel):
     reject_null = no_null("name", "category", "status")
     name: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = None
-    status: str | None = None
-    contact_name: str | None = None
+    # The four values `vendors_status_check` allows; anything else was a raw 500.
+    status: Literal["Active", "Inactive", "Under Review", "Blacklisted"] | None = None
+    # The same limits `CreateSupplierIn` has, i.e. the column sizes.
+    contact_name: str | None = Field(default=None, max_length=255)
     contact_email: EmailStr | None = None
-    contact_phone: str | None = None
+    contact_phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
     rating: Decimal | None = Field(default=None, ge=0, le=5)
-    tax_id: str | None = None
-    payment_terms: str | None = None
+    tax_id: str | None = Field(default=None, max_length=100)
+    payment_terms: str | None = Field(default=None, max_length=100)
 
 
 class LinkMaterialIn(BaseModel):
