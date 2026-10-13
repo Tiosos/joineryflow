@@ -291,8 +291,12 @@ test("a selection with nothing to order can be confirmed, and the line is marked
   await expect(dialog).toBeHidden({ timeout: 30_000 });
   // the dialog is already gone while the request runs; do not reload until the server has covered the line
   await expect.poll(async () => {
-    const r = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
-    return r.lines.find((l: { line_id: number }) => l.line_id === line.line_id).orders_generated_at;
+    const r = await page.request.get(`/api/revisions/${rid}/order-preview`);
+    expect(r.ok(), `order-preview -> ${r.status()}`).toBe(true);
+    const found = ((await r.json()).lines as { line_id: number; orders_generated_at: string | null }[])
+      .find((l) => l.line_id === line.line_id);
+    expect(found, `line ${line.line_id} is missing from the order preview`).toBeDefined();
+    return found!.orders_generated_at;
   }, { timeout: 30_000 }).not.toBeNull();
 
   // The line is covered: the Generate orders bar is gone and the page says orders were generated
