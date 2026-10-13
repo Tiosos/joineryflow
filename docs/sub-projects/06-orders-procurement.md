@@ -1661,3 +1661,5 @@ Model (`0059`): `po_document` (`po_no` from `po_document_no_seq`, which starts a
 Tests: `test_purchase_order_documents.py` (create, rules, add / remove, delivery, totals, cancel, invoices, outputs incl. the xlsx re-read, RBAC, workspace isolation, contacts) and `po.spec.ts`. The three isolation probes list the PO routes in their `NOT_PROBED` / `FIELD_REASONS` with a pointer to the dedicated test, because the seed has no PO. `orderbook_layout.spec.ts` no longer expects Po / Create PO! to be disabled.
 
 `0060` (same week): `setval` on `po_document_no_seq` to the greater of 193970, the highest stored `po_no` and the sequence's own last value, so it never moves backwards. No downgrade (issued numbers cannot be taken back).
+
+Supplier contacts are also edited from the **Supplier** list: opening a supplier's Edit row shows its contacts with add, edit and delete (`SupplierContacts.tsx`, the same `/suppliers/{id}/contacts` routes; `orderbook:write` to change). Spec: the third test in `po.spec.ts`.
