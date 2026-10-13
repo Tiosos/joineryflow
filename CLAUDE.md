@@ -122,7 +122,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
-| `tests/e2e/` | Playwright specs (34 spec files, plus `helpers.ts`; see §3) |
+| `tests/e2e/` | Playwright specs (35 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -298,7 +298,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-PO approval: cost centres have no delete, no report across cost centres and no hard budget limit. See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). Tracking's **Orders** quick-filter chip is parked until the user builds it (the Tg Solid chip went live with `0053`): see `docs/sub-projects/03-tracking-and-item-detail.md`. E3's first slice (the item grid) is built; the rest of the pilot data is open.
+PO approval: cost centres have no delete, no report across cost centres and no hard budget limit. See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

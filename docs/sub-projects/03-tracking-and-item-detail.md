@@ -585,12 +585,9 @@ around the Material Take table; the tables now scroll inside their own box. Veri
 at 1500, 1280 and 1000px. Below 1000px a small (about 35px) overflow on every tab remains from elsewhere in the chrome, which this
 did not touch. e2e `item_editor_header.spec.ts` (fails without the fix: 299px at 1280).
 
-### Parked on purpose: the disabled Orders chip on Tracking
-Kept visible but disabled; **the user will build it later** (**Deleted** was built with soft delete, and **Tg Solid** went live
-with migration `0053`, see `09-e3-pilot-data-import.md`: it filters on the per-item `items.tg_solid` tag).
-| Chip | Why it is disabled today (the tooltip in `TrackingClient.tsx`) | What building it needs |
-| --- | --- | --- |
-| **Orders** | "Backend wiring pending": the list carries each row's issued order number, but the chip has no filter logic | filter to rows that have an order (`issued_order_no` / `order_no` set) once the intended meaning is confirmed |
-The chip's state is already wired (`quick` filter key `orders`); only the filter logic and the removal of `disabled` are
-missing. Listed in CLAUDE.md "Still open".
-
+### Orders chip on Tracking (built October 2026)
+Asked first; the answer is a **settled decision**: the chip keeps items that have **any order in any state** (the O/BOOK
+sub-tab's `order_no`, so a Draft or Pending order counts), on the item itself **or on one of its related parts**, because
+related parts are where most orders are raised (Q417); a related part still rides with its parent like under the other chips.
+Not the issued-only `issued_order_no`. Client-side in `TrackingClient.tsx` (`quick` key `orders`); no API change. e2e
+`tracking_orders_chip.spec.ts` (own project, one ordered and one plain item).
