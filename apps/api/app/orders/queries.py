@@ -107,6 +107,34 @@ _PATCHABLE = frozenset({
 })
 
 
+def orders_waiting_for_decision(
+    db: Session, *, workspace_id: int, limit: int = 20
+) -> tuple[int, list[dict]]:
+    """(count, newest `limit` rows) of the orders still `Pending`: they wait for the purchase
+    officer's decision. Derived on read, never stored, so an order that is decided or cancelled
+    drops out by itself and one moved back to Pending comes back."""
+    where = f"po.status = 'Pending' AND {_ORDER_WORKSPACE}"
+    count = db.execute(
+        text(f"SELECT count(*) FROM purchase_orders po WHERE {where}"), {"w": workspace_id}
+    ).scalar_one()
+    rows = db.execute(
+        text(
+            f"""
+            SELECT po.po_id, po.po_number, po.description, v.name AS vendor_name,
+                   ru.full_name AS requester_name, po.created_at
+              FROM purchase_orders po
+              LEFT JOIN vendors v ON v.vendor_id = po.vendor_id
+              LEFT JOIN app_user ru ON ru.id = po.requester_id
+             WHERE {where}
+             ORDER BY po.created_at DESC, po.po_id DESC
+             LIMIT :lim
+            """
+        ),
+        {"w": workspace_id, "lim": limit},
+    ).mappings().all()
+    return count, [dict(r) for r in rows]
+
+
 def open_orders_sql(alias: str) -> str:
     """Orders still on the book: not Delivered, Cancelled or Rejected. The home dashboard's
     "Open POs" tile and the Orders list's `?status=open` both use it, so the tile's number is the

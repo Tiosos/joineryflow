@@ -53,9 +53,24 @@ export interface NotificationOut {
   url: string | null;
 }
 
+/** An order still `Pending`, waiting for the purchase officer's decision. Derived on read: it has no
+ *  read state and leaves the list when the order is decided or cancelled. */
+export interface OrderWaiting {
+  po_id: number;
+  po_number: string;
+  description: string | null;
+  vendor_name: string | null;
+  requester_name: string | null;
+  created_at: string;
+  url: string;
+}
+
 export interface NotificationList {
   notifications: NotificationOut[];
   unread_count: number;
+  /** Purchase officers only; left out of the reply for everyone else. */
+  orders_waiting?: OrderWaiting[];
+  orders_waiting_count?: number;
 }
 
 /** Live comment counts per area / room of one project (absent = none). */

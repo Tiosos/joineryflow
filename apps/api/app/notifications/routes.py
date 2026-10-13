@@ -10,9 +10,15 @@ and module threads (their link opens the item editor), without `shop_dwgs:read`
 the revision threads. Their notifications are hidden, not deleted — they
 reappear if access is restored.
 
+A purchase officer's list also carries the orders still waiting for a decision (`orders_waiting`),
+derived from `purchase_orders.status = 'Pending'` on every call: no rows are stored, so nothing is
+marked read and an order disappears the moment it is Approved, Rejected or Cancelled.
+
 Marking read is audited (`notification.read`, `notification.read_all`), once per
 real change, so CLAUDE.md's "every authenticated mutation is audited" holds.
 """
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -22,13 +28,14 @@ from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..comments.queries import READ_MODULES
+from ..orders.queries import orders_waiting_for_decision
 from . import queries as q
 from .schemas import NotificationListOut, ReadAllOut
 
 router = APIRouter(tags=["notifications"])
 
 
-@router.get("/notifications", response_model=NotificationListOut)
+@router.get("/notifications", response_model=NotificationListOut, response_model_exclude_unset=True)
 def list_notifications_route(
     unread_only: bool = False,
     limit: int = Query(50, ge=1, le=100),
@@ -39,10 +46,19 @@ def list_notifications_route(
     readable = {m: has_permission_db(db, user, m, "read")
                 for m in {m for ms in READ_MODULES.values() for m in ms}}
     types = [t for t, ms in READ_MODULES.items() if all(readable[m] for m in ms)]
-    return q.list_notifications(
+    out = q.list_notifications(
         db, user_id=user.id, workspace_id=user.workspace_id,
         unread_only=unread_only, limit=limit, offset=offset, types=types,
     )
+    # Orders waiting for a decision are the purchase officer's (the customer's choice: that role
+    # only, not everyone with `orderbook:approve`), and only while they can read the Orderbook.
+    if user.auth_role == "purchase_officer" and has_permission_db(db, user, "orderbook", "read"):
+        count, rows = orders_waiting_for_decision(db, workspace_id=user.workspace_id)
+        out["orders_waiting_count"] = count
+        out["orders_waiting"] = [
+            {**r, "url": f"/orderbook?order={quote(r['po_number'])}"} for r in rows
+        ]
+    return out
 
 
 @router.post("/notifications/read-all", response_model=ReadAllOut)
