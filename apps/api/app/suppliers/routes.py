@@ -13,7 +13,11 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from . import queries as q
 from .schemas import (
+    ContactIn,
+    ContactListOut,
+    ContactOut,
     CreateSupplierIn,
+    PatchContactIn,
     LinkMaterialIn,
     PatchSupplierIn,
     SupplierListOut,
@@ -129,5 +133,62 @@ def link_material_route(
         raise HTTPException(404, "supplier not found")
     if code != "OK":
         _raise(code)
+    db.commit()
+    return None
+
+
+@router.get("/suppliers/{vendor_id}/contacts", response_model=ContactListOut)
+def list_contacts_route(
+    vendor_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    contacts = q.list_contacts(db, vendor_id=vendor_id, workspace_id=user.workspace_id)
+    if contacts is None:
+        raise HTTPException(404, "supplier not found")
+    return {"contacts": contacts}
+
+
+@router.post("/suppliers/{vendor_id}/contacts", response_model=ContactOut, status_code=201)
+def add_contact_route(
+    vendor_id: int,
+    payload: ContactIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    contact = q.add_contact(db, vendor_id=vendor_id, workspace_id=user.workspace_id,
+                            payload=payload, actor_id=user.id)
+    if contact is None:
+        raise HTTPException(404, "supplier not found")
+    db.commit()
+    return contact
+
+
+@router.patch("/suppliers/{vendor_id}/contacts/{contact_id}", response_model=ContactOut)
+def patch_contact_route(
+    vendor_id: int,
+    contact_id: int,
+    payload: PatchContactIn,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    contact = q.patch_contact(db, vendor_id=vendor_id, contact_id=contact_id,
+                              workspace_id=user.workspace_id, payload=payload, actor_id=user.id)
+    if contact is None:
+        raise HTTPException(404, "contact not found")
+    db.commit()
+    return contact
+
+
+@router.delete("/suppliers/{vendor_id}/contacts/{contact_id}", status_code=204)
+def delete_contact_route(
+    vendor_id: int,
+    contact_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    if not q.delete_contact(db, vendor_id=vendor_id, contact_id=contact_id,
+                            workspace_id=user.workspace_id, actor_id=user.id):
+        raise HTTPException(404, "contact not found")
     db.commit()
     return None

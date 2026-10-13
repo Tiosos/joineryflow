@@ -9,6 +9,7 @@ import { COLUMNS, OrderRowView } from "./orders/OrderRowView";
 import { OrderDetailPanel } from "./orders/OrderDetailPanel";
 import { CostCentreManager } from "./orders/CostCentreManager";
 import { CostBreakdownModal } from "./CostBreakdownModal";
+import { PurchaseOrderModal } from "./po/PurchaseOrderModal";
 import { NewOrderDialog } from "./NewOrderDialog";
 import { SupplierListModal } from "./SupplierListModal";
 
@@ -31,8 +32,8 @@ import { SupplierListModal } from "./SupplierListModal";
  *
  * The list follows the old screen: orders grouped under their type, its columns, and a row of
  * buttons. RTO / TBO / Due / Over Due / Arrived / My Orders filter the loaded list; New opens the
- * new-order form, Supplier the supplier list; Po stays disabled until what it should print is
- * decided (the same open question as the pop-up's Create PO!).
+ * new-order form, Supplier the supplier list; Po puts the ticked orders (one supplier, open, not yet
+ * on a PO) on a new PO document, whose edit panel is `po/PurchaseOrderModal` (`?po=` opens one).
  */
 
 /** The old screen's filter buttons; `view` in the URL holds the one that is on. */
@@ -60,6 +61,9 @@ export function OrdersClient({ me }: { me: Me | null }) {
   // Q418: the number Tracking sent us here with.
   const selected = params.get("order") ?? "";
   const view = params.get("view") ?? "";
+  const poId = Number(params.get("po")) || null;
+  const [ticked, setTicked] = useState<Set<number>>(new Set());
+  const [poErr, setPoErr] = useState<string | null>(null);
   const [categories, setCategories] = useState<OrderCategory[]>([]);
   const [costOpen, setCostOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
@@ -168,12 +172,38 @@ export function OrdersClient({ me }: { me: Me | null }) {
     setCcForm(null);
   }
 
-  function setParam(k: string, v: string) {
+  const tickedRows = rows.filter(r => ticked.has(r.po_id));
+
+  /** The Po button: a PO for the ticked orders, or the one they are already on. */
+  async function createPo() {
+    setPoErr(null);
+    const res = await fetch("/api/purchase-orders", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ order_ids: tickedRows.map(r => r.po_id) }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
+      const body = res ? await res.json().catch(() => null) : null;
+      const msg: Record<string, string> = {
+        SUPPLIER_MISMATCH: "A PO is for one supplier: tick orders of the same supplier",
+        ORDER_ALREADY_ON_PO: "One of those orders is already on a PO",
+        ORDER_NOT_OPEN: "One of those orders is closed",
+      };
+      setPoErr(msg[body?.detail?.code] ?? "Could not create the PO");
+      return;
+    }
+    const created = (await res.json()) as { po_document_id: number };
+    setTicked(new Set());
+    fetchRows();
+    setParam("po", String(created.po_document_id));
+  }
+
+  function setParams(changes: Record<string, string>) {
     const next = new URLSearchParams(params.toString());
-    if (v) next.set(k, v); else next.delete(k);
+    for (const [k, v] of Object.entries(changes)) { if (v) next.set(k, v); else next.delete(k); }
     const qs = next.toString();
     router.push(qs ? `/orderbook?${qs}` : "/orderbook");
   }
+  const setParam = (k: string, v: string) => setParams({ [k]: v });
 
   return (
     <div className="grid gap-3" data-testid="orders-panel">
@@ -267,9 +297,13 @@ export function OrdersClient({ me }: { me: Me | null }) {
         </button>
         <button type="button" data-testid="orders-suppliers" onClick={() => setSuppliersOpen(true)}
           className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-ink hover:bg-h-surface">Supplier</button>
-        <button type="button" disabled data-testid="orders-po"
-          title="Not built yet: what Po should print is not decided"
-          className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-muted opacity-40">Po</button>
+        <button type="button" data-testid="orders-po" disabled={!canEdit || tickedRows.length === 0}
+          title="Put the ticked orders of one supplier on a PO"
+          onClick={() => void createPo()}
+          className="rounded border border-h-line bg-h-bg px-2.5 py-1 text-h-ink hover:bg-h-surface disabled:opacity-40">
+          Po{tickedRows.length > 0 ? ` (${tickedRows.length})` : ""}
+        </button>
+        {poErr && <span data-testid="orders-po-error" role="alert" className="text-[#b4443d]">{poErr}</span>}
         <span className="mx-1 h-4 border-l border-h-line" />
         {VIEWS.filter(v => v.key !== "rto" && v.key !== "tbo").map(v => (
           <button key={v.key} type="button" title={v.hint} data-testid={`orders-view-${v.key}`}
@@ -338,6 +372,9 @@ export function OrdersClient({ me }: { me: Me | null }) {
                     today={today}
                     selected={r.po_number === selected}
                     onSelect={() => setParam("order", r.po_number === selected ? "" : r.po_number)}
+                    checked={ticked.has(r.po_id)}
+                    onCheck={() => setTicked(t => { const n = new Set(t); if (n.has(r.po_id)) n.delete(r.po_id); else n.add(r.po_id); return n; })}
+                    onOpenPo={id => setParam("po", String(id))}
                   />
                 ))}
               </tbody>
@@ -356,6 +393,17 @@ export function OrdersClient({ me }: { me: Me | null }) {
           canApprove={canApprove}
           costCentres={costCentres}
           categories={categories}
+          onOpenPo={id => setParams({ order: "", po: String(id) })}
+        />
+      )}
+
+      {poId && (
+        <PurchaseOrderModal
+          key={poId}
+          docId={poId}
+          canEdit={canEdit}
+          onChanged={fetchRows}
+          onClose={() => setParam("po", "")}
         />
       )}
 

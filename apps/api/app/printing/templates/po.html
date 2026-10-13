@@ -1,0 +1,49 @@
+{% extends "_base.html" %}
+{% set title = "PO " ~ po.po_no %}
+{% block body %}
+  <h1>Purchase Order <span class="mono">{{ po.po_no }}</span>{% if po.status == 'Cancelled' %} <span class="muted">(cancelled)</span>{% endif %}</h1>
+
+  <div class="item-header">
+    <div class="label">Supplier</div><div class="value">{{ po.vendor_name }}</div>
+    <div class="label">Reference no.</div><div class="value mono">{{ po.reference_no or '' }}</div>
+    <div class="label">Ordered by</div><div class="value">{{ po.ordered_by_name or '' }}</div>
+    <div class="label">Date ordered</div><div class="value mono">{{ po.date_ordered_fmt }}</div>
+    <div class="label">Date required</div><div class="value mono">{{ po.date_required_fmt }}</div>
+    <div class="label">Date due</div><div class="value mono">{{ po.date_due_fmt }}</div>
+  </div>
+
+  {% if po.deliver_to %}<div class="po-box"><strong>Deliver to</strong>
+{{ po.deliver_to }}</div>{% endif %}
+  {% if po.memo %}<div class="po-box"><strong>Memo to supplier</strong>
+{{ po.memo }}</div>{% endif %}
+
+  <table class="po">
+    <thead>
+      <tr>
+        <th>#</th><th class="num">Qty</th><th>Item</th><th>Pcode</th><th>Location</th><th>Project</th>
+        <th class="num">Cost</th><th>Um</th><th class="num">Amount $</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in po.lines %}
+      <tr{% if l.status in ('Cancelled', 'Rejected') %} class="cancelled"{% endif %}>
+        <td class="mono">{{ l.line_no }}</td>
+        <td class="num mono">{{ l.quantity_fmt }}</td>
+        <td>{{ l.description }}</td>
+        <td class="mono">{{ l.product_code or '' }}</td>
+        <td>{{ l.location or '' }}</td>
+        <td>{{ l.project_name or '' }}</td>
+        <td class="num mono">{{ l.unit_cost_fmt }}</td>
+        <td>{{ l.unit_of_measure or '' }}</td>
+        <td class="num mono">{{ l.grand_total_fmt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="po-totals">
+    <tr><td>Total Order</td><td class="num">{{ po.totals.total_ex_fmt }}</td></tr>
+    <tr><td>Gst</td><td class="num">{{ po.totals.gst_fmt }}</td></tr>
+    <tr class="grand"><td>Gst inc</td><td class="num">{{ po.totals.total_inc_fmt }}</td></tr>
+  </table>
+{% endblock %}

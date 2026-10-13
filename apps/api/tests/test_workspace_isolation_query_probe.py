@@ -49,7 +49,11 @@ OP_QUERY = {("GET", "/comments"): ({"object_type": "project"}, {"object_id": "pr
 A_ROW_QUERIES: dict[tuple[str, str, str], str] = {}
 
 # (METHOD, path template, parameter) pairs that cannot be probed, with the reason.
-NOT_PROBED: dict[tuple[str, str, str], str] = {}
+NOT_PROBED: dict[tuple[str, str, str], str] = {
+    ("GET", "/purchase-orders", "vendor_id"):
+        "the seed has no PO document; the list is scoped by po_document.workspace_id, and "
+        "test_purchase_order_documents.test_other_workspace_is_404 reads it with a foreign vendor_id",
+}
 
 
 def _query_params(op: dict) -> list[str]:

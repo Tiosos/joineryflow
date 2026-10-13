@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+{% set title = "PO " ~ po.po_no ~ " authorisation" %}
+{% block body %}
+  <h1>Purchase Order Authorisation</h1>
+
+  <div class="item-header">
+    <div class="label">PO number</div><div class="value mono">{{ po.po_no }}</div>
+    <div class="label">Supplier</div><div class="value">{{ po.vendor_name }}</div>
+    <div class="label">Reference no.</div><div class="value mono">{{ po.reference_no or '' }}</div>
+    <div class="label">Date ordered</div><div class="value mono">{{ po.date_ordered_fmt }}</div>
+    <div class="label">Ordered by</div><div class="value">{{ po.ordered_by_name or '' }}</div>
+    <div class="label">Total (inc GST)</div><div class="value mono">{{ po.totals.total_inc_fmt }}</div>
+  </div>
+
+  <table class="po">
+    <thead><tr><th>#</th><th class="num">Qty</th><th>Item</th><th>Project</th><th class="num">Amount $</th></tr></thead>
+    <tbody>
+      {% for l in po.lines %}
+      {% if l.status not in ('Cancelled', 'Rejected') %}
+      <tr>
+        <td class="mono">{{ l.line_no }}</td>
+        <td class="num mono">{{ l.quantity_fmt }}</td>
+        <td>{{ l.description }}</td>
+        <td>{{ l.project_name or '' }}</td>
+        <td class="num mono">{{ l.grand_total_fmt }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="sign-block">
+    <div><div class="sign-line">Prepared by (name, signature, date)</div></div>
+    <div><div class="sign-line">Authorised by (name, signature, date)</div></div>
+  </div>
+{% endblock %}

@@ -44,7 +44,7 @@ test("the Orders list is grouped by order type, with the old columns and filter 
     await expect(page.getByTestId("order-group").filter({ hasText: "Board" })
       .locator('[data-testid="order-row"]', { hasText: `Layout fine ${stamp}` })).toHaveCount(1);
 
-    // Po is there but off until what it prints is decided.
+    // Po is there, and off until an order is ticked.
     await expect(page.getByTestId("orders-po")).toBeDisabled();
 
     await expect(async () => {
@@ -75,7 +75,7 @@ test("the priority pill is coloured: High red, Medium amber, Low grey", async ({
     }
     await page.goto("/orderbook");
     const pill = (p: string) =>
-      page.locator('[data-testid="order-row"]', { hasText: `Prio ${p} ${stamp}` }).locator("td").first().locator("span");
+      page.locator('[data-testid="order-row"]', { hasText: `Prio ${p} ${stamp}` }).locator("td").nth(1).locator("span");
     await expect(pill("High")).toHaveClass(/b4443d/, { timeout: 15_000 });
     await expect(pill("Medium")).toHaveClass(/c48a2e/);
     await expect(pill("Low")).toHaveClass(/8f8b80/);
@@ -118,8 +118,8 @@ test("a row opens the order pop-up with its type's layout, and Close puts the li
     await page.goto(`/orderbook?order=${contractor.po_number}`);
     await expect(page.getByTestId("order-detail")).toContainText("Description", { timeout: 15_000 });
     await expect(page.getByTestId("order-detail")).not.toContainText("Board size");
-    // Create PO! is shown but not built
-    await expect(page.getByTestId("order-create-po")).toBeDisabled();
+    // Create PO! puts the order on a PO (po.spec.ts)
+    await expect(page.getByTestId("order-create-po")).toBeEnabled();
   } finally {
     for (const o of [acoustic, contractor]) await page.request.delete(`/api/orders/${o.po_id}`);
   }

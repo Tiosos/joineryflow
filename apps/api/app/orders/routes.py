@@ -195,6 +195,8 @@ def patch_order_route(
         raise HTTPException(409, {"code": "COST_CENTER_LOCKED", **order})
     if code == "ORDER_LOCKED":
         raise HTTPException(409, {"code": "ORDER_LOCKED", **order})
+    if code == "ORDER_ON_PO":
+        raise HTTPException(409, {"code": "ORDER_ON_PO", **order})
     if code == "VENDOR_NOT_FOUND":
         raise HTTPException(404, {"code": "VENDOR_NOT_FOUND", **order})
     if code == "UNKNOWN_CATEGORY":

@@ -25,6 +25,8 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("orders/queries.py", "FROM purchase_orders po"):
         "`_ORDER_FROM`: an order outlives its item (item_id is display-only); callers that "
         "start from an item (`list_orders_for_item`, `_prefill_from_item`) filter it themselves",
+    ("purchase_orders/queries.py", "SELECT po.po_id AS order_id"):
+        "the PO line's item number is display-only; an order outlives its item (as `_ORDER_FROM`)",
     ("orders/queries.py", "WITH reference AS"):
         "keeps the cutlist reference of an item's existing orders current; the item was resolved by the caller",
     ("project_contracts/actual_costs.py", "FROM stage_completion_log scl"):
