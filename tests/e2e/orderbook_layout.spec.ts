@@ -65,6 +65,25 @@ test("the Orders list is grouped by order type, with the old columns and filter 
   }
 });
 
+test("the priority pill is coloured: High red, Medium amber, Low grey", async ({ page }) => {
+  await login(page, BUYER);
+  const stamp = Date.now();
+  const made: Made[] = [];
+  try {
+    for (const priority of ["High", "Medium", "Low"]) {
+      made.push(await newOrder(page, { description: `Prio ${priority} ${stamp}`, category: "Board", priority }));
+    }
+    await page.goto("/orderbook");
+    const pill = (p: string) =>
+      page.locator('[data-testid="order-row"]', { hasText: `Prio ${p} ${stamp}` }).locator("td").first().locator("span");
+    await expect(pill("High")).toHaveClass(/b4443d/, { timeout: 15_000 });
+    await expect(pill("Medium")).toHaveClass(/c48a2e/);
+    await expect(pill("Low")).toHaveClass(/8f8b80/);
+  } finally {
+    for (const o of made) await page.request.delete(`/api/orders/${o.po_id}`);
+  }
+});
+
 test("a row opens the order pop-up with its type's layout, and Close puts the list back", async ({ page }) => {
   await login(page, BUYER);
   const stamp = Date.now();
@@ -82,6 +101,8 @@ test("a row opens the order pop-up with its type's layout, and Close puts the li
     await expect(dialog).toContainText("Board size");
     await expect(dialog).toContainText("2838.00");          // grand total: 2580.00 + 10% GST
     await expect(dialog).not.toContainText("Laminate code");
+    // the same three priorities as the New form
+    await expect(page.getByTestId("order-priority").locator("option")).toHaveText(["High", "Medium", "Low"]);
 
     // type-specific fields live in `attributes`
     await page.getByTestId("order-attr-colour").fill("Navy");

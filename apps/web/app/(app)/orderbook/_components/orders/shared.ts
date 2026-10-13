@@ -19,6 +19,15 @@ export function statusClasses(status: string): string {
   }
 }
 
+/** The priority pill: High red, Medium amber, Low the neutral grey (the status tones, no new colours). */
+export function priorityClasses(priority: string): string {
+  switch (priority) {
+    case "High":   return "bg-[#f2dcd9] text-[#b4443d]";
+    case "Medium": return "bg-[#f4ebd9] text-[#c48a2e]";
+    default:       return "bg-[#f4f2ed] text-[#8f8b80]";
+  }
+}
+
 /** "2026-02-16" -> "16/02/2026", the way the old Orderbook shows dates. */
 export function fmtDate(iso: string | null): string {
   if (!iso) return "";

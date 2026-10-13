@@ -24,9 +24,8 @@ from ..schema_guards import no_null
 
 # The values `purchase_orders_status_check` / `purchase_orders_priority_check`
 # allow (migration 0002; the priorities narrowed to three levels in 0058). Hand-kept
-# copies: `test_the_accepted_statuses_are_
-# exactly_the_databases` / `..._priorities_...` fail if a migration changes one
-# and not the other. Without them an unknown value reached the SQL and came back
+# copies: `test_the_accepted_statuses_are_exactly_the_databases` and the matching
+# `..._priorities_...` test fail if a migration changes one and not the other. Without them an unknown value reached the SQL and came back
 # as a raw 500. (`category` is *not* here: it is a lookup table IT can extend
 # without a migration, Q557, so it is checked against the table instead.)
 OrderStatus = Literal[

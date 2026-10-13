@@ -336,7 +336,7 @@ export function OrderDetailPanel({
           <dl className="self-start rounded border border-h-line">
             <TextRow label="Order number" value={order.order_number} canEdit={canEditFields} mono
               onSave={v => patchField("order_number", v || null)} error={errors.order_number} />
-            <SelectRow label="Priority" value={order.priority} canEdit={canEditFields}
+            <SelectRow label="Priority" value={order.priority} canEdit={canEditFields} testId="order-priority"
               options={PRIORITIES.map(p => ({ value: p, label: p }))}
               onSave={v => patchField("priority", v)} error={errors.priority} />
             <TextRow label="Date required" type="date" value={order.required_date} canEdit={canEditFields} mono

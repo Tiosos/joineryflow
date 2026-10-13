@@ -3,10 +3,12 @@
 Product-owner decision (October 2026): the old system's priority had only high, medium and low.
 `Next`, `Hold` and `Quote` were carried over from the status list (0002 gave both columns the same
 six values), but they are order *statuses*, and `purchase_orders.status` already allows all three,
-so nothing is lost by taking them out of `priority`.
+so no status value needs adding.
 
-Data-preserving: an order whose priority was one of the three is set to `Medium` and keeps its
-status as it is (it is not copied into the status). The check is then narrowed to the three levels.
+An order whose priority was one of the three is set to `Medium` and keeps its status as it is (it is
+not copied into the status). The old priority value of those orders is not kept anywhere, and the
+update writes no audit row and does not touch `updated_at` or `field_versions` (a migration, not a
+user edit). The check is then narrowed to the three levels.
 Downgrade widens the check again; the priorities that were replaced are not recoverable.
 
 Revision ID: 0058

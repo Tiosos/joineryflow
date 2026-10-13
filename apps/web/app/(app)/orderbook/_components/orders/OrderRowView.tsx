@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import type { OrderRow } from "@/lib/orders-types";
-import { statusClasses, money, qty, fmtDate } from "./shared";
+import { statusClasses, priorityClasses, money, qty, fmtDate } from "./shared";
 
 /** The columns, in the old Orderbook's order. The Orders table's header and group rows read this. */
 export const COLUMNS = [
@@ -37,7 +37,7 @@ export function OrderRowView({
       }`}
     >
       <td className="px-2 py-1.5">
-        <span className={`inline-block min-w-14 rounded px-1.5 py-0.5 text-center text-[10px] uppercase ${statusClasses(row.priority)}`}>
+        <span className={`inline-block min-w-14 rounded px-1.5 py-0.5 text-center text-[10px] uppercase ${priorityClasses(row.priority)}`}>
           {row.priority}
         </span>
       </td>
