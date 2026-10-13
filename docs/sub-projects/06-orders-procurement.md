@@ -1666,3 +1666,9 @@ Supplier contacts are also edited from the **Supplier** list: opening a supplier
 
 **Staff Cc (October 2026, no migration).** Asked first; settled: ticked staff become real `cc=` addresses on the Email Details link. Staff emails are visible to admins only (`/users`) and stay off `/workspace/team`, so the PO panel reads them from a new `GET /purchase-orders/staff` (`orderbook:read`; id, name, email of the workspace's active people), which also feeds its Ordered by list. Declared before `/purchase-orders/{doc_id}`. Test: `test_staff_emails_come_from_the_orderbook_route_only`; `po.spec.ts` ticks a staff member and checks the `cc=`.
 
+## Order attachments: the FILE and PDF boxes (October 2026, no migration)
+
+Asked first; settled: the boxes hold **supporting files on the order** (a quote, a drawing, the supplier's PDF). FILE takes any allowed type (PDF, PNG, JPEG, `.skp`, `.cvj`, 25 MB, sniffed and extension-checked, sha256-deduped per workspace: the shared file rules); PDF takes PDF only (`415` otherwise). Orderbook writers add and remove; a **Cancelled / Delivered order is read-only** for its files (`409 ORDER_LOCKED`), which can still be opened. Either box lights the Orders list's "Pdf" column (`has_attachment`).
+
+Built on the existing `po_attachments` table with `file_blob_id` (`0047`); no migration. `orders/attachments.py` has its own routes, **gated by `orderbook`** because `POST /files` needs `shop_dwgs:write`, which the purchase officer does not hold. Upload follows the retired legacy route (`legacy/procurement_v0/`) minus its client-supplied `uploaded_by` (the uploader is the caller). Rows written before `0047` (a `file_path`, no blob) are not listed. Audit: `order.attachment.add` / `.remove`. Tests: `test_order_attachments.py`, `order_attachments.spec.ts`; the download route is listed in the isolation probe's `NOT_PROBED` with its dedicated cross-workspace test.
+

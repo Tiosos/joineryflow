@@ -9,6 +9,7 @@ import { ErrorLine } from "./ErrorLine";
 import { AreaRow, CheckRow, Row, SelectRow, TextRow } from "./DetailRows";
 import { OrderTypeFields } from "./OrderTypeFields";
 import { LinesSection } from "./LinesSection";
+import { OrderAttachments } from "./OrderAttachments";
 
 /**
  * The order pop-up: the old Orderbook's Details window. Left, the fields every order has and the
@@ -440,14 +441,7 @@ export function OrderDetailPanel({
               )}
               {poError && <p role="alert" data-testid="order-po-error" className="mt-1 text-[#b4443d]">{poError}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {["FILE", "PDF"].map(t => (
-                <div key={t} className="rounded border border-dashed border-h-line p-2 text-h-muted opacity-60">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-h-ink">{t}</div>
-                  <div>{order.has_attachment ? "Attached" : "Attachments are not built yet"}</div>
-                </div>
-              ))}
-            </div>
+            <OrderAttachments poId={order.po_id} canEdit={canEdit} locked={order.locked} onChanged={onChanged} />
             <div className="grid grid-cols-[8rem_1fr] gap-3">
               <div className="flex h-28 items-center justify-center rounded border border-h-line bg-h-bg text-h-muted">
                 Product image
