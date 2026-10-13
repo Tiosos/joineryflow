@@ -3,7 +3,7 @@ export const STATUSES = [
   "Delivered", "Cancelled", "Hold", "Quote", "Next",
 ] as const;
 
-export const PRIORITIES = ["High", "Medium", "Low", "Next", "Hold", "Quote"] as const;
+export const PRIORITIES = ["High", "Medium", "Low"] as const;
 
 export function statusClasses(status: string): string {
   switch (status) {

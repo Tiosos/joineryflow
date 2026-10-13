@@ -1037,7 +1037,7 @@ def _snapshot(c, po_id: int) -> dict:
                               "vendor_id", "notes", "field_versions", "updated_at")}
 
 
-@pytest.mark.parametrize("priority", ["High", "Medium", "Low", "Next", "Hold", "Quote"])
+@pytest.mark.parametrize("priority", ["High", "Medium", "Low"])
 def test_patch_accepts_every_priority_the_database_allows(ctx, priority):
     ids = _make_order_with_line(ctx)
     r = ctx["client"].patch(f"/orders/{ids['po_id']}", json={"priority": priority})
@@ -1045,7 +1045,8 @@ def test_patch_accepts_every_priority_the_database_allows(ctx, priority):
     assert r.json()["priority"] == priority
 
 
-@pytest.mark.parametrize("bad", ["Urgent", "high", "HIGH", " High", "", "Critical"])
+# Next / Hold / Quote were priorities until 0058; they are order statuses now.
+@pytest.mark.parametrize("bad", ["Urgent", "high", "HIGH", " High", "", "Critical", "Next", "Hold", "Quote"])
 def test_patch_unknown_priority_is_a_clean_422_and_writes_nothing(ctx, bad):
     ids = _make_order_with_line(ctx)
     c = ctx["client"]

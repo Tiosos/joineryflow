@@ -391,3 +391,9 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
   mix-up. Seeded items are no longer changed. Verified: three consecutive runs on a database that the old spec fails on.
 - **Checked, not changed.** `attachments_locks.spec.ts` also uses `input[type="file"]').first()`, but only after `openAttachments`
   has waited for the slot cards' buttons, so the first input is a slot's.
+
+## Flaky `catalog_supplier_link` "Generate Orders" specs (October 2026)
+
+Seen twice in full local runs: `expect(mine).toHaveLength(1)` received `[]` for the orders of the revision just generated, passing on retry. **Cause (a test race, not an app bug):** `EstimateDetailClient.confirmGenerateOrders` closes the preview dialog *before* the `generate-orders` POST returns (by design, so a failure's banner is not hidden behind the modal). The specs waited for the dialog to be hidden and then read `GET /api/orders` once, so they raced the request; one spec also `reload()`ed while the POST was in flight. Click-before-hydration (the usual suspect) and CPU load were tried first and did not reproduce it (30 runs, 4 busy loops, JS chunks delayed 1.5 s).
+
+**Reproduced deterministically** by delaying the POST 1.5 s with `page.route`: 5 of the 6 Generate Orders specs failed. **Fix:** `ordersGeneratedFor(page, rid)` polls for the orders instead of reading once, and the "nothing to order" spec waits for the server to cover the line before it reloads. With the same 1.5 s delay all six pass. The delay harness was a temporary `beforeEach`, not committed.

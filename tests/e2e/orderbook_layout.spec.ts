@@ -217,6 +217,9 @@ test("New opens the order form and Create order saves a Pending order", async ({
     await expect(page.getByTestId("new-order-dialog")).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 
+  // priority has three levels; "on hold" and "quote" are statuses
+  await expect(page.getByTestId("new-order-priority").locator("option")).toHaveText(["High", "Medium", "Low"]);
+
   // a supplier and a description are needed
   await page.getByTestId("new-order-create").click();
   await expect(page.getByTestId("new-order-error")).toContainText("supplier");

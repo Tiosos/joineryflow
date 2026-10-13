@@ -2956,19 +2956,19 @@ def main() -> None:
                 _demo_orders = [
                     # (category, description, vendor, qty, unit cost, priority, required offset,
                     #  ordered offset, due offset, attributes, line item comment)
-                    ("Acoustic", "2800 X 1200 X 24 Echopanel Sage 580", 0, 15, 430, "Hold", -20, None, None,
+                    ("Acoustic", "2800 X 1200 X 24 Echopanel Sage 580", 0, 15, 430, "High", -20, None, None,
                      {"board_length": "2800", "board_width": "1200", "board_thickness": "24",
                       "colour": "Echopanel Sage 580"}, None),
-                    ("Acoustic", "2750 X 1100 X 12 Echopanel Navy Longitude 365", 0, 4, 215, "Next", 9, None, None,
+                    ("Acoustic", "2750 X 1100 X 12 Echopanel Navy Longitude 365", 0, 4, 215, "Medium", 9, None, None,
                      {"board_length": "2750", "board_width": "1100", "board_thickness": "12",
                       "colour": "Echopanel Navy 365", "finish": "Longitude"}, None),
-                    ("Benchtop", "Pcs:(1) 3000 X 800 X 25 White Chem Resistant", 1, 1, 1850, "Next", 18, -3, 12,
+                    ("Benchtop", "Pcs:(1) 3000 X 800 X 25 White Chem Resistant", 1, 1, 1850, "Low", 18, -3, 12,
                      {"bench_length": "3000", "bench_width": "800", "bench_thickness": "25", "bench_pcs": "1",
                       "colour": "White Chem Resistant", "underside": "Aquaban", "edge_details": "10/10",
                       "laminate_supplier": "Demo Laminates", "finish": "Natural", "laminate_code": "200",
                       "joins": "0", "shp": True}, "Front 10/10, lh side 1mm ABS"),
                     ("Contractor", "1.2mm grade 316 stainless steel benchtop with lip, splashback and sink",
-                     2, 2, 3551, "Next", 26, None, None, {}, "With mixer cutout"),
+                     2, 2, 3551, "Medium", 26, None, None, {}, "With mixer cutout"),
                     ("Board", "Demo melamine board, 2400 x 1200 x 16", 0, 30, 62, "Medium", 14, -2, 7, {}, None),
                 ]
                 for (_cat, _descr, _vi, _qty, _cost, _prio, _req, _ord, _due, _attrs, _lic) in _demo_orders:
