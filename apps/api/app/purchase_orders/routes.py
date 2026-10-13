@@ -17,6 +17,7 @@ from . import documents
 from . import queries as q
 from .schemas import (
     CreatePoIn, DeliveryIn, InvoiceIn, PatchInvoiceIn, PatchPoIn, PoListOut, PoOrdersIn, PoOut,
+    PoStaffListOut,
 )
 
 router = APIRouter(tags=["purchase-orders"])
@@ -52,6 +53,14 @@ def _result(db: Session, code: str, data: dict | None):
 
 def _can_decide(db: Session, user: AuthUser) -> bool:
     return "approve" in effective_actions(db, user, "orderbook", None)
+
+
+@router.get("/purchase-orders/staff", response_model=PoStaffListOut)
+def staff_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"staff": q.list_staff(db, workspace_id=user.workspace_id)}
 
 
 @router.get("/purchase-orders", response_model=PoListOut)

@@ -153,3 +153,14 @@ class PoSummaryOut(BaseModel):
 
 class PoListOut(BaseModel):
     purchase_orders: list[PoSummaryOut]
+
+
+class PoStaffOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+
+
+class PoStaffListOut(BaseModel):
+    staff: list[PoStaffOut]
+

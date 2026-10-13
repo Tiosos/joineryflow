@@ -61,6 +61,10 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
     const contact = modal.getByTestId("po-contact").filter({ hasText: `Sam ${stamp}` });
     await contact.getByRole("checkbox").check();
     await expect(modal.getByTestId("po-email")).toHaveAttribute("href", new RegExp(`mailto:sam${stamp}@supplier.test`));
+    // ticked staff become real Cc addresses (from the Orderbook-gated staff list)
+    await expect(modal.getByTestId("po-email")).not.toHaveAttribute("href", /cc=/);
+    await modal.getByTestId("po-staff").getByRole("checkbox").first().check();
+    await expect(modal.getByTestId("po-email")).toHaveAttribute("href", /[?&]cc=[^&]*%40/);
 
     // invoice details
     await modal.getByTestId("po-invoice-add").click();

@@ -233,3 +233,13 @@ def test_supplier_contacts(ws):
     assert [x["contact_id"] for x in c.get(f"/suppliers/{v}/contacts").json()["contacts"]] == [cid]
     assert c.delete(f"/suppliers/{v}/contacts/{cid}").status_code == 204
     assert c.delete(f"/suppliers/{v}/contacts/{cid}").status_code == 404
+
+
+def test_staff_emails_come_from_the_orderbook_route_only(ws):
+    """The PO panel's Cc list: names + emails for Orderbook readers; /workspace/team stays email-free."""
+    staff = ws["buyer"].get("/purchase-orders/staff").json()["staff"]
+    assert staff and all(x["email"] and x["full_name"] for x in staff)
+    assert all("email" not in m for m in ws["buyer"].get("/workspace/team").json()["members"])
+    other, _, _ = login("admin", prefix="ps")
+    mine = {x["id"] for x in staff}
+    assert mine.isdisjoint({x["id"] for x in other.get("/purchase-orders/staff").json()["staff"]})
