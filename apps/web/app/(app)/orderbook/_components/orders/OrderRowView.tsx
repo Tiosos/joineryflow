@@ -7,13 +7,17 @@ import { statusClasses, priorityClasses, money, qty, fmtDate } from "./shared";
 
 /** The columns, in the old Orderbook's order. The Orders table's header and group rows read this. */
 export const COLUMNS = [
-  "Priority", "Order", "Requester", "Qty", "Item", "Location", "Pdf", "Project", "Supplier",
+  "", "Priority", "Order", "PO", "Requester", "Qty", "Item", "Location", "Pdf", "Project", "Supplier",
   "Stock", "Cost", "Product code", "Required", "Ordered", "Due", "Arrived", "Status",
 ] as const;
 
 export function OrderRowView({
-  row, selected, onSelect, today,
-}: { row: OrderRow; selected: boolean; onSelect: () => void; today: string }) {
+  row, selected, onSelect, today, checked, onCheck, onOpenPo,
+}: {
+  row: OrderRow; selected: boolean; onSelect: () => void; today: string;
+  /** The Po button's selection: a tick box at the start of the row. */
+  checked: boolean; onCheck: () => void; onOpenPo: (docId: number) => void;
+}) {
   const ref = useRef<HTMLTableRowElement>(null);
   // Q418: arriving from Tracking should land on the order, not near it.
   useEffect(() => {
@@ -36,12 +40,21 @@ export function OrderRowView({
         selected ? "bg-h-accent/10 ring-1 ring-inset ring-h-accent" : ""
       }`}
     >
+      <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+        <input type="checkbox" aria-label={`Select ${row.po_number}`} data-testid="order-check" checked={checked} onChange={onCheck} />
+      </td>
       <td className="px-2 py-1.5">
         <span className={`inline-block min-w-14 rounded px-1.5 py-0.5 text-center text-[10px] uppercase ${priorityClasses(row.priority)}`}>
           {row.priority}
         </span>
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 h-mono text-h-ink">{row.po_number}</td>
+      <td className="whitespace-nowrap px-2 py-1.5 h-mono" onClick={e => e.stopPropagation()}>
+        {row.po_document_id != null && (
+          <button type="button" data-testid="order-po-link" onClick={() => onOpenPo(row.po_document_id!)}
+            className="text-h-accent hover:underline">{row.po_no}</button>
+        )}
+      </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-h-muted">{row.requester_name ?? ""}</td>
       <td className="px-2 py-1.5 text-right h-mono text-h-ink">{qty(row.quantity) ?? ""}</td>
       <td className="min-w-56 px-2 py-1.5 text-h-ink">{row.description}</td>

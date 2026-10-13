@@ -18,6 +18,10 @@ export interface OrderRow {
   vendor_id: number;
   vendor_name: string | null;
 
+  /** The PO document this order is on (migration 0059), with its number. */
+  po_document_id: number | null;
+  po_no: number | null;
+
   project_id: number | null;
   project_name: string | null;
   location: string | null;

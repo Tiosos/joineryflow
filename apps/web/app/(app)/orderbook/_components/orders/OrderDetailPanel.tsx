@@ -18,9 +18,11 @@ import { LinesSection } from "./LinesSection";
 const OTHER_TABS = ["Delivery", "Glass C", "Timber", "Stock", "Tracking", "Supplier", "TGSolid", "Cutlists", "ADMIN"];
 
 export function OrderDetailPanel({
-  poId, canEdit, onChanged, canApprove, costCentres, categories, onClose,
+  poId, canEdit, onChanged, canApprove, costCentres, categories, onClose, onOpenPo,
 }: {
   poId: number; canEdit: boolean; onChanged: () => void;
+  /** Open a PO document's edit panel (this pop-up closes). */
+  onOpenPo: (docId: number) => void;
   categories: OrderCategory[];
   onClose: () => void;
   /** The purchase officer, manager or admin: may set Approved / Rejected or move an order out of them. */
@@ -34,6 +36,25 @@ export function OrderDetailPanel({
   // Choosing Rejected asks for the reason first; the status is not sent until it is given.
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+
+  const [creatingPo, setCreatingPo] = useState(false);
+  const [poError, setPoError] = useState<string | null>(null);
+
+  /** Create PO!: a PO document with this order on it (any open order may go on one). */
+  async function createPo() {
+    setCreatingPo(true); setPoError(null);
+    const res = await fetch("/api/purchase-orders", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ order_ids: [poId] }),
+    }).catch(() => null);
+    setCreatingPo(false);
+    if (!res || !res.ok) {
+      const body = res ? await res.json().catch(() => null) : null;
+      setPoError(body?.detail?.code === "ORDER_NOT_OPEN" ? "A closed order cannot go on a PO" : "Could not create the PO");
+      return;
+    }
+    onChanged();
+    onOpenPo(((await res.json()) as { po_document_id: number }).po_document_id);
+  }
 
   const refetch = useCallback(() => {
     setLoading(true);
@@ -405,11 +426,19 @@ export function OrderDetailPanel({
               ))}
             </div>
             <div>
-              <button type="button" disabled data-testid="order-create-po"
-                title="Not built yet: what Create PO! should do is not decided"
-                className="rounded border border-h-line bg-h-bg px-4 py-2 text-sm font-semibold text-h-ink opacity-50">
-                Create PO!
-              </button>
+              {order.po_document_id != null ? (
+                <button type="button" data-testid="order-create-po" onClick={() => onOpenPo(order.po_document_id!)}
+                  className="rounded border border-h-line bg-h-bg px-4 py-2 text-sm font-semibold text-h-ink hover:bg-h-surface">
+                  Open PO {order.po_no}
+                </button>
+              ) : (
+                <button type="button" data-testid="order-create-po" disabled={!canEdit || creatingPo}
+                  onClick={() => void createPo()}
+                  className="rounded border border-h-line bg-h-bg px-4 py-2 text-sm font-semibold text-h-ink hover:bg-h-surface disabled:opacity-50">
+                  Create PO!
+                </button>
+              )}
+              {poError && <p role="alert" data-testid="order-po-error" className="mt-1 text-[#b4443d]">{poError}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               {["FILE", "PDF"].map(t => (
