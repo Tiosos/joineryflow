@@ -8,7 +8,7 @@ import { PoInvoices } from "./PoInvoices";
 
 const INPUT = "w-full rounded border border-h-line bg-h-bg px-1.5 py-1 text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent disabled:opacity-60";
 const BTN = "rounded border border-h-line bg-h-bg px-3 py-1 text-h-ink hover:bg-h-surface disabled:opacity-50";
-type Member = { id: number; full_name: string };
+type Member = { id: number; full_name: string; email: string };
 
 const initials = (n: string) => n.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 const refusal: Record<string, string> = {
@@ -49,8 +49,9 @@ export function PurchaseOrderModal({
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    fetch("/api/workspace/team", { cache: "no-store" }).then(r => (r.ok ? r.json() : { members: [] }))
-      .then((b: { members: Member[] }) => setTeam(b.members)).catch(() => setTeam([]));
+    // Names and emails come from the Orderbook-gated staff route; the open team list has no emails.
+    fetch("/api/purchase-orders/staff", { cache: "no-store" }).then(r => (r.ok ? r.json() : { staff: [] }))
+      .then((b: { staff: Member[] }) => setTeam(b.staff)).catch(() => setTeam([]));
   }, []);
   const vendorId = doc?.vendor_id;
   const loadContacts = useCallback(() => {
@@ -105,12 +106,11 @@ export function PurchaseOrderModal({
   const mailto = useMemo(() => {
     if (!doc) return "#";
     const to = contacts.filter(c => ticked.has(c.contact_id) && c.email).map(c => c.email).join(",");
-    const names = team.filter(m => staff.has(m.id)).map(m => m.full_name);
+    const cc = team.filter(m => staff.has(m.id)).map(m => m.email).join(",");
     const subject = `Purchase order ${doc.po_no}${doc.reference_no ? ` (${doc.reference_no})` : ""}`;
     const body = [`Please find purchase order ${doc.po_no} attached.`, "",
-      `Total ex GST: $${doc.totals.total_ex}`, `Total inc GST: $${doc.totals.total_inc}`,
-      ...(names.length ? ["", `Internal contacts: ${names.join(", ")}`] : [])].join("\n");
-    return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      `Total ex GST: $${doc.totals.total_ex}`, `Total inc GST: $${doc.totals.total_inc}`].join("\n");
+    return `mailto:${to}?${cc ? `cc=${encodeURIComponent(cc)}&` : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }, [doc, contacts, ticked, team, staff]);
 
   if (!doc) {
@@ -254,7 +254,7 @@ export function PurchaseOrderModal({
                 ))}
               </section>
               <section data-testid="po-staff" className="grid gap-1">
-                <h3 className="text-[10px] font-semibold uppercase tracking-wide text-h-ink">Staff</h3>
+                <h3 className="text-[10px] font-semibold uppercase tracking-wide text-h-ink">Staff (Cc)</h3>
                 <div className="flex flex-wrap gap-2">
                   {team.map(m => (
                     <label key={m.id} title={m.full_name} className="flex items-center gap-1">

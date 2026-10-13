@@ -38,6 +38,8 @@ _PO_REASON = ("the seed has no PO document; every operation is called by another
               "test_purchase_order_documents.test_other_workspace_is_404")
 
 NOT_PROBED: dict[tuple[str, str], str] = {
+    ("GET", "/orders/{po_id}/attachments/{attachment_id}/download"):
+        "the seed has no order attachment; test_order_attachments.test_other_workspace_is_404 downloads one as another workspace",
     ("DELETE", "/purchase-orders/{doc_id}/delivery"): _PO_REASON,
     ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}"): _PO_REASON,
     ("DELETE", "/purchase-orders/{doc_id}/orders/{order_id}"): _PO_REASON,

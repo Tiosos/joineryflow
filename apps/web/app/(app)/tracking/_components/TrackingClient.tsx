@@ -84,6 +84,10 @@ export function TrackingClient({
 
   const visibleItems = useMemo(() => {
     if (!quick) return items;
+    const partsWithOrder = new Set(
+      items.filter((it) => it.row_type === "related_part" && it.order_no && it.parent_item_id != null)
+        .map((it) => it.parent_item_id as number),
+    );
     const matches = (it: TrackingItemRow) => {
       switch (quick) {
         case "my":
@@ -99,7 +103,9 @@ export function TrackingClient({
         case "tgsolid":
           return Boolean(it.tg_solid);
         case "orders":
-          return false;
+          // Any order in any state (the O/BOOK sub-tab's `order_no`), on the item or on one of its
+          // related parts: related parts are where most orders are raised (Q417).
+          return Boolean(it.order_no) || partsWithOrder.has(it.id);
       }
     };
     // The quick filters judge Joinery Items. A related part rides with its
@@ -242,7 +248,7 @@ export function TrackingClient({
         <Chip label="Deleted" active={deletedView} onClick={toggleDeletedView} title="Show this project's deleted items" />
         <Chip label="Void" active={quick === "void"} onClick={() => setQuick(quick === "void" ? null : "void")} />
         <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} title="Items tagged Tg Solid" />
-        <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} disabled title="Backend wiring pending" />
+        <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} title="Items with an order, or whose related parts have one" />
         <span className="mx-1 h-4 w-px bg-h-line" />
         <Chip label="Overdue" tone="bad" active={quick === "overdue"} onClick={() => setQuick(quick === "overdue" ? null : "overdue")} />
         <Chip label="Installed" tone="good" active={quick === "installed"} onClick={() => setQuick(quick === "installed" ? null : "installed")} />

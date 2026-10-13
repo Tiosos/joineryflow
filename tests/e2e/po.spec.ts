@@ -61,6 +61,10 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
     const contact = modal.getByTestId("po-contact").filter({ hasText: `Sam ${stamp}` });
     await contact.getByRole("checkbox").check();
     await expect(modal.getByTestId("po-email")).toHaveAttribute("href", new RegExp(`mailto:sam${stamp}@supplier.test`));
+    // ticked staff become real Cc addresses (from the Orderbook-gated staff list)
+    await expect(modal.getByTestId("po-email")).not.toHaveAttribute("href", /cc=/);
+    await modal.getByTestId("po-staff").getByRole("checkbox").first().check();
+    await expect(modal.getByTestId("po-email")).toHaveAttribute("href", /[?&]cc=[^&]*%40/);
 
     // invoice details
     await modal.getByTestId("po-invoice-add").click();
@@ -116,4 +120,39 @@ test("Create PO! in the order pop-up puts that order on a PO, then opens it", as
     if (docId) await page.request.post(`/api/purchase-orders/${docId}/cancel`);
     await page.request.delete(`/api/orders/${order.po_id}`);
   }
+});
+
+test("the Supplier list edits a supplier's contacts: add, change, delete", async ({ page }) => {
+  const stamp = Date.now();
+  await login(page, BUYER);
+  const made = await page.request.post("/api/suppliers", { data: { name: `Contacts Co ${stamp}`, category: "Other" } });
+  expect(made.ok()).toBe(true);
+  await page.goto("/orderbook");
+  await page.getByTestId("orders-suppliers").click();
+  const modal = page.getByTestId("supplier-modal");
+  await modal.getByPlaceholder("Search name or contact").fill(`Contacts Co ${stamp}`);
+  const row = modal.getByTestId("supplier-row");
+  await expect(row).toHaveCount(1);
+  await row.getByTestId("supplier-edit").click();
+  const box = modal.getByTestId("supplier-contacts");
+  await expect(box).toContainText("No contacts yet");
+
+  await box.getByTestId("supplier-contact-add").click();
+  await box.getByTestId("supplier-contact-name").fill(`Sam ${stamp}`);
+  await box.getByTestId("supplier-contact-email").fill("not-an-email");
+  await box.getByTestId("supplier-contact-save").click();
+  await expect(box.getByRole("alert")).toContainText("email");
+  await box.getByTestId("supplier-contact-email").fill(`sam${stamp}@supplier.test`);
+  await box.getByTestId("supplier-contact-save").click();
+  const contact = box.getByTestId("supplier-contact").filter({ hasText: `Sam ${stamp}` });
+  await expect(contact).toContainText(`sam${stamp}@supplier.test`);
+
+  await contact.getByTestId("supplier-contact-edit").click();
+  await box.getByTestId("supplier-contact-mobile").fill("0400 000 000");
+  await box.getByTestId("supplier-contact-save").click();
+  await expect(contact).toContainText("0400 000 000");
+
+  await contact.getByTestId("supplier-contact-delete").click();
+  await expect(contact).toHaveCount(0);
+  await expect(box).toContainText("No contacts yet");
 });

@@ -502,3 +502,15 @@ def delete_invoice(
         payload={"po_no": doc["po_no"], "invoice_id": invoice_id},
     )
     return "OK", get_document(db, doc_id=doc_id, workspace_id=workspace_id)
+
+
+def list_staff(db: Session, *, workspace_id: int) -> list[dict]:
+    """Active people of the workspace with their email: the PO panel's Ordered by list and Cc ticks.
+    Reached only through the Orderbook-gated route, so emails are not on the open team list."""
+    rows = db.execute(
+        text("SELECT id, full_name, email FROM app_user WHERE workspace_id = :w AND is_active = true"
+             " ORDER BY full_name"),
+        {"w": workspace_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+

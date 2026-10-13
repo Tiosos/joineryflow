@@ -60,7 +60,8 @@ def _code(r):
 def test_create_marks_orders_ordered_and_totals(ws):
     a, b = _order(ws, total="100.00"), _order(ws, total="50.00")
     po = _po(ws, a, b, reference_no="R-1")
-    assert po["po_no"] >= 100001 and po["status"] == "Open" and po["reference_no"] == "R-1"
+    assert po["po_no"] >= 193971  # 0060: after the old system's last PO, 193970
+    assert po["status"] == "Open" and po["reference_no"] == "R-1"
     assert len(po["lines"]) == 2
     assert po["totals"]["total_ex"] == "150.00"
     assert po["totals"]["total_inc"] == "165.00"
@@ -232,3 +233,13 @@ def test_supplier_contacts(ws):
     assert [x["contact_id"] for x in c.get(f"/suppliers/{v}/contacts").json()["contacts"]] == [cid]
     assert c.delete(f"/suppliers/{v}/contacts/{cid}").status_code == 204
     assert c.delete(f"/suppliers/{v}/contacts/{cid}").status_code == 404
+
+
+def test_staff_emails_come_from_the_orderbook_route_only(ws):
+    """The PO panel's Cc list: names + emails for Orderbook readers; /workspace/team stays email-free."""
+    staff = ws["buyer"].get("/purchase-orders/staff").json()["staff"]
+    assert staff and all(x["email"] and x["full_name"] for x in staff)
+    assert all("email" not in m for m in ws["buyer"].get("/workspace/team").json()["members"])
+    other, _, _ = login("admin", prefix="ps")
+    mine = {x["id"] for x in staff}
+    assert mine.isdisjoint({x["id"] for x in other.get("/purchase-orders/staff").json()["staff"]})

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SupplierContacts } from "./SupplierContacts";
 import { SUPPLIER_STATUSES, type OrderCategory, type SupplierRecord } from "@/lib/orders-types";
 
 type Draft = {
@@ -181,7 +182,9 @@ export function SupplierListModal({
                     )}
                   </td>
                 </tr>
-                {open === s.vendor_id && <tr><td colSpan={8} className="px-2 pb-3">{form}</td></tr>}
+                {open === s.vendor_id && (
+                  <tr><td colSpan={8} className="px-2 pb-3"><div className="grid gap-2">{form}<SupplierContacts vendorId={s.vendor_id} canEdit={canEdit} /></div></td></tr>
+                )}
               </tbody>
             ))}
           </table>
