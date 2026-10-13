@@ -43,6 +43,21 @@ async function boardId(page: Page, sku: string): Promise<number> {
   return body.rows.find((r: { sku: string }) => r.sku === sku).material_id;
 }
 
+/**
+ * The orders Generate Orders made for a revision. The dialog closes *before* the POST returns
+ * (`confirmGenerateOrders`), so a hidden dialog does not mean the orders exist yet: wait for them
+ * instead of reading the list once and racing the request.
+ */
+async function ordersGeneratedFor(page: Page, rid: number) {
+  type Order = { attributes?: Record<string, unknown>; vendor_name: string };
+  const mine = async () => {
+    const { orders } = (await (await page.request.get("/api/orders")).json()) as { orders: Order[] };
+    return orders.filter((o) => o.attributes?.generated_from_revision_id === rid);
+  };
+  await expect.poll(async () => (await mine()).length, { timeout: 30_000 }).toBeGreaterThan(0);
+  return mine();
+}
+
 test("a seeded row shows its supplier; an unlinked row is flagged and counted", async ({ page }) => {
   await login(page, MANAGER);
   await openBoards(page);
@@ -172,10 +187,7 @@ test("a material linked in the Catalog is ordered from that supplier by Generate
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // 4. The draft order exists, with Plyco as its supplier.
-    const { orders } = await (await page.request.get("/api/orders")).json();
-    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
-      (o) => o.attributes?.generated_from_revision_id === rid,
-    );
+    const mine = await ordersGeneratedFor(page, rid);
     expect(mine).toHaveLength(1);
     expect(mine[0].vendor_name).toBe("Plyco");
   } finally {
@@ -236,10 +248,7 @@ test("a quote line whose material has no supplier can be ordered after linking i
     await page.getByTestId("generate-orders-confirm-btn").click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
-    const { orders } = await (await page.request.get("/api/orders")).json();
-    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
-      (o) => o.attributes?.generated_from_revision_id === rid,
-    );
+    const mine = await ordersGeneratedFor(page, rid);
     expect(mine).toHaveLength(1);
     expect(mine[0].vendor_name).toBe("Plyco");
   } finally {
@@ -280,6 +289,11 @@ test("a selection with nothing to order can be confirmed, and the line is marked
   await expect(confirm).toHaveText("Mark ticked lines done (nothing to order)");
   await confirm.click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
+  // the dialog is already gone while the request runs; do not reload until the server has covered the line
+  await expect.poll(async () => {
+    const r = await (await page.request.get(`/api/revisions/${rid}/order-preview`)).json();
+    return r.lines.find((l: { line_id: number }) => l.line_id === line.line_id).orders_generated_at;
+  }, { timeout: 30_000 }).not.toBeNull();
 
   // The line is covered: the Generate orders bar is gone and the page says orders were generated
   // (with no "last" — nothing is left to order), and no PO was made.
@@ -450,10 +464,7 @@ test("an estimator links a supplier from the Generate Orders dialog and orders",
     await page.getByTestId("generate-orders-confirm-btn").click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
-    const { orders } = await (await page.request.get("/api/orders")).json();
-    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
-      (o) => o.attributes?.generated_from_revision_id === rid,
-    );
+    const mine = await ordersGeneratedFor(page, rid);
     expect(mine).toHaveLength(1);
     expect(mine[0].vendor_name).toBe("Plyco");
   } finally {
@@ -605,10 +616,7 @@ test("a line's materials are ordered separately: the supplied one orders, the ot
     await page.getByTestId("generate-orders-confirm-btn").click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
-    const { orders } = await (await page.request.get("/api/orders")).json();
-    const mine = (orders as { attributes?: Record<string, unknown>; vendor_name: string }[]).filter(
-      (o) => o.attributes?.generated_from_revision_id === rid,
-    );
+    const mine = await ordersGeneratedFor(page, rid);
     expect(mine).toHaveLength(1);
     expect(mine[0].vendor_name).toBe("Plyco");
     // Nothing is left to order on the quote.

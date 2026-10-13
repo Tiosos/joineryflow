@@ -23,7 +23,8 @@ from ..schema_guards import no_null
 
 
 # The values `purchase_orders_status_check` / `purchase_orders_priority_check`
-# allow (migration 0002). Hand-kept copies: `test_the_accepted_statuses_are_
+# allow (migration 0002; the priorities narrowed to three levels in 0058). Hand-kept
+# copies: `test_the_accepted_statuses_are_
 # exactly_the_databases` / `..._priorities_...` fail if a migration changes one
 # and not the other. Without them an unknown value reached the SQL and came back
 # as a raw 500. (`category` is *not* here: it is a lookup table IT can extend
@@ -32,7 +33,7 @@ OrderStatus = Literal[
     "Draft", "Pending", "Approved", "Rejected", "Delivered",
     "Cancelled", "Hold", "Quote", "Next",
 ]
-OrderPriority = Literal["High", "Medium", "Low", "Next", "Hold", "Quote"]
+OrderPriority = Literal["High", "Medium", "Low"]
 
 # The statuses only a purchase officer, manager or admin (the `orderbook:approve` grant) may set,
 # or move an order out of: the decision on a Pending order. Any sign-off beyond that is outside

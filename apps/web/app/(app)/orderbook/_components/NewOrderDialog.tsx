@@ -148,7 +148,7 @@ export function NewOrderDialog({
               onSave={v => { set("category", v); return ok(); }} />
             <AreaRow label="Description" rows={2} value={draft.description} canEdit onSave={setText("description")} />
             <TextRow label="Order number" value={draft.order_number} canEdit mono onSave={setText("order_number")} />
-            <SelectRow label="Priority" value={draft.priority} canEdit
+            <SelectRow label="Priority" value={draft.priority} canEdit testId="new-order-priority"
               options={PRIORITIES.map(p => ({ value: p, label: p }))}
               onSave={v => { set("priority", v); return ok(); }} />
             <TextRow label="Date required" type="date" value={draft.required_date} canEdit mono onSave={setText("required_date")} />
