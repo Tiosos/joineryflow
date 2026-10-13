@@ -21,8 +21,11 @@ async function openBell(page: Page) {
 test("a pending order waits in the purchase officer's bell until it is decided", async ({ page }) => {
   const stamp = Date.now();
   await login(page, DRAFTER);
-  const suppliers = await (await page.request.get("/api/suppliers")).json();
-  const vendor = (suppliers.suppliers ?? suppliers.vendors ?? suppliers)[0].vendor_id as number;
+  const suppliers = (await (await page.request.get("/api/suppliers")).json()) as {
+    suppliers: { vendor_id: number }[];
+  };
+  expect(suppliers.suppliers.length).toBeGreaterThan(0);
+  const vendor = suppliers.suppliers[0].vendor_id;
   const r = await page.request.post("/api/orders", {
     data: { vendor_id: vendor, description: `Waiting ${stamp}`, category: "Board", total_amount: "9.00" },
   });
@@ -35,11 +38,19 @@ test("a pending order waits in the purchase officer's bell until it is decided",
     const row = page.getByTestId("order-waiting").filter({ hasText: order.po_number });
     await expect(row).toContainText(`Waiting ${stamp}`);
     await expect(page.getByTestId("notification-count")).toBeVisible();
+    // waiting orders are not "unread": the badge says they need attention
+    await expect(page.getByTestId("notification-bell")).toHaveAttribute("aria-label", /need attention/);
     await row.click();
     await expect(page).toHaveURL(new RegExp(`order=${order.po_number}`));
 
     // the full page lists it too
     await page.goto("/notifications");
+    await expect(page.getByTestId("orders-waiting-list")).toContainText(order.po_number);
+
+    // "Unread only" is a comments filter: the waiting section goes while it is on
+    await page.getByLabel("Unread only").check();
+    await expect(page.getByTestId("orders-waiting-list")).toHaveCount(0);
+    await page.getByLabel("Unread only").uncheck();
     await expect(page.getByTestId("orders-waiting-list")).toContainText(order.po_number);
 
     // a manager can decide but is not told
@@ -54,6 +65,34 @@ test("a pending order waits in the purchase officer's bell until it is decided",
     await expect(page.getByTestId("order-waiting").filter({ hasText: order.po_number })).toHaveCount(0);
   } finally {
     await switchTo(page, BUYER);
-    await page.request.delete(`/api/orders/${order.po_id}`);
+    const cleanup = await page.request.delete(`/api/orders/${order.po_id}`);
+    expect(cleanup.ok()).toBe(true);
+  }
+});
+
+test("the bell says how many waiting orders it is not listing", async ({ page }) => {
+  const stamp = Date.now();
+  await login(page, DRAFTER);
+  const suppliers = (await (await page.request.get("/api/suppliers")).json()) as {
+    suppliers: { vendor_id: number }[];
+  };
+  const vendor = suppliers.suppliers[0].vendor_id;
+  const made: number[] = [];
+  try {
+    // more than the bell's six rows, whatever else is Pending on this database
+    for (let i = 0; i < 7; i++) {
+      const r = await page.request.post("/api/orders", {
+        data: { vendor_id: vendor, description: `Overflow ${stamp} ${i}`, category: "Board", total_amount: "1.00" },
+      });
+      expect(r.ok()).toBe(true);
+      made.push(((await r.json()) as { po_id: number }).po_id);
+    }
+    await switchTo(page, BUYER);
+    await openBell(page);
+    await expect(page.getByTestId("order-waiting")).toHaveCount(6);
+    await expect(page.getByTestId("orders-waiting").getByRole("link", { name: /\+\d+ more/ })).toBeVisible();
+  } finally {
+    await switchTo(page, BUYER);
+    for (const id of made) expect((await page.request.delete(`/api/orders/${id}`)).ok()).toBe(true);
   }
 });

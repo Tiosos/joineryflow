@@ -25,8 +25,11 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationOut[]>([]);
   const [waiting, setWaiting] = useState<OrderWaiting[]>([]);
   const [waitingCount, setWaitingCount] = useState(0);
-  // Orders waiting for a decision count on the badge too; they have no read state.
+  // Orders waiting for a decision count on the badge too; they have no read state, they leave
+  // when the order is decided. So the badge is "need attention", not "unread".
   const badge = unread + waitingCount;
+  const shownWaiting = waiting.slice(0, PREVIEW);
+  const showEmpty = items.length === 0 && waitingCount === 0;
 
   const refresh = useCallback(async () => {
     try {
@@ -75,7 +78,7 @@ export function NotificationBell() {
     <div ref={boxRef} className="relative">
       <button
         type="button"
-        aria-label={badge > 0 ? `Notifications, ${badge} unread` : "Notifications"}
+        aria-label={badge > 0 ? `Notifications, ${badge} need attention` : "Notifications"}
         aria-expanded={open}
         data-testid="notification-bell"
         onClick={() => {
@@ -114,7 +117,7 @@ export function NotificationBell() {
                 {`Orders waiting for your decision (${waitingCount})`}
               </div>
               <ul>
-                {waiting.slice(0, PREVIEW).map((o) => (
+                {shownWaiting.map((o) => (
                   <li key={o.po_id}>
                     <Link
                       href={o.url}
@@ -136,13 +139,14 @@ export function NotificationBell() {
                 onClick={() => setOpen(false)}
                 className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
               >
-                All pending orders
+                {waitingCount > shownWaiting.length
+                  ? `+${waitingCount - shownWaiting.length} more · all pending orders`
+                  : "All pending orders"}
               </Link>
             </div>
           )}
-          {items.length === 0 && waitingCount === 0 ? (
-            <p className="px-3 py-4 text-sm text-h-muted">Nothing yet.</p>
-          ) : items.length === 0 ? null : (
+          {showEmpty && <p className="px-3 py-4 text-sm text-h-muted">Nothing yet.</p>}
+          {items.length > 0 && (
             <ul>
               {items.map((n) => (
                 <li key={n.notification_id}>
