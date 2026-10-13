@@ -229,7 +229,7 @@ def crash(label: str, response) -> str | None:
 # Body field -> the kind of row it points at.
 FIELD_KIND = {
     "assigned_to": "user", "pm_id": "user", "user_id": "user",
-    "requester_id": "user", "approver_id": "admin_user", "reviewer_id": "user", "contractor_id": "user",
+    "requester_id": "user", "ordered_by_id": "user", "approver_id": "admin_user", "reviewer_id": "user", "contractor_id": "user",
     "mentioned_user_ids": "user", "worker_id": "shop_worker",
     "vendor_id": "vendor", "supplier_id": "vendor",
     "project_id": "project",

@@ -111,3 +111,18 @@ table.parts thead th, table.hw thead th, table.painting thead th {
 .placeholder-page .kind { font-weight: 700; color: #8f8b80; margin-bottom: 4mm; }
 
 .page-break { page-break-after: always; }
+
+/* PO document (purchase_orders module) */
+table.po { width: 100%; border-collapse: collapse; font-size: 9pt; }
+table.po th, table.po td { border-bottom: 1px solid #e4e0d8; padding: 1.5mm 2mm; text-align: left; vertical-align: top; }
+table.po thead { background: #f4f2ed; }
+table.po thead th { font-weight: 700; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em; color: #5a574f; }
+table.po td.num, table.po th.num { text-align: right; }
+table.po tr.cancelled td { color: #b5b1a6; text-decoration: line-through; }
+.po-box { border: 1px solid #e4e0d8; padding: 3mm 4mm; margin-bottom: 4mm; font-size: 9pt; white-space: pre-line; }
+.po-totals { width: 60mm; margin: 4mm 0 0 auto; border-collapse: collapse; font-size: 10pt; }
+.po-totals td { padding: 1mm 2mm; }
+.po-totals td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+.po-totals tr.grand td { border-top: 1px solid #1b1a17; font-weight: 700; }
+.sign-block { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 18mm; }
+.sign-line { border-top: 1px solid #1b1a17; padding-top: 1mm; font-size: 9pt; color: #5a574f; margin-top: 14mm; }

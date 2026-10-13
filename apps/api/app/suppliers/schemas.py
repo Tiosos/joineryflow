@@ -6,9 +6,9 @@ legacy `/procurement/vendors*` endpoints.
 """
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
 from ..schema_guards import no_null
 
 
@@ -73,3 +73,43 @@ class LinkMaterialIn(BaseModel):
     material_table: str
     material_id: int
     field: str = "supplier_id"   # or 'default_supplier_id'
+
+
+# ── supplier contacts (migration 0059: the PO screen's contact list) ──────────────────────────
+
+def _clean_email(v: str | None) -> str | None:
+    v = (v or "").strip() or None
+    if v is not None and ("@" not in v or " " in v):
+        raise ValueError("not an email address")
+    return v
+
+
+class ContactIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+    position: str | None = Field(default=None, max_length=100)
+    mobile: str | None = Field(default=None, max_length=50)
+    email: str | None = Field(default=None, max_length=255)
+    _email = field_validator("email")(lambda cls, v: _clean_email(v))
+
+
+class PatchContactIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)] | None = None
+    position: str | None = Field(default=None, max_length=100)
+    mobile: str | None = Field(default=None, max_length=50)
+    email: str | None = Field(default=None, max_length=255)
+    reject_null = no_null("name")
+    _email = field_validator("email")(lambda cls, v: _clean_email(v))
+
+
+class ContactOut(BaseModel):
+    contact_id: int
+    vendor_id: int
+    position: str | None
+    name: str
+    mobile: str | None
+    email: str | None
+    created_at: datetime
+
+
+class ContactListOut(BaseModel):
+    contacts: list[ContactOut]

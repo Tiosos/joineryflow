@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
-from .schemas import CreateSupplierIn, PatchSupplierIn
+from .schemas import ContactIn, CreateSupplierIn, PatchContactIn, PatchSupplierIn
 
 # The six catalog tables and the PK each one actually uses.
 CATALOG_PK = {
@@ -233,3 +233,74 @@ def linked_materials(
         {"v": vendor_id, "w": workspace_id},
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+# ── contacts ─────────────────────────────────────────────────────────────────────────────────────
+
+_CONTACT_COLS = "c.contact_id, c.vendor_id, c.position, c.name, c.mobile, c.email, c.created_at"
+
+
+def list_contacts(db: Session, *, vendor_id: int, workspace_id: int) -> list[dict] | None:
+    """The supplier's contacts, or None when the supplier is not this workspace's."""
+    if get_supplier(db, vendor_id=vendor_id, workspace_id=workspace_id) is None:
+        return None
+    rows = db.execute(
+        text(f"SELECT {_CONTACT_COLS} FROM vendor_contact c WHERE c.vendor_id = :v ORDER BY c.contact_id"),
+        {"v": vendor_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def add_contact(
+    db: Session, *, vendor_id: int, workspace_id: int, payload: ContactIn, actor_id: int
+) -> dict | None:
+    if get_supplier(db, vendor_id=vendor_id, workspace_id=workspace_id) is None:
+        return None
+    row = db.execute(
+        text(
+            "INSERT INTO vendor_contact (vendor_id, position, name, mobile, email)"
+            " VALUES (:v, :p, :n, :m, :e) RETURNING contact_id, vendor_id, position, name, mobile, email, created_at"
+        ),
+        {"v": vendor_id, "p": payload.position, "n": payload.name, "m": payload.mobile, "e": payload.email},
+    ).mappings().one()
+    write_audit(db, workspace_id=workspace_id, actor_id=actor_id, event="supplier.contact.add",
+                target=f"vendor:{vendor_id}", payload={"contact_id": row["contact_id"], "name": payload.name})
+    return dict(row)
+
+
+def patch_contact(
+    db: Session, *, vendor_id: int, contact_id: int, workspace_id: int, payload: PatchContactIn, actor_id: int
+) -> dict | None:
+    if get_supplier(db, vendor_id=vendor_id, workspace_id=workspace_id) is None:
+        return None
+    fields = payload.model_dump(exclude_unset=True)
+    if fields:
+        sets = ", ".join(f"{k} = :{k}" for k in fields)
+        found = db.execute(
+            text(f"UPDATE vendor_contact SET {sets} WHERE contact_id = :c AND vendor_id = :v RETURNING 1"),
+            {**fields, "c": contact_id, "v": vendor_id},
+        ).first()
+        if not found:
+            return None
+        write_audit(db, workspace_id=workspace_id, actor_id=actor_id, event="supplier.contact.update",
+                    target=f"vendor:{vendor_id}", payload={"contact_id": contact_id, "fields": sorted(fields)})
+    row = db.execute(
+        text(f"SELECT {_CONTACT_COLS} FROM vendor_contact c WHERE c.contact_id = :c AND c.vendor_id = :v"),
+        {"c": contact_id, "v": vendor_id},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def delete_contact(
+    db: Session, *, vendor_id: int, contact_id: int, workspace_id: int, actor_id: int
+) -> bool:
+    if get_supplier(db, vendor_id=vendor_id, workspace_id=workspace_id) is None:
+        return False
+    found = db.execute(
+        text("DELETE FROM vendor_contact WHERE contact_id = :c AND vendor_id = :v RETURNING 1"),
+        {"c": contact_id, "v": vendor_id},
+    ).first()
+    if found:
+        write_audit(db, workspace_id=workspace_id, actor_id=actor_id, event="supplier.contact.delete",
+                    target=f"vendor:{vendor_id}", payload={"contact_id": contact_id})
+    return bool(found)

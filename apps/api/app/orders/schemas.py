@@ -133,6 +133,9 @@ class OrderOut(BaseModel):
     line_item_comments: str | None = None
     changelog: str | None = None
     product_website: str | None = None
+    # The PO document this order is on (0059), if any: its running number comes from `po_document`.
+    po_document_id: int | None = None
+    po_no: int | None = None
     has_attachment: bool = False
 
     @computed_field  # type: ignore[prop-decorator]

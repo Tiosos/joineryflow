@@ -72,7 +72,8 @@ _ORDER_COLS = """
     po.requester_id, ru.full_name AS requester_name, po.requested_date, po.arrived_date,
     po.stock_tracked, po.gst_applicable, po.gst_included_in_price, po.gst_amount, po.grand_total,
     po.line_item_comments, po.changelog, po.product_website,
-    EXISTS (SELECT 1 FROM po_attachments pa WHERE pa.po_id = po.po_id) AS has_attachment
+    EXISTS (SELECT 1 FROM po_attachments pa WHERE pa.po_id = po.po_id) AS has_attachment,
+    po.po_document_id, pd.po_no
 """
 
 _ORDER_FROM = """
@@ -81,6 +82,7 @@ _ORDER_FROM = """
     LEFT JOIN items   i ON i.item_id   = po.item_id
     LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
     LEFT JOIN app_user ru ON ru.id = po.requester_id
+    LEFT JOIN po_document pd ON pd.po_document_id = po.po_document_id
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -574,6 +576,7 @@ def patch_order(
     {status}: setting an order Approved or Rejected, or moving it out of either, needs
     `can_decide`, the `orderbook:approve` grant) | 'REJECTION_NOTE_REQUIRED' (Rejected without a
     note) | 'REJECTION_NOTE_NOT_APPLICABLE' (a note with a status other than Rejected) |
+    'ORDER_ON_PO' (`data` is {po_no}: the supplier of an order on a PO document cannot change) |
     'VENDOR_NOT_FOUND' (`data` is {vendor_id}: unknown, or another workspace's —
     the same rule `create_order` applies) | 'UNKNOWN_CATEGORY' (`data` is
     {category})."""
@@ -650,6 +653,10 @@ def patch_order(
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.
+    # An order on a PO document stays with that PO's supplier: take it off the PO first.
+    if ("vendor_id" in fields and fields["vendor_id"] != current["vendor_id"]
+            and current.get("po_document_id") is not None):
+        return "ORDER_ON_PO", {"po_no": current["po_no"]}
     if "vendor_id" in fields and not _vendor_in_workspace(
         db, vendor_id=fields["vendor_id"], workspace_id=workspace_id
     ):

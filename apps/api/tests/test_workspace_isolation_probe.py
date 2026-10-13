@@ -34,7 +34,24 @@ from .helpers import login
 _cleanup = truncate_fixture(*CLEANUP_TABLES)
 
 # Operations that cannot be probed, with the reason. Must equal the computed set.
+_PO_REASON = ("the seed has no PO document; every operation is called by another workspace in "
+              "test_purchase_order_documents.test_other_workspace_is_404")
+
 NOT_PROBED: dict[tuple[str, str], str] = {
+    ("DELETE", "/purchase-orders/{doc_id}/delivery"): _PO_REASON,
+    ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}"): _PO_REASON,
+    ("DELETE", "/purchase-orders/{doc_id}/orders/{order_id}"): _PO_REASON,
+    ("GET", "/purchase-orders/{doc_id}"): _PO_REASON,
+    ("GET", "/purchase-orders/{doc_id}/authorisation-form"): _PO_REASON,
+    ("GET", "/purchase-orders/{doc_id}/excel"): _PO_REASON,
+    ("GET", "/purchase-orders/{doc_id}/pdf"): _PO_REASON,
+    ("PATCH", "/purchase-orders/{doc_id}"): _PO_REASON,
+    ("PATCH", "/purchase-orders/{doc_id}/invoices/{invoice_id}"): _PO_REASON,
+    ("POST", "/purchase-orders/{doc_id}/cancel"): _PO_REASON,
+    ("POST", "/purchase-orders/{doc_id}/invoices"): _PO_REASON,
+    ("POST", "/purchase-orders/{doc_id}/orders"): _PO_REASON,
+    ("PUT", "/purchase-orders/{doc_id}/delivery"): _PO_REASON,
+
     # The path parameter is a catalog type, not a row id; the routes create rows in the
     # caller's own workspace, so there is no foreign row to find.
     # The foreign id that matters here is the supplier in the body or the row: covered by
