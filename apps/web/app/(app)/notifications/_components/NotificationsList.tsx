@@ -72,7 +72,8 @@ export function NotificationsList() {
         </div>
       </div>
 
-      {waitingCount > 0 && (
+      {/* the API leaves the waiting orders out of an unread-only call, so this follows the filter */}
+      {!unreadOnly && waitingCount > 0 && (
         <section data-testid="orders-waiting-list" className="grid gap-2">
           <h2 className="text-sm font-semibold text-h-ink">
             {`Orders waiting for your decision (${waitingCount})`}
@@ -103,7 +104,7 @@ export function NotificationsList() {
 
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       {!rows && !error && <p className="text-sm text-h-muted">Loading…</p>}
-      {rows && rows.length === 0 && waitingCount === 0 && (
+      {rows && rows.length === 0 && (unreadOnly || waitingCount === 0) && (
         <p className="text-sm text-h-muted">
           {unreadOnly ? "Nothing unread." : "No notifications yet."}
         </p>

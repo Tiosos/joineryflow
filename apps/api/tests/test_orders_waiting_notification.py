@@ -10,8 +10,7 @@ from sqlalchemy import text
 from app.db import SessionLocal
 
 from .conftest import truncate_fixture
-from .helpers import login_same_workspace
-from .helpers import login
+from .helpers import login, login_same_workspace
 
 _cleanup = truncate_fixture("budget_transactions", "cost_centers", "purchase_orders", "vendors")
 
@@ -29,11 +28,12 @@ def _vendor(wid: int) -> int:
 
 @pytest.fixture
 def ws():
-    buyer, wid, _uid = login("purchase_officer", prefix="ow")
+    buyer, wid, uid = login("purchase_officer", prefix="ow")
     vendor = _vendor(wid)
     drafter, _ = login_same_workspace(wid, "drafter")
     manager, _ = login_same_workspace(wid, "manager")
-    return {"wid": wid, "vendor": vendor, "buyer": buyer, "drafter": drafter, "manager": manager}
+    return {"wid": wid, "uid": uid, "vendor": vendor, "buyer": buyer, "drafter": drafter,
+            "manager": manager}
 
 
 def _order(c, ws, desc="waiting order"):
@@ -100,3 +100,49 @@ def test_another_workspaces_pending_orders_are_not_counted(ws):
     other, owid, _ = login("purchase_officer", prefix="ox")
     assert _waiting(other)["orders_waiting_count"] == 0
     assert owid != ws["wid"]
+
+
+# ── the list is only worked out for the calls that use it ──
+
+def test_paged_and_unread_only_calls_carry_no_waiting_orders(ws):
+    _order(ws["drafter"], ws)
+    assert _waiting(ws["buyer"])["orders_waiting_count"] == 1
+    for params in ({"unread_only": True}, {"offset": 1}):
+        body = ws["buyer"].get("/notifications", params=params).json()
+        assert "orders_waiting" not in body and "orders_waiting_count" not in body
+
+
+# ── the officer must still be able to read the Orderbook ──
+
+def _only_grants(ws, grants):
+    """Make the purchase officer DB-governed with only `grants` (module, action); returns group id."""
+    s = SessionLocal()
+    try:
+        gid = s.execute(text("INSERT INTO permission_group(workspace_id, name, is_system)"
+                             " VALUES (:w, 'only-ow', false) RETURNING group_id"),
+                        {"w": ws["wid"]}).scalar()
+        for module, action in grants:
+            s.execute(text("INSERT INTO group_module_grant(group_id, module, action)"
+                           " VALUES (:g, :m, :a)"), {"g": gid, "m": module, "a": action})
+        s.execute(text("INSERT INTO user_group_membership(user_id, group_id, project_id)"
+                       " VALUES (:u, :g, NULL)"), {"u": ws["uid"], "g": gid})
+        s.commit()
+        return gid
+    finally:
+        s.close()
+
+
+def test_an_officer_who_cannot_read_the_orderbook_is_told_nothing(ws):
+    _order(ws["drafter"], ws)
+    _only_grants(ws, [("orderbook", "read")])
+    assert _waiting(ws["buyer"])["orders_waiting_count"] == 1
+    s = SessionLocal()
+    try:
+        s.execute(text("DELETE FROM group_module_grant WHERE module = 'orderbook' AND group_id IN"
+                       " (SELECT group_id FROM permission_group WHERE name = 'only-ow'"
+                       " AND workspace_id = :w)"), {"w": ws["wid"]})
+        s.commit()
+    finally:
+        s.close()
+    body = _waiting(ws["buyer"])
+    assert "orders_waiting" not in body and "orders_waiting_count" not in body

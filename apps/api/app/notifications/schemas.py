@@ -34,11 +34,14 @@ class OrderWaitingOut(BaseModel):
 class NotificationListOut(BaseModel):
     notifications: list[NotificationOut]
     unread_count: int
-    # Purchase officers only: orders still Pending, newest first (at most 20) and how many in all.
-    # Derived on read, so there is nothing to mark read: an order leaves when it is decided.
-    # Left out of the reply (route uses `response_model_exclude_unset`) for everyone else.
-    orders_waiting: list[OrderWaitingOut] = []
-    orders_waiting_count: int = 0
+
+
+class NotificationListWaitingOut(NotificationListOut):
+    """A purchase officer's first page: also the orders still Pending, newest first (at most 20)
+    and how many in all. Derived on read, so there is nothing to mark read: an order leaves when
+    it is decided. Everyone else, and paged or unread-only calls, get `NotificationListOut`."""
+    orders_waiting: list[OrderWaitingOut]
+    orders_waiting_count: int
 
 
 class ReadAllOut(BaseModel):
