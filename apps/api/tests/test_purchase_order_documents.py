@@ -60,7 +60,8 @@ def _code(r):
 def test_create_marks_orders_ordered_and_totals(ws):
     a, b = _order(ws, total="100.00"), _order(ws, total="50.00")
     po = _po(ws, a, b, reference_no="R-1")
-    assert po["po_no"] >= 100001 and po["status"] == "Open" and po["reference_no"] == "R-1"
+    assert po["po_no"] >= 193971  # 0060: after the old system's last PO, 193970
+    assert po["status"] == "Open" and po["reference_no"] == "R-1"
     assert len(po["lines"]) == 2
     assert po["totals"]["total_ex"] == "150.00"
     assert po["totals"]["total_inc"] == "165.00"
