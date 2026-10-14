@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ...sql_columns import require_columns
+
 # Derived status: cancelled > delivered > in-transit > open.
 # Qualified with `pb.` so it can be reused in WHERE clauses against the
 # `procurement_batches AS pb` alias used in list_batches/get_batch.
@@ -91,9 +93,16 @@ def create_batch(db: Session, *, payload: dict, project_id: int) -> int:
     return db.execute(sql, {**payload, "project_id": project_id}).scalar()
 
 
+_PATCHABLE_COLUMNS = frozenset({
+    "supplier", "po_ref", "qty_ordered", "qty_received", "cost_per_unit",
+    "ordered_date", "eta_date", "received_date", "notes",
+})
+
+
 def patch_batch(db: Session, *, batch_id: int, fields: dict) -> int:
     if not fields:
         return batch_id
+    require_columns(fields, _PATCHABLE_COLUMNS)
     sets = ", ".join(f"{k} = :{k}" for k in fields)
     sql = text(
         f"UPDATE procurement_batches SET {sets}, updated_at = now() "

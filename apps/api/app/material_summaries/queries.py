@@ -17,6 +17,7 @@ from ..material_takes.generation import summary_sheets
 from ..material_takes.queries import Conflict, NotFound
 from ..procurement_v1.materials.queries import project_material_rollup
 from ..row_types import live_joinery_items
+from ..sql_columns import require_columns
 
 _JOINERY_I = live_joinery_items("i")
 
@@ -166,6 +167,9 @@ def history(db: Session, project_id: int, workspace_id: int) -> list[dict]:
         {"p": project_id}).mappings()]
 
 
+_LINE_COLUMNS = frozenset({"qty_confirmed", "note"})
+
+
 def patch_line(db: Session, summary_id: int, line_id: int, workspace_id: int, actor_id: int,
                changes: dict) -> None:
     s = _summary(db, summary_id, workspace_id, lock=True)
@@ -176,6 +180,7 @@ def patch_line(db: Session, summary_id: int, line_id: int, workspace_id: int, ac
                      {"l": line_id, "s": summary_id}).mappings().first()
     if old is None:
         raise NotFound()
+    require_columns(changes, _LINE_COLUMNS)
     diff = {k: v for k, v in changes.items() if old[k] != v}
     if not diff:
         return

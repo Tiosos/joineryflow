@@ -122,7 +122,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
-| `tests/e2e/` | Playwright specs (36 spec files, plus `helpers.ts`; see §3) |
+| `tests/e2e/` | Playwright specs (37 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -220,6 +220,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - Mutations that can be refused return `409 {detail: {code, …}}` with a stable `code`. Prefer codes-and-409 over bare strings.
 - **Null-write guard:** a PATCH schema must call `schema_guards.no_null(...)` for every field whose column is `NOT NULL` (explicit `null` → 422 naming the field). A `null` written to a nullable column that a response model types non-null **poisons every later read**, because routes commit before the response is validated. Opt-in — nothing fails if you forget.
 - Field-level optimistic concurrency (`concurrency.py`): PATCH may carry `expected_versions`; a stale field is `409 FIELD_CONFLICT` with a **string-safe** `current_value` (`conflict_safe_value`). Reads for PATCH use `SELECT … FOR UPDATE`.
+- **Dynamic SQL names need an allow-list.** Values are always bound parameters; column and table names cannot be. An f-string `UPDATE … SET {list}` (or an interpolated table / column) must take its names from a fixed set: `sql_columns.require_columns(keys, ALLOWED)`, a filter `if k in <CONSTANT>`, a column map (`columns[k]`), or keys that are the declared fields of a request model (`payload.model_dump(...)`; no PATCH model may use `extra="allow"`). `tests/test_sql_set_columns.py` fails on a statement with none of these; one that is safe for another reason goes in its `ALLOWED` with the reason.
+- **Workspace checks come from `workspace_scope.py`** (`project_in_workspace`, `user_in_workspace`, `vendor_in_workspace`): a new route imports them instead of writing the `SELECT 1 … AND workspace_id` again; older modules move over as they are touched (no big-bang rewrite). Item and catalog-material checks have their own helpers.
 - Computing `MAX(seq)+1` needs a parent-row lock (`FOR UPDATE`) — races found and fixed in estimate lines, order lines, material-take generate.
 - `LOCKED`/frozen order statuses (`Cancelled`, `Delivered`) are read-only except `status`; `OrderOut.locked` is server-computed — the web reads it, never copies the set.
 - Route ordering: literal paths (`/orders`, `/catalog/cv-mappings`) must be declared **before** parameterised ones.

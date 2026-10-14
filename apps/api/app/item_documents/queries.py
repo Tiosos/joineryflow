@@ -11,6 +11,7 @@ from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
 from ..items.queries import assert_item_content_unlocked
 from ..row_types import live_joinery_items
+from ..sql_columns import require_columns
 
 # Like the named attachment slots, the register belongs to Joinery Items only.
 _JOINERY_ITEM = live_joinery_items("i")
@@ -143,6 +144,9 @@ def bind_document(
     return _document(db, document_id=did, workspace_id=workspace_id)
 
 
+_PATCHABLE_COLUMNS = frozenset({"label", "sort_order"})
+
+
 def patch_document(
     db: Session,
     *,
@@ -158,6 +162,7 @@ def patch_document(
     assert_item_content_unlocked(
         db, item_id=current["item_id"], workspace_id=workspace_id, actor=actor,
     )
+    require_columns(changes, _PATCHABLE_COLUMNS)
     diff = {k: v for k, v in changes.items() if current[k] != v}
     if not diff:
         return current
