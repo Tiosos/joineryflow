@@ -22,6 +22,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..files.blobs import discard_bytes_if_unreferenced, insert_blob_or_existing
 from ..files.store import FileStore, get_default_store
 from ..files.validators import MAX_BYTE_SIZE, sniff_mime, validate_extension_matches
 from . import queries as q
@@ -126,19 +127,19 @@ async def upload_attachment(
         text("SELECT file_blob_id FROM file_blob WHERE workspace_id = :w AND sha256 = :s"),
         {"w": user.workspace_id, "s": sha},
     ).scalar()
-    storage_key: str | None = None  # set only when this request wrote new bytes
+    storage_key: str | None = None  # set only when this request wrote bytes
     try:
         if blob_id is None:
             slug = db.execute(text("SELECT slug FROM workspace WHERE id = :w"), {"w": user.workspace_id}).scalar_one()
             storage_key = store.put(slug, sha, io.BytesIO(payload))
-            blob_id = db.execute(
-                text("INSERT INTO file_blob(workspace_id, sha256, mime, byte_size, original_filename,"
-                     " storage_key, uploaded_by) VALUES (:w, :s, :m, :sz, :n, :k, :u) RETURNING file_blob_id"),
-                {"w": user.workspace_id, "s": sha, "m": mime, "sz": size, "n": name, "k": storage_key, "u": user.id},
-            ).scalar()
-            write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="file_blob.create",
-                        target=str(blob_id), payload={"sha256": sha, "byte_size": size, "mime": mime,
-                                                      "original_filename": name})
+            blob_id, created = insert_blob_or_existing(
+                db, workspace_id=user.workspace_id, sha256=sha, mime=mime, byte_size=size,
+                original_filename=name, storage_key=storage_key, uploaded_by=user.id,
+            )
+            if created:
+                write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="file_blob.create",
+                            target=str(blob_id), payload={"sha256": sha, "byte_size": size, "mime": mime,
+                                                          "original_filename": name})
         aid = db.execute(
             text("INSERT INTO po_attachments (po_id, attachment_type, file_name, file_size_bytes, file_blob_id,"
                  " uploaded_by) VALUES (:o, :t, :n, :sz, :b, :u) RETURNING attachment_id"),
@@ -150,7 +151,7 @@ async def upload_attachment(
     except Exception:
         db.rollback()
         if storage_key is not None:
-            store.delete(storage_key)
+            discard_bytes_if_unreferenced(db, store, storage_key)
         raise
     return {"attachments": _list(db, po_id)}
 

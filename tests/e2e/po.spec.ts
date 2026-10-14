@@ -189,3 +189,60 @@ test("a bad ?po= link can be closed, and Po only sends the orders the view shows
     await page.request.delete(`/api/orders/${order.po_id}`);
   }
 });
+
+test("the PO panel saves what was typed when it closes, restores an emptied date, and keeps focus", async ({ page }) => {
+  const stamp = Date.now();
+  await login(page, BUYER);
+  const vendors = (await (await page.request.get("/api/suppliers")).json()) as { suppliers: { vendor_id: number; name: string }[] };
+  const v = vendors.suppliers[0];
+  const order = (await (await page.request.post("/api/orders", {
+    data: { vendor_id: v.vendor_id, description: `Panel edit ${stamp}`, category: "Board", total_amount: "5.00" },
+  })).json()) as { po_id: number };
+  let docId: number | null = null;
+  try {
+    await page.goto(`/orderbook?supplier=${encodeURIComponent(v.name)}`);
+    const row = page.getByTestId("order-row").filter({ hasText: `Panel edit ${stamp}` });
+    await row.getByTestId("order-check").check();
+    await page.getByTestId("orders-po").click();
+    const modal = page.getByTestId("po-modal");
+    await expect(modal).toBeVisible();
+    docId = Number(new URL(page.url()).searchParams.get("po"));
+
+    // an accessible modal: focus is inside it, Tab never leaves it
+    await expect(modal).toHaveAttribute("aria-modal", "true");
+    await expect(async () => {
+      expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="po-modal"]'))).toBe(true);
+    }).toPass();
+    for (let i = 0; i < 70; i++) await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="po-modal"]'))).toBe(true);
+    for (let i = 0; i < 70; i++) await page.keyboard.press("Shift+Tab");
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="po-modal"]'))).toBe(true);
+
+    // an emptied Date ordered goes back to the saved date, with the reason
+    const saved = await modal.getByTestId("po-date_ordered").inputValue();
+    expect(saved).not.toBe("");
+    await modal.getByTestId("po-date_ordered").fill("");
+    await modal.getByTestId("po-memo").focus();                       // blur the date box
+    await expect(modal.getByTestId("po-date_ordered")).toHaveValue(saved);
+    await expect(modal.getByTestId("po-error")).toContainText("cannot be empty");
+
+    // typed text is saved by Esc, without clicking out of the box first
+    await modal.getByTestId("po-memo").fill(`typed ${stamp}`);
+    await page.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    const d = await (await page.request.get(`/api/purchase-orders/${docId}`)).json();
+    expect(d.memo).toBe(`typed ${stamp}`);
+
+    // focus goes back to what opened the panel: the row's PO link (the Po button is off by now)
+    const link = row.getByTestId("order-po-link");
+    await link.focus();
+    await page.keyboard.press("Enter");
+    await expect(modal).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(link).toBeFocused();
+  } finally {
+    if (docId) await page.request.post(`/api/purchase-orders/${docId}/cancel`);
+    await page.request.delete(`/api/orders/${order.po_id}`);
+  }
+});

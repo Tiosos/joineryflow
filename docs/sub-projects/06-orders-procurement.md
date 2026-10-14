@@ -1684,5 +1684,12 @@ An independent read of the PO work (not anchored on its author) found eight thin
 7. The **Po** button counts and sends only the ticked orders the current view shows.
 8. Add Invoice and TBO Add are disabled while their request is in flight.
 
-Not fixed, on purpose (the user agreed): the shared upload race in `files/routes.py` and `orders/attachments.py` (two identical new uploads at the same moment can delete each other's bytes), unsaved text lost on Esc, and the PO dialog's focus handling. **Decision, unchanged:** a PO may hold **Pending** orders (a drafter can order an undecided order): "stay as it is".
+Left for a second round (the user then chose to do them, below): the upload race, unsaved text lost on Esc, an emptied Date ordered, and the PO dialog's focus handling. **Decision, unchanged:** a PO may hold **Pending** orders (a drafter can order an undecided order): "stay as it is".
+
+### Second round: the upload race and the PO panel's smaller items (October 2026, no migration)
+Asked first; all four answers were the recommended ones.
+- **Upload race** (`POST /files` and `POST /orders/{id}/attachments`): two identical new uploads at the same moment both missed the dedup SELECT, wrote the same key, and the loser's INSERT hit `UNIQUE (workspace_id, sha256)`; its cleanup then deleted the bytes the winner had committed, so every download of that file was a 404. Both routes now go through `files/blobs.py`: `insert_blob_or_existing` (`INSERT … ON CONFLICT (workspace_id, sha256) DO NOTHING`, adopting the winner's row, audited as `file_blob.dedup`) and `discard_bytes_if_unreferenced` (a failed upload deletes its bytes only when no `file_blob` row points at that key). `test_upload_race.py` makes the interleaving deterministic with a store that commits the winner's row right after the loser wrote its bytes; both tests fail on the old code (unique violation).
+- **PO panel text**: typed header text (reference, dates, memo, deliver-to) is saved when the box loses focus **and when the panel closes** (Done, Esc, backdrop), in one PATCH; a failed save keeps the panel open. An emptied **Date ordered** (required) goes back to the saved date with "Date ordered cannot be empty".
+- **PO panel dialog**: `aria-modal`, labelled by its title, focus moves in when it opens, Tab / Shift+Tab stay inside, Esc closes, and focus returns to what opened it (the Po button, or the row's PO link). The other Orderbook dialogs (Supplier list, New order, order pop-up, cost centre) were deliberately **not** changed.
+Tests: `po.spec.ts` (the last test).
 
