@@ -65,10 +65,14 @@ def racing(tmp_path):
     app.dependency_overrides.pop(order_attachments._get_store, None)
 
 
-def _blob_rows():
+def _blob_rows(workspace_id: int):
+    """This test's file: other tests (and the seed) leave file_blob rows of their own around."""
     s = SessionLocal()
     try:
-        return s.execute(text("SELECT file_blob_id, storage_key FROM file_blob")).all()
+        return s.execute(
+            text("SELECT file_blob_id, storage_key FROM file_blob WHERE workspace_id = :w AND sha256 = :s"),
+            {"w": workspace_id, "s": hashlib.sha256(PDF).hexdigest()},
+        ).all()
     finally:
         s.close()
 
@@ -78,7 +82,7 @@ def test_post_files_loses_the_race_without_deleting_the_winners_bytes(racing):
     store = racing(wid)
     r = c.post("/files", files={"file": ("a.pdf", PDF)})
     assert r.status_code in (200, 201), r.text
-    [(blob_id, key)] = _blob_rows()
+    [(blob_id, key)] = _blob_rows(wid)
     assert r.json()["file_blob_id"] == blob_id            # the winner's row
     assert store.exists(key)                              # its bytes are still there
     assert c.get(f"/files/{blob_id}").content == PDF
@@ -97,7 +101,7 @@ def test_order_attachment_loses_the_race_without_deleting_the_winners_bytes(raci
     store = racing(wid)
     r = c.post(f"/orders/{order}/attachments", files={"file": ("q.pdf", PDF)}, data={"attachment_type": "PDF"})
     assert r.status_code == 201, r.text
-    [(blob_id, key)] = _blob_rows()
+    [(blob_id, key)] = _blob_rows(wid)
     assert store.exists(key)
     [att] = r.json()["attachments"]
     d = c.get(f"/orders/{order}/attachments/{att['attachment_id']}/download")
