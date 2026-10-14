@@ -66,15 +66,17 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
     await modal.getByTestId("po-staff").getByRole("checkbox").first().check();
     await expect(modal.getByTestId("po-email")).toHaveAttribute("href", /[?&]cc=[^&]*%40/);
 
-    // invoice details
-    await modal.getByTestId("po-invoice-add").click();
-    await modal.getByTestId("po-invoice-line").selectOption({ index: 1 });
-    await modal.getByTestId("po-invoice-number").fill(`INV-${stamp}`);
-    await modal.getByTestId("po-invoice-save").click();
+    // invoice details: ticking Invoiced on a line opens the Invoice Details window
+    await modal.getByTestId("po-line-invoiced").first().click();
+    const win = page.getByTestId("invoice-window");
+    await win.getByTestId("inv-invoice_number").fill(`INV-${stamp}`);
+    await win.getByTestId("inv-invoice_number").blur();
+    await win.getByTestId("inv-close").click();
+    await expect(win).toHaveCount(0);
     await expect(modal.getByTestId("po-invoice-row")).toContainText(`INV-${stamp}`);
 
     // documents
-    for (const [path, type] of [["pdf", /pdf/], ["authorisation-form", /pdf/], ["excel", /spreadsheetml/]] as const) {
+    for (const [path, type] of [["pdf", /pdf/], ["excel", /spreadsheetml/]] as const) {
       const r = await page.request.get(`/api/purchase-orders/${docId}/${path}`);
       expect(r.ok()).toBe(true);
       expect(r.headers()["content-type"]).toMatch(type);
@@ -90,7 +92,8 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
     page.on("dialog", d => void d.accept());
     await page.getByTestId("po-cancel").click();
     await expect(page.getByTestId("po-error")).toContainText("Remove the invoices first");   // a PO with invoices stays
-    await page.getByTestId("po-invoice-remove").click();
+    await page.getByTestId("po-invoice-open").click();
+    await page.getByTestId("inv-delete").click();
     await expect(page.getByTestId("po-invoice-row")).toHaveCount(0);
     await page.getByTestId("po-cancel").click();
     await expect(page.getByTestId("po-modal").getByText("Cancelled", { exact: true })).toBeVisible();

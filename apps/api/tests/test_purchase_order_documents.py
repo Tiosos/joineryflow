@@ -5,56 +5,21 @@ the delivery charge is a real Delivery Fee order; totals skip Cancelled / Reject
 """
 import io
 
-import pytest
 from openpyxl import load_workbook
-from sqlalchemy import text
 
-from app.db import SessionLocal
+import pytest
 
 from .conftest import truncate_fixture
-from .helpers import login, login_same_workspace
-
-_cleanup = truncate_fixture("po_document", "vendor_contact", "po_invoice")
-
-
-def _sql(sql: str, **p):
-    s = SessionLocal()
-    try:
-        out = s.execute(text(sql), p)
-        val = out.scalar() if out.returns_rows else None
-        s.commit()
-        return val
-    finally:
-        s.close()
+from .helpers import login
+from .helpers_po import _code, _order, _po, make_ws
 
 
 @pytest.fixture
 def ws():
-    buyer, wid, _ = login("purchase_officer", prefix="pd")
-    v1 = _sql("INSERT INTO vendors(name, category, workspace_id) VALUES ('Laminex', 'Board', :w)"
-              " RETURNING vendor_id", w=wid)
-    v2 = _sql("INSERT INTO vendors(name, category, workspace_id) VALUES ('Other', 'Board', :w)"
-              " RETURNING vendor_id", w=wid)
-    viewer, _ = login_same_workspace(wid, "viewer")
-    return {"wid": wid, "buyer": buyer, "viewer": viewer, "v1": v1, "v2": v2}
+    return make_ws()
 
 
-def _order(ws, vendor="v1", total="100.00", **extra):
-    body = {"vendor_id": ws[vendor], "description": "Board", "quantity": 1, "unit_cost": total,
-            "total_amount": total, **extra}
-    r = ws["buyer"].post("/orders", json=body)
-    assert r.status_code == 201, r.text
-    return r.json()["po_id"]
-
-
-def _po(ws, *order_ids, **body):
-    r = ws["buyer"].post("/purchase-orders", json={"order_ids": list(order_ids), **body})
-    assert r.status_code == 201, r.text
-    return r.json()
-
-
-def _code(r):
-    return r.json()["detail"]["code"]
+_cleanup = truncate_fixture("po_document", "vendor_contact", "po_invoice")
 
 
 def test_create_marks_orders_ordered_and_totals(ws):
@@ -141,7 +106,7 @@ def test_invoices(ws):
     a = _order(ws)
     id_ = _po(ws, a)["po_document_id"]
     r = ws["buyer"].post(f"/purchase-orders/{id_}/invoices",
-                         json={"order_id": a, "invoice_number": "INV-1", "total_inc": "110.00"})
+                         json={"order_id": a, "invoice_number": "INV-1", "total_ex": "100.00"})
     assert r.status_code == 201, r.text
     po = r.json()
     assert po["lines"][0]["invoiced"] is True and po["invoices"][0]["invoice_number"] == "INV-1"
@@ -160,8 +125,6 @@ def test_invoices(ws):
 def test_outputs(ws):
     id_ = _po(ws, _order(ws), reference_no="R9")["po_document_id"]
     r = ws["buyer"].get(f"/purchase-orders/{id_}/pdf")
-    assert r.status_code == 200 and r.content[:4] == b"%PDF"
-    r = ws["buyer"].get(f"/purchase-orders/{id_}/authorisation-form")
     assert r.status_code == 200 and r.content[:4] == b"%PDF"
     r = ws["buyer"].get(f"/purchase-orders/{id_}/excel")
     assert r.status_code == 200
@@ -193,7 +156,7 @@ def test_other_workspace_is_404(ws):
     ghost = 10**9
     calls = [
         ("get", "", None), ("patch", "", {"memo": "x"}), ("post", "/cancel", None),
-        ("get", "/pdf", None), ("get", "/authorisation-form", None), ("get", "/excel", None),
+        ("get", "/pdf", None), ("get", "/excel", None),
         ("post", "/orders", {"order_ids": [a]}), ("delete", f"/orders/{a}", None),
         ("put", "/delivery", {"amount": "1"}), ("delete", "/delivery", None),
         ("post", "/invoices", {"order_id": a, "invoice_number": "Z"}),

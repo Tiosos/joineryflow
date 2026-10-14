@@ -404,6 +404,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
           key={poId}
           docId={poId}
           canEdit={canEdit}
+          canKeepLists={canManageCostCentres}
           onChanged={fetchRows}
           onClose={() => setParam("po", "")}
         />

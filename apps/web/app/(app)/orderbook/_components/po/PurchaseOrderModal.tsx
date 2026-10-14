@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OrderRow } from "@/lib/orders-types";
-import type { PoDoc, SupplierContact } from "@/lib/po-types";
+import type { PaymentMethod, PoDoc, SupplierContact } from "@/lib/po-types";
 import { fmtDate, money, qty } from "../orders/shared";
+import { AuthorisationWindow } from "./AuthorisationWindow";
+import { InvoiceWindow } from "./InvoiceWindow";
 import { PoInvoices } from "./PoInvoices";
 
 const INPUT = "w-full rounded border border-h-line bg-h-bg px-1.5 py-1 text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent disabled:opacity-60";
 const BTN = "rounded border border-h-line bg-h-bg px-3 py-1 text-h-ink hover:bg-h-surface disabled:opacity-50";
-type Member = { id: number; full_name: string; email: string };
+type Member = { id: number; full_name: string; email: string; has_photo: boolean };
 
 const initials = (n: string) => n.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 const refusal: Record<string, string> = {
@@ -25,8 +27,8 @@ const refusal: Record<string, string> = {
  * TBO, Excel / Print / View Pdf / Authorisation Form, and the Invoice Details table.
  */
 export function PurchaseOrderModal({
-  docId, canEdit, onClose, onChanged,
-}: { docId: number; canEdit: boolean; onClose: () => void; onChanged: () => void }) {
+  docId, canEdit, canKeepLists, onClose, onChanged,
+}: { docId: number; canEdit: boolean; canKeepLists: boolean; onClose: () => void; onChanged: () => void }) {
   const [doc, setDoc] = useState<PoDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [contacts, setContacts] = useState<SupplierContact[]>([]);
@@ -40,6 +42,10 @@ export function PurchaseOrderModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<() => void>(() => {});
   const [delivery, setDelivery] = useState("");
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  // The Invoice Details window: a line's order and the invoice shown (null = a new one); the Authorisation Form window.
+  const [invoiceWin, setInvoiceWin] = useState<{ orderId: number; invoiceId: number | null; n: number } | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
   const [newContact, setNewContact] = useState<{ name: string; position: string; mobile: string; email: string } | null>(null);
   const base = `/api/purchase-orders/${docId}`;
   const open = doc?.status === "Open";
@@ -59,6 +65,13 @@ export function PurchaseOrderModal({
     fetch("/api/purchase-orders/staff", { cache: "no-store" }).then(r => (r.ok ? r.json() : { staff: [] }))
       .then((b: { staff: Member[] }) => setTeam(b.staff)).catch(() => setTeam([]));
   }, []);
+  const loadMethods = useCallback(() => {
+    fetch("/api/payment-methods", { cache: "no-store" }).then(r => (r.ok ? r.json() : { payment_methods: [] }))
+      .then((b: { payment_methods: PaymentMethod[] }) => setMethods(b.payment_methods)).catch(() => setMethods([]));
+  }, []);
+  useEffect(loadMethods, [loadMethods]);
+  /** A window answered with the whole PO: take it as the current one. */
+  const apply = useCallback((d: PoDoc) => { setDoc(d); setDelivery(d.delivery_charge ?? ""); onChanged(); }, [onChanged]);
   const vendorId = doc?.vendor_id;
   const loadContacts = useCallback(() => {
     if (vendorId == null) return;
@@ -173,7 +186,10 @@ export function PurchaseOrderModal({
         className={INPUT} /></label>
   );
 
+  const winLine = invoiceWin ? doc.lines.find(l => l.order_id === invoiceWin.orderId) : undefined;
+
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
       onClick={e => { if (e.target === e.currentTarget) closeRef.current(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="po-title" tabIndex={-1} ref={dialogRef} data-testid="po-modal"
@@ -251,7 +267,15 @@ export function PurchaseOrderModal({
                     <td className="px-2 py-1 text-right h-mono">{l.unit_cost != null ? money(l.unit_cost, null) : ""}</td>
                     <td className="px-2 py-1">{l.unit_of_measure ?? ""}</td>
                     <td className="px-2 py-1 text-right h-mono">{l.total_amount != null ? money(l.total_amount, null) : ""}</td>
-                    <td className="px-2 py-1 text-center">{l.invoiced ? "✓" : ""}</td>
+                    <td className="px-2 py-1 text-center">
+                      {!l.is_delivery && (
+                        <button type="button" data-testid="po-line-invoiced" role="checkbox" aria-checked={l.invoiced}
+                          aria-label={`Invoice details for line ${l.line_no}`}
+                          disabled={!editable && !doc.invoices.some(i => i.order_id === l.order_id)}
+                          onClick={() => setInvoiceWin({ orderId: l.order_id, invoiceId: doc.invoices.find(i => i.order_id === l.order_id)?.invoice_id ?? null, n: 0 })}
+                          className="rounded-full border border-h-line px-1.5 text-h-muted hover:text-h-ink disabled:opacity-40">{l.invoiced ? "✓" : "○"}</button>
+                      )}
+                    </td>
                     <td className="px-2 py-1 text-right">
                       {editable && !l.is_delivery && (
                         <button type="button" aria-label="Remove line" data-testid="po-line-remove" onClick={() => void send("DELETE", `/orders/${l.order_id}`)}
@@ -315,13 +339,27 @@ export function PurchaseOrderModal({
               </section>
               <section data-testid="po-staff" className="grid gap-1">
                 <h3 className="text-[10px] font-semibold uppercase tracking-wide text-h-ink">Staff (Cc)</h3>
-                <div className="flex flex-wrap gap-2">
-                  {team.map(m => (
-                    <label key={m.id} title={m.full_name} className="flex items-center gap-1">
-                      <input type="checkbox" checked={staff.has(m.id)} onChange={() => setStaff(s => toggle(s, m.id))} />
-                      <span className="grid h-6 w-6 place-items-center rounded-full bg-h-bg text-[10px] text-h-ink">{initials(m.full_name)}</span>
-                    </label>
-                  ))}
+                <div className="max-h-48 overflow-y-auto rounded border border-h-line">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-h-bg text-left text-[10px] uppercase tracking-wide text-h-muted">
+                      <tr><th className="px-2 py-1">Tg</th><th className="px-2 py-1" /><th className="px-2 py-1">Name</th><th className="px-2 py-1">Email</th></tr>
+                    </thead>
+                    <tbody>
+                      {team.map(m => (
+                        <tr key={m.id} data-testid="po-staff-row" className="border-t border-h-line">
+                          <td className="px-2 py-1"><input type="checkbox" aria-label={`Cc ${m.full_name}`} checked={staff.has(m.id)} onChange={() => setStaff(s => toggle(s, m.id))} /></td>
+                          <td className="px-1 py-1">
+                            {m.has_photo
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={`/api/purchase-orders/staff/${m.id}/photo`} alt="" data-testid="po-staff-photo" className="h-6 w-6 rounded-full object-cover" />
+                              : <span className="grid h-6 w-6 place-items-center rounded-full bg-h-bg text-[10px] text-h-ink">{initials(m.full_name)}</span>}
+                          </td>
+                          <td className="px-2 py-1 text-h-ink">{m.full_name}</td>
+                          <td className="px-2 py-1 text-h-muted">{m.email}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             </div>
@@ -339,16 +377,27 @@ export function PurchaseOrderModal({
             <button type="button" data-testid="po-print" className={BTN}
               onClick={() => { const w = window.open(`${base}/pdf`, "_blank"); w?.addEventListener("load", () => w.print()); }}>Print</button>
             <a href={`${base}/pdf`} target="_blank" rel="noreferrer" data-testid="po-pdf" className={BTN}>View Pdf</a>
-            <a href={`${base}/authorisation-form`} target="_blank" rel="noreferrer" data-testid="po-auth" className={BTN}>Authorisation Form</a>
+            <button type="button" data-testid="po-auth" onClick={() => setAuthOpen(true)} className={BTN}>Authorisation Form</button>
             {editable && (
               <button type="button" data-testid="po-cancel" className={`${BTN} ml-auto`}
                 onClick={() => { if (window.confirm(`Cancel PO ${doc.po_no}? Its orders go back to unordered.`)) void send("POST", "/cancel"); }}>Cancel PO</button>
             )}
           </div>
 
-          <PoInvoices doc={doc} canEdit={canEdit} send={send} />
+          <PoInvoices doc={doc} onOpen={i => setInvoiceWin({ orderId: i.order_id, invoiceId: i.invoice_id, n: 0 })} />
         </div>
       </div>
     </div>
+    {invoiceWin && winLine && (
+      <InvoiceWindow key={`${invoiceWin.orderId}-${invoiceWin.invoiceId ?? "new"}-${invoiceWin.n}`} doc={doc} line={winLine}
+        invoiceId={invoiceWin.invoiceId} editable={editable} methods={methods} canKeep={canKeepLists}
+        onListChanged={loadMethods} apply={apply}
+        onSwitch={id => setInvoiceWin({ orderId: invoiceWin.orderId, invoiceId: id, n: invoiceWin.n + 1 })} onClose={() => setInvoiceWin(null)} />
+    )}
+    {authOpen && (
+      <AuthorisationWindow doc={doc} editable={editable} methods={methods} canKeep={canKeepLists}
+        onListChanged={loadMethods} team={team} onClose={() => setAuthOpen(false)} />
+    )}
+    </>
   );
 }

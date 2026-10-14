@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,8 @@ from ..auth.rbac import current_user, require_permission
 from ..auth.rbac_engine import swap_default_group_membership
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..files import uploads
+from ..files.store import FileStore, get_default_store
 from ..shop_floor import queries as sf_queries
 from .schemas import (
     MyStatusPatch,
@@ -52,7 +54,7 @@ def list_users(
         text(
             """
             SELECT id, email, full_name, auth_role, jtbd_role,
-                   is_active, is_shop_worker
+                   is_active, is_shop_worker, (photo_file_blob_id IS NOT NULL) AS has_photo
             FROM app_user WHERE workspace_id = :w ORDER BY full_name
             """
         ),
@@ -121,13 +123,55 @@ def patch_user(
     # surface it). Cheap second SELECT.
     extra = db.execute(
         text(
-            "SELECT is_shop_worker FROM app_user "
+            "SELECT is_shop_worker, (photo_file_blob_id IS NOT NULL) FROM app_user "
             "WHERE id = :i AND workspace_id = :w"
         ),
         {"i": uid, "w": user.workspace_id},
     ).first()
     row_dict["is_shop_worker"] = bool(extra[0]) if extra else False
+    row_dict["has_photo"] = bool(extra[1]) if extra else False
     return row_dict
+
+
+def _set_photo(db: Session, user: AuthUser, uid: int, blob_id: int | None) -> None:
+    found = db.execute(
+        text("UPDATE app_user SET photo_file_blob_id = :b WHERE id = :i AND workspace_id = :w RETURNING id"),
+        {"b": blob_id, "i": uid, "w": user.workspace_id},
+    ).first()
+    if not found:
+        raise HTTPException(404)
+    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id,
+                event="user.photo.set" if blob_id is not None else "user.photo.remove", target=str(uid), payload={})
+
+
+@router.put("/{uid}/photo", status_code=204)
+async def put_photo(
+    uid: int,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_permission("it_management", "write")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(get_default_store),
+):
+    """The small photo shown in front of a name in the PO staff list (an admin sets it)."""
+    stored = None
+    try:
+        stored = await uploads.store_upload(db, store, user=user, file=file, allowed=uploads.IMAGE)
+        _set_photo(db, user, uid, stored.blob_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        uploads.discard(db, store, stored)
+        raise
+
+
+@router.delete("/{uid}/photo", status_code=204)
+def delete_photo(
+    uid: int,
+    user: AuthUser = Depends(require_permission("it_management", "write")),
+    db: Session = Depends(get_db),
+):
+    _set_photo(db, user, uid, None)
+    db.commit()
 
 
 @team_router.get("/team", response_model=TeamOut)

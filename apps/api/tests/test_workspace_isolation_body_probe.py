@@ -44,6 +44,8 @@ FIELD_REASONS = {
     "include_line_ids": "estimate lines: selected within one revision",
     "order_id": "PO invoices: an order of this PO; test_purchase_order_documents.test_other_workspace_is_404",
     "order_ids": "PO create / add orders: test_purchase_order_documents.test_other_workspace_is_404",
+    "payment_method_id": "PO invoice / authorisation: test_po_invoice_authorisation.test_other_workspace_is_404",
+    "on_behalf_of_id": "PO authorisation: test_po_invoice_authorisation.test_other_workspace_is_404",
 }
 
 # A body field that names the table the id belongs to is set to match its kind.

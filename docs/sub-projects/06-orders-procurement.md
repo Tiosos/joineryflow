@@ -1693,3 +1693,16 @@ Asked first; all four answers were the recommended ones.
 - **PO panel dialog**: `aria-modal`, labelled by its title, focus moves in when it opens, Tab / Shift+Tab stay inside, Esc closes, and focus returns to what opened it (the Po button, or the row's PO link). The other Orderbook dialogs (Supplier list, New order, order pop-up, cost centre) were deliberately **not** changed.
 Tests: `po.spec.ts` (the last test).
 
+
+
+## PO screen follow-up: the Invoice Details window, the Authorisation Form window, the payment list, staff photos (October 2026, `0063`)
+
+The customer answered the open assumptions with screenshots of the old windows. Settled: (1) **an invoice belongs to one PO line**; the purchase officer ticks *Invoiced* on a line and the Invoice Details window opens (the window's *+ Add* makes another invoice for the same line, `‹ n of m ›` steps between them). (2) **Authorisation Form**: clicking it opens *Authorisation Form Details* (Payment Type, Purchase Order Amount, deposit % **or** amount, Date Required by, On Behalf Of, Pdf Form, Signed Form, Create Form). (3) The Delivery Fee order is created `Pending` like any order. (4) **Staff list** shows a very small photo in front of the full name. (5) **Email Details stays a `mailto:` link**; the PDF is attached by hand.
+
+Answers to the questions asked first: Total Cost (Ex) is typed, or ↻ works it out as qty × the line's cost; GST is 10% of Ex while its tick is on (untick to type your own); Inc is Ex + GST, all computed by the server (`purchase_orders/queries.py::_gst_and_inc`). Payment Method (invoice) and Payment Type (form) are **one shared list** the purchase officer can add to ("a manager's credit card"), seeded with Account, Credit card, Deposit, COD / Pay on delivery. *On Behalf Of* is a staff member picked from the list. Photos are set by an admin on /it (Staff photos panel).
+
+Model (`0063`): `payment_method`; `po_invoice` gains `payment_method_id`, `total_ex`, `gst`, `gst_auto`, three file-blob columns and `updated_at` (the old `delivery_doc` text column stays, unused); `po_authorisation` (one row per PO: details, the created form blob, the signed blob); `app_user.photo_file_blob_id`. `files/uploads.py` is the shared "read an upload into the store" helper for these routes.
+
+Found while building it: the file store dedupes by content, so a blob's `original_filename` is the first uploader's, not the name given to this box. The windows therefore show a thumbnail or a PDF icon from the stored mime type, never a name (rule in CLAUDE.md §7 Files). Also found by the e2e spec: a save started by leaving a field and a Close click right after it must queue, not drop the second (`InvoiceWindow.commit`).
+
+The old blank `GET /purchase-orders/{id}/authorisation-form` is replaced by Create Form (a stored, dated PDF made from the saved details). Tests: `test_po_invoice_authorisation.py` (payment list, GST rules, files, form + signed copy, photos, isolation), `po_invoice_authorisation.spec.ts`; `po.spec.ts` now invoices through the window.

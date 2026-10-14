@@ -128,4 +128,5 @@ export interface UserAdminOut {
   jtbd_role: string | null;
   is_active: boolean;
   is_shop_worker: boolean;
+  has_photo: boolean;
 }
