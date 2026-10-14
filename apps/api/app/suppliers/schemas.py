@@ -4,6 +4,7 @@
 `supplier` table, and this module is its only surface since Q565 retired the
 legacy `/procurement/vendors*` endpoints.
 """
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -77,9 +78,14 @@ class LinkMaterialIn(BaseModel):
 
 # ── supplier contacts (migration 0059: the PO screen's contact list) ──────────────────────────
 
+_EMAIL = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$")
+
+
 def _clean_email(v: str | None) -> str | None:
+    """A plain address: no list separators, no `?`, `<>` or spaces, so it can never add recipients or
+    header fields when it is put into a mailto link."""
     v = (v or "").strip() or None
-    if v is not None and ("@" not in v or " " in v):
+    if v is not None and not _EMAIL.match(v):
         raise ValueError("not an email address")
     return v
 

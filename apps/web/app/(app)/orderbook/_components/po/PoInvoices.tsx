@@ -14,17 +14,22 @@ export function PoInvoices({
   send: (method: string, path: string, body?: unknown) => Promise<boolean>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [f, setF] = useState({ order_id: "", invoice_number: "", invoiced_date: "", qty: "", total_inc: "", delivery_doc: "" });
   const set = (k: keyof typeof f, v: string) => setF(x => ({ ...x, [k]: v }));
   const orderLines = doc.lines.filter(l => !l.is_delivery);
 
   async function add() {
+    if (saving) return;
+    setSaving(true);
     const body = {
       order_id: Number(f.order_id), invoice_number: f.invoice_number,
       invoiced_date: f.invoiced_date || null, qty: f.qty || null,
       total_inc: f.total_inc || null, delivery_doc: f.delivery_doc || null,
     };
-    if (await send("POST", `/invoices`, body)) {
+    const ok = await send("POST", `/invoices`, body);
+    setSaving(false);
+    if (ok) {
       setAdding(false);
       setF({ order_id: "", invoice_number: "", invoiced_date: "", qty: "", total_inc: "", delivery_doc: "" });
     }
@@ -50,7 +55,7 @@ export function PoInvoices({
           <input aria-label="Quantity" placeholder="Qty" value={f.qty} onChange={e => set("qty", e.target.value)} className={`${INPUT} w-16`} />
           <input aria-label="Total inc GST" placeholder="Total inc" value={f.total_inc} onChange={e => set("total_inc", e.target.value)} className={`${INPUT} w-24`} />
           <input aria-label="Delivery doc" placeholder="Delivery doc" value={f.delivery_doc} onChange={e => set("delivery_doc", e.target.value)} className={`${INPUT} w-28`} />
-          <button type="button" data-testid="po-invoice-save" disabled={!f.order_id || !f.invoice_number.trim()} onClick={() => void add()}
+          <button type="button" data-testid="po-invoice-save" disabled={saving || !f.order_id || !f.invoice_number.trim()} onClick={() => void add()}
             className="rounded border border-h-line bg-h-surface px-3 py-1 text-h-ink hover:bg-h-bg disabled:opacity-50">Add</button>
         </div>
       )}

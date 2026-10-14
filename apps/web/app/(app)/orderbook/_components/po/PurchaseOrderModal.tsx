@@ -16,6 +16,7 @@ const refusal: Record<string, string> = {
   SUPPLIER_MISMATCH: "That order belongs to another supplier", ORDER_HAS_INVOICES: "Remove its invoices first",
   IS_DELIVERY_ORDER: "Use Delivery to remove the delivery charge", PO_CANCELLED: "This PO is cancelled",
   ORDER_LOCKED: "That order is locked", NO_DELIVERY: "There is no delivery charge",
+  PO_HAS_INVOICES: "Remove the invoices first",
 };
 
 /**
@@ -33,6 +34,7 @@ export function PurchaseOrderModal({
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [staff, setStaff] = useState<Set<number>>(new Set());
   const [tbo, setTbo] = useState<OrderRow[] | null>(null);
+  const [addingId, setAddingId] = useState<number | null>(null);
   const [delivery, setDelivery] = useState("");
   const [newContact, setNewContact] = useState<{ name: string; position: string; mobile: string; email: string } | null>(null);
   const base = `/api/purchase-orders/${docId}`;
@@ -105,18 +107,24 @@ export function PurchaseOrderModal({
 
   const mailto = useMemo(() => {
     if (!doc) return "#";
-    const to = contacts.filter(c => ticked.has(c.contact_id) && c.email).map(c => c.email).join(",");
-    const cc = team.filter(m => staff.has(m.id)).map(m => m.email).join(",");
+    // Each address is encoded on its own, so nothing typed into a contact can add a header or a recipient.
+    const to = contacts.filter(c => ticked.has(c.contact_id) && c.email).map(c => encodeURIComponent(c.email!)).join(",");
+    const cc = team.filter(m => staff.has(m.id)).map(m => encodeURIComponent(m.email)).join(",");
     const subject = `Purchase order ${doc.po_no}${doc.reference_no ? ` (${doc.reference_no})` : ""}`;
     const body = [`Please find purchase order ${doc.po_no} attached.`, "",
       `Total ex GST: $${doc.totals.total_ex}`, `Total inc GST: $${doc.totals.total_inc}`].join("\n");
-    return `mailto:${to}?${cc ? `cc=${encodeURIComponent(cc)}&` : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return `mailto:${to}?${cc ? `cc=${cc}&` : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }, [doc, contacts, ticked, team, staff]);
 
   if (!doc) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="rounded border border-h-line bg-h-surface p-4 text-xs text-h-muted">{err ?? "Loading…"}</div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="flex items-center gap-3 rounded border border-h-line bg-h-surface p-4 text-xs text-h-muted">
+          <span data-testid="po-load-state">{err ?? "Loading…"}</span>
+          <button type="button" data-testid="po-done" onClick={onClose}
+            className="rounded border border-h-line bg-h-bg px-3 py-1 text-h-ink hover:bg-h-surface">Close</button>
+        </div>
       </div>
     );
   }
@@ -216,8 +224,12 @@ export function PurchaseOrderModal({
                 <div key={o.po_id} className="flex items-center gap-2">
                   <span className="h-mono text-h-ink">{o.po_number}</span><span className="text-h-ink">{o.description}</span>
                   <span className="h-mono text-h-muted">{o.total_amount != null ? money(o.total_amount, null) : ""}</span>
-                  <button type="button" data-testid="po-tbo-add" className={`${BTN} ml-auto py-0.5`}
-                    onClick={async () => { if (await send("POST", "/orders", { order_ids: [o.po_id] })) setTbo(t => t && t.filter(x => x.po_id !== o.po_id)); }}>Add</button>
+                  <button type="button" data-testid="po-tbo-add" className={`${BTN} ml-auto py-0.5`} disabled={addingId !== null}
+                    onClick={async () => {
+                      setAddingId(o.po_id);
+                      if (await send("POST", "/orders", { order_ids: [o.po_id] })) setTbo(t => t && t.filter(x => x.po_id !== o.po_id));
+                      setAddingId(null);
+                    }}>Add</button>
                 </div>
               ))}
             </div>

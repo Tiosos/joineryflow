@@ -1672,3 +1672,17 @@ Asked first; settled: the boxes hold **supporting files on the order** (a quote,
 
 Built on the existing `po_attachments` table with `file_blob_id` (`0047`); no migration. `orders/attachments.py` has its own routes, **gated by `orderbook`** because `POST /files` needs `shop_dwgs:write`, which the purchase officer does not hold. Upload follows the retired legacy route (`legacy/procurement_v0/`) minus its client-supplied `uploaded_by` (the uploader is the caller). Rows written before `0047` (a `file_path`, no blob) are not listed. Audit: `order.attachment.add` / `.remove`. Tests: `test_order_attachments.py`, `order_attachments.spec.ts`; the download route is listed in the isolation probe's `NOT_PROBED` with its dedicated cross-workspace test.
 
+## Review of PRs 108 and 109 (October 2026, `0061`)
+
+An independent read of the PO work (not anchored on its author) found eight things worth fixing; the user said to fix them all and to leave one as it is. Each has a test that failed first.
+1. **Leaving or cancelling a PO** (`_detach`) now locks the orders, versions `date_ordered` when it clears it (a stale order panel gets `FIELD_CONFLICT`) and leaves a Cancelled / Delivered order's date alone. **Cancelling a PO with invoices is refused** (`409 PO_HAS_INVOICES`), like removing one such order.
+2. **Date ordered provenance** (`0061`, `date_ordered_from_po`): the old rule guessed by comparing the order's date with the PO's. Now only a date the PO itself gave is taken away; a typed date survives, and a PO-given date goes even if the PO's own date was edited since. Existing rows were flagged by the old rule once. Editing the date on an order (`PATCH /orders`) turns the flag off. Not done: changing the PO's date does not rewrite its orders' dates.
+3. **mailto**: each address is URL-encoded on its own, and a contact's email must be a plain address (no `?`, `,`, `;`, `<>`, spaces; a dot in the domain), so it cannot add a Bcc or a recipient. Addresses saved before this keep their text but are encoded when used.
+4. **Excel**: every text cell is written as a string, so an order description such as `=HYPERLINK(...)` is text, never a formula.
+5. **Delivery Fee order cancelled in the Orderbook**: `delivery_charge` ignores a Cancelled / Rejected fee order and `PUT /delivery` detaches it and makes a new one (it used to answer `409 ORDER_LOCKED` until Remove was pressed).
+6. A bad or foreign `?po=` shows a loading box with a Close button (and a backdrop click closes it); `po` must be a positive whole number.
+7. The **Po** button counts and sends only the ticked orders the current view shows.
+8. Add Invoice and TBO Add are disabled while their request is in flight.
+
+Not fixed, on purpose (the user agreed): the shared upload race in `files/routes.py` and `orders/attachments.py` (two identical new uploads at the same moment can delete each other's bytes), unsaved text lost on Esc, and the PO dialog's focus handling. **Decision, unchanged:** a PO may hold **Pending** orders (a drafter can order an undecided order): "stay as it is".
+

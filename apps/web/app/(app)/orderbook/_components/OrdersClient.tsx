@@ -61,7 +61,8 @@ export function OrdersClient({ me }: { me: Me | null }) {
   // Q418: the number Tracking sent us here with.
   const selected = params.get("order") ?? "";
   const view = params.get("view") ?? "";
-  const poId = Number(params.get("po")) || null;
+  const poParam = params.get("po") ?? "";
+  const poId = /^[1-9]\d*$/.test(poParam) ? Number(poParam) : null;
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [poErr, setPoErr] = useState<string | null>(null);
   const [categories, setCategories] = useState<OrderCategory[]>([]);
@@ -172,7 +173,8 @@ export function OrdersClient({ me }: { me: Me | null }) {
     setCcForm(null);
   }
 
-  const tickedRows = rows.filter(r => ticked.has(r.po_id));
+  // Only what the current view shows: a ticked order hidden by a filter is not sent to the PO.
+  const tickedRows = shown.filter(r => ticked.has(r.po_id));
 
   /** The Po button: a PO for the ticked orders, or the one they are already on. */
   async function createPo() {

@@ -60,7 +60,7 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
     await modal.getByTestId("po-contact-save").click();
     const contact = modal.getByTestId("po-contact").filter({ hasText: `Sam ${stamp}` });
     await contact.getByRole("checkbox").check();
-    await expect(modal.getByTestId("po-email")).toHaveAttribute("href", new RegExp(`mailto:sam${stamp}@supplier.test`));
+    await expect(modal.getByTestId("po-email")).toHaveAttribute("href", new RegExp(`mailto:sam${stamp}%40supplier.test`));
     // ticked staff become real Cc addresses (from the Orderbook-gated staff list)
     await expect(modal.getByTestId("po-email")).not.toHaveAttribute("href", /cc=/);
     await modal.getByTestId("po-staff").getByRole("checkbox").first().check();
@@ -87,7 +87,11 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
 
     // cancelling the PO frees its orders
     await rows.nth(0).getByTestId("order-po-link").click();
-    page.once("dialog", d => void d.accept());
+    page.on("dialog", d => void d.accept());
+    await page.getByTestId("po-cancel").click();
+    await expect(page.getByTestId("po-error")).toContainText("Remove the invoices first");   // a PO with invoices stays
+    await page.getByTestId("po-invoice-remove").click();
+    await expect(page.getByTestId("po-invoice-row")).toHaveCount(0);
     await page.getByTestId("po-cancel").click();
     await expect(page.getByTestId("po-modal").getByText("Cancelled", { exact: true })).toBeVisible();
     await page.getByTestId("po-done").click();
@@ -155,4 +159,33 @@ test("the Supplier list edits a supplier's contacts: add, change, delete", async
   await contact.getByTestId("supplier-contact-delete").click();
   await expect(contact).toHaveCount(0);
   await expect(box).toContainText("No contacts yet");
+});
+
+test("a bad ?po= link can be closed, and Po only sends the orders the view shows", async ({ page }) => {
+  const stamp = Date.now();
+  await login(page, BUYER);
+
+  await page.goto("/orderbook?po=999999999");
+  await expect(page.getByTestId("po-load-state")).toContainText("Could not load");
+  await page.getByTestId("po-done").click();
+  await expect(page.getByTestId("po-load-state")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/po=/);
+
+  const vendors = (await (await page.request.get("/api/suppliers")).json()) as { suppliers: { vendor_id: number; name: string }[] };
+  const v = vendors.suppliers[0];
+  const order = (await (await page.request.post("/api/orders", {
+    data: { vendor_id: v.vendor_id, description: `Hidden tick ${stamp}`, category: "Board", total_amount: "5.00" },
+  })).json()) as { po_id: number };
+  try {
+    await page.goto(`/orderbook?supplier=${encodeURIComponent(v.name)}`);
+    const row = page.getByTestId("order-row").filter({ hasText: `Hidden tick ${stamp}` });
+    await row.getByTestId("order-check").check();
+    await expect(page.getByTestId("orders-po")).toContainText("Po (1)");
+    await page.getByTestId("orders-view-rto").click();         // Approved and not ordered: hides the Pending order
+    await expect(row).toHaveCount(0);
+    await expect(page.getByTestId("orders-po")).toBeDisabled();
+    await expect(page.getByTestId("orders-po")).not.toContainText("(1)");
+  } finally {
+    await page.request.delete(`/api/orders/${order.po_id}`);
+  }
 });

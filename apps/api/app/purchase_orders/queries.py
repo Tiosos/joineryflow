@@ -119,7 +119,7 @@ def get_document(db: Session, *, doc_id: int, workspace_id: int, for_update: boo
             total_ex += line["total_amount"] or 0
             gst += line["gst_amount"] or 0
             total_inc += line["grand_total"] or 0
-        if line["is_delivery"]:
+        if line["is_delivery"] and line["status"] not in _OUT_OF_TOTALS:
             delivery_charge = line["total_amount"]
     # the invoice table shows each row's item
     by_id = {line["order_id"]: line for line in lines}
@@ -143,7 +143,7 @@ def _lock_orders(db: Session, order_ids: list[int], workspace_id: int) -> list[d
         text(
             """
             SELECT po.po_id, po.po_number, po.vendor_id, po.status, po.po_document_id, po.date_ordered,
-                   po.required_date, po.field_versions
+                   po.required_date, po.field_versions, po.date_ordered_from_po
               FROM purchase_orders po
               JOIN vendors v ON v.vendor_id = po.vendor_id AND v.workspace_id = :w
              WHERE po.po_id = ANY(:ids)
@@ -177,21 +177,24 @@ def _check_orders(rows: list[dict], vendor_id: int | None) -> tuple[str, dict] |
 
 
 def _attach(db: Session, rows: list[dict], doc_id: int, date_ordered: date) -> None:
-    """Put the orders on the PO; an order with no Date ordered gets the PO's (it is ordered now)."""
+    """Put the orders on the PO; an order with no Date ordered gets the PO's (it is ordered now), and
+    is flagged so that leaving the PO takes that date away again (and only that one)."""
     for r in rows:
         versions = r["field_versions"]
-        if r["date_ordered"] is None:
+        from_po = r["date_ordered"] is None
+        if from_po:
             versions = bump_field_versions(versions, ["date_ordered"])
         db.execute(
             text(
                 """
                 UPDATE purchase_orders
                    SET po_document_id = :d, date_ordered = COALESCE(date_ordered, :dt),
+                       date_ordered_from_po = :fp,
                        field_versions = CAST(:fv AS jsonb), updated_at = now()
                  WHERE po_id = :o
                 """
             ),
-            {"d": doc_id, "dt": date_ordered, "o": r["po_id"], "fv": _json(versions)},
+            {"d": doc_id, "dt": date_ordered, "o": r["po_id"], "fv": _json(versions), "fp": from_po},
         )
 
 
@@ -200,20 +203,30 @@ def _json(v: Any) -> str:
     return json.dumps(v or {})
 
 
-def _detach(db: Session, order_ids: list[int], po_date_ordered: date) -> None:
-    """Take orders off the PO; a Date ordered that is the PO's own (set when it went on) is cleared."""
-    db.execute(
-        text(
-            """
-            UPDATE purchase_orders
-               SET po_document_id = NULL,
-                   date_ordered = CASE WHEN date_ordered = :dt THEN NULL ELSE date_ordered END,
-                   updated_at = now()
-             WHERE po_id = ANY(:ids)
-            """
-        ),
-        {"ids": order_ids, "dt": po_date_ordered},
-    )
+def _detach(db: Session, order_ids: list[int]) -> None:
+    """Take orders off the PO. A Date ordered the PO gave an order is taken away again (and versioned,
+    so a stale order panel gets a conflict), unless the order is already Cancelled / Delivered: its
+    date is then history and stays. The rows are locked first, in id order."""
+    rows = db.execute(
+        text("SELECT po_id, status, date_ordered_from_po, field_versions FROM purchase_orders"
+             " WHERE po_id = ANY(:ids) ORDER BY po_id FOR UPDATE"),
+        {"ids": order_ids},
+    ).mappings().all()
+    for r in rows:
+        clear = r["date_ordered_from_po"] and r["status"] not in ("Cancelled", "Delivered")
+        versions = bump_field_versions(r["field_versions"], ["date_ordered"]) if clear else r["field_versions"]
+        db.execute(
+            text(
+                """
+                UPDATE purchase_orders
+                   SET po_document_id = NULL, date_ordered_from_po = false,
+                       date_ordered = CASE WHEN :clear THEN NULL ELSE date_ordered END,
+                       field_versions = CAST(:fv AS jsonb), updated_at = now()
+                 WHERE po_id = :o
+                """
+            ),
+            {"o": r["po_id"], "clear": clear, "fv": _json(versions)},
+        )
 
 
 def _touch(db: Session, doc_id: int) -> None:
@@ -333,7 +346,7 @@ def remove_order(
         return "IS_DELIVERY_ORDER", {"order_id": order_id}
     if any(i["order_id"] == order_id for i in doc["invoices"]):
         return "ORDER_HAS_INVOICES", {"order_id": order_id}
-    _detach(db, [order_id], doc["date_ordered"])
+    _detach(db, [order_id])
     _touch(db, doc_id)
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id, event="po.orders.remove", target=f"po:{doc_id}",
@@ -351,6 +364,8 @@ def cancel_document(
     code, doc = _open_doc(db, doc_id, workspace_id)
     if code != "OK":
         return code, doc
+    if doc["invoices"]:
+        return "PO_HAS_INVOICES", {"po_no": doc["po_no"], "invoices": len(doc["invoices"])}
     delivery_id = doc["delivery_order_id"]
     if delivery_id is not None:
         result = oq.cancel_order(db, po_id=delivery_id, workspace_id=workspace_id,
@@ -359,7 +374,7 @@ def cancel_document(
             return "DECISION_FORBIDDEN", {"order_id": delivery_id}
     ids = [x["order_id"] for x in doc["lines"]]
     if ids:
-        _detach(db, ids, doc["date_ordered"])
+        _detach(db, ids)
     db.execute(
         text("UPDATE po_document SET status = 'Cancelled', delivery_order_id = NULL, updated_at = now()"
              " WHERE po_document_id = :d"),
@@ -381,6 +396,12 @@ def set_delivery(
     code, doc = _open_doc(db, doc_id, workspace_id)
     if code != "OK":
         return code, doc
+    old_fee = next((x for x in doc["lines"] if x["is_delivery"]), None)
+    if old_fee is not None and old_fee["status"] in _OUT_OF_TOTALS:
+        # cancelled in the Orderbook: it is no charge any more, so take it off and make a new one
+        _detach(db, [old_fee["order_id"]])
+        db.execute(text("UPDATE po_document SET delivery_order_id = NULL WHERE po_document_id = :d"), {"d": doc_id})
+        doc["delivery_order_id"] = None
     if doc["delivery_order_id"] is not None:
         code, data = oq.patch_order(
             db, po_id=doc["delivery_order_id"], workspace_id=workspace_id, actor_id=actor_id,
@@ -427,7 +448,7 @@ def remove_delivery(
                              actor_id=actor_id, can_decide=can_decide)
     if result == "DECISION_FORBIDDEN":
         return "DECISION_FORBIDDEN", {"order_id": delivery_id}
-    _detach(db, [delivery_id], doc["date_ordered"])
+    _detach(db, [delivery_id])
     db.execute(text("UPDATE po_document SET delivery_order_id = NULL, updated_at = now()"
                     " WHERE po_document_id = :d"), {"d": doc_id})
     write_audit(

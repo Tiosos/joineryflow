@@ -88,6 +88,11 @@ def po_xlsx(doc: dict) -> bytes:
     for col, width in zip("ABCDEFGHIJKLM", (6, 8, 48, 14, 18, 22, 10, 6, 16, 10, 16, 12, 9)):
         ws.column_dimensions[col].width = width
     ws["B2"].alignment = Alignment(horizontal="left")
+    # order text is typed by people: a value starting with = + - @ must stay text, never a formula
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
