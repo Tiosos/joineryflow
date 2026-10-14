@@ -1,6 +1,6 @@
 # Joinery Workflow Software — Plan V1
 
-> **Reading note.** Where a passage carries a `Decided — Qnnn` blockquote, the decision overrides the prose above it. Three such departures exist (Q499, Q513, Q527); the original wording is kept so the history stays readable.
+> **Reading note.** Where a passage carries a `Decided — Qnnn` blockquote, the decision overrides the prose above it; the original wording is kept so the history stays readable. The three departures that change shipped behaviour against the plan's wording are Q499, Q513 and Q527.
 
 ## 1. Vision and Objectives
 
@@ -34,6 +34,20 @@ Primary drill-down:
 **Company → Project → Area → Room → Joinery Item → Individual Activity/Change**
 
 The hierarchy is mostly fixed so the common Tracking Dashboard can retain a consistent layout across projects. Some areas, fields or workflow stages may be empty or N/A depending on project type and scale.
+
+> **Decided — Q454 = Option 1 (2026-09-18).** Area and Room become real tables with foreign keys from the Joinery Item, not free-text labels. See `OPEN-QUESTIONS.md` Q454.
+
+> **Decided — Q455 = Option 1 (2026-09-18).** Area is today's site-location field (`items.stage`) and Room is today's room number and description (`rm_no` + `rm_desc`). This is a rename and normalisation of data that already exists, not a new structure. See `OPEN-QUESTIONS.md` Q455.
+
+> **Decided — Q457 = Option 1 (2026-09-18).** Areas and Rooms are created per project, not drawn from a workspace-level library. See `OPEN-QUESTIONS.md` Q457.
+
+> **Decided — Q458 = Option 1 (2026-09-18).** A Joinery Item can move between Rooms, with audit. See `OPEN-QUESTIONS.md` Q458.
+
+> **Decided — Q546 = Option 1 (2026-09-18).** `level` and `zone` are kept as searchable, displayable attributes, not hierarchy levels. The drill-down stays Project → Area → Room → Item. See `OPEN-QUESTIONS.md` Q546.
+
+> **Decided — Q552 = Option 2 (2026-09-18).** A Room belongs to exactly one Area (nested), enforced so an item's room can never drift out of its area. The same room number used in two areas becomes two rooms. An item with a room but no area keeps its room text until an area is set. See `OPEN-QUESTIONS.md` Q552.
+
+> **Decided — Q573 (custom, 2026-09-20).** In the item editor, Area and Room are selectors (Room filtered to the chosen Area) that also keep the old stage / room columns populated, and each selector can create a new row for the project inline. Moving an item to another Area clears the room left behind. Tracking's filter dropdowns are not repointed in that step. See `OPEN-QUESTIONS.md` Q573.
 
 The **Joinery Item** is the central operational unit used by all departments. Examples include Kitchen, Pantry, Laundry, Robe, Vanity, etc. It is not each individual cabinet.
 
@@ -123,6 +137,10 @@ Departments / functions may include:
 
 A user normally belongs to one department but authorised users can have multiple roles/groups.
 
+> **Decided — Q467 = Option 2 (2026-09-18).** Departments stay a descriptive label, not an entity; user groups carry all permission meaning. See `OPEN-QUESTIONS.md` Q467.
+
+> **Decided — Q468 = Option 1 (2026-09-18).** The seven existing roles become seven groups carrying today's grants, and departments stay labels. Nothing changes behaviour on day one; IT adds department-shaped groups as needed. See `OPEN-QUESTIONS.md` Q468.
+
 Permission structure can operate at:
 
 **Company → Department → Role/User Group → Person → Project → Joinery Item → Tab → Action**
@@ -141,13 +159,21 @@ Possible actions include:
 - Override
 - Configure
 
+> **Decided — Q466 = Option 2 (2026-09-18).** Permissions move to a database-backed engine scoped down to **project** only. Item-level and tab-level scoping are not built. See `OPEN-QUESTIONS.md` Q466.
+
+> **Decided — Q469 = Option 3 (2026-09-18).** The permission matrix keeps four actions (`read`, `write`, `approve`, `comment`). The other actions listed above are expressed as per-object rules rather than matrix actions. See `OPEN-QUESTIONS.md` Q469.
+
 IT creates custom user groups. Users can belong to multiple groups.
 
 Normally the **most permissive** assigned group wins, except for critical system/security actions that may require a specific authorised group.
 
+> **Decided — Q470 = Option 1 (2026-09-18).** The critical actions are Lock, Unlock, Override and Configure. Most-permissive-wins does not apply to them, so multi-group membership must not silently confer the power to override a Hard Lock. See `OPEN-QUESTIONS.md` Q470.
+
 Only IT/System Administrators can modify master templates.
 
 Upper Management can apply partial or full locks.
+
+> **Decided — Q472 = Option 1 (2026-09-18).** The hand-written per-object rules (drafter-only writes, approver not the uploader, creator-or-manager, the 5-minute undo window) move into the permission engine as rules, so there is one place to answer any access question. See `OPEN-QUESTIONS.md` Q472.
 
 ---
 
@@ -202,6 +228,12 @@ Tender work exists in a separate **Tender Dashboard**, mainly accessible to Esti
 Tender lifecycle:
 
 **Tender Opportunity → Initial Review → Go/No-Go → Information Requested → Tender Documents Received → Estimating → Supplier/Subcontractor Pricing → Internal Review → Quote Prepared → Management Approval → Submitted → Won / Lost / Withdrawn**
+
+> **Decided — Q487 = Option 1 (2026-09-18).** The Tender Dashboard wraps the existing estimating module: the shipped estimate becomes one step of this lifecycle, and nothing built is discarded. See `OPEN-QUESTIONS.md` Q487.
+
+> **Decided — Q488 = Option 1 (2026-09-18).** All twelve stages are adopted, replacing the existing legal transitions. The module and its data survive; the old state list does not. See `OPEN-QUESTIONS.md` Q488.
+
+> **Decided — Q548 = Option 2 (2026-09-18).** The old `expired` state maps onto **Lost**, because commercially a quote that lapsed did not win. No thirteenth stage is added. See `OPEN-QUESTIONS.md` Q548.
 
 Estimating decides whether to pursue the opportunity and gathers:
 
@@ -274,6 +306,10 @@ The Project Manager reviews what transfers, including:
 
 No manual re-entry is required where information already exists.
 
+> **Decided — Q489 = Option 1 (2026-09-18).** Handover creates Joinery Items from the Preliminary Joinery Items, so no manual re-entry is needed. See `OPEN-QUESTIONS.md` Q489.
+
+> **Decided — Q490 = Option 1 (2026-09-18).** Handover goes through a Project Manager review screen where the PM chooses what transfers; it is not one click. See `OPEN-QUESTIONS.md` Q490.
+
 Original tender history remains intact.
 
 After handover:
@@ -289,6 +325,8 @@ After handover:
 ## 7. Project Templates and Configuration
 
 When a project becomes live, the system determines initial departments, workflows and permissions using project type / scale / template configuration, subject to authorised override.
+
+> **Decided — Q528 = Option 2 (2026-09-18).** The template and governance half of the plan (§7–§8 and §35–§38: templates, validation, simulation, issue register, initiatives, escalation) is revisited **after the joinery workflow is complete**. It stays in this document as a target. Q529, Q530 and Q531 defer with it. See `OPEN-QUESTIONS.md` Q528.
 
 Template hierarchy supports inheritance:
 
@@ -487,6 +525,8 @@ When a change occurs, configured task/change-impact rules may be suggested. The 
 
 Change visibility is hybrid: departments see relevant changes by default; authorised users/management/item owner can access full history.
 
+> **Decided — Q524 = Option 1 (2026-09-18).** Tasks are a real record with assignment, due date and status, because manually created, rule-created and requested tasks cannot be derived from other data. See `OPEN-QUESTIONS.md` Q524.
+
 ---
 
 ## 11. Change History, Revisions and Rollback
@@ -519,6 +559,18 @@ Locks can apply to fields, components, Joinery Items, Areas, Projects, tabs, rev
 
 Every lock/unlock/request/approval/override is audited.
 
+> **Decided — Q508 = Option 1 (2026-09-18).** All three lock types are adopted: Hard, Controlled and Approval. See `OPEN-QUESTIONS.md` Q508.
+
+> **Decided — Q509 = Option 1 (2026-09-18).** Today's advisory item lock becomes a **Controlled Lock**: override-with-audit becomes request-and-approve. See `OPEN-QUESTIONS.md` Q509.
+
+> **Decided — Q510 = Option 2 (2026-09-18).** Locking applies to Joinery Items and projects only. There are no field, tab, Area, revision or department locks. See `OPEN-QUESTIONS.md` Q510.
+
+> **Decided — Q511 = Option 2 (2026-09-18).** Optimistic concurrency control is added only where conflicts actually hurt: the item editor, the cutlist and orders. Everything else stays last-write-wins. See `OPEN-QUESTIONS.md` Q511.
+
+> **Decided — Q512 = Option 1 (2026-09-18).** Simultaneous-edit detection is true field-level, with per-field versioning, on those three surfaces. See `OPEN-QUESTIONS.md` Q512.
+
+> **Decided — Q566 (custom, 2026-09-19).** The first build covers the item Controlled Lock only: a non-owner's save on a locked item becomes a request that the lock owner, or a manager or admin, approves or rejects. Approving applies the stored edit; the edit history credits the requester and the audit names the approver. Q510 is read as a ceiling, not as a requirement to add project locking in that build. See `OPEN-QUESTIONS.md` Q566.
+
 ---
 
 ## 13. Search
@@ -526,6 +578,22 @@ Every lock/unlock/request/approval/override is audited.
 Support global company-wide search for authorised users and department-specific search.
 
 Search may cover projects, clients/builders/sites, Joinery Items, Areas/Rooms, components, drawings, revisions, materials, hardware, suppliers, POs, tasks, people, status, priority, dates, history, documents, notes and communications.
+
+> **Decided — Q525 = Option 2 (2026-09-18).** Search is a dedicated search service (a new container), not Postgres full-text search, for better relevance, fuzzy matching and faceting. See `OPEN-QUESTIONS.md` Q525.
+
+> **Decided — Q574 = Option 1 (2026-09-24).** The search engine is Meilisearch. See `OPEN-QUESTIONS.md` Q574.
+
+> **Decided — Q575 = Option 1 (2026-09-24).** The index is fed by a transactional outbox: every indexed mutation writes an outbox row in the same database transaction and a worker drains it into the index. A full rebuild command covers first load and recovery, and no update is lost while the search service is down. See `OPEN-QUESTIONS.md` Q575.
+
+> **Decided — Q576 = Option 1 (2026-09-24).** Search v1 covers the object types that already exist as entities (items, related parts, cutlists, orders, suppliers, shop drawings, samples, customers, estimates and catalog rows), filtered by workspace and by module `read` grants. Project scoping arrives with the Q466 work. Remaining types join as their entities are built. Amended by Q579. See `OPEN-QUESTIONS.md` Q576.
+
+> **Decided — Q577 = Option 1 (2026-09-24).** The search worker runs as its own separate service. See `OPEN-QUESTIONS.md` Q577.
+
+> **Decided — Q578 = Option 1 (2026-09-24).** Outbox rows are written by Postgres triggers on each indexed table, so every write path is caught, including seed and migration data. See `OPEN-QUESTIONS.md` Q578.
+
+> **Decided — Q579 = Option 1 (2026-09-24).** This amends Q576: projects are added as a type, area and room names are folded into item documents, people are deferred, and suppliers are indexed without a link. See `OPEN-QUESTIONS.md` Q579.
+
+> **Decided — Q580 = Option 1 (2026-09-24).** Soft-deleted items are never indexed. Archived and void records are indexed and hidden unless the user ticks include archived. See `OPEN-QUESTIONS.md` Q580.
 
 ---
 
@@ -537,11 +605,17 @@ Site/installation mobile capabilities include photos, measurements, drawing mark
 
 Offline sync is automatic with conflict detection and authorised conflict resolution. Conflicting changes are never silently overwritten.
 
+> **Decided — Q532 = Option 3 (2026-09-18).** Mobile is a native app for site use, rather than responsive web only or a PWA. See `OPEN-QUESTIONS.md` Q532.
+
+> **Decided — Q533 = Option 2 (2026-09-18).** Offline is nice to have: build online-first and queue writes later if it proves painful. See `OPEN-QUESTIONS.md` Q533.
+
 ---
 
 ## 15. QR / Barcode
 
 QR/barcodes are mainly used for Production, Packing, Installation and physical products/components.
+
+> **Decided — Q534 = Option 1 (2026-09-18).** Each Joinery Item is what carries a QR/barcode. See `OPEN-QUESTIONS.md` Q534.
 
 ---
 
@@ -563,6 +637,16 @@ Track separately:
 - Budget vs Forecast
 
 Project Managers can see real-time costs aggregated from departments.
+
+> **Decided — Q451 = Option 1 (2026-09-18).** A related part's order cost rolls into its parent Joinery Item's cost, matching Project + Item granularity. Q543 defers the item cost, so this states intent, not current behaviour. See `OPEN-QUESTIONS.md` Q451.
+
+> **Decided — Q492 = Option 1 (2026-09-18).** Costs are held at Project and Joinery Item level only, with no cutlist or part cost level. See `OPEN-QUESTIONS.md` Q492.
+
+> **Decided — Q493 = Option 1 (2026-09-18).** Actual costs come from procurement (received quantities × price) plus labour from Shop Floor completions × the workspace labour rate. No manual entry and no accounting integration are needed for this. See `OPEN-QUESTIONS.md` Q493.
+
+> **Decided — Q543 = Option 3 (2026-09-18).** The parent item's cost is deferred until §16 is scoped. Related-part orders carry cost, but nothing rolls up to the parent item yet. See `OPEN-QUESTIONS.md` Q543.
+
+> **Decided — Q549 = Option 2 (2026-09-18).** Labour from a cutlist shared by several items is apportioned to each item by its share of the parts on that cutlist. See `OPEN-QUESTIONS.md` Q549.
 
 Selling price is fixed after handover. PM decides whether a change creates a variation or is absorbed by the company.
 
@@ -586,6 +670,8 @@ Flow:
 
 Original Contract Value is never overwritten.
 
+> **Decided — Q491 = Option 2 (2026-09-18).** Contract Value lives in a separate `project_contract` record with full history (original value, each approved variation, current value), so the original is never overwritten. See `OPEN-QUESTIONS.md` Q491.
+
 ---
 
 ## 18. Materials and Stock
@@ -597,6 +683,10 @@ Material substitution can be proposed by Procurement/Material Team, but Designer
 Selected materials may support usage/waste tracking, offcut inventory, automatic matching, reservations, partial consumption, minimum stock, reorder alerts, usage-based forecasting, batch/lot tracking, expiry/shelf-life, FEFO, quarantine and recall traceability.
 
 Stock may be reserved to Project/Joinery Item. Authorised managers may override reservations with reason; if this creates shortage/risk, affected work is flagged At Risk.
+
+> **Decided — Q501 = Option 1 (2026-09-18).** The cut-plan optimiser stays a pure function: it reads stock but never reserves or consumes it. Reservation is a separate, explicit action. See `OPEN-QUESTIONS.md` Q501.
+
+> **Decided — Q544 = Option 1 (2026-09-18).** Sheet stock stays in `board_inventory`. The legacy `inventory` and `inventory_movements` tables are dropped, with reserved quantity, reorder point and reorder quantity ported onto `board_inventory`. Only the purchase-order and vendor half of the legacy procurement namespace is revived. See `OPEN-QUESTIONS.md` Q544.
 
 Support multi-location stock including warehouse, Production, offcut rack, site, external storage and supplier-held stock.
 
@@ -618,6 +708,22 @@ Authorised users can confirm/adjust quantities, add/remove materials, choose sup
 
 If Shop Drawing changes after Material Take, the system detects possible impact and requires human review: No Impact / Partial Impact / Full Impact. Original history remains preserved.
 
+> **Decided — Q495 = Option 1 (2026-09-18).** Material Take is its own record, generated from the item's parts and hardware lines and then adjusted, approved and frozen, so it can diverge from the live lines and the impact review has something to compare against. See `OPEN-QUESTIONS.md` Q495.
+
+> **Decided — Q496 = Option 3 (2026-09-18).** The take is generated from both the parts and hardware lines and the CutPlan nest's real sheet counts. Narrowed by Q582. See `OPEN-QUESTIONS.md` Q496.
+
+> **Decided — Q497 = Option 2 (2026-09-18).** Material Take is advisory for Shop Drawing Approved: the approver is warned that no take exists but may proceed. The drawing approval flow is unchanged. See `OPEN-QUESTIONS.md` Q497.
+
+> **Decided — Q581 = Option 1 (2026-09-24).** Board lines are counted in sheets, estimated from part area plus an adjustable wastage percentage, and in m² when no sheet size is known. Amended by Q586. See `OPEN-QUESTIONS.md` Q581.
+
+> **Decided — Q582 = Option 1 (2026-09-24).** The nest's sheet count applies at the project summary; per-item takes keep the area estimate. This narrows Q496. See `OPEN-QUESTIONS.md` Q582.
+
+> **Decided — Q583 = Option 1 (2026-09-24).** Drift is detected from the take's own inputs (live parts and hardware lines): the take shows Outdated and a reviewer records No / Partial / Full Impact. The drawing-triggered review, and the warning in Q497, wait for a drawing-to-item link. See `OPEN-QUESTIONS.md` Q583.
+
+> **Decided — Q584 = Option 1 (2026-09-24).** Edging and finishing are manual take lines in v1, not generated. See `OPEN-QUESTIONS.md` Q584.
+
+> **Decided — Q586 = Option 1 (2026-09-24).** Boards are counted as fractional sheets per item (area ÷ sheet area, rounded up to 2 decimals, plus wastage); the summary sums them and rounds up once. This amends Q581. See `OPEN-QUESTIONS.md` Q586.
+
 ---
 
 ## 20. Project Material Summary → Procurement
@@ -632,17 +738,45 @@ The Project Manager checks and confirms final quantity.
 
 Only after PM confirmation is the summary released to Procurement Dashboard.
 
+
+> **Decided — Q498 = Option 2 (2026-09-18).** Both exist: the procurement queue stays the live view for early visibility, and the Material Summary is the formal released artefact. See `OPEN-QUESTIONS.md` Q498.
 > **Decided — Q499 = Option 2 (2026-09-18).** PM confirmation is **advisory**, not a gate: Procurement may order early and the line is flagged as unconfirmed. The code is right and this sentence is superseded. See `OPEN-QUESTIONS.md` Q499 and `ALIGNMENT.md` §6.
 
 Procurement may then compare prices or directly order.
 
+> **Decided — Q585 = Option 1 (2026-09-24).** There is no create-order-from-line in v1. The summary shows each line's on-order and received quantities read-only; create-order-from-line follows with §21's required / ordered / received / outstanding design. See `OPEN-QUESTIONS.md` Q585.
+
 If an underlying Material Take changes after the summary is prepared, affected summary lines are flagged as potentially outdated.
+
+> **Decided — Q500 = Option 2 (2026-09-18).** The take is versioned; the summary records which version it consumed and flags a line when that version advances. See `OPEN-QUESTIONS.md` Q500.
 
 ---
 
 ## 21. Procurement, Suppliers and Purchase Orders
 
 Procurement may split requirements across multiple suppliers/POs while showing required, ordered, received and outstanding quantities.
+
+> **Decided — Q502 = Option 1 (2026-09-18).** The legacy procurement namespace is revived and converged as the basis for orders and purchase orders, rather than building fresh. See `OPEN-QUESTIONS.md` Q502.
+
+> **Decided — Q504 = Option 2 (2026-09-18).** Orders are the commercial layer; procurement batches and allocations remain beneath as the allocation mechanism. See `OPEN-QUESTIONS.md` Q504.
+
+> **Decided — Q505 = Option 1 (2026-09-18).** Create PO makes a real PO with number, supplier, lines and status. See `OPEN-QUESTIONS.md` Q505.
+
+> **Decided — Q506 = Option 1 (2026-09-18).** Supplier becomes an entity, and the free-text supplier columns on the catalog tables repoint to it. See `OPEN-QUESTIONS.md` Q506.
+
+> **Decided — Q507 = Option 2 (2026-09-18).** Orders cover all procurement (board, hardware and related parts alike); batches become the internal allocation detail. See `OPEN-QUESTIONS.md` Q507.
+
+> **Decided — Q553 = Option 1 (2026-09-18).** The order layer reuses the existing `purchase_orders` and `po_line_items` rather than adding new order tables. See `OPEN-QUESTIONS.md` Q553.
+
+> **Decided — Q554 = Option 2 (2026-09-18).** An order reaches its workspace through a `project_id` link to the project. The free-text project name stays as a fallback for orders with no project. See `OPEN-QUESTIONS.md` Q554.
+
+> **Decided — Q555 = Option 2 (2026-09-18).** Workspace scoping is added only to the legacy tables that have no join path to a project (suppliers and cost centres); tables reached through an order need none. See `OPEN-QUESTIONS.md` Q555.
+
+> **Decided — Q557 = Option 2 (2026-09-19).** Order and supplier category become a lookup table, seeded with the legacy values plus joinery categories, instead of the office-procurement-only list. See `OPEN-QUESTIONS.md` Q557.
+
+> **Decided — Q563 = Option 1 (2026-09-19).** A joinery order does not need a cost centre; the cost-centre link becomes optional. See `OPEN-QUESTIONS.md` Q563.
+
+> **Decided — Q565 = Option 1 (2026-09-19).** The legacy vendor endpoints are retired; the supplier surface is the single one over the supplier records. See `OPEN-QUESTIONS.md` Q565.
 
 Supplier Comparison may include supplier, product code, unit/total price, stock, lead time, delivery, payment, MOQ, substitutions, notes and supplier performance.
 
@@ -686,6 +820,12 @@ POs support deposits, progress payments, final payment, credits and outstanding 
 
 Different projects may skip stages that do not apply while retaining the same Tracking Dashboard structure.
 
+> **Decided — Q459 = Option 3 (2026-09-18).** Today's ten stages stand (`REQ · SM · LISTED · DOWN · CNC · EDGED · PAINTED · MADE · DEL · INST`). The cutlist takes over the existing stages unchanged, and Plan V1's extra stages arrive with the sub-projects that need them. This defers Q460, Q463, Q464 and Q465. See `OPEN-QUESTIONS.md` Q459.
+
+> **Decided — Q461 = Option 2 (2026-09-18).** Today's default stays: Painted before Made, with a per-item opt-in for painting after assembly. The order above becomes one project type, not the rule. See `OPEN-QUESTIONS.md` Q461.
+
+> **Decided — Q462 = Option 1 (2026-09-18).** There is one global stage list; projects mark inapplicable stages N/A. See `OPEN-QUESTIONS.md` Q462.
+
 ---
 
 ## 23. Shop Drawing Approval
@@ -703,6 +843,8 @@ Designer/Draftsperson releases official production information.
 Production uses one current approved Production Pack. Older packs remain historical, clearly superseded/obsolete and normally hidden from Production.
 
 Changes after release require a new controlled revision/release rather than silent update.
+
+> **Decided — Q494 = Option 2 (2026-09-18).** A variation and a Production Release are independent. A variation is commercial and a release is technical, and not every variation changes what gets built. See `OPEN-QUESTIONS.md` Q494.
 
 ---
 
@@ -737,11 +879,21 @@ QC checks the work just completed against the applicable controlled Cut List / 3
 
 QC defects relate to work completed at that stage.
 
+> **Decided — Q515 = Option 1 (2026-09-18).** QC is its own module (a `qc` permission module) with a defect record and checklists, and it backs the QC Dashboard in §4.2. See `OPEN-QUESTIONS.md` Q515.
+
+> **Decided — Q516 = Option 2 (2026-09-18).** Internal Rework and Full Rework are one rework record with a `kind` field. See `OPEN-QUESTIONS.md` Q516.
+
+> **Decided — Q517 = Option 2 (2026-09-18).** Rework does not re-open the workflow: it is a parallel record and the original stage completions stay intact. See `OPEN-QUESTIONS.md` Q517.
+
+> **Decided — Q518 = Option 2 (2026-09-18).** The QC-timing rule is guidance only: the system shows what is suggested and QC chooses. See `OPEN-QUESTIONS.md` Q518.
+
 ---
 
 ## 27. Production, Packing and Installation Tracking
 
 Production/Packing/Installation use physical product/component scanning and mobile features. Production Manager controls production stages; PM may control permitted parts and coordinate scheduling.
+
+> **Decided — Q519 = Option 1 (2026-09-18).** Packing is a tracked stage with scanning. See `OPEN-QUESTIONS.md` Q519.
 
 ---
 
@@ -763,6 +915,10 @@ General company/team/department discussion areas may also exist.
 
 Important technical decisions should remain linked to the relevant work object.
 
+> **Decided — Q473 = Option 1 (2026-09-18).** §29 comments are built, so the `comment` permission action stops being a dead grant. See `OPEN-QUESTIONS.md` Q473.
+
+> **Decided — Q523 = Option 1 (2026-09-18).** @mentions and notifications ship with comments from day one. See `OPEN-QUESTIONS.md` Q523.
+
 ---
 
 ## 30. Notifications
@@ -777,6 +933,10 @@ Rules may use:
 
 with immediate alerts, summaries, grouping, acknowledgement and escalation.
 
+> **Decided — Q521 = Option 1 (2026-09-18).** In v1, notifications are in-app only. See `OPEN-QUESTIONS.md` Q521.
+
+> **Decided — Q522 = Option 1 (2026-09-18).** When email arrives it is sent over SMTP. v1 sends none, so this fixes the transport for later. See `OPEN-QUESTIONS.md` Q522.
+
 ---
 
 ## 31. Reporting and External Sharing
@@ -788,6 +948,8 @@ PM can generate secure external/daily reports and choose which fields to share. 
 IT can create external report master templates; PM selects/customises content.
 
 Secure sharing may include unique link, password, expiry, revoke, access tracking/view history, and snapshot or live mode.
+
+> **Decided — Q526 = Option 1 (2026-09-18).** Secure external links are built as specified: unique link, password, expiry, revoke, view history, and snapshot or live. See `OPEN-QUESTIONS.md` Q526.
 
 Management scheduled reports may combine dashboards. Department scheduled reports remain department-focused.
 
@@ -830,6 +992,8 @@ KPI display uses numbers only. KPIs are reporting-only and do not themselves tri
 ## 33. Integrations
 
 The integration layer should be modular/API-friendly and may include AutoCAD, Revit, Cabinet Vision, CNC/manufacturing software, Excel, Xero, MYOB, Microsoft 365, Teams, Outlook/email, Google Drive, Dropbox, PDF, supplier systems/catalogues, barcode/QR, accounting/payroll, CRM and future integrations.
+
+> **Decided — Q535 = Option 1 (2026-09-18).** The next integration is Microsoft 365 / SharePoint, which the project-file folder in §40 already requires. See `OPEN-QUESTIONS.md` Q535.
 
 ---
 
@@ -1226,8 +1390,14 @@ Important records preserve who, what, when, previous/new values, reasons, approv
 - **Joinery Item cutlist entry:** Show the assigned cutlist number at the front of each Joinery Item's information row. Clicking that number opens a separate window containing the cutlist details, including individual parts and components, design instructions, and hardware.
 - **Deferred design:** The user will define the detailed cutlist contents and design later. Do not infer those specifications from this navigation decision.
 
+> **Decided — Q569 (custom, 2026-09-20).** (a) The cutlist details window rolls up the real parts and hardware across the whole cutlist, flat, each row naming its item; "design instructions" are read as the part's paint instruction, colour and comment. (b) Tracking, List and Orderbook each open in their own browser tab, marked ↗; a tab you are already on navigates in place. See `OPEN-QUESTIONS.md` Q569.
+
 ### Q398 — Project-file folder location
 **Custom decision confirmed.** Each project's linked Project-level file folder is named `site related` and is located inside that project's folder in SharePoint. Logical location: SharePoint / [project folder] / site related. No specific SharePoint site URL or document-library path has yet been supplied.
+
+> **Decided — Q479 = Option 1 (2026-09-18).** The existing file store survives. SharePoint is an additional surface for project-level files only; shop drawings, item attachments and sample photos stay in the existing store. See `OPEN-QUESTIONS.md` Q479.
+
+> **Decided — Q481 = Option 1 (2026-09-18).** The app connects to Microsoft 365 app-only (client credentials) through one service identity, so in-app permissions are the only gate. See `OPEN-QUESTIONS.md` Q481.
 
 ### Q399 — Project-file pop-up actions
 **Custom decision confirmed.** Users may only view files in the Project-file pop-up. To change, edit, or delete files, they must use OneDrive to access the project's linked SharePoint `site related` folder and perform those actions there. Do not provide upload, replace, rename, edit, or delete controls inside the view-only pop-up. This rule concerns Project-level files; detailed Joinery Item and cutlist design remains deferred as previously requested.
@@ -1235,20 +1405,30 @@ Important records preserve who, what, when, previous/new values, reasons, approv
 ### Q400 — Refreshing the file view
 **Custom decision confirmed.** When files in the linked SharePoint `site related` folder change through OneDrive, automatically update the open Project-file pop-up to display the latest file version, without requiring a manual refresh. The pop-up remains view-only under Q399. Refresh timing and technical mechanism are not yet specified.
 
+> **Decided — Q482 = Option 1 (2026-09-18).** The pop-up polls while it is open. The interval is not yet set; 15 seconds is proposed, matching Shop Floor. See `OPEN-QUESTIONS.md` Q482.
+
+> **Decided — Q483 = Option 2 (2026-09-18).** When SharePoint is unreachable, the pop-up falls back to a cached listing, marked stale. See `OPEN-QUESTIONS.md` Q483.
+
 ### Q401 — Architectural drawing reference navigation
 **Custom decision confirmed; corrected by Q402.** Clicking the architectural drawing reference number in a Joinery Item's design tab opens the project's common architectural-drawings folder and locates the file matching that drawing number. The user then clicks the located file to open the drawing. The reference click itself does not automatically open the drawing file. Which application displays the folder remains to be defined.
 
 ### Q402 — Common architectural-drawings folder and file location
 **Custom clarification confirmed.** All architectural drawings for a project are in the same folder. Do not assign a separate drawing-folder location to each Joinery Item or architectural drawing reference. Use the common folder and the clicked drawing number to locate the related file so the user can directly click it to open the drawing. This replaces the separate-folder premise of the original Q402 question. Q403 defines filename-based matching.
 
+> **Decided — Q484 = Option 2 (2026-09-18).** Architectural drawings live in a different folder from `site related`. The folder name has not been supplied. See `OPEN-QUESTIONS.md` Q484.
+
 ### Q403 — Matching drawing numbers to files
 **Yes confirmed.** Each architectural drawing's filename contains its architectural drawing number. The system uses that number to automatically locate the matching file in the project's common architectural-drawings folder. The user clicks the located file to open it, as confirmed in Q401–Q402. Q404 defines which file to locate when multiple revisions match.
+
+> **Decided — Q485 = Option 2 (2026-09-18).** Drawing numbers are matched by a filename pattern, but the pattern itself has not been supplied, so this cannot be implemented until it is. See `OPEN-QUESTIONS.md` Q485.
 
 ### Q404 — Multiple matching drawing revisions
 **Custom decision confirmed.** When multiple files contain the same architectural drawing number, locate only the latest revision in the common drawing folder. The user then clicks that file to open the drawing. Q405 defines revision ordering.
 
 ### Q405 — Latest revision ordering
 **Custom decision confirmed.** Determine the latest drawing revision by the highest revision number for numeric revisions, or the latest letter in alphabetical order for letter revisions (for example, 10 follows 9; C follows B). This comparison concerns the revision identifier, not the drawing number or file modification date. Ordering mixed numeric/letter schemes and multi-letter revisions remains undefined.
+
+> **Decided — Q486 = Option 3 (2026-09-18).** A project never mixes numeric and letter revision schemes; if both appear in one folder, flag it rather than guess. Ordering of multi-letter revisions (`AA` after `Z`) remains undefined. See `OPEN-QUESTIONS.md` Q486.
 
 ---
 
@@ -1283,8 +1463,22 @@ The user supplied 18 screenshots of a similar system and requested a complete re
 ### Q407 — Navigation direction and UI flexibility
 **Custom decision confirmed.** Use a navigation arrangement similar to the reference system described in Q406: Dashboard as the main entrance, access to Orderbook/Tracking/Cutlist module workspaces, and project details accessible from the Dashboard's Project tab. The design may extend the functionality and introduce a new UI; it does not need to reproduce the reference screens exactly. Specific additional features and navigation changes remain design proposals until confirmed through the ongoing interview. Existing confirmed workflow and permission rules continue to apply.
 
+> **Decided — Q474 (custom, 2026-09-18).** The existing `List` tab is the Cutlist module workspace. There is no seventh primary tab and no demotion to the secondary strip. See `OPEN-QUESTIONS.md` Q474.
+
+> **Decided — Q475 = Option 2 (2026-09-18).** Orderbook, Tracking and Cutlist open as genuinely separate browser windows, so Tracking and Orderbook can sit side by side. See `OPEN-QUESTIONS.md` Q475.
+
+> **Decided — Q478 = Option 2 (2026-09-18).** Dashboard is the landing page, but every module stays directly linkable. See `OPEN-QUESTIONS.md` Q478.
+
+> **Decided — Q545 = Option 2 (2026-09-18).** "Separate window" means a normal browser tab opened with `target="_blank"`. See `OPEN-QUESTIONS.md` Q545.
+
 ### Q408 — Tracking access to Project Details
 **Custom explanation confirmed for the reference system.** Clicking the Info button in the Tracking window opens the separate Project Details window shown in screenshot 11, containing the Project Stats, Cars, OH&S and Scope tabs. Q409 confirms that it shares underlying project information with the Dashboard Project tab.
+
+> **Decided — Q476 = Option 3 (2026-09-18).** Both surfaces are kept: the Info-button modal gains the four tabs and the full project page stays, as two views of one record. See `OPEN-QUESTIONS.md` Q476.
+
+> **Decided — Q477 = Option 1 (2026-09-18).** Cars and OH&S are in scope as site vehicle allocation and workplace-safety records. The fields have not been supplied, so this is answered in principle only. See `OPEN-QUESTIONS.md` Q477.
+
+> **Decided — Q571 (custom, 2026-09-20).** The Project Stats tiles are built from real project columns. The two hours tables (admin stats; production / install) show their row labels with blank values, captioned "Data from TGPAY — not integrated", because payroll is not connected. See `OPEN-QUESTIONS.md` Q571.
 
 ### Q409 — Shared project information across views
 **Yes confirmed.** The Dashboard's Project tab and the Project Details window opened through Tracking's Info button share the same underlying project information. Changes made in one view appear in the other for the same project. These are two views of the same project record, not independently maintained copies.
@@ -1297,14 +1491,42 @@ The user supplied 18 screenshots of a similar system and requested a complete re
 - **Distinct purposes:** Keep the project-defined JID separate from the company cutlist number. Sharing either reference does not by itself merge the individual Joinery Item records.
 - **Relationship detail:** Q411 confirms that a Joinery Item may link to only one cutlist number. Number allocation rules and detailed cutlist contents are not established by this decision.
 
+> **Decided — Q442 = Option 1 (2026-09-18).** The six-digit cutlist number is system-allocated, sequentially, on creation in the Cutlist panel, from the company-wide sequence. See `OPEN-QUESTIONS.md` Q442.
+
+> **Decided — Q443 = Option 1 (2026-09-18).** Cutlist numbers are unique company-wide: one sequence across all projects. See `OPEN-QUESTIONS.md` Q443.
+
+> **Decided — Q540 = Option 1 (2026-09-18).** Each existing item gets its own cutlist carrying its existing number across as the cutlist number; the company-wide sequence starts above the highest existing value. See `OPEN-QUESTIONS.md` Q540.
+
+> **Decided — Q541 = Option 1 (2026-09-18).** Item IDs and cutlist numbers share one company-wide sequence, so a six-digit number never means two different things. See `OPEN-QUESTIONS.md` Q541.
+
 ### Q411 — Cutlist links per Joinery Item
 **No confirmed.** A single Joinery Item cannot link to more than one cutlist number. One cutlist number may be shared by several Joinery Items under Q410. This sets the maximum to one cutlist link per item; it does not require a cutlist link before an item can be created.
+
+> **Decided — Q438 = Option 1 (2026-09-18).** The cutlist becomes a first-class entity: a `cutlist` table, items link to it, and the production workflow moves onto it. See `OPEN-QUESTIONS.md` Q438.
+
+> **Decided — Q440 = Option 1 (2026-09-18).** A Joinery Item can exist with no cutlist indefinitely; the cutlist is assigned later. See `OPEN-QUESTIONS.md` Q440.
+
+> **Decided — Q444 = Option 1 (2026-09-18).** A cutlist belongs to exactly one project, enforced by a foreign key. See `OPEN-QUESTIONS.md` Q444.
 
 ### Q412 — Shared cutlist production workflow
 **No independent production completion times confirmed.** Each cutlist has one workflow. All Joinery Items linked to that cutlist share its production-stage progress and the same completion date/time for each production stage. Record each production-stage completion once against the cutlist and reflect it across all linked Joinery Items. Each stage has its own completion time; that time is shared by the linked items. This refines earlier item-level workflow descriptions: individual Joinery Items remain separate records, but do not maintain independent production workflows when they share a cutlist. Whether this shared timing also applies to delivery and installation remains to be clarified.
 
+> **Decided — Q439 = Option 3 (2026-09-18).** Item stage records stay per item; completing a shared stage writes the same done date to every linked item. There is no separate cutlist-stage table. See `OPEN-QUESTIONS.md` Q439.
+
+> **Decided — Q441 = Option 1 (2026-09-18).** Tracking repeats the stage strip on every item row. See `OPEN-QUESTIONS.md` Q441.
+
+> **Decided — Q445 = Option 1 (2026-09-18).** Shop Floor assignment and completion key off `(cutlist_id, stage_key)` for production stages, and `(item_id, 'INST')` for installation. See `OPEN-QUESTIONS.md` Q445.
+
+> **Decided — Q446 = Option 1 (2026-09-18).** The 5-minute undo reverses the whole cutlist's stage completion atomically, including every fanned-out date. See `OPEN-QUESTIONS.md` Q446.
+
+> **Decided — Q539 = Option 2 (2026-09-18).** An item linked to a cutlist that already has completed stages is left blank for those stages; it catches up when a later stage completes. See `OPEN-QUESTIONS.md` Q539.
+
+> **Decided — Q562 = Option 1 (2026-09-19).** On a shared cutlist, completing a stage requires every linked item's prior stages to be done, with each item keeping its own painting settings. The completion date is written only to items whose own stage order contains that stage. See `OPEN-QUESTIONS.md` Q562.
+
 ### Q413 — Shared delivery and individual installation
 **Custom decision confirmed; scheduling clarified by Q414.** Shared cutlist timing applies to delivery: all Joinery Items linked to one cutlist share its delivery completion date/time. It does not apply to installation, which is individual to each Joinery Item. Q414 confirms that installation scheduling is coordinated outside the system, rather than recorded as item-level or project-level installation schedules here. This resolves the delivery/installation scope left open in Q412.
+
+> **Decided — Q561 = Option 1 (2026-09-19).** Shop Floor is keyed to the cutlist for the five production stages only (`DOWN · CNC · EDGED · PAINTED · MADE`). DEL and INST stay out of Shop Floor and remain recordable per item. Shared delivery (Q413) and per-item install completion (Q415) therefore remain unbuilt in Shop Floor. See `OPEN-QUESTIONS.md` Q561.
 
 ### Q414 — Installation scheduling outside the system
 **Custom decision confirmed.** The Project Manager and Site Installation Manager communicate and coordinate the installation schedule outside this system. Do not record that installation schedule in the software. This supersedes earlier assumptions about recording installation schedules or enforcing item schedules against project-level installation dates. Existing actual installation progress/completion tracking is separate from this scheduling exclusion; the role responsible for recording item completion is the next clarification.
@@ -1315,8 +1537,24 @@ The user supplied 18 screenshots of a similar system and requested a complete re
 ### Q416 — Item ID, Group ID and related part rows
 **Custom decision confirmed.** Each main Joinery Item has its own unique internal number, used as both its Item ID and its Group ID. Tracking also displays related part rows when required, including metal parts, benchtops and cushions. Each related part has its own distinct Item ID and shares the main Joinery Item's Group ID. The shared Group ID identifies the specific Joinery Item to which that part belongs; the part is linked to that Joinery Item only. These internal identifiers are distinct from the project-defined JID and the company cutlist number described in Q410. The cutlist links and workflow behaviour of related part rows remain to be clarified; sharing a Group ID alone does not establish those rules.
 
+> **Decided — Q447 = Option 1 (2026-09-18).** Related parts are rows in the item table, with a `row_type` discriminator and a self-referencing parent link. See `OPEN-QUESTIONS.md` Q447.
+
+> **Decided — Q448 = Option 2 (2026-09-18).** The related-part type list is a configurable lookup table, seeded with metal, benchtop and cushion. See `OPEN-QUESTIONS.md` Q448.
+
+> **Decided — Q449 = Option 1 (2026-09-18).** One level only: a related part cannot itself be a parent. See `OPEN-QUESTIONS.md` Q449.
+
+> **Decided — Q450 = Option 1 (2026-09-18).** Related parts carry their own status, so a stuck supplier order can be flagged without changing the parent. See `OPEN-QUESTIONS.md` Q450.
+
+> **Decided — Q452 = Option 1 (2026-09-18).** A related part can be moved to a different parent, with audit. The move updates its Group ID and the CUTLIST NO. on any linked supplier orders. See `OPEN-QUESTIONS.md` Q452.
+
+> **Decided — Q453 = Option 1 (2026-09-18).** The existing Group ID column is repurposed for these semantics, migrating existing values. See `OPEN-QUESTIONS.md` Q453.
+
 ### Q417 — Cutlist and supplier-order references in Tracking
 **Custom decision confirmed.** Cutlist numbers are assigned only to Joinery Items. Related metal, benchtop and cushion rows do not receive cutlist numbers. Once an order for a related part has been issued to its supplier, display the order number on that part's Tracking row in the same position used for a Joinery Item's cutlist number. The displayed reference therefore depends on the row type: cutlist number for a Joinery Item, issued supplier-order number for a related part. The six-digit cutlist format does not establish the format of order numbers. This resolves the cutlist-link question left open in Q416; related-part workflow details remain to be clarified.
+
+> **Decided — Q567 (custom, 2026-09-19).** A related part's order counts as issued once it has an ordered date (`date_ordered`); with several, the most recent is shown, and a draft leaves the cell blank. No separate Issued status is added. See `OPEN-QUESTIONS.md` Q567.
+
+> **Decided — Q568 (custom, 2026-09-19).** Tracking's CUTLIST column shows the cutlist's own number, blank when the item holds none. The far-right Item ID column shows the item's own number. See `OPEN-QUESTIONS.md` Q568.
 
 ### Q418 — Tracking order-number navigation
 **Custom decision confirmed.** Clicking the issued order number on a related-part row in Tracking navigates to Orderbook and locates the matching order number there. This provides the link from the metal, benchtop or cushion Tracking row to its order record. This decision does not specify automatically opening the order-detail pop-up.
@@ -1327,6 +1565,8 @@ The user supplied 18 screenshots of a similar system and requested a complete re
 ### Q420 — Related-part row placement
 **Yes confirmed.** In Tracking, display related metal, benchtop and cushion rows directly beneath their parent Joinery Item, using the Group ID relationship confirmed in Q416. Their workflow-stage area remains empty under Q419. Q421 confirms expand/collapse controls.
 
+> **Decided — Q558 = Option 1 (2026-09-19).** The Tracking list returns related parts inline: one response carries Joinery Items and their related parts, each row carrying its row type, parent and type, ordered so children stay beneath their parent. See `OPEN-QUESTIONS.md` Q558.
+
 ### Q421 — Expand and collapse related-part rows
 **Yes confirmed.** Users can expand or collapse each Joinery Item's related-part rows in Tracking. Expanding displays its related parts directly beneath the parent item; collapsing hides those related-part rows while leaving the parent Joinery Item visible. The initial expanded/collapsed state remains to be defined.
 
@@ -1336,14 +1576,24 @@ The user supplied 18 screenshots of a similar system and requested a complete re
 ### Q423 — Creating related-part rows
 **Custom decision confirmed.** The Drafter (Designer/Draftsperson role) or Project Manager can create related metal, benchtop and cushion rows beneath a Joinery Item. Each created part has its own Item ID and shares its parent Joinery Item's Group ID under Q416. Existing change-recording rules apply.
 
+> **Decided — Q559 = Option 1 (2026-09-19).** The item editor does not open a related part; related parts are edited in Tracking. See `OPEN-QUESTIONS.md` Q559.
+
 ### Q424 — Related-part creation and order requests
 **No confirmed.** Creating a related metal, benchtop or cushion row in Tracking does not automatically create a linked order request in Orderbook. The action used to create and link the order request remains to be defined. Issued order numbers are displayed and navigated as confirmed in Q417–Q418.
+
+> **Decided — Q560 = Option 1 (2026-09-19).** A related part has no availability view. It is procured through its own supplier order. See `OPEN-QUESTIONS.md` Q560.
 
 ### Q425 — Create Order entry point in Tracking
 **Custom decision confirmed.** Tracking has an O/BOOK subtab. Users switch to that subtab and click its Create Order button to initiate an order request for a related part. This is an explicit user action, consistent with Q424. The subsequent form, prefilled information and exact linking interaction remain to be clarified.
 
+> **Decided — Q432 = Option 1 (2026-09-18).** The roles that can click Create Order are today's Orderbook write holders (admin, manager, drafter, purchase officer). No new permission is introduced. See `OPEN-QUESTIONS.md` Q432.
+
+> **Decided — Q570 (custom, 2026-09-20).** O/BOOK is a seventh column-set in Tracking's existing sub-tab strip: one row per item with ORDER #, SUPPLIER, STATUS and ETA columns, and the Create Order button on the strip. The form also offers "No item — a project-level order". See `OPEN-QUESTIONS.md` Q570.
+
 ### Q426 — Create Order details form
 **Custom decision confirmed.** Clicking Create Order in Tracking's O/BOOK subtab opens the order-details form shown in the supplied Orderbook Details screenshots (07–09). Those screenshots provide examples for acoustic panels, benchtops and contractor manufacturing. The reference establishes the form opened by this action; exact field requirements, type-specific variations, automatic prefilling and linking behaviour remain to be confirmed.
+
+> **Decided — Q503 = Option 3 (2026-09-18).** There is one generic order form: fixed fields for the shared columns plus a free-form attributes store for type-specific fields. See `OPEN-QUESTIONS.md` Q503.
 
 ### Q427 — Prefilled order-details fields
 **Custom decision confirmed.** When creating an order through Tracking's O/BOOK subtab, automatically carry over PROJECT, LOCATION and CUTLIST NO. into the Orderbook Details form. Q417 establishes that related-part rows do not themselves receive cutlist numbers, so the source of the CUTLIST NO. value for these orders must be clarified. Do not infer a cutlist assignment to the related part from this form field.
@@ -2227,3 +2477,22 @@ Item's room is always within that item's area.
 Where the same room number is used in two areas — which the existing records do
 contain — it becomes two rooms, one in each. An item that records a room but no
 area keeps that room text unchanged and gains a room once an area is set.
+
+---
+
+## Decisions about this build (Q432 →)
+
+Decisions that concern how this codebase and its sub-projects are run, with no single plan section to sit under. Decisions about a plan section are noted in place above.
+
+- **Decided — Q433 = Option 1 (2026-09-18).** Plan V1 is the roadmap for this codebase. See `OPEN-QUESTIONS.md` Q433.
+- **Decided — Q434 = Option 2 (2026-09-18).** The joinery-workflow half of Plan V1 is committed scope; the IT-governance half (§7–§8 and §35–§38: templates, validation, simulation, initiatives, escalation) is aspirational. See `OPEN-QUESTIONS.md` Q434.
+- **Decided — Q435 = Option 2 (2026-09-18).** Shipped behaviour may change, but only behind migrations that preserve existing data. See `OPEN-QUESTIONS.md` Q435.
+- **Decided — Q436 = Option 2 (2026-09-18).** Pilot users are on the demo workspace: real rows exist but nothing business-critical. Migrations must be correct, and a bad one is recoverable by re-seeding. See `OPEN-QUESTIONS.md` Q436.
+- **Decided — Q437 = Option 1 (2026-09-18).** The next sub-project is the Cutlist entity plus related parts (§3.1 + §3.2 of the gap analysis), built as one change. See `OPEN-QUESTIONS.md` Q437.
+- **Decided — Q456 = Option 1 (2026-09-18).** Rename and retire the "never use bare stage" terminology rule once the site-location column becomes `area`. The rule stays until the rename actually ships. See `OPEN-QUESTIONS.md` Q456.
+- **Decided — Q520 = Search first (2026-09-18).** Global Search (§13) is built first of the remaining subsystems; the other five are unranked. See `OPEN-QUESTIONS.md` Q520.
+- **Decided — Q536 = Option 1 (2026-09-18).** This file is the authoritative Plan V1, kept in the repository and updated in place as questions are answered. See `OPEN-QUESTIONS.md` Q536.
+- **Decided — Q537 = Option 1 (2026-09-18).** Answers are recorded in two places: this document carries the decision in its own form, and `OPEN-QUESTIONS.md` tracks what is still open and carries the codebase-specific reasoning. See `OPEN-QUESTIONS.md` Q537.
+- **Decided — Q538 = Option 1 (2026-09-18).** Each earlier sub-project plan that Plan V1 changes says so at the top. Done: eight of the nine carry such a note; only the CV import plan is unaffected. See `OPEN-QUESTIONS.md` Q538.
+- **Decided — Q542 = Option 3 (2026-09-18).** The sub-project chosen in Q437 also carries the full Orderbook rework (order entity, order-details forms, purchase-order creation and the supplier registry), rather than deferring it or shipping a minimal order record. See `OPEN-QUESTIONS.md` Q542.
+- **Decided — Q556 (custom, no date recorded).** The supplier entity is the existing `vendors` table, not a new one; the catalog tables gain supplier link columns beside their existing free-text supplier columns. Recorded as confirmed by the earlier Q506 round, not as a fresh decision. See `OPEN-QUESTIONS.md` Q556.
