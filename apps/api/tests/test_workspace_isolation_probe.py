@@ -37,14 +37,29 @@ _cleanup = truncate_fixture(*CLEANUP_TABLES)
 _PO_REASON = ("the seed has no PO document; every operation is called by another workspace in "
               "test_purchase_order_documents.test_other_workspace_is_404")
 
+_PO_WINDOWS = ("the seed has no PO document; called by another workspace in "
+               "test_po_invoice_authorisation.test_other_workspace_is_404")
+
 NOT_PROBED: dict[tuple[str, str], str] = {
     ("GET", "/orders/{po_id}/attachments/{attachment_id}/download"):
         "the seed has no order attachment; test_order_attachments.test_other_workspace_is_404 downloads one as another workspace",
+    ("DELETE", "/purchase-orders/{doc_id}/authorisation/signed"): _PO_WINDOWS,
+    ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}/files/{slot}"): _PO_WINDOWS,
+    ("GET", "/purchase-orders/staff/{user_id}/photo"):
+        "the seed holds no photo; test_po_invoice_authorisation.test_other_workspace_is_404 reads one as another workspace",
+    ("GET", "/purchase-orders/{doc_id}/authorisation"): _PO_WINDOWS,
+    ("GET", "/purchase-orders/{doc_id}/authorisation/{which}"): _PO_WINDOWS,
+    ("GET", "/purchase-orders/{doc_id}/invoices/{invoice_id}/files/{slot}"): _PO_WINDOWS,
+    ("POST", "/purchase-orders/{doc_id}/authorisation/form"): _PO_WINDOWS,
+    ("POST", "/purchase-orders/{doc_id}/authorisation/signed"): _PO_WINDOWS,
+    ("POST", "/purchase-orders/{doc_id}/invoices/{invoice_id}/files/{slot}"): _PO_WINDOWS,
+    ("PUT", "/purchase-orders/{doc_id}/authorisation"): _PO_WINDOWS,
+    ("PUT", "/users/{uid}/photo"):
+        "a file upload the generator cannot fill; test_po_invoice_authorisation.test_other_workspace_is_404 sets another workspace's user photo",
     ("DELETE", "/purchase-orders/{doc_id}/delivery"): _PO_REASON,
     ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}"): _PO_REASON,
     ("DELETE", "/purchase-orders/{doc_id}/orders/{order_id}"): _PO_REASON,
     ("GET", "/purchase-orders/{doc_id}"): _PO_REASON,
-    ("GET", "/purchase-orders/{doc_id}/authorisation-form"): _PO_REASON,
     ("GET", "/purchase-orders/{doc_id}/excel"): _PO_REASON,
     ("GET", "/purchase-orders/{doc_id}/pdf"): _PO_REASON,
     ("PATCH", "/purchase-orders/{doc_id}"): _PO_REASON,

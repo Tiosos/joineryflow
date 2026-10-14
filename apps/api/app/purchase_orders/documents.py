@@ -48,8 +48,22 @@ def po_pdf(doc: dict) -> bytes:
     return render_template_to_pdf("po.html", po_context(doc))
 
 
-def authorisation_pdf(doc: dict) -> bytes:
-    return render_template_to_pdf("po_authorisation.html", po_context(doc))
+def authorisation_pdf(doc: dict, details: dict) -> bytes:
+    """The form from the saved Authorisation Form Details. A deposit % shows as the amount it works out to."""
+    amount = details["purchase_order_amount"]
+    pct, required = details["deposit_pct"], details["amount_required"]
+    if pct is not None:
+        required = (amount * pct / 100).quantize(Decimal("0.01"))
+    ctx = po_context(doc)
+    ctx["auth"] = {
+        "payment_type": details["payment_method_name"] or "",
+        "po_amount_fmt": _money(amount),
+        "deposit_pct_fmt": "" if pct is None else f"{pct.normalize():f}%",
+        "amount_required_fmt": _money(required),
+        "date_required_fmt": _date(details["date_required"]),
+        "on_behalf_of": details["on_behalf_of_name"] or "",
+    }
+    return render_template_to_pdf("po_authorisation.html", ctx)
 
 
 def po_xlsx(doc: dict) -> bytes:

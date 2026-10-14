@@ -2937,6 +2937,12 @@ def main() -> None:
                 code="GEN", name="General", budget_amount=50000,
             )
 
+            # The Payment Method / Payment Type list (0063): the four the customer named. Made through
+            # the query the API uses; a name already there is left alone.
+            from app.payment_methods.queries import create_method as _create_payment_method
+            for _method in ("Account", "Credit card", "Deposit", "COD / Pay on delivery"):
+                _create_payment_method(s, workspace_id=workspace_id, actor_id=mina_id, name=_method)
+
             # Demo orders for the Orderbook list and pop-up: one or two in each order type, made
             # up (no real supplier, project or product). They go through the query functions the
             # API uses, so the audit rows are real; the marker in `internal_comments` makes a

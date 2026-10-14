@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     jtbd_role: str | None = None
     is_active: bool
     is_shop_worker: bool = False
+    has_photo: bool = False
 
 
 class UserPatch(BaseModel):

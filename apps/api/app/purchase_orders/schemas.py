@@ -52,23 +52,29 @@ class DeliveryIn(BaseModel):
 
 
 class InvoiceIn(BaseModel):
+    """`gst` and `total_inc` are the server's: GST is 10% of Ex while `gst_auto`, else the typed `gst`;
+    Inc is Ex + GST (0063)."""
     order_id: int
     invoice_number: _Text100
     invoiced_date: date | None = None
     qty: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=3)
-    total_inc: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    payment_method_id: int | None = None
+    total_ex: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    gst: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    gst_auto: bool = True
     notes: str | None = None
-    delivery_doc: str | None = Field(default=None, max_length=100)
 
 
 class PatchInvoiceIn(BaseModel):
     invoice_number: _Text100 | None = None
     invoiced_date: date | None = None
     qty: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=3)
-    total_inc: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    payment_method_id: int | None = None
+    total_ex: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    gst: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    gst_auto: bool | None = None
     notes: str | None = None
-    delivery_doc: str | None = Field(default=None, max_length=100)
-    reject_null = no_null("invoice_number")
+    reject_null = no_null("invoice_number", "gst_auto")
 
 
 class PoLineOut(BaseModel):
@@ -101,9 +107,18 @@ class PoInvoiceOut(BaseModel):
     invoice_number: str
     invoiced_date: date | None
     qty: Decimal | None
+    payment_method_id: int | None
+    payment_method_name: str | None
+    total_ex: Decimal | None
+    gst: Decimal | None
+    gst_auto: bool
     total_inc: Decimal | None
     notes: str | None
-    delivery_doc: str | None
+    delivery_doc_mime: str | None
+    invoice_doc_mime: str | None
+    non_delivery_mime: str | None
+    created_at: datetime
+    updated_at: datetime
     description: str | None
     product_code: str | None
 
@@ -159,8 +174,33 @@ class PoStaffOut(BaseModel):
     id: int
     full_name: str
     email: str
+    has_photo: bool
 
 
 class PoStaffListOut(BaseModel):
     staff: list[PoStaffOut]
 
+
+
+class AuthorisationIn(BaseModel):
+    """The Authorisation Form Details window. A deposit % OR an amount, never both."""
+    payment_method_id: int | None = None
+    deposit_pct: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
+    amount_required: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=2)
+    date_required: date | None = None
+    on_behalf_of_id: int | None = None
+
+
+class AuthorisationOut(BaseModel):
+    po_document_id: int
+    purchase_order_amount: Decimal
+    payment_method_id: int | None
+    payment_method_name: str | None
+    deposit_pct: Decimal | None
+    amount_required: Decimal | None
+    date_required: date | None
+    on_behalf_of_id: int | None
+    on_behalf_of_name: str | None
+    form_created_at: datetime | None
+    signed_mime: str | None
+    updated_at: datetime | None

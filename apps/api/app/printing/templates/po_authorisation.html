@@ -12,6 +12,15 @@
     <div class="label">Total (inc GST)</div><div class="value mono">{{ po.totals.total_inc_fmt }}</div>
   </div>
 
+  <div class="item-header">
+    <div class="label">Payment type</div><div class="value">{{ auth.payment_type }}</div>
+    <div class="label">Purchase order amount (ex GST)</div><div class="value mono">{{ auth.po_amount_fmt }}</div>
+    <div class="label">Deposit required %</div><div class="value mono">{{ auth.deposit_pct_fmt }}</div>
+    <div class="label">Amount required</div><div class="value mono">{{ auth.amount_required_fmt }}</div>
+    <div class="label">Date required by</div><div class="value mono">{{ auth.date_required_fmt }}</div>
+    <div class="label">On behalf of</div><div class="value">{{ auth.on_behalf_of }}</div>
+  </div>
+
   <table class="po">
     <thead><tr><th>#</th><th class="num">Qty</th><th>Item</th><th>Project</th><th class="num">Amount $</th></tr></thead>
     <tbody>

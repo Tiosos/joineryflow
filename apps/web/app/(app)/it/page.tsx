@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { LabourRatesPanel } from "./_components/LabourRatesPanel";
 import { PermissionGroupsPanel } from "./_components/PermissionGroupsPanel";
 import { SearchHealthPanel } from "./_components/SearchHealthPanel";
+import { StaffPhotosPanel } from "./_components/StaffPhotosPanel";
 import { WorkerRosterPanel } from "./_components/WorkerRosterPanel";
 
 export const metadata: Metadata = { title: "IT Management" };
@@ -20,6 +21,7 @@ export default async function ITPage() {
       </header>
       <PermissionGroupsPanel />
       <WorkerRosterPanel />
+      <StaffPhotosPanel />
       <LabourRatesPanel />
       <SearchHealthPanel />
     </section>

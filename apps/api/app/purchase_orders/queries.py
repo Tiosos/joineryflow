@@ -12,7 +12,7 @@ charge is an ordinary "Delivery Fee" order of the same supplier (`po_document.de
 Every function returns `(code, data)`; a code other than `"OK"` means nothing was written.
 """
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -22,8 +22,10 @@ from ..auth.audit import write_audit
 from ..concurrency import bump_field_versions
 from ..orders import queries as oq
 from ..orders.schemas import CreateOrderIn, PatchOrderIn
+from ..payment_methods.queries import active_in_workspace
+from ..sql_columns import require_columns
 from ..workspace_scope import user_in_workspace
-from .schemas import CreatePoIn, InvoiceIn, PatchInvoiceIn, PatchPoIn
+from .schemas import AuthorisationIn, CreatePoIn, InvoiceIn, PatchInvoiceIn, PatchPoIn
 
 _OPEN_STATUSES = ("Delivered", "Cancelled", "Rejected")
 _OUT_OF_TOTALS = ("Cancelled", "Rejected")
@@ -73,8 +75,15 @@ def get_document(db: Session, *, doc_id: int, workspace_id: int, for_update: boo
         text(
             """
             SELECT inv.invoice_id, inv.order_id, inv.invoice_number, inv.invoiced_date, inv.qty,
-                   inv.total_inc, inv.notes, inv.delivery_doc
-              FROM po_invoice inv WHERE inv.po_document_id = :d ORDER BY inv.invoice_id
+                   inv.payment_method_id, pm.name AS payment_method_name, inv.total_ex, inv.gst,
+                   inv.gst_auto, inv.total_inc, inv.notes, inv.created_at, inv.updated_at,
+                   dd.mime AS delivery_doc_mime, idoc.mime AS invoice_doc_mime, nd.mime AS non_delivery_mime
+              FROM po_invoice inv
+              LEFT JOIN payment_method pm ON pm.payment_method_id = inv.payment_method_id
+              LEFT JOIN file_blob dd ON dd.file_blob_id = inv.delivery_doc_blob
+              LEFT JOIN file_blob idoc ON idoc.file_blob_id = inv.invoice_doc_blob
+              LEFT JOIN file_blob nd ON nd.file_blob_id = inv.non_delivery_blob
+             WHERE inv.po_document_id = :d ORDER BY inv.invoice_id
             """
         ),
         {"d": doc_id},
@@ -454,6 +463,21 @@ def remove_delivery(
 
 # ── writes: invoices ────────────────────────────────────────────────────────────────────────────
 
+GST_RATE = Decimal("0.10")
+_INVOICE_COLUMNS = frozenset({
+    "invoice_number", "invoiced_date", "qty", "payment_method_id", "total_ex", "gst", "gst_auto", "total_inc", "notes",
+})
+
+
+def _gst_and_inc(total_ex: Decimal | None, gst_auto: bool, gst: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
+    """GST is 10% of Ex while `gst_auto`, else the typed figure (0 if none); Inc is Ex + GST.
+    With no Ex there is nothing to add up: both stay as they are (None)."""
+    if total_ex is None:
+        return None, None
+    g = (total_ex * GST_RATE).quantize(Decimal("0.01"), ROUND_HALF_UP) if gst_auto else (gst or Decimal(0))
+    return g, total_ex + g
+
+
 def add_invoice(
     db: Session, *, doc_id: int, workspace_id: int, actor_id: int, payload: InvoiceIn
 ) -> tuple[str, dict | None]:
@@ -462,17 +486,20 @@ def add_invoice(
         return code, doc
     if not any(x["order_id"] == payload.order_id for x in doc["lines"]):
         return "ORDER_NOT_ON_PO", {"order_id": payload.order_id}
+    if payload.payment_method_id is not None and not active_method(db, payload.payment_method_id, workspace_id):
+        return "PAYMENT_METHOD_NOT_FOUND", {"payment_method_id": payload.payment_method_id}
+    gst, total_inc = _gst_and_inc(payload.total_ex, payload.gst_auto, payload.gst)
     invoice_id = db.execute(
         text(
             """
-            INSERT INTO po_invoice (po_document_id, order_id, invoice_number, invoiced_date, qty, total_inc,
-                                    notes, delivery_doc, created_by)
-            VALUES (:d, :o, :n, :dt, :q, :t, :notes, :dd, :u) RETURNING invoice_id
+            INSERT INTO po_invoice (po_document_id, order_id, invoice_number, invoiced_date, qty,
+                                    payment_method_id, total_ex, gst, gst_auto, total_inc, notes, created_by)
+            VALUES (:d, :o, :n, :dt, :q, :pm, :ex, :g, :ga, :t, :notes, :u) RETURNING invoice_id
             """
         ),
         {"d": doc_id, "o": payload.order_id, "n": payload.invoice_number, "dt": payload.invoiced_date,
-         "q": payload.qty, "t": payload.total_inc, "notes": payload.notes, "dd": payload.delivery_doc,
-         "u": actor_id},
+         "q": payload.qty, "pm": payload.payment_method_id, "ex": payload.total_ex, "g": gst,
+         "ga": payload.gst_auto, "t": total_inc, "notes": payload.notes, "u": actor_id},
     ).scalar_one()
     _touch(db, doc_id)
     write_audit(
@@ -488,12 +515,26 @@ def patch_invoice(
     code, doc = _open_doc(db, doc_id, workspace_id)
     if code != "OK":
         return code, doc
-    if not any(i["invoice_id"] == invoice_id for i in doc["invoices"]):
+    current = next((i for i in doc["invoices"] if i["invoice_id"] == invoice_id), None)
+    if current is None:
         return "INVOICE_NOT_FOUND", {"invoice_id": invoice_id}
     fields = payload.model_dump(exclude_unset=True)
+    if fields.get("payment_method_id") is not None and not active_method(
+        db, fields["payment_method_id"], workspace_id
+    ):
+        return "PAYMENT_METHOD_NOT_FOUND", {"payment_method_id": fields["payment_method_id"]}
+    if {"total_ex", "gst", "gst_auto"} & fields.keys():
+        gst, total_inc = _gst_and_inc(
+            fields.get("total_ex", current["total_ex"]),
+            fields.get("gst_auto", current["gst_auto"]),
+            fields.get("gst", current["gst"]),
+        )
+        fields["gst"], fields["total_inc"] = gst, total_inc
     if fields:
+        require_columns(fields, _INVOICE_COLUMNS)
         sets = ", ".join(f"{k} = :{k}" for k in fields)
-        db.execute(text(f"UPDATE po_invoice SET {sets} WHERE invoice_id = :i"), {**fields, "i": invoice_id})
+        db.execute(text(f"UPDATE po_invoice SET {sets}, updated_at = now() WHERE invoice_id = :i"),
+                   {**fields, "i": invoice_id})
         _touch(db, doc_id)
         write_audit(
             db, workspace_id=workspace_id, actor_id=actor_id, event="po.invoice.update", target=f"po:{doc_id}",
@@ -519,11 +560,159 @@ def delete_invoice(
     return "OK", get_document(db, doc_id=doc_id, workspace_id=workspace_id)
 
 
+def active_method(db: Session, payment_method_id: int, workspace_id: int) -> bool:
+    return active_in_workspace(db, payment_method_id=payment_method_id, workspace_id=workspace_id)
+
+
+# ── invoice files: Delivery Doc / Invoice Doc / Non Delivery ────────────────────────────────────
+
+_SLOT_COLUMN = {"delivery": "delivery_doc_blob", "invoice": "invoice_doc_blob", "non_delivery": "non_delivery_blob"}
+
+
+def invoice_file_blob(db: Session, *, doc_id: int, invoice_id: int, workspace_id: int, slot: str) -> int | None:
+    """The stored file in one of an invoice's boxes, or None (no box, no file, or not this workspace's)."""
+    return db.execute(
+        text(
+            f"SELECT inv.{_SLOT_COLUMN[slot]} FROM po_invoice inv JOIN po_document pd"
+            " ON pd.po_document_id = inv.po_document_id"
+            " WHERE inv.invoice_id = :i AND inv.po_document_id = :d AND pd.workspace_id = :w"
+        ),
+        {"i": invoice_id, "d": doc_id, "w": workspace_id},
+    ).scalar()
+
+
+def set_invoice_file(
+    db: Session, *, doc_id: int, invoice_id: int, workspace_id: int, actor_id: int, slot: str, blob_id: int | None
+) -> tuple[str, dict | None]:
+    code, doc = _open_doc(db, doc_id, workspace_id)
+    if code != "OK":
+        return code, doc
+    if not any(i["invoice_id"] == invoice_id for i in doc["invoices"]):
+        return "INVOICE_NOT_FOUND", {"invoice_id": invoice_id}
+    db.execute(
+        text(f"UPDATE po_invoice SET {_SLOT_COLUMN[slot]} = :b, updated_at = now() WHERE invoice_id = :i"),
+        {"b": blob_id, "i": invoice_id},
+    )
+    _touch(db, doc_id)
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="po.invoice.file" if blob_id is not None else "po.invoice.file.remove", target=f"po:{doc_id}",
+        payload={"po_no": doc["po_no"], "invoice_id": invoice_id, "slot": slot},
+    )
+    return "OK", get_document(db, doc_id=doc_id, workspace_id=workspace_id)
+
+
+# ── the Authorisation Form Details window ───────────────────────────────────────────────────────
+
+_AUTH_SQL = """
+    SELECT pd.po_document_id, a.payment_method_id, pm.name AS payment_method_name, a.deposit_pct,
+           a.amount_required, a.date_required, a.on_behalf_of_id, ob.full_name AS on_behalf_of_name,
+           a.form_created_at, sf.mime AS signed_mime,
+           a.updated_at
+      FROM po_document pd
+      LEFT JOIN po_authorisation a ON a.po_document_id = pd.po_document_id
+      LEFT JOIN payment_method pm ON pm.payment_method_id = a.payment_method_id
+      LEFT JOIN app_user ob ON ob.id = a.on_behalf_of_id
+      LEFT JOIN file_blob sf ON sf.file_blob_id = a.signed_blob
+     WHERE pd.po_document_id = :d AND pd.workspace_id = :w
+"""
+
+
+def get_authorisation(db: Session, *, doc_id: int, workspace_id: int) -> dict | None:
+    """The saved details (all empty until first saved) plus the PO amount, ex GST; None if no such PO."""
+    row = db.execute(text(_AUTH_SQL), {"d": doc_id, "w": workspace_id}).mappings().first()
+    if row is None:
+        return None
+    doc = get_document(db, doc_id=doc_id, workspace_id=workspace_id)
+    return {**row, "purchase_order_amount": doc["totals"]["total_ex"]}
+
+
+def save_authorisation(
+    db: Session, *, doc_id: int, workspace_id: int, actor_id: int, payload: AuthorisationIn
+) -> tuple[str, dict | None]:
+    code, doc = _open_doc(db, doc_id, workspace_id)
+    if code != "OK":
+        return code, doc
+    if payload.deposit_pct is not None and payload.amount_required is not None:
+        return "DEPOSIT_BOTH", {}
+    if payload.payment_method_id is not None and not active_method(db, payload.payment_method_id, workspace_id):
+        return "PAYMENT_METHOD_NOT_FOUND", {"payment_method_id": payload.payment_method_id}
+    if payload.on_behalf_of_id is not None and not user_in_workspace(
+        db, user_id=payload.on_behalf_of_id, workspace_id=workspace_id
+    ):
+        return "USER_NOT_FOUND", {"user_id": payload.on_behalf_of_id}
+    db.execute(
+        text(
+            """
+            INSERT INTO po_authorisation (po_document_id, payment_method_id, deposit_pct, amount_required,
+                                          date_required, on_behalf_of_id)
+            VALUES (:d, :pm, :pct, :amt, :dt, :ob)
+            ON CONFLICT (po_document_id) DO UPDATE SET payment_method_id = EXCLUDED.payment_method_id,
+                deposit_pct = EXCLUDED.deposit_pct, amount_required = EXCLUDED.amount_required,
+                date_required = EXCLUDED.date_required, on_behalf_of_id = EXCLUDED.on_behalf_of_id,
+                updated_at = now()
+            """
+        ),
+        {"d": doc_id, "pm": payload.payment_method_id, "pct": payload.deposit_pct,
+         "amt": payload.amount_required, "dt": payload.date_required, "ob": payload.on_behalf_of_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id, event="po.authorisation.save", target=f"po:{doc_id}",
+        payload={"po_no": doc["po_no"]},
+    )
+    return "OK", get_authorisation(db, doc_id=doc_id, workspace_id=workspace_id)
+
+
+_AUTH_FILE_COLUMN = {"form": "form_blob", "signed": "signed_blob"}
+
+
+def authorisation_file_blob(db: Session, *, doc_id: int, workspace_id: int, which: str) -> int | None:
+    return db.execute(
+        text(
+            f"SELECT a.{_AUTH_FILE_COLUMN[which]} FROM po_authorisation a JOIN po_document pd"
+            " ON pd.po_document_id = a.po_document_id WHERE a.po_document_id = :d AND pd.workspace_id = :w"
+        ),
+        {"d": doc_id, "w": workspace_id},
+    ).scalar()
+
+
+def set_authorisation_file(
+    db: Session, *, doc_id: int, workspace_id: int, actor_id: int, which: str, blob_id: int | None
+) -> tuple[str, dict | None]:
+    """Create Form stores the PDF it rendered (`form`); the scan of the signed copy is `signed`."""
+    code, doc = _open_doc(db, doc_id, workspace_id)
+    if code != "OK":
+        return code, doc
+    db.execute(
+        text("INSERT INTO po_authorisation (po_document_id) VALUES (:d) ON CONFLICT DO NOTHING"), {"d": doc_id}
+    )
+    extra = ", form_created_at = now()" if which == "form" and blob_id is not None else ""
+    db.execute(
+        text(f"UPDATE po_authorisation SET {_AUTH_FILE_COLUMN[which]} = :b{extra}, updated_at = now()"
+             " WHERE po_document_id = :d"),
+        {"b": blob_id, "d": doc_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="po.authorisation.file" if blob_id is not None else "po.authorisation.file.remove",
+        target=f"po:{doc_id}", payload={"po_no": doc["po_no"], "which": which},
+    )
+    return "OK", get_authorisation(db, doc_id=doc_id, workspace_id=workspace_id)
+
+
+def staff_photo_blob(db: Session, *, user_id: int, workspace_id: int) -> int | None:
+    return db.execute(
+        text("SELECT photo_file_blob_id FROM app_user WHERE id = :u AND workspace_id = :w"),
+        {"u": user_id, "w": workspace_id},
+    ).scalar()
+
+
 def list_staff(db: Session, *, workspace_id: int) -> list[dict]:
     """Active people of the workspace with their email: the PO panel's Ordered by list and Cc ticks.
     Reached only through the Orderbook-gated route, so emails are not on the open team list."""
     rows = db.execute(
-        text("SELECT id, full_name, email FROM app_user WHERE workspace_id = :w AND is_active = true"
+        text("SELECT id, full_name, email, (photo_file_blob_id IS NOT NULL) AS has_photo FROM app_user"
+             " WHERE workspace_id = :w AND is_active = true"
              " ORDER BY full_name"),
         {"w": workspace_id},
     ).mappings().all()
