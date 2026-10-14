@@ -20,6 +20,7 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from .blobs import discard_bytes_if_unreferenced, insert_blob_or_existing
 from .schemas import FileBlobOut
 from .store import FileStore, get_default_store
 from .validators import MAX_BYTE_SIZE, sniff_mime, validate_extension_matches
@@ -100,33 +101,23 @@ async def upload_file(
     slug = _workspace_slug(db, user.workspace_id)
     storage_key = store.put(slug, sha, io.BytesIO(payload))
     try:
-        new_id = db.execute(
-            text(
-                """
-                INSERT INTO file_blob(workspace_id, sha256, mime, byte_size,
-                                      original_filename, storage_key, uploaded_by)
-                VALUES (:w, :s, :m, :sz, :n, :k, :u)
-                RETURNING file_blob_id
-                """
-            ),
-            {
-                "w": user.workspace_id, "s": sha, "m": sniffed, "sz": total,
-                "n": file.filename or "", "k": storage_key, "u": user.id,
-            },
-        ).scalar()
+        new_id, created = insert_blob_or_existing(
+            db, workspace_id=user.workspace_id, sha256=sha, mime=sniffed, byte_size=total,
+            original_filename=file.filename or "", storage_key=storage_key, uploaded_by=user.id,
+        )
         write_audit(
             db,
             workspace_id=user.workspace_id,
             actor_id=user.id,
-            event="file_blob.create",
+            event="file_blob.create" if created else "file_blob.dedup",
             target=str(new_id),
             payload={"sha256": sha, "byte_size": total, "mime": sniffed,
                      "original_filename": file.filename},
         )
         db.commit()
     except Exception:
-        store.delete(storage_key)
         db.rollback()
+        discard_bytes_if_unreferenced(db, store, storage_key)
         raise
 
     return FileBlobOut(
@@ -135,7 +126,7 @@ async def upload_file(
         mime=sniffed,
         byte_size=total,
         original_filename=file.filename or "",
-        deduped=False,
+        deduped=not created,
     )
 
 

@@ -243,3 +243,97 @@ def test_staff_emails_come_from_the_orderbook_route_only(ws):
     other, _, _ = login("admin", prefix="ps")
     mine = {x["id"] for x in staff}
     assert mine.isdisjoint({x["id"] for x in other.get("/purchase-orders/staff").json()["staff"]})
+
+
+# ── code-review fixes (October 2026) ───────────────────────────────────────────────────────────
+
+def _order_row(c, order):
+    return c.get(f"/orders/{order}").json()
+
+
+def test_a_hand_typed_date_ordered_survives_leaving_a_po_with_the_same_date(ws):
+    """The PO only clears a Date ordered it set itself, not one that happens to equal its own."""
+    c = ws["buyer"]
+    a = _order(ws)
+    assert c.patch(f"/orders/{a}", json={"date_ordered": "2020-05-05"}).status_code == 200
+    assert _order_row(c, a)["date_ordered"] == "2020-05-05"
+    id_ = _po(ws, a)["po_document_id"]
+    assert c.patch(f"/purchase-orders/{id_}", json={"date_ordered": "2020-05-05"}).status_code == 200
+    c.delete(f"/purchase-orders/{id_}/orders/{a}")
+    assert _order_row(c, a)["date_ordered"] == "2020-05-05"
+
+
+def test_the_po_date_is_cleared_even_after_the_po_date_was_edited(ws):
+    c = ws["buyer"]
+    a = _order(ws)                                             # no date: the PO sets it
+    id_ = _po(ws, a)["po_document_id"]
+    assert _order_row(c, a)["date_ordered"] is not None
+    assert c.patch(f"/purchase-orders/{id_}", json={"date_ordered": "2020-01-01"}).status_code == 200
+    c.delete(f"/purchase-orders/{id_}/orders/{a}")
+    assert _order_row(c, a)["date_ordered"] is None            # back in "to be ordered"
+
+
+def test_editing_an_orders_date_by_hand_keeps_it_when_it_leaves_the_po(ws):
+    c = ws["buyer"]
+    a = _order(ws)
+    id_ = _po(ws, a)["po_document_id"]
+    assert c.patch(f"/orders/{a}", json={"date_ordered": "2021-02-03"}).status_code == 200
+    c.delete(f"/purchase-orders/{id_}/orders/{a}")
+    assert _order_row(c, a)["date_ordered"] == "2021-02-03"
+
+
+def test_cancelling_a_po_leaves_a_delivered_orders_date_and_versions_the_rest(ws):
+    c = ws["buyer"]
+    a, b = _order(ws), _order(ws)
+    id_ = _po(ws, a, b)["po_document_id"]
+    assert c.patch(f"/orders/{a}", json={"status": "Delivered"}).status_code == 200
+    before = _order_row(c, a)["date_ordered"]
+    vb = _order_row(c, b)["field_versions"].get("date_ordered", 0)
+    assert c.post(f"/purchase-orders/{id_}/cancel").status_code == 200
+    assert _order_row(c, a)["date_ordered"] == before          # delivered: history stays
+    after_b = _order_row(c, b)
+    assert after_b["date_ordered"] is None
+    assert after_b["field_versions"]["date_ordered"] == vb + 1  # a stale panel now sees a conflict
+
+
+def test_a_po_with_invoices_cannot_be_cancelled(ws):
+    c = ws["buyer"]
+    a = _order(ws)
+    id_ = _po(ws, a)["po_document_id"]
+    c.post(f"/purchase-orders/{id_}/invoices", json={"order_id": a, "invoice_number": "I-1"})
+    r = c.post(f"/purchase-orders/{id_}/cancel")
+    assert r.status_code == 409 and _code(r) == "PO_HAS_INVOICES"
+    assert c.get(f"/purchase-orders/{id_}").json()["status"] == "Open"
+
+
+def test_a_cancelled_delivery_fee_order_is_replaced_not_stuck(ws):
+    c = ws["buyer"]
+    id_ = _po(ws, _order(ws))["po_document_id"]
+    d1 = c.put(f"/purchase-orders/{id_}/delivery", json={"amount": "10.00"}).json()["delivery_order_id"]
+    assert c.delete(f"/orders/{d1}").status_code in (200, 204)  # cancelled in the Orderbook
+    po = c.get(f"/purchase-orders/{id_}").json()
+    assert po["delivery_charge"] is None                        # the cancelled fee is no charge
+    assert po["totals"]["total_ex"] == "100.00"
+    r = c.put(f"/purchase-orders/{id_}/delivery", json={"amount": "20.00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["delivery_order_id"] != d1 and r.json()["delivery_charge"] == "20.00"
+    assert r.json()["totals"]["total_ex"] == "120.00"
+
+
+def test_contact_emails_must_be_plain_addresses(ws):
+    c, v = ws["buyer"], ws["v1"]
+    for bad in ("a@b.com?bcc=evil@x.com", "a@b.com,evil@x.com", "a@b.com;x@y.com", "<a@b.com>", "a@b"):
+        assert c.post(f"/suppliers/{v}/contacts", json={"name": "N", "email": bad}).status_code == 422, bad
+    assert c.post(f"/suppliers/{v}/contacts", json={"name": "N", "email": "sam.o'neil+po@sub.example.com.au"}).status_code == 201
+
+
+def test_excel_cells_from_order_text_are_never_formulas(ws):
+    c = ws["buyer"]
+    a = _order(ws, description='=HYPERLINK("http://evil","x")')
+    id_ = _po(ws, a, memo="@SUM(1+1)")["po_document_id"]
+    wb = load_workbook(io.BytesIO(c.get(f"/purchase-orders/{id_}/excel").content))
+    bad = [(cell.coordinate, cell.value) for row in wb.active.iter_rows() for cell in row
+           if cell.data_type == "f"]
+    assert bad == []
+    cells = [str(cell.value) for row in wb.active.iter_rows() for cell in row]
+    assert '=HYPERLINK("http://evil","x")' in cells             # the text itself is kept

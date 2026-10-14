@@ -696,6 +696,8 @@ def patch_order(
         else:
             sets.append(f"{col} = :{key}")
             params[key] = val
+    if "date_ordered" in fields:
+        sets.append("date_ordered_from_po = false")  # typed by hand: a PO no longer owns that date
     db.execute(
         text(f"UPDATE purchase_orders SET {', '.join(sets)},"
              " field_versions = CAST(:fv AS jsonb), updated_at = now()"
