@@ -49,12 +49,6 @@ _cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 
-def _login(role: str = "drafter"):
-    return login(role, prefix="h")
-
-
-
-
 def _create_project(db, *, wid: int, uid: int) -> int:
     code = f"HJ-{uuid.uuid4().hex[:8]}"
     pid = db.execute(
@@ -115,7 +109,7 @@ def _seed_part(db, *, module_id: int, part_name: str = "Side Panel", qty: int = 
 
 def test_create_module_writes_create_log():
     """POST /items/{id}/modules creates module and writes item_edit_log field='_create_module'."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -147,7 +141,7 @@ def test_create_module_writes_create_log():
 
 def test_create_part_writes_log_with_field_create():
     """POST /modules/{mid}/parts creates part and writes item_edit_log field='_create_part'."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -181,7 +175,7 @@ def test_create_part_writes_log_with_field_create():
 
 def test_patch_part_qty_writes_one_edit_log_row():
     """PATCH /parts/{pid} with qty=5 writes exactly 1 new edit_log row with field='parts.qty'."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid_proj = _create_project(db, wid=wid, uid=uid)
@@ -227,7 +221,7 @@ def test_patch_part_qty_writes_one_edit_log_row():
 
 def test_delete_part_writes_delete_log():
     """DELETE /parts/{pid} writes _delete_part log row before delete; row persists after."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid_proj = _create_project(db, wid=wid, uid=uid)
@@ -262,7 +256,7 @@ def test_delete_part_writes_delete_log():
 
 def test_module_in_other_workspace_404():
     """Workspace B cannot PATCH workspace A's module — must get 404."""
-    c_a, wid_a, uid_a = _login(role="drafter")
+    c_a, wid_a, uid_a = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid_a, uid=uid_a)
@@ -271,14 +265,14 @@ def test_module_in_other_workspace_404():
     finally:
         db.close()
 
-    c_b, _wid_b, _uid_b = _login(role="drafter")
+    c_b, _wid_b, _uid_b = login(role="drafter")
     r = c_b.patch(f"/modules/{mid}", json={"name": "Hijacked"})
     assert r.status_code == 404, r.text
 
 
 def test_editor_403_on_part_patch():
     """An editor (not drafter/manager/admin) cannot PATCH a part — must get 403."""
-    c_drafter, wid, uid_drafter = _login(role="drafter")
+    c_drafter, wid, uid_drafter = login(role="drafter")
     db = SessionLocal()
     try:
         pid_proj = _create_project(db, wid=wid, uid=uid_drafter)
@@ -324,7 +318,7 @@ def _module_with_threads():
     """A drafter, their workspace, and a module holding 2 parts and threads: two
     live top-level comments, a live reply, and a soft-deleted one (3 are live).
     A second module of the same item carries a comment that must not be counted."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -366,7 +360,7 @@ def test_delete_impact_counts_parts_and_live_comments_of_this_module_only():
 
 
 def test_delete_impact_is_zero_for_an_empty_module():
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -381,10 +375,10 @@ def test_delete_impact_has_the_deletes_gate_and_is_workspace_scoped():
     c, _wid, _uid, _iid, mid = _module_with_threads()
     # same gate as DELETE /modules/{mid}: drafter / manager / admin only
     for role in ("editor", "viewer"):
-        other, *_ = _login(role=role)
+        other, *_ = login(role=role)
         assert other.get(f"/modules/{mid}/delete-impact").status_code == 403
     # another workspace's drafter cannot see it, and an unknown id is 404 too
-    theirs, *_ = _login(role="drafter")
+    theirs, *_ = login(role="drafter")
     assert theirs.get(f"/modules/{mid}/delete-impact").status_code == 404
     assert c.get("/modules/99999999/delete-impact").status_code == 404
 

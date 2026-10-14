@@ -13,12 +13,6 @@ from .helpers import login
 pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="pc")
-
-
-
-
 def _make_project(wid: int, uid: int, code: str) -> int:
     s = SessionLocal()
     try:
@@ -51,14 +45,14 @@ def _make_contract(pid: int, uid: int, original_value: str) -> None:
 
 
 def test_get_contract_404_when_missing():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     r = c.get(f"/projects/{pid}/contract")
     assert r.status_code == 404
 
 
 def test_get_contract_returns_original_with_no_variations():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "100000.00")
     r = c.get(f"/projects/{pid}/contract")
@@ -70,7 +64,7 @@ def test_get_contract_returns_original_with_no_variations():
 
 
 def test_create_variation_updates_current_value():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "100000.00")
     r = c.post(f"/projects/{pid}/contract/variations",
@@ -83,7 +77,7 @@ def test_create_variation_updates_current_value():
 
 
 def test_negative_variation_reduces_current_value():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "100000.00")
     c.post(f"/projects/{pid}/contract/variations",
@@ -93,10 +87,10 @@ def test_negative_variation_reduces_current_value():
 
 
 def test_contract_workspace_isolation():
-    c1, wid1, uid1 = _login()
+    c1, wid1, uid1 = login()
     pid = _make_project(wid1, uid1, "P1")
     _make_contract(pid, uid1, "50000.00")
-    c2, *_ = _login()
+    c2, *_ = login()
     assert c2.get(f"/projects/{pid}/contract").status_code == 404
     r = c2.post(f"/projects/{pid}/contract/variations",
                 json={"description": "x", "amount_delta": "1"})
@@ -104,7 +98,7 @@ def test_contract_workspace_isolation():
 
 
 def test_drafter_cannot_write_but_can_read():
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "10000.00")
     assert c.get(f"/projects/{pid}/contract").status_code == 200
@@ -114,7 +108,7 @@ def test_drafter_cannot_write_but_can_read():
 
 
 def test_viewer_cannot_write():
-    c, wid, uid = _login(role="viewer")
+    c, wid, uid = login(role="viewer")
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "10000.00")
     r = c.post(f"/projects/{pid}/contract/variations",
@@ -125,7 +119,7 @@ def test_viewer_cannot_write():
 # --- Actual costs (Q493/Q549) ---------------------------------------------
 
 def test_actual_costs_zero_for_untouched_project():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     r = c.get(f"/projects/{pid}/actual-costs")
     assert r.status_code == 200, r.text
@@ -136,7 +130,7 @@ def test_actual_costs_zero_for_untouched_project():
 
 
 def test_actual_costs_materials_from_received_batches():
-    c, wid, uid = _login()
+    c, wid, uid = login()
     pid = _make_project(wid, uid, "P1")
     s = SessionLocal()
     try:
@@ -171,7 +165,7 @@ def test_actual_costs_materials_from_received_batches():
 
 
 def test_actual_costs_workspace_isolation():
-    c1, wid1, uid1 = _login()
+    c1, wid1, uid1 = login()
     pid = _make_project(wid1, uid1, "P1")
-    c2, *_ = _login()
+    c2, *_ = login()
     assert c2.get(f"/projects/{pid}/actual-costs").status_code == 404

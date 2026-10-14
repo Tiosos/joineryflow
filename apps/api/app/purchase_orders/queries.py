@@ -22,6 +22,7 @@ from ..auth.audit import write_audit
 from ..concurrency import bump_field_versions
 from ..orders import queries as oq
 from ..orders.schemas import CreateOrderIn, PatchOrderIn
+from ..workspace_scope import user_in_workspace
 from .schemas import CreatePoIn, InvoiceIn, PatchInvoiceIn, PatchPoIn
 
 _OPEN_STATUSES = ("Delivered", "Cancelled", "Rejected")
@@ -157,13 +158,6 @@ def _lock_orders(db: Session, order_ids: list[int], workspace_id: int) -> list[d
     return [dict(r) for r in rows]
 
 
-def _user_in_workspace(db: Session, user_id: int, workspace_id: int) -> bool:
-    return db.execute(
-        text("SELECT 1 FROM app_user WHERE id = :u AND workspace_id = :w"),
-        {"u": user_id, "w": workspace_id},
-    ).first() is not None
-
-
 def _check_orders(rows: list[dict], vendor_id: int | None) -> tuple[str, dict] | None:
     """The refusal for a set of orders that cannot go on a PO of `vendor_id`, or None."""
     if any(r["po_document_id"] is not None for r in rows):
@@ -254,7 +248,7 @@ def create_document(
     refusal = _check_orders(rows, None)
     if refusal:
         return refusal
-    if payload.ordered_by_id is not None and not _user_in_workspace(db, payload.ordered_by_id, workspace_id):
+    if payload.ordered_by_id is not None and not user_in_workspace(db, user_id=payload.ordered_by_id, workspace_id=workspace_id):
         return "USER_NOT_FOUND", {"user_id": payload.ordered_by_id}
     required = payload.date_required or min(
         (r["required_date"] for r in rows if r["required_date"] is not None), default=None
@@ -297,7 +291,7 @@ def patch_document(
     if code != "OK":
         return code, doc
     fields = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if k in _PATCHABLE}
-    if fields.get("ordered_by_id") is not None and not _user_in_workspace(db, fields["ordered_by_id"], workspace_id):
+    if fields.get("ordered_by_id") is not None and not user_in_workspace(db, user_id=fields["ordered_by_id"], workspace_id=workspace_id):
         return "USER_NOT_FOUND", {"user_id": fields["ordered_by_id"]}
     if fields:
         sets = ", ".join(f"{k} = :{k}" for k in fields)

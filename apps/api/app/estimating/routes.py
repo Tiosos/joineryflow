@@ -962,9 +962,10 @@ def quote_pdf_route(
     estimate = q.estimate_detail(
         db, estimate_id=detail["estimate_id"], workspace_id=user.workspace_id
     )
-    pdf_bytes = pdf_engine.render_quote_pdf(
+    html = pdf_engine.render_quote_html(
         estimate=estimate, revision=detail, is_draft=is_draft,
     )
+    pdf_bytes = pdf_engine.cached_quote_pdf(db, revision_id=rid, html=html)
     write_audit(
         db, workspace_id=user.workspace_id, actor_id=user.id,
         event="estimate.print", target=str(rid),

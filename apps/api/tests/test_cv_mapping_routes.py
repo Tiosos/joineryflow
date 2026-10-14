@@ -25,12 +25,6 @@ _cleanup = truncate_fixture(
 )
 
 
-def _login(role: str = "drafter"):
-    return login(role, prefix="m")
-
-
-
-
 def _seed_board(wid: int, *, code: str, sku: str, description: str = "Board") -> int:
     db = SessionLocal()
     try:
@@ -47,7 +41,7 @@ def _seed_board(wid: int, *, code: str, sku: str, description: str = "Board") ->
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 def test_list_cv_mappings_empty_workspace_returns_zero():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     r = c.get("/catalog/cv-mappings")
     assert r.status_code == 200
     body = r.json()
@@ -56,7 +50,7 @@ def test_list_cv_mappings_empty_workspace_returns_zero():
 
 
 def test_post_cv_mapping_creates_row():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     bid = _seed_board(wid, code="A", sku="b-1", description="18mm PB")
     r = c.post("/catalog/cv-mappings", json={
         "cv_code": "18-PB",
@@ -72,7 +66,7 @@ def test_post_cv_mapping_creates_row():
 
 
 def test_post_cv_mapping_duplicate_code_returns_409():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     bid = _seed_board(wid, code="A", sku="b-1")
     payload = {"cv_code": "DUP", "target_material_table": "board_materials",
                "target_material_id": bid}
@@ -83,7 +77,7 @@ def test_post_cv_mapping_duplicate_code_returns_409():
 
 
 def test_post_cv_mapping_with_invalid_target_table_returns_422():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     r = c.post("/catalog/cv-mappings", json={
         "cv_code": "X",
         "target_material_table": "not_a_table",
@@ -93,7 +87,7 @@ def test_post_cv_mapping_with_invalid_target_table_returns_422():
 
 
 def test_get_cv_mapping_returns_target_description():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     bid = _seed_board(wid, code="A", sku="b-1", description="Pinned description")
     r = c.post("/catalog/cv-mappings", json={
         "cv_code": "PIN", "target_material_table": "board_materials",
@@ -106,7 +100,7 @@ def test_get_cv_mapping_returns_target_description():
 
 
 def test_patch_cv_mapping_repoints_to_new_target():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     b1 = _seed_board(wid, code="A", sku="b-1", description="Old")
     b2 = _seed_board(wid, code="B", sku="b-2", description="New")
     created = c.post("/catalog/cv-mappings", json={
@@ -120,13 +114,13 @@ def test_patch_cv_mapping_repoints_to_new_target():
 
 
 def test_patch_cv_mapping_unknown_id_returns_404():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     r = c.patch("/catalog/cv-mappings/999999", json={"cv_code": "X"})
     assert r.status_code == 404
 
 
 def test_delete_cv_mapping_hard_deletes():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     bid = _seed_board(wid, code="A", sku="b-1")
     created = c.post("/catalog/cv-mappings", json={
         "cv_code": "DEL", "target_material_table": "board_materials",
@@ -140,13 +134,13 @@ def test_delete_cv_mapping_hard_deletes():
 
 
 def test_delete_cv_mapping_unknown_id_returns_404():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     r = c.delete("/catalog/cv-mappings/999999")
     assert r.status_code == 404
 
 
 def test_create_writes_audit_event_cv_material_mapping_create():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     bid = _seed_board(wid, code="A", sku="b-1")
     r = c.post("/catalog/cv-mappings", json={
         "cv_code": "AUDIT", "target_material_table": "board_materials",

@@ -42,14 +42,6 @@ _cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _login(role: str = "manager"):
-    return login(role, prefix="hw")
-
-
-
-
-
-
 def _insert_board(
     db,
     *,
@@ -126,7 +118,7 @@ def _add_to_catalog(
 
 def test_catalog_empty_for_new_project():
     """A project with no catalog rows returns project_id and an empty rows list."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid)
@@ -142,7 +134,7 @@ def test_catalog_empty_for_new_project():
 
 def test_catalog_resolves_two_source_tables():
     """Catalog rows from BOARD and HARDWARE types surface with correct source_table strings."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid)
@@ -172,8 +164,8 @@ def test_catalog_resolves_two_source_tables():
 
 def test_catalog_404_for_other_workspace():
     """A user from workspace B cannot access workspace A's project catalog."""
-    c_a, wid_a, uid_a = _login()
-    c_b, _wid_b, _uid_b = _login()
+    c_a, wid_a, uid_a = login()
+    c_b, _wid_b, _uid_b = login()
 
     db = SessionLocal()
     try:
@@ -187,7 +179,7 @@ def test_catalog_404_for_other_workspace():
 
 def test_catalog_includes_qty_and_unit_cost():
     """Catalog row echoes unit_cost from the source table; qty is always 1.0."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid)
@@ -218,7 +210,7 @@ def test_catalog_supplier_falls_back_to_default_supplier():
     Reading `supplier` alone showed "no supplier" on every seeded row while a
     supplier was plainly recorded (custom_made via its `vendor` column).
     """
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid)
@@ -260,7 +252,7 @@ def test_catalog_supplier_falls_back_to_default_supplier():
 
 def test_source_catalog_supplier_falls_back_to_default_supplier():
     """GET /source_catalog/{table} carries the same default_supplier fallback."""
-    c, wid, _uid = _login()
+    c, wid, _uid = login()
     db = SessionLocal()
     try:
         db.execute(
@@ -343,7 +335,7 @@ def test_adding_a_material_already_in_the_catalog_is_a_409():
     """The catalog holds a material once per project. A second add is refused with a
     stable code (it used to hit the unique constraint and answer a raw 500), and writes
     neither a second row nor a second ADD log entry."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-DUP")
@@ -372,7 +364,7 @@ def test_adding_a_material_already_in_the_catalog_is_a_409():
 
 def test_add_catalog_writes_log_in_same_txn():
     """POST hardware_catalog inserts both catalog row and log row."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-A1")
@@ -409,7 +401,7 @@ def test_add_catalog_writes_log_in_same_txn():
 
 def test_add_catalog_invalid_source_404():
     """POST hardware_catalog with non-existent source_id returns 404."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-A2")
@@ -425,7 +417,7 @@ def test_add_catalog_invalid_source_404():
 
 def test_remove_catalog_409_when_referenced():
     """DELETE hardware_catalog returns 409 when a hardware_line references it."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-B1")
@@ -442,7 +434,7 @@ def test_remove_catalog_409_when_referenced():
 
 def test_remove_catalog_writes_remove_log_row():
     """DELETE hardware_catalog inserts a REMOVE log row."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-B2")
@@ -471,7 +463,7 @@ def test_remove_catalog_writes_remove_log_row():
 
 def test_create_hardware_line_validates_catalog_belongs_to_project():
     """POST hardware_line with catalog_id from a different project returns 404."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid_a = create_project(db, uid=uid, code="T18-C1A")
@@ -494,7 +486,7 @@ def test_create_hardware_line_validates_catalog_belongs_to_project():
 
 def test_patch_hardware_line_qty_writes_edit_log():
     """PATCH qty writes one item_edit_log row with field='hardware_lines.qty'."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-D1")
@@ -526,7 +518,7 @@ def test_patch_hardware_line_qty_writes_edit_log():
 
 def test_editor_403_on_hardware_line_create():
     """A user with auth_role='editor' gets 403 when POSTing a hardware line."""
-    c, wid, uid = _login(role="editor")
+    c, wid, uid = login(role="editor")
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-E1")
@@ -542,7 +534,7 @@ def test_editor_403_on_hardware_line_create():
 
 def test_availability_endpoint_reflects_new_line():
     """After POSTing a hardware_line, GET /items/{id}/availability shows it as 'none'."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code="T18-F1")
@@ -575,7 +567,7 @@ def test_availability_endpoint_reflects_new_line():
 
 def _hw_fixture():
     """A drafter, their workspace, and an item with one hardware line."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = create_project(db, uid=uid, code=f"HL-{uuid.uuid4().hex[:6]}")

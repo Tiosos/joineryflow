@@ -15,12 +15,6 @@ from .helpers import login
 pytestmark = pytest.mark.usefixtures("truncate_after")
 
 
-def _login(role: str = "admin"):
-    c, wid, _ = login(role)
-    return c, wid
-
-
-
 def _seed_groups(wid: int) -> None:
     db = SessionLocal()
     try:
@@ -44,20 +38,20 @@ def _group_id(wid: int, name: str) -> int:
 # --- access control --------------------------------------------------------
 
 def test_non_admin_cannot_list_groups():
-    c, wid = _login(role="drafter")
+    c, wid, _ = login(role="drafter")
     r = c.get("/permission-groups")
     assert r.status_code == 403
 
 
 def test_manager_can_read_but_not_write():
-    c, wid = _login(role="manager")
+    c, wid, _ = login(role="manager")
     assert c.get("/permission-groups").status_code == 200
     r = c.post("/permission-groups", json={"name": "new-group"})
     assert r.status_code == 403
 
 
 def test_admin_can_read_and_write():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     assert c.get("/permission-groups").status_code == 200
     r = c.post("/permission-groups", json={"name": "kitchen-team"})
     assert r.status_code == 201
@@ -66,7 +60,7 @@ def test_admin_can_read_and_write():
 # --- group CRUD -------------------------------------------------------------
 
 def test_list_groups_returns_seeded_system_groups_with_grants():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     _seed_groups(wid)
     rows = c.get("/permission-groups").json()
     names = {r["name"] for r in rows}
@@ -78,7 +72,7 @@ def test_list_groups_returns_seeded_system_groups_with_grants():
 
 
 def test_create_group_duplicate_name_returns_existing_id():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     r1 = c.post("/permission-groups", json={"name": "kitchen-team"})
     gid = r1.json()["group_id"]
     r2 = c.post("/permission-groups", json={"name": "kitchen-team"})
@@ -87,7 +81,7 @@ def test_create_group_duplicate_name_returns_existing_id():
 
 
 def test_set_grants_replaces_full_set():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     r = c.put(
         f"/permission-groups/{gid}/grants",
@@ -105,7 +99,7 @@ def test_set_grants_replaces_full_set():
 
 
 def test_set_grants_rejects_unknown_module():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     r = c.put(
         f"/permission-groups/{gid}/grants",
@@ -115,7 +109,7 @@ def test_set_grants_rejects_unknown_module():
 
 
 def test_delete_group_blocks_system_group():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     _seed_groups(wid)
     gid = _group_id(wid, "viewer")
     r = c.delete(f"/permission-groups/{gid}")
@@ -124,7 +118,7 @@ def test_delete_group_blocks_system_group():
 
 
 def test_delete_group_blocks_when_it_has_members():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     other_uid = _make_workspace_user(wid, "viewer")
     c.post(f"/permission-groups/{gid}/memberships", json={"user_id": other_uid})
@@ -134,7 +128,7 @@ def test_delete_group_blocks_when_it_has_members():
 
 
 def test_delete_group_succeeds_when_empty():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     r = c.delete(f"/permission-groups/{gid}")
     assert r.status_code == 204
@@ -162,7 +156,7 @@ def _make_workspace_user(wid: int, role: str) -> int:
 
 
 def test_create_membership_workspace_wide():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     uid = _make_workspace_user(wid, "viewer")
     r = c.post(f"/permission-groups/{gid}/memberships", json={"user_id": uid})
@@ -171,9 +165,9 @@ def test_create_membership_workspace_wide():
 
 
 def test_create_membership_rejects_foreign_user():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
-    other_c, other_wid = _login(role="admin")
+    other_c, other_wid, _ = login(role="admin")
     other_uid = _make_workspace_user(other_wid, "viewer")
     r = c.post(f"/permission-groups/{gid}/memberships", json={"user_id": other_uid})
     assert r.status_code == 422
@@ -181,10 +175,10 @@ def test_create_membership_rejects_foreign_user():
 
 
 def test_create_membership_rejects_foreign_project():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     uid = _make_workspace_user(wid, "viewer")
-    other_c, other_wid = _login(role="admin")
+    other_c, other_wid, _ = login(role="admin")
     db = SessionLocal()
     try:
         other_pid = db.execute(
@@ -200,7 +194,7 @@ def test_create_membership_rejects_foreign_project():
 
 
 def test_create_membership_duplicate_returns_existing():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     uid = _make_workspace_user(wid, "viewer")
     r1 = c.post(f"/permission-groups/{gid}/memberships", json={"user_id": uid})
@@ -211,7 +205,7 @@ def test_create_membership_duplicate_returns_existing():
 
 
 def test_delete_membership():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     gid = c.post("/permission-groups", json={"name": "kitchen-team"}).json()["group_id"]
     uid = _make_workspace_user(wid, "viewer")
     mid = c.post(f"/permission-groups/{gid}/memberships", json={"user_id": uid}).json()["membership_id"]
@@ -220,7 +214,7 @@ def test_delete_membership():
 
 
 def test_list_user_memberships():
-    c, wid = _login(role="admin")
+    c, wid, _ = login(role="admin")
     _seed_groups(wid)
     uid = _make_workspace_user(wid, "viewer")
     viewer_gid = _group_id(wid, "viewer")

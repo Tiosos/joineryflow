@@ -27,12 +27,6 @@ _cleanup = truncate_fixture(
 
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _seed_project_and_material(*, wid: int, uid: int) -> tuple[int, int]:
     """Insert a project (pm_id=uid) and a hardware material; return (pid, mat_id)."""
     db = SessionLocal()
@@ -68,7 +62,7 @@ def _seed_project_and_material(*, wid: int, uid: int) -> tuple[int, int]:
 
 def test_create_batch():
     """POST /batches creates an OPEN batch when only qty_ordered is set."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     pid, mat_id = _seed_project_and_material(wid=wid, uid=uid)
 
     r = c.post(
@@ -95,7 +89,7 @@ def test_create_batch():
 
 def test_patch_batch_marks_in_transit():
     """PATCH ordered_date flips derived status to 'IN_TRANSIT'."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     pid, mat_id = _seed_project_and_material(wid=wid, uid=uid)
     bid = c.post(
         "/batches",
@@ -115,7 +109,7 @@ def test_patch_batch_marks_in_transit():
 
 def test_soft_cancel_batch():
     """DELETE soft-cancels; GET returns status='CANCELLED'."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     pid, mat_id = _seed_project_and_material(wid=wid, uid=uid)
     bid = c.post(
         "/batches",
@@ -139,7 +133,7 @@ def test_soft_cancel_batch():
 
 def test_create_batch_404_for_unknown_project():
     """Unknown project_id yields 404 (workspace-scoped get_project miss)."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     _, mat_id = _seed_project_and_material(wid=wid, uid=uid)
 
     r = c.post(
@@ -156,7 +150,7 @@ def test_create_batch_404_for_unknown_project():
 
 def test_soft_cancel_blocked_when_allocations_exist():
     """DELETE /batches/{bid} returns 409 when batch has allocations with qty_allocated > 0."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     pid, mat_id = _seed_project_and_material(wid=wid, uid=uid)
 
     # Create a batch

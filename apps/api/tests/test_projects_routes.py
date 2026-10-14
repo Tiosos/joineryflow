@@ -11,21 +11,15 @@ from .conftest import truncate_fixture
 _cleanup = truncate_fixture()
 
 
-def _login(role: str):
-    return login(role, prefix="h")
-
-
-
-
 def test_list_empty_returns_empty():
-    c, _wid, _uid = _login("manager")
+    c, _wid, _uid = login("manager")
     r = c.get("/projects")
     assert r.status_code == 200
     assert r.json() == {"projects": []}
 
 
 def test_create_project_defaults_pm_to_self():
-    c, _wid, uid = _login("manager")
+    c, _wid, uid = login("manager")
     r = c.post(
         "/projects",
         json={"project_code": "HJ-001", "name": "Block B Kitchen"},
@@ -39,7 +33,7 @@ def test_create_project_defaults_pm_to_self():
 
 
 def test_create_forbidden_for_editor():
-    c, _wid, _uid = _login("editor")
+    c, _wid, _uid = login("editor")
     r = c.post(
         "/projects",
         json={"project_code": "HJ-002", "name": "Should Be Blocked"},
@@ -49,7 +43,7 @@ def test_create_forbidden_for_editor():
 
 def test_get_one_404_for_other_workspace():
     """A project whose pm_id belongs to workspace A is invisible to workspace B."""
-    c_a, wid_a, uid_a = _login("manager")
+    c_a, wid_a, uid_a = login("manager")
     # Create project in workspace A (pm_id = uid_a, which belongs to wid_a).
     r = c_a.post(
         "/projects",
@@ -59,13 +53,13 @@ def test_get_one_404_for_other_workspace():
     pid = r.json()["id"]
 
     # Workspace B user tries to fetch the same project ID.
-    c_b, _wid_b, _uid_b = _login("manager")
+    c_b, _wid_b, _uid_b = login("manager")
     r2 = c_b.get(f"/projects/{pid}")
     assert r2.status_code == 404
 
 
 def test_patch_status_writes_audit():
-    c, _wid, _uid = _login("manager")
+    c, _wid, _uid = login("manager")
     r = c.post(
         "/projects",
         json={"project_code": "HJ-003", "name": "Audit Test Project"},
@@ -90,7 +84,7 @@ def test_patch_status_writes_audit():
 
 
 def test_list_fav_only_filters_to_favourites():
-    c, _wid, uid = _login("manager")
+    c, _wid, uid = login("manager")
     # Create two projects.
     r1 = c.post("/projects", json={"project_code": "FAV-001", "name": "Fav Project"})
     assert r1.status_code == 201, r1.text
@@ -123,13 +117,13 @@ def test_list_fav_only_filters_to_favourites():
 
 def test_patch_404_for_other_workspace():
     """PATCH from workspace B on workspace A's project must not mutate it."""
-    c_a, _wid_a, _uid_a = _login("manager")
+    c_a, _wid_a, _uid_a = login("manager")
     r = c_a.post("/projects", json={"project_code": "WS-A-FIX", "name": "A's project"})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
     original_status = r.json()["status"]
 
-    c_b, _wid_b, _uid_b = _login("manager")
+    c_b, _wid_b, _uid_b = login("manager")
     r2 = c_b.patch(f"/projects/{pid}", json={"status": "Closed"})
     assert r2.status_code == 404
 
@@ -140,20 +134,20 @@ def test_patch_404_for_other_workspace():
 
 def test_patch_pm_id_to_other_workspace_rejected():
     """Supplying a pm_id that belongs to another workspace must be rejected with 422."""
-    c_a, _wid_a, _uid_a = _login("manager")
+    c_a, _wid_a, _uid_a = login("manager")
     r = c_a.post("/projects", json={"project_code": "WS-A-PM", "name": "A's project"})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
 
     # uid_b is a user in workspace B — not in workspace A.
-    _c_b, _wid_b, uid_b = _login("manager")
+    _c_b, _wid_b, uid_b = login("manager")
     r2 = c_a.patch(f"/projects/{pid}", json={"pm_id": uid_b})
     assert r2.status_code == 422
 
 
 def test_patch_pm_id_explicit_null_rejected():
     """PATCH with pm_id: null must be rejected with 422 (Pydantic validator)."""
-    c, _wid, _uid = _login("manager")
+    c, _wid, _uid = login("manager")
     r = c.post("/projects", json={"project_code": "WS-NULL", "name": "X"})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
@@ -162,7 +156,7 @@ def test_patch_pm_id_explicit_null_rejected():
 
 
 def test_add_fav_then_list_with_fav_true_returns_it():
-    c, _, uid = _login("manager")
+    c, _, uid = login("manager")
     r = c.post("/projects", json={"project_code": "FAV-001", "name": "Fav project"})
     pid = r.json()["id"]
 
@@ -182,7 +176,7 @@ def test_add_fav_then_list_with_fav_true_returns_it():
 
 
 def test_remove_fav_idempotent_no_404():
-    c, _, _ = _login("manager")
+    c, _, _ = login("manager")
     r = c.post("/projects", json={"project_code": "FAV-002", "name": "Fav project"})
     pid = r.json()["id"]
 
@@ -200,11 +194,11 @@ def test_remove_fav_idempotent_no_404():
 
 def test_fav_cross_workspace_404():
     """Workspace-B user cannot favourite workspace-A's project."""
-    c_a, _, _ = _login("manager")
+    c_a, _, _ = login("manager")
     r = c_a.post("/projects", json={"project_code": "WS-A-FAV", "name": "A's project"})
     pid = r.json()["id"]
 
-    c_b, _, _ = _login("manager")
+    c_b, _, _ = login("manager")
     r2 = c_b.post(f"/projects/{pid}/favourites")
     assert r2.status_code == 404
     r3 = c_b.delete(f"/projects/{pid}/favourites")
@@ -222,7 +216,7 @@ def test_project_serves_the_detail_window_tiles():
     The mock's two hours tables are deliberately absent: they come from TGPAY
     and nothing in this schema records hours (Q571).
     """
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     r = c.post("/projects", json={"project_code": "HJ-TILE", "name": "Tile Project"})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]

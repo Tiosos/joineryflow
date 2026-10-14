@@ -118,11 +118,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0061` (head `0061_po_date_ordered_provenance`) |
+| `db/` | Alembic migrations `0001`→`0062` (head `0062_quote_pdf_cache`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
-| `tests/e2e/` | Playwright specs (36 spec files, plus `helpers.ts`; see §3) |
+| `tests/e2e/` | Playwright specs (37 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -203,6 +203,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - **Procurement:** `purchase_orders` + `po_line_items` *are* the order layer (Q553) and `vendors` is the supplier entity (Q556). Item cost does **not** roll up (Q543). Batch status pill is derived in SQL. Allocation over-commit is 409. The legacy `/procurement/*` namespace was **retired** in October 2026 (code kept as reference in `legacy/procurement_v0/`, not mounted).
 - **Order coverage is per (quote line, material)** in `estimate_line_material_order` (row = ordered or ordered by hand; no row = pending). `estimate_line.orders_generated_at` / `orders_dismissed_*` are **derived** from it (`_refresh_line_state`) for a line that references catalog materials, and written directly only for a line with none. Never write the line columns for a materials line by hand.
 - **Estimating:** `locked_at` (set once at `MGMT_APPROVAL → SUBMITTED`) is the "frozen" gate; the 12-stage tender lifecycle replaced the old six states; `advance()` is the only forward action (`/send` is retired). Cost columns are snapshotted. `current_value` of contracts is computed on read.
+- **Quote PDF cache (`0062`):** `quote_pdf_cache` keeps the last PDF per revision, keyed on the SHA-256 of the rendered HTML (`estimating/pdf.py::cached_quote_pdf`), so an edit, a status change or a new day re-renders and anything else is served from the table. WeasyPrint costs about 6 s per 300 lines and 12 s per 800 (a straight line); the HTML render is cheap.
 - **Material Take:** generated, then person-owned; approved takes are immutable (new version = n+1); boards are fractional sheets per item, rounded up once over the project (Q586).
 - **Workspace isolation everywhere**: scope through `projects.workspace_id` (or the entity's own `workspace_id`); cross-workspace is **404**. Any FK to `app_user` / `vendors` / `projects` taken from a request body must be validated against the caller's workspace (it would otherwise leak names). A catalog material taken from a body goes through `catalog.queries.assert_material_in_workspace` (after the lock check, before any write): another workspace's row and a missing one both answer `404 {code: MATERIAL_NOT_FOUND}`. `POST /items/bulk-status` reports another workspace's item as `not_found`, like a missing one (there is no `cross_workspace` list).
 - **Search:** the outbox is identity-only; a new searchable table needs a trigger in a migration *and* a loader in `documents.py` (a test enforces this). `codes` have typo tolerance **off**. Never index secrets, money, bank/tax fields.
@@ -220,6 +221,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - Mutations that can be refused return `409 {detail: {code, …}}` with a stable `code`. Prefer codes-and-409 over bare strings.
 - **Null-write guard:** a PATCH schema must call `schema_guards.no_null(...)` for every field whose column is `NOT NULL` (explicit `null` → 422 naming the field). A `null` written to a nullable column that a response model types non-null **poisons every later read**, because routes commit before the response is validated. Opt-in — nothing fails if you forget.
 - Field-level optimistic concurrency (`concurrency.py`): PATCH may carry `expected_versions`; a stale field is `409 FIELD_CONFLICT` with a **string-safe** `current_value` (`conflict_safe_value`). Reads for PATCH use `SELECT … FOR UPDATE`.
+- **Dynamic SQL names need an allow-list.** Values are always bound parameters; column and table names cannot be. An f-string `UPDATE … SET {list}` (or an interpolated table / column) must take its names from a fixed set: `sql_columns.require_columns(keys, ALLOWED)`, a filter `if k in <CONSTANT>`, a column map (`columns[k]`), or keys that are the declared fields of a request model (`payload.model_dump(...)`; no PATCH model may use `extra="allow"`). `tests/test_sql_set_columns.py` fails on a statement with none of these; one that is safe for another reason goes in its `ALLOWED` with the reason.
+- **Workspace checks come from `workspace_scope.py`** (`project_in_workspace`, `user_in_workspace`, `vendor_in_workspace`): a new route imports them instead of writing the `SELECT 1 … AND workspace_id` again; older modules move over as they are touched (no big-bang rewrite). Item and catalog-material checks have their own helpers.
 - Computing `MAX(seq)+1` needs a parent-row lock (`FOR UPDATE`) — races found and fixed in estimate lines, order lines, material-take generate.
 - `LOCKED`/frozen order statuses (`Cancelled`, `Delivered`) are read-only except `status`; `OrderOut.locked` is server-computed — the web reads it, never copies the set.
 - Route ordering: literal paths (`/orders`, `/catalog/cv-mappings`) must be declared **before** parameterised ones.

@@ -14,7 +14,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 from app.main import app
-from .helpers import log_in
+from .helpers import log_in, login_same_workspace
 
 
 def _sql(sql: str, params: dict | None = None):
@@ -76,15 +76,6 @@ def _item(ws: dict, cutlist_id: int | None) -> int:
 
 def _flag(table: str, col: str, i: int) -> bool:
     return _scalar(f"SELECT deleted FROM {table} WHERE {col}=:i", {"i": i})
-
-
-def _login_as(ws: dict, role: str) -> TestClient:
-    email = f"{role}-{uuid.uuid4().hex[:6]}@{ws['slug']}.test"
-    _sql("""INSERT INTO app_user(workspace_id,email,full_name,password_hash,auth_role)
-            VALUES(:w,:e,:r,:p,:r)""", {"w": ws["wid"], "e": email, "r": role, "p": hash_password("pw")})
-    c = TestClient(app)
-    log_in(ws["slug"], email, client=c)
-    return c
 
 
 def _delete(c: TestClient, iid: int):
@@ -203,7 +194,7 @@ def test_related_parts_follow_their_parent_and_come_back_with_it():
     assert _flag("items", "item_id", part) is True
     assert _listed(c, ws) == set()
     assert _listed(c, ws, deleted=True) == {parent, part}
-    assert _login_as(ws, "manager").post(f"/items/{parent}/restore").status_code == 204
+    assert login_same_workspace(ws["wid"], "manager")[0].post(f"/items/{parent}/restore").status_code == 204
     assert _listed(c, ws) == {parent, part}
 
 
@@ -213,7 +204,7 @@ def test_restore_brings_back_the_item_and_its_cutlist_and_is_audited():
     iid = _item(ws, cid)
     c = _client(ws)
     assert _delete(c, iid).status_code == 204
-    mgr = _login_as(ws, "manager")
+    mgr = login_same_workspace(ws["wid"], "manager")[0]
     assert mgr.post(f"/items/{iid}/restore").status_code == 204
     assert _flag("items", "item_id", iid) is False
     assert _flag("cutlist", "cutlist_id", cid) is False
@@ -235,13 +226,13 @@ def test_restore_is_manager_or_admin_only():
     assert _delete(c, iid).status_code == 204
     assert c.post(f"/items/{iid}/restore").status_code == 403
     assert _flag("items", "item_id", iid) is True
-    assert _login_as(ws, "admin").post(f"/items/{iid}/restore").status_code == 204
+    assert login_same_workspace(ws["wid"], "admin")[0].post(f"/items/{iid}/restore").status_code == 204
 
 
 def test_restoring_a_live_or_missing_item_is_refused():
     ws = _workspace()
     iid = _item(ws, None)
-    mgr = _login_as(ws, "manager")
+    mgr = login_same_workspace(ws["wid"], "manager")[0]
     r = mgr.post(f"/items/{iid}/restore")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "ITEM_NOT_DELETED"
     assert mgr.post("/items/999999999/restore").status_code == 404
@@ -251,7 +242,7 @@ def test_another_workspace_cannot_restore_it():
     ws, other = _workspace(), _workspace()
     iid = _item(ws, None)
     assert _delete(_client(ws), iid).status_code == 204
-    assert _login_as(other, "admin").post(f"/items/{iid}/restore").status_code == 404
+    assert login_same_workspace(other["wid"], "admin")[0].post(f"/items/{iid}/restore").status_code == 404
     assert _flag("items", "item_id", iid) is True
 
 
@@ -291,7 +282,7 @@ def test_a_hard_locked_item_cannot_be_deleted_by_anyone():
     ws = _workspace()
     iid = _item(ws, None)
     _hard_lock(iid)
-    for c in (_client(ws), _login_as(ws, "manager"), _login_as(ws, "admin")):
+    for c in (_client(ws), login_same_workspace(ws["wid"], "manager")[0], login_same_workspace(ws["wid"], "admin")[0]):
         r = _delete(c, iid)
         assert r.status_code == 409 and r.json()["detail"]["code"] == "HARD_LOCKED", r.text
     assert _flag("items", "item_id", iid) is False
@@ -303,7 +294,7 @@ def test_clearing_the_hard_lock_lets_the_delete_through():
     ws = _workspace()
     iid = _item(ws, None)
     _hard_lock(iid)
-    mgr = _login_as(ws, "manager")
+    mgr = login_same_workspace(ws["wid"], "manager")[0]
     assert mgr.delete(f"/items/{iid}/hard-lock").status_code == 200
     assert _delete(_client(ws), iid).status_code == 204
 
@@ -320,7 +311,7 @@ def test_restore_is_not_stopped_by_a_hard_lock():
     iid = _item(ws, None)
     assert _delete(_client(ws), iid).status_code == 204
     _hard_lock(iid)
-    assert _login_as(ws, "manager").post(f"/items/{iid}/restore").status_code == 204
+    assert login_same_workspace(ws["wid"], "manager")[0].post(f"/items/{iid}/restore").status_code == 204
 
 
 def _related_part(ws: dict, parent: int) -> int:
@@ -341,7 +332,7 @@ def test_a_related_part_delete_is_a_soft_delete_and_can_be_restored():
     assert _flag("items", "item_id", part) is True
     assert c.get(f"/related-parts/{part}").status_code == 404
     assert _listed(c, ws) == {parent} and _listed(c, ws, deleted=True) == {part}
-    assert _login_as(ws, "manager").post(f"/items/{part}/restore").status_code == 204
+    assert login_same_workspace(ws["wid"], "manager")[0].post(f"/items/{part}/restore").status_code == 204
     assert c.get(f"/related-parts/{part}").status_code == 200
     assert _listed(c, ws) == {parent, part}
 
@@ -353,7 +344,7 @@ def test_a_related_part_cannot_be_restored_while_its_parent_is_deleted():
     c = _client(ws)
     assert c.delete(f"/related-parts/{part}").status_code == 204
     assert _delete(c, parent).status_code == 204
-    mgr = _login_as(ws, "manager")
+    mgr = login_same_workspace(ws["wid"], "manager")[0]
     r = mgr.post(f"/items/{part}/restore")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "PARENT_DELETED", r.text
     assert _flag("items", "item_id", part) is True

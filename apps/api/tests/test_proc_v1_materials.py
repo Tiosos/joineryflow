@@ -36,12 +36,6 @@ _cleanup = truncate_fixture(
 
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _seed_golden_project(db, *, wid: int, uid: int) -> int:
     """Create a project with one hardware material, one catalog row, one item,
     one hardware line (qty=5), one delivered batch (qty_ordered=3, qty_received=3),
@@ -160,7 +154,7 @@ def _seed_golden_project(db, *, wid: int, uid: int) -> int:
 
 def test_project_materials_rollup():
     """Happy path: rollup aggregates demand, batches, and allocations."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     db = SessionLocal()
     try:
         pid = _seed_golden_project(db, wid=wid, uid=uid)
@@ -188,7 +182,7 @@ def test_project_materials_rollup():
 
 def test_project_materials_404_for_unknown_project():
     """Unknown project_id yields 404."""
-    c, _, _ = _login("manager")
+    c, _, _ = login("manager")
     r = c.get("/projects/999999/materials")
     assert r.status_code == 404
 
@@ -200,7 +194,7 @@ def test_item_availability_includes_per_line_procurement():
     one delivered batch (qty_received=3), one in-transit batch (qty_ordered=4),
     one allocation (qty_allocated=2).
     """
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     db = SessionLocal()
     try:
         pid = _seed_golden_project(db, wid=wid, uid=uid)
@@ -233,7 +227,7 @@ def test_item_availability_includes_per_line_procurement():
 def test_project_materials_workspace_isolated():
     """A user in workspace A cannot see a project owned by workspace B (gets 404)."""
     # Workspace A: requesting user
-    c_a, _, _ = _login("manager")
+    c_a, _, _ = login("manager")
 
     # Workspace B: separate workspace + user; create a project there.
     suffix = uuid.uuid4().hex[:8]

@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
 from ..catalog.queries import assert_material_in_workspace
+from ..workspace_scope import project_in_workspace, vendor_in_workspace
 from ..sql_columns import require_columns
 from ..concurrency import bump_field_versions, check_field_conflicts, conflict_safe_value
 from .budget import settle_on_close, sync_commitment
@@ -374,11 +375,7 @@ def cost_breakdown(
 def list_orders_for_project(
     db: Session, *, project_id: int, workspace_id: int
 ) -> list[dict] | None:
-    in_ws = db.execute(
-        text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
-        {"p": project_id, "w": workspace_id},
-    ).first()
-    if in_ws is None:
+    if not project_in_workspace(db, project_id=project_id, workspace_id=workspace_id):
         return None
     rows = db.execute(
         text(f"SELECT {_ORDER_COLS} {_ORDER_FROM} WHERE po.project_id = :p ORDER BY po.po_id DESC"),
@@ -437,20 +434,6 @@ def _prefill_from_item(db: Session, *, item_id: int, workspace_id: int) -> dict 
     return dict(row) if row else None
 
 
-def _vendor_in_workspace(db: Session, *, vendor_id: int, workspace_id: int) -> bool:
-    return db.execute(
-        text("SELECT 1 FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
-        {"v": vendor_id, "w": workspace_id},
-    ).first() is not None
-
-
-def project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
-    return db.execute(
-        text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
-        {"p": project_id, "w": workspace_id},
-    ).first() is not None
-
-
 def _category_exists(db: Session, category_key: str) -> bool:
     """Any row of the `order_category` lookup (0031), archived or not: the FK the
     column carries accepts an archived key, and this only turns what would be a
@@ -471,7 +454,7 @@ def create_order(
     """('OK', order) | ('ITEM_NOT_FOUND', None) | ('VENDOR_NOT_FOUND', None) |
     ('UNKNOWN_CATEGORY', None) | ('PROJECT_NOT_FOUND', None) |
     ('PROJECT_ITEM_MISMATCH', None) (an explicit project other than the item's own)."""
-    if not _vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
+    if not vendor_in_workspace(db, vendor_id=payload.vendor_id, workspace_id=workspace_id):
         return "VENDOR_NOT_FOUND", None
     if not _category_exists(db, payload.category):
         return "UNKNOWN_CATEGORY", None
@@ -657,7 +640,7 @@ def patch_order(
     if ("vendor_id" in fields and fields["vendor_id"] != current["vendor_id"]
             and current.get("po_document_id") is not None):
         return "ORDER_ON_PO", {"po_no": current["po_no"]}
-    if "vendor_id" in fields and not _vendor_in_workspace(
+    if "vendor_id" in fields and not vendor_in_workspace(
         db, vendor_id=fields["vendor_id"], workspace_id=workspace_id
     ):
         return "VENDOR_NOT_FOUND", {"vendor_id": fields["vendor_id"]}
