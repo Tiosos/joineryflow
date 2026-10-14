@@ -35,12 +35,6 @@ _cleanup = truncate_fixture(
 
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _seed_alloc_setup(*, wid: int, uid: int) -> dict:
     """Seed a project + material + catalog + item + hardware line + batch.
 
@@ -129,7 +123,7 @@ def _seed_alloc_setup(*, wid: int, uid: int) -> dict:
 
 def test_create_allocation_within_capacity():
     """POST creates an allocation when qty fits within batch capacity."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     r = c.post(
@@ -142,7 +136,7 @@ def test_create_allocation_within_capacity():
 
 def test_over_commit_returns_409():
     """A second POST that would push qty_allocated over capacity returns 409."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     first = c.post(
@@ -161,7 +155,7 @@ def test_over_commit_returns_409():
 
 def test_patch_allocation_capacity_check():
     """PATCH that would push qty over capacity returns 409."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     aid = c.post(
@@ -175,7 +169,7 @@ def test_patch_allocation_capacity_check():
 
 def test_delete_allocation_releases_capacity():
     """DELETE frees capacity so the same qty can be re-allocated."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     aid = c.post(
@@ -193,7 +187,7 @@ def test_delete_allocation_releases_capacity():
 
 def test_cross_project_line_rejected():
     """A line from a different project cannot be allocated to this batch."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     db = SessionLocal()
@@ -252,7 +246,7 @@ def test_cross_project_line_rejected():
 
 def test_allocation_list_summary():
     """GET /batches/{bid}/allocations returns summary qty_received/allocated_total/remaining."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     s = _seed_alloc_setup(wid=wid, uid=uid)
 
     # POST 1 allocation with qty=3

@@ -109,17 +109,12 @@ def test_me_includes_jtbd_role():
     assert r2.json()["jtbd_role"] == "Drafter"
 
 
-def _login_as(auth_role: str):
-    """A user with `auth_role` in a fresh workspace, logged in -> the client."""
-    return login(auth_role, prefix="h")[0]
-
-
 def test_me_includes_permissions_matching_the_matrix():
     """The web tier gates navigation off this payload — it must mirror MATRIX."""
     from app.auth.permissions import _ALL_MODULES, has_permission
 
     for role in ("admin", "viewer", "purchase_officer", "estimator"):
-        perms = _login_as(role).get("/auth/me").json()["permissions"]
+        perms = login(role)[0].get("/auth/me").json()["permissions"]
         assert set(perms) == set(_ALL_MODULES), role
         for module in _ALL_MODULES:
             for action in ("read", "write", "approve", "comment"):
@@ -127,5 +122,5 @@ def test_me_includes_permissions_matching_the_matrix():
 
 
 def test_me_permissions_deny_it_management_for_non_admin():
-    assert _login_as("viewer").get("/auth/me").json()["permissions"]["it_management"] == []
-    assert "read" in _login_as("admin").get("/auth/me").json()["permissions"]["it_management"]
+    assert login("viewer")[0].get("/auth/me").json()["permissions"]["it_management"] == []
+    assert "read" in login("admin")[0].get("/auth/me").json()["permissions"]["it_management"]

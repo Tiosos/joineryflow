@@ -26,12 +26,6 @@ def index():
 _cleanup = truncate_fixture()
 
 
-def _login(role="manager"):
-    c, wid, _ = login(role, prefix="srch")
-    return c, wid
-
-
-
 def _doc(i, ws, type_="item", title="Kitchen island bench", archived=False, project_id=7):
     return {"id": f"{type_}-{i}", "type": type_, "entity_id": i, "workspace_id": ws,
             "project_id": project_id, "project_code": "ALF-001", "codes": [str(297800 + i)],
@@ -44,7 +38,7 @@ def test_requires_login(index):
 
 
 def test_hits_are_trimmed_to_public_fields(index):
-    c, w = _login()
+    c, w, _ = login()
     index.upsert([_doc(1, w)])
     body = c.get("/search", params={"q": "kitchen"}).json()
     assert body["total"] == 1
@@ -54,15 +48,15 @@ def test_hits_are_trimmed_to_public_fields(index):
 
 def test_workspace_isolation(index):
     """A record in another workspace is never returned — the core guarantee."""
-    c1, w1 = _login()
-    c2, w2 = _login()
+    c1, w1, _ = login()
+    c2, w2, _ = login()
     index.upsert([_doc(1, w1, title="Shared words"), _doc(2, w2, title="Shared words")])
     assert [h["entity_id"] for h in c1.get("/search", params={"q": "shared"}).json()["hits"]] == [1]
     assert [h["entity_id"] for h in c2.get("/search", params={"q": "shared"}).json()["hits"]] == [2]
 
 
 def test_types_param_narrows_but_counts_cover_all_readable(index):
-    c, w = _login()
+    c, w, _ = login()
     index.upsert([_doc(1, w), _doc(2, w, type_="order")])
     body = c.get("/search", params={"q": "kitchen", "types": "order"}).json()
     assert [h["type"] for h in body["hits"]] == ["order"]
@@ -70,13 +64,13 @@ def test_types_param_narrows_but_counts_cover_all_readable(index):
 
 
 def test_unreadable_type_is_dropped_silently(index, monkeypatch):
-    # `_login()`'s user has zero `user_group_membership` rows, so
+    # `login()`'s user has zero `user_group_membership` rows, so
     # `readable_types` (backed by the Dynamic RBAC engine) falls back to
     # `MATRIX` for them exactly as the static matrix once did directly —
     # but `rbac_engine.py` bound its own `MATRIX` name at import time
     # (`from .permissions import MATRIX`), so the fallback the engine
     # actually reads lives there, not on `permissions.MATRIX`.
-    c, w = _login("viewer")
+    c, w, _ = login("viewer")
     matrix = {**permissions.MATRIX, "viewer": {**permissions.MATRIX["viewer"], "orderbook": set()}}
     monkeypatch.setattr(rbac_engine, "MATRIX", matrix)
     index.upsert([_doc(1, w), _doc(2, w, type_="order")])
@@ -96,7 +90,7 @@ def test_group_grant_revoked_via_admin_ui_hides_the_type(index):
     only `effective_actions` (the Dynamic RBAC engine) sees that revocation.
     This user has a REAL `user_group_membership`, so it is governed by the
     DB, never MATRIX."""
-    c, w = _login("viewer")
+    c, w, _ = login("viewer")
     db = SessionLocal()
     try:
         seed_system_groups(db, workspace_id=w)
@@ -129,7 +123,7 @@ def test_group_grant_revoked_via_admin_ui_hides_the_type(index):
 def _member_of_custom_group(role, *, grants, project_id=None):
     """A user whose ONLY membership is a non-system group with `grants`
     (list of (module, action)), so the DB — never MATRIX — governs them."""
-    c, w = _login(role)
+    c, w, _ = login(role)
     db = SessionLocal()
     try:
         uid = db.execute(text("SELECT id FROM app_user WHERE workspace_id=:w"), {"w": w}).scalar()
@@ -178,19 +172,19 @@ def test_project_scoped_only_membership_sees_no_types(index):
     {"q": "kitchen", "types": "item,order,nope"},
 ])
 def test_injection_through_types_is_inert(index, params):
-    c, w = _login()
+    c, w, _ = login()
     index.upsert([_doc(1, w), _doc(2, w + 1000)])
     assert [h["entity_id"] for h in c.get("/search", params=params).json()["hits"]] in ([1], [])
 
 
 def test_non_integer_project_id_is_rejected(index):
-    c, _ = _login()
+    c, _, _ = login()
     r = c.get("/search", params={"q": "x", "project_id": "1 OR workspace_id = 2"})
     assert r.status_code == 422
 
 
 def test_project_filter_and_archived_toggle(index):
-    c, w = _login()
+    c, w, _ = login()
     index.upsert([_doc(1, w), _doc(2, w, project_id=8), _doc(3, w, archived=True)])
     ids = lambda **p: {h["entity_id"] for h in c.get("/search", params={"q": "kitchen", **p}).json()["hits"]}  # noqa: E731
     assert ids() == {1, 2}
@@ -200,19 +194,19 @@ def test_project_filter_and_archived_toggle(index):
 
 @pytest.mark.parametrize("q", ["", "   ", "x" * 201])
 def test_bad_queries_are_422(index, q):
-    c, _ = _login()
+    c, _, _ = login()
     assert c.get("/search", params={"q": q}).status_code == 422
 
 
 def test_outage_is_503(index):
-    c, _ = _login()
+    c, _, _ = login()
     index.down = True
     r = c.get("/search", params={"q": "kitchen"})
     assert r.status_code == 503 and r.json()["detail"]["code"] == "SEARCH_UNAVAILABLE"
 
 
 def test_health_for_admin(index):
-    c, _ = _login("admin")
+    c, _, _ = login("admin")
     s = SessionLocal()
     try:
         s.execute(text("TRUNCATE search_outbox"))
@@ -231,5 +225,5 @@ def test_health_for_admin(index):
                                        ("editor", 403)])
 def test_health_follows_it_management_read(index, role, code):
     """Gated on ("it_management","read"), which the matrix gives manager too."""
-    c, _ = _login(role)
+    c, _, _ = login(role)
     assert c.get("/search/health").status_code == code

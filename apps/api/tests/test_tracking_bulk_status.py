@@ -39,12 +39,6 @@ def _seed_status_options(db):
     db.commit()
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="bs")
-
-
-
-
 def _create_project(db, *, wid: int, uid: int, code: str = "BS-001") -> int:
     pid = db.execute(
         text(
@@ -76,7 +70,7 @@ def _insert_item(db, *, project_id: int, num: int) -> int:
 
 
 def test_bulk_status_happy_path():
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -119,7 +113,7 @@ def test_bulk_status_happy_path():
 
 
 def test_bulk_status_missing_note_422():
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -134,7 +128,7 @@ def test_bulk_status_missing_note_422():
 def test_bulk_status_reports_another_workspaces_item_as_not_found():
     """An id from another workspace is indistinguishable from one that does not exist:
     both come back in not_found, and the response has no field that tells them apart."""
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
 
     db = SessionLocal()
     try:
@@ -184,7 +178,7 @@ def test_bulk_status_reports_another_workspaces_item_as_not_found():
 
 
 def test_bulk_status_purchase_officer_403():
-    c, wid, uid = _login(role="purchase_officer")
+    c, wid, uid = login(role="purchase_officer")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -200,7 +194,7 @@ def test_bulk_status_purchase_officer_403():
 
 
 def test_bulk_status_viewer_403():
-    c, wid, uid = _login(role="viewer")
+    c, wid, uid = login(role="viewer")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -216,7 +210,7 @@ def test_bulk_status_viewer_403():
 
 
 def test_bulk_status_editor_allowed():
-    c, wid, uid = _login(role="editor")
+    c, wid, uid = login(role="editor")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)

@@ -39,12 +39,6 @@ _cleanup = truncate_fixture(*_EXTRA_TABLES)
 
 
 
-def _login(role: str = "admin"):
-    return login(role, prefix="h")
-
-
-
-
 def _create_project(db, *, wid: int, uid: int, code: str = "HJ-001") -> int:
     """Insert a project scoped to workspace via projects.workspace_id, return project_id."""
     pid = db.execute(
@@ -133,7 +127,7 @@ def _insert_audit(
 
 def test_dashboard_admin_returns_ceo_view():
     """Admin caller gets role_view='ceo', 4 metric cards, all_projects_count reflects workspace."""
-    c, wid, uid = _login(role="admin")
+    c, wid, uid = login(role="admin")
     db = SessionLocal()
     try:
         _create_project(db, wid=wid, uid=uid, code="HJ-001")
@@ -161,7 +155,7 @@ def test_dashboard_pm_scope_filters_to_own_projects():
     Two projects in same workspace: one owned by calling PM, one by another manager.
     Overdue item seeded in each project. Assert overdue == 1 (only own project).
     """
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
 
     db = SessionLocal()
     try:
@@ -207,7 +201,7 @@ def test_dashboard_drafter_scope_filters_to_own_items():
     Two items in the same project: one owned by drafter, one unowned.
     Both have overdue stages. Assert overdue == 1.
     """
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
 
     db = SessionLocal()
     try:
@@ -249,7 +243,7 @@ def test_dashboard_drafter_scope_filters_to_own_items():
 
 def test_dashboard_purchase_officer_metrics_shape():
     """Purchase officer gets role_view='purchase_officer' and procurement-centric metric keys."""
-    c, wid, uid = _login(role="purchase_officer")
+    c, wid, uid = login(role="purchase_officer")
 
     r = c.get("/home/dashboard")
     assert r.status_code == 200, r.text
@@ -266,8 +260,8 @@ def test_dashboard_purchase_officer_metrics_shape():
 def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspaces():
     """purchase_orders has no workspace_id of its own; open_pos and pending_approvals
     (orders with status 'Pending') must still not count another workspace's rows."""
-    c, wid, uid = _login(role="purchase_officer")
-    other_c, other_wid, other_uid = _login(role="purchase_officer")
+    c, wid, uid = login(role="purchase_officer")
+    other_c, other_wid, other_uid = login(role="purchase_officer")
 
     db = SessionLocal()
     try:
@@ -315,7 +309,7 @@ def test_dashboard_purchase_officer_open_pos_and_approvals_exclude_other_workspa
 
 def test_dashboard_includes_team_activity_from_audit_log():
     """Seeded audit_log row appears in team_activity, newest first."""
-    c, wid, uid = _login(role="admin")
+    c, wid, uid = login(role="admin")
 
     db = SessionLocal()
     try:
@@ -385,7 +379,7 @@ def _seed_estimate(
 def test_dashboard_estimator_metrics_shape():
     """Estimator gets role_view='estimator' and quoting-pipeline cards keyed
     off each estimate's current revision status."""
-    c, wid, uid = _login(role="estimator")
+    c, wid, uid = login(role="estimator")
     db = SessionLocal()
     try:
         today = date.today()
@@ -417,7 +411,7 @@ def test_dashboard_estimator_metrics_shape():
 
 
 def test_dashboard_estimator_empty_workspace_is_all_zero():
-    c, _wid, _uid = _login(role="estimator")
+    c, _wid, _uid = login(role="estimator")
     data = c.get("/home/dashboard").json()
     assert data["role_view"] == "estimator"
     assert all(m["value"] == 0 for m in data["metrics"])
@@ -426,7 +420,7 @@ def test_dashboard_estimator_empty_workspace_is_all_zero():
 def test_dashboard_editor_gets_editor_view_with_general_metrics():
     """Editor is now its own role_view but still receives the general
     production cards, not the estimating ones."""
-    c, _wid, _uid = _login(role="editor")
+    c, _wid, _uid = login(role="editor")
     data = c.get("/home/dashboard").json()
     assert data["role_view"] == "editor"
     keys = {m["key"] for m in data["metrics"]}
@@ -437,7 +431,7 @@ def test_dashboard_editor_gets_editor_view_with_general_metrics():
 def test_open_pos_tile_link_shows_exactly_the_orders_it_counts():
     """The tile links to /orderbook?status=open; the Orders list must treat `open` as "not
     Delivered / Cancelled / Rejected" (it used to match a status literally called 'open')."""
-    c, wid, uid = _login(role="purchase_officer")
+    c, wid, uid = login(role="purchase_officer")
     db = SessionLocal()
     try:
         vendor = db.execute(

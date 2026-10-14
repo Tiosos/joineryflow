@@ -28,12 +28,6 @@ _cleanup = truncate_fixture(
 )
 
 
-def _login(role: str = "drafter", wid: int | None = None):
-    return login(role, wid=wid, prefix="sl")
-
-
-
-
 def _vendor(wid: int, name: str = "Laminex Australia") -> int:
     db = SessionLocal()
     try:
@@ -107,7 +101,7 @@ def _audit_count(wid: int, event_like: str) -> int:
 # ── Reads ─────────────────────────────────────────────────────────────────────
 
 def test_an_unlinked_row_reads_null_id_and_name():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     mid = _row(c, "board-materials")
     row = c.get(f"/catalog/board-materials/{mid}").json()
     assert row["default_supplier_id"] is None
@@ -120,7 +114,7 @@ def test_an_unlinked_row_reads_null_id_and_name():
 
 @pytest.mark.parametrize("slug", list(TABLES))
 def test_patch_links_and_clears_a_supplier_on_every_catalog_table(slug):
-    c, wid, uid = _login()
+    c, wid, uid = login("drafter")
     pid = _project(wid, uid) if slug == "equipment-hire" else None
     _, id_col, table = TABLES[slug]
     mid = _row(c, slug, project_id=pid)
@@ -144,7 +138,7 @@ def test_patch_links_and_clears_a_supplier_on_every_catalog_table(slug):
 
 
 def test_the_link_can_be_moved_to_another_supplier():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     a, b = _vendor(wid, "A Co"), _vendor(wid, "B Co")
     c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": a})
@@ -153,7 +147,7 @@ def test_the_link_can_be_moved_to_another_supplier():
 
 
 def test_omitting_the_link_leaves_it_alone():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     vid = _vendor(wid)
     c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})
@@ -165,7 +159,7 @@ def test_omitting_the_link_leaves_it_alone():
 
 def test_linking_leaves_the_free_text_supplier_untouched():
     """Q435 — the text column stays exactly as it was; the two may disagree."""
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials", default_supplier="Some Old Name")
     vid = _vendor(wid)
     r = c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})
@@ -174,7 +168,7 @@ def test_linking_leaves_the_free_text_supplier_untouched():
 
 
 def test_a_row_can_be_created_with_a_supplier_link():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     vid = _vendor(wid)
     r = c.post("/catalog/board-materials", json={
         "code": "B9", "sku": "s-9", "description": "X", "default_supplier_id": vid,
@@ -187,7 +181,7 @@ def test_a_row_can_be_created_with_a_supplier_link():
 
 @pytest.mark.parametrize("slug", [s for s in TABLES if s != "equipment-hire"])
 def test_every_simple_table_takes_a_link_at_create(slug):
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     vid = _vendor(wid)
     mid = _row(c, slug, default_supplier_id=vid)
     _, id_col, table = TABLES[slug]
@@ -195,7 +189,7 @@ def test_every_simple_table_takes_a_link_at_create(slug):
 
 
 def test_a_row_created_without_a_link_is_unlinked():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     _vendor(wid)
     r = c.post("/catalog/board-materials", json={"code": "B9", "sku": "s-9", "description": "X"})
     assert r.status_code == 201, r.text
@@ -203,8 +197,8 @@ def test_a_row_created_without_a_link_is_unlinked():
 
 
 def test_create_refuses_an_unknown_or_foreign_supplier_and_creates_nothing():
-    c, wid, _ = _login()
-    _, other_wid, _ = _login()
+    c, wid, _ = login("drafter")
+    _, other_wid, _ = login("drafter")
     foreign = _vendor(other_wid, "Plyco")
     for sid in (999999, foreign):
         r = c.post("/catalog/board-materials", json={
@@ -225,7 +219,7 @@ def _bulk(c, slug, rows):
 
 
 def test_bulk_import_links_a_row_whose_supplier_name_matches_exactly_one_supplier():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     vid = _vendor(wid, "Laminex Australia")
     out = _bulk(c, "board-materials", [
         {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "laminex AUSTRALIA"},
@@ -237,7 +231,7 @@ def test_bulk_import_links_a_row_whose_supplier_name_matches_exactly_one_supplie
 
 
 def test_bulk_import_reports_rows_whose_supplier_name_matches_nobody():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     _vendor(wid, "Laminex Australia")
     out = _bulk(c, "board-materials", [
         {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Nobody Ltd"},
@@ -250,7 +244,7 @@ def test_bulk_import_reports_rows_whose_supplier_name_matches_nobody():
 
 
 def test_bulk_import_never_links_a_name_two_suppliers_share():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     _vendor(wid, "Plyco")
     _vendor(wid, "plyco")
     out = _bulk(c, "board-materials", [
@@ -262,8 +256,8 @@ def test_bulk_import_never_links_a_name_two_suppliers_share():
 
 
 def test_bulk_import_does_not_match_another_workspaces_supplier():
-    c, wid, _ = _login()
-    _, other_wid, _ = _login()
+    c, wid, _ = login("drafter")
+    _, other_wid, _ = login("drafter")
     _vendor(other_wid, "Plyco")
     out = _bulk(c, "board-materials", [
         {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Plyco"},
@@ -272,7 +266,7 @@ def test_bulk_import_does_not_match_another_workspaces_supplier():
 
 
 def test_bulk_import_ignores_a_supplier_id_in_a_row():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     vid = _vendor(wid)
     out = _bulk(c, "board-materials", [
         {"code": "B1", "sku": "b-1", "description": "One", "default_supplier_id": vid},
@@ -282,7 +276,7 @@ def test_bulk_import_ignores_a_supplier_id_in_a_row():
 
 
 def test_a_failed_bulk_import_links_and_reports_nothing():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     _vendor(wid)
     out = _bulk(c, "board-materials", [
         {"code": "B1", "sku": "b-1", "description": "One", "default_supplier": "Laminex Australia"},
@@ -295,7 +289,7 @@ def test_a_failed_bulk_import_links_and_reports_nothing():
 # ── Clearing the free-text fields ─────────────────────────────────────────────
 
 def test_an_explicit_null_clears_the_free_text_supplier_and_lead_time():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials", default_supplier="Old Name", default_lead_time_days=7)
     r = c.patch(f"/catalog/board-materials/{mid}", json={
         "default_supplier": None, "default_lead_time_days": None,
@@ -306,7 +300,7 @@ def test_an_explicit_null_clears_the_free_text_supplier_and_lead_time():
 
 
 def test_omitting_the_free_text_fields_leaves_them_alone():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials", default_supplier="Old Name", default_lead_time_days=7)
     r = c.patch(f"/catalog/board-materials/{mid}", json={"description": "Renamed"})
     assert r.json()["default_supplier"] == "Old Name"
@@ -314,7 +308,7 @@ def test_omitting_the_free_text_fields_leaves_them_alone():
 
 
 def test_a_null_does_not_clear_a_not_null_field():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     r = c.patch(f"/catalog/board-materials/{mid}", json={"description": None})
     assert r.status_code == 200, r.text
@@ -324,7 +318,7 @@ def test_a_null_does_not_clear_a_not_null_field():
 # ── Refusals ──────────────────────────────────────────────────────────────────
 
 def test_an_unknown_supplier_is_refused_and_nothing_is_written():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     before = _audit_count(wid, "catalog.board.update")
     r = c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": 999999})
@@ -335,8 +329,8 @@ def test_an_unknown_supplier_is_refused_and_nothing_is_written():
 
 
 def test_another_workspaces_supplier_is_refused_and_its_name_never_appears():
-    c, wid, _ = _login()
-    _, other_wid, _ = _login()
+    c, wid, _ = login("drafter")
+    _, other_wid, _ = login("drafter")
     foreign = _vendor(other_wid, "Secret Supplier Pty")
     mid = _row(c, "board-materials")
     r = c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": foreign})
@@ -349,8 +343,8 @@ def test_another_workspaces_supplier_is_refused_and_its_name_never_appears():
 def test_a_cross_workspace_link_written_some_other_way_never_leaks_a_name():
     """The column is a plain FK, so a stale cross-workspace id is possible in
     the database; the name read is scoped to the row's own workspace."""
-    c, wid, _ = _login()
-    _, other_wid, _ = _login()
+    c, wid, _ = login("drafter")
+    _, other_wid, _ = login("drafter")
     foreign = _vendor(other_wid, "Secret Supplier Pty")
     mid = _row(c, "board-materials")
     db = SessionLocal()
@@ -368,15 +362,15 @@ def test_a_cross_workspace_link_written_some_other_way_never_leaks_a_name():
 
 
 def test_a_non_integer_supplier_id_is_a_422():
-    c, _, _ = _login()
+    c, _, _ = login("drafter")
     mid = _row(c, "board-materials")
     r = c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": "abc"})
     assert r.status_code == 422
 
 
 def test_another_workspaces_row_is_a_404():
-    c, wid, _ = _login()
-    other_c, other_wid, _ = _login()
+    c, wid, _ = login("drafter")
+    other_c, other_wid, _ = login("drafter")
     mid = _row(other_c, "board-materials")
     vid = _vendor(wid)
     r = c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})
@@ -386,10 +380,10 @@ def test_another_workspaces_row_is_a_404():
 
 @pytest.mark.parametrize("role", ["purchase_officer", "viewer", "estimator"])
 def test_a_role_without_catalog_write_cannot_link(role):
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     vid = _vendor(wid)
-    ro, _, _ = _login(role=role, wid=wid)
+    ro, _, _ = login(role=role, wid=wid)
     r = ro.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})
     assert r.status_code == 403
     assert _db_link("board_materials", "material_id", mid) is None
@@ -397,10 +391,10 @@ def test_a_role_without_catalog_write_cannot_link(role):
 
 def test_an_editor_can_link():
     """`catalog:write` is held by editor as well as drafter / manager / admin."""
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     vid = _vendor(wid)
-    ed, _, _ = _login(role="editor", wid=wid)
+    ed, _, _ = login(role="editor", wid=wid)
     assert ed.patch(
         f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid},
     ).status_code == 200
@@ -409,7 +403,7 @@ def test_an_editor_can_link():
 # ── Audit and the supplier side ───────────────────────────────────────────────
 
 def test_link_and_clear_are_audited_with_the_id():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     vid = _vendor(wid)
     c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})
@@ -428,7 +422,7 @@ def test_link_and_clear_are_audited_with_the_id():
 
 
 def test_the_supplier_side_sees_a_catalog_link():
-    c, wid, _ = _login()
+    c, wid, _ = login("drafter")
     mid = _row(c, "board-materials")
     vid = _vendor(wid)
     c.patch(f"/catalog/board-materials/{mid}", json={"default_supplier_id": vid})

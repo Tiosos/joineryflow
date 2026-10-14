@@ -35,12 +35,6 @@ _cleanup = truncate_fixture(
 
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _create_project(db, *, wid: int, uid: int, code: str = "HJ-001") -> int:
     pid = db.execute(
         text(
@@ -83,7 +77,7 @@ def _insert_item(
 
 def test_patch_status_writes_audit_and_edit_log():
     """PATCH /items/{id}/status updates items.status and writes audit + edit_log rows."""
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -142,7 +136,7 @@ def test_patch_status_writes_audit_and_edit_log():
 
 def test_status_value_validated_by_pydantic():
     """Invalid status string in body → 422 (Pydantic Literal rejection)."""
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -156,7 +150,7 @@ def test_status_value_validated_by_pydantic():
 
 def test_patch_lifecycle_invalid_stage_400():
     """PATCH /items/{id}/lifecycle/UNKNOWN → 400."""
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -171,7 +165,7 @@ def test_patch_lifecycle_invalid_stage_400():
 
 def test_patch_lifecycle_upserts_item_stages():
     """PATCH lifecycle/CNC with done_date creates item_stages row with that done_date."""
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -207,7 +201,7 @@ def test_patch_lifecycle_writes_item_status_log():
     records status-value changes (not lifecycle date changes). This test verifies the
     item_edit_log row — the correct audit trail for lifecycle date mutations.
     """
-    c, wid, uid = _login(role="manager")
+    c, wid, uid = login(role="manager")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -239,7 +233,7 @@ def test_patch_lifecycle_writes_item_status_log():
 
 def test_patch_lifecycle_editor_allowed():
     """Editor role has tracking:write → PATCH lifecycle/CNC returns 200."""
-    c, wid, uid = _login(role="editor")
+    c, wid, uid = login(role="editor")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -270,7 +264,7 @@ def test_patch_lifecycle_editor_allowed():
 
 def test_patch_lifecycle_purchase_officer_403():
     """purchase_officer has tracking:read+comment only → 403 on lifecycle PATCH."""
-    c, wid, uid = _login(role="purchase_officer")
+    c, wid, uid = login(role="purchase_officer")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)

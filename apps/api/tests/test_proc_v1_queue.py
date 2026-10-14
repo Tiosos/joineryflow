@@ -22,12 +22,6 @@ _cleanup = truncate_fixture(
 )
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _seed_two_projects_one_material(*, wid: int, uid: int) -> tuple[int, int, int]:
     """Insert 2 projects (pm_id=uid) and a hardware material; return (p1, p2, mat)."""
     db = SessionLocal()
@@ -98,7 +92,7 @@ def _seed_two_batches(*, p1: int, p2: int, mat: int) -> None:
 
 def test_queue_lists_both_projects():
     """GET /procurement-queue returns 1 row per batch across all workspace projects."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     p1, p2, mat = _seed_two_projects_one_material(wid=wid, uid=uid)
     _seed_two_batches(p1=p1, p2=p2, mat=mat)
 
@@ -111,7 +105,7 @@ def test_queue_lists_both_projects():
 
 def test_queue_filter_by_supplier():
     """?supplier=Acme returns only the Acme batch."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     p1, p2, mat = _seed_two_projects_one_material(wid=wid, uid=uid)
     _seed_two_batches(p1=p1, p2=p2, mat=mat)
 
@@ -124,7 +118,7 @@ def test_queue_filter_by_supplier():
 
 def test_queue_filter_by_status():
     """?status=IN_TRANSIT returns only IN_TRANSIT batches; OPEN excluded."""
-    c, wid, uid = _login("manager")
+    c, wid, uid = login("manager")
     p1, p2, mat = _seed_two_projects_one_material(wid=wid, uid=uid)
     _seed_two_batches(p1=p1, p2=p2, mat=mat)
 
@@ -182,7 +176,7 @@ def _seed_eta_batches(*, p1: int, mat: int) -> None:
 def test_queue_eta_filters_match_the_dashboard_tiles():
     """?eta=overdue / ?eta=this_week return exactly the batches the purchase officer's
     'Overdue Deliveries' / 'Deliveries This Week' tiles count (a received batch is neither)."""
-    c, wid, uid = _login("purchase_officer")
+    c, wid, uid = login("purchase_officer")
     p1, _p2, mat = _seed_two_projects_one_material(wid=wid, uid=uid)
     _seed_eta_batches(p1=p1, mat=mat)
 
@@ -200,5 +194,5 @@ def test_queue_eta_filters_match_the_dashboard_tiles():
 
 
 def test_queue_eta_rejects_an_unknown_value():
-    c, _wid, _uid = _login("manager")
+    c, _wid, _uid = login("manager")
     assert c.get("/procurement-queue?eta=yesterday").status_code == 422

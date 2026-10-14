@@ -36,12 +36,6 @@ _cleanup = truncate_fixture(
 
 
 
-def _login(role: str = "manager"):
-    return login(role, prefix="h")
-
-
-
-
 def _create_project(db, *, wid: int, uid: int, code: str = "HJ-001") -> int:
     """Insert a project scoped to the given workspace via projects.workspace_id and return project_id."""
     pid = db.execute(
@@ -93,7 +87,7 @@ def _insert_item(
 
 def test_empty_project_returns_empty_items():
     """A project with no items returns project_id and an empty items list."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -109,7 +103,7 @@ def test_empty_project_returns_empty_items():
 
 def test_grid_pivots_stages():
     """item_stages rows are pivoted into a stages dict keyed by stage_key."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -146,7 +140,7 @@ def test_grid_pivots_stages():
 
 def test_status_filter():
     """?status=X returns only items whose status matches exactly."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -165,7 +159,7 @@ def test_status_filter():
 
 def test_search_filter():
     """?q=substring matches description or code case-insensitively."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -183,21 +177,21 @@ def test_search_filter():
 
 def test_cross_workspace_404():
     """Workspace B cannot access workspace A's project — must get 404."""
-    c_a, wid_a, uid_a = _login()
+    c_a, wid_a, uid_a = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid_a, uid=uid_a, code="WS-A-001")
     finally:
         db.close()
 
-    c_b, _wid_b, _uid_b = _login()
+    c_b, _wid_b, _uid_b = login()
     r = c_b.get(f"/projects/{pid}/items")
     assert r.status_code == 404
 
 
 def test_availability_rollup_counts_lines():
     """ready = lines with an allocation; blocked = lines without any allocation."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -277,7 +271,7 @@ def test_availability_rollup_counts_lines():
 
 def test_availability_rollup_dedups_split_allocations():
     """A hardware line with 2 batch_allocations rows must count as 1 ready, not 2."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -442,7 +436,7 @@ def _seed_part(db, *, module_id: int, part_name: str = "Side Panel", qty: int = 
 
 def test_get_item_assembles_full_payload():
     """GET /items/{id} returns nested modules+parts, hardware_lines with catalog info."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -485,7 +479,7 @@ def test_get_item_assembles_full_payload():
 
 def test_get_item_lock_warning_for_non_owner():
     """GET /items/{id} as non-owner of a locked item returns lock_warning with owner info."""
-    c_a, wid_a, uid_a = _login(role="manager")
+    c_a, wid_a, uid_a = login(role="manager")
 
     # Create a second user in the same workspace (owner of the cutlist)
     suffix = uuid.uuid4().hex[:8]
@@ -545,7 +539,7 @@ def test_get_item_lock_warning_for_non_owner():
 
 def test_get_item_no_lock_warning_for_owner():
     """GET /items/{id} as the cutlist owner returns lock_warning=None even if locked."""
-    c, wid, uid = _login(role="editor")
+    c, wid, uid = login(role="editor")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -572,7 +566,7 @@ def test_get_item_no_lock_warning_for_owner():
 
 def test_get_item_404_for_cross_workspace():
     """Workspace B cannot GET workspace A's item — must receive 404."""
-    c_a, wid_a, uid_a = _login()
+    c_a, wid_a, uid_a = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid_a, uid=uid_a, code="XW-A-001")
@@ -580,7 +574,7 @@ def test_get_item_404_for_cross_workspace():
     finally:
         db.close()
 
-    c_b, _wid_b, _uid_b = _login()
+    c_b, _wid_b, _uid_b = login()
     r = c_b.get(f"/items/{iid}")
     assert r.status_code == 404
 
@@ -647,7 +641,7 @@ def _seed_batch_allocation(
 
 def test_availability_empty_when_no_lines():
     """Item with 0 hardware lines returns lines: []."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -664,7 +658,7 @@ def test_availability_empty_when_no_lines():
 
 def test_availability_three_states():
     """Three hardware lines exercise ready, ordered, and none statuses."""
-    c, wid, uid = _login()
+    c, wid, uid = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -722,7 +716,7 @@ def test_availability_three_states():
 
 def test_availability_cross_workspace_404():
     """Workspace B cannot access workspace A's item availability — must get 404."""
-    c_a, wid_a, uid_a = _login()
+    c_a, wid_a, uid_a = login()
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid_a, uid=uid_a, code="AV-A-001")
@@ -730,7 +724,7 @@ def test_availability_cross_workspace_404():
     finally:
         db.close()
 
-    c_b, _wid_b, _uid_b = _login()
+    c_b, _wid_b, _uid_b = login()
     r = c_b.get(f"/items/{iid}/availability")
     assert r.status_code == 404
 
@@ -740,7 +734,7 @@ def test_availability_cross_workspace_404():
 
 def test_post_item_writes_create_log_row():
     """POST /projects/{pid}/items creates an item and writes field='_create' edit log row."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -770,7 +764,7 @@ def test_post_item_writes_create_log_row():
 
 def test_patch_item_writes_one_log_row_per_changed_field():
     """PATCH changes 3 fields → 3 item_edit_log rows inserted."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -798,7 +792,7 @@ def test_patch_item_writes_one_log_row_per_changed_field():
 
 def test_delete_item_with_allocated_hardware_soft_deletes_and_keeps_the_allocation():
     """No IN_USE any more (soft delete, 0052): the line and its batch allocation stay."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -829,7 +823,7 @@ def test_delete_item_with_allocated_hardware_soft_deletes_and_keeps_the_allocati
 
 def test_editor_post_item_403():
     """An editor (not drafter/manager/admin) cannot POST a new item."""
-    c, wid, uid = _login(role="editor")
+    c, wid, uid = login(role="editor")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -845,7 +839,7 @@ def test_editor_post_item_403():
 
 def test_patch_item_reference_fields_and_cutlist_printed():
     """floor_plan / rls / joiery_details / cutlist_printed are writable, logged, and read back."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -870,7 +864,7 @@ def test_patch_item_reference_fields_and_cutlist_printed():
 
 
 def test_patch_item_reference_field_over_64_chars_is_422():
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
@@ -883,7 +877,7 @@ def test_patch_item_reference_field_over_64_chars_is_422():
 def test_get_item_returns_tracking_2_0_fields():
     """The detail payload used to declare these but never select them, so it
     always answered jid_code=None / var_boq='BOQ' whatever the row held."""
-    c, wid, uid = _login(role="drafter")
+    c, wid, uid = login(role="drafter")
     db = SessionLocal()
     try:
         pid = _create_project(db, wid=wid, uid=uid)
