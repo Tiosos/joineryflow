@@ -7,7 +7,7 @@ These live at top-level paths (`/orders`, `/projects/{pid}/orders`,
 `/items/{iid}/orders`) and are **separate from the untouched legacy
 `/procurement/*` namespace**, which still serves its own 32 endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -187,7 +187,7 @@ def patch_order_route(
         raise HTTPException(404, "order not found")
     if code == "DECISION_FORBIDDEN":
         raise HTTPException(403, {"code": "DECISION_FORBIDDEN", **order})
-    if code in ("REJECTION_NOTE_REQUIRED", "REJECTION_NOTE_NOT_APPLICABLE"):
+    if code in ("REJECTION_NOTE_REQUIRED", "REJECTION_NOTE_NOT_APPLICABLE", "CANCEL_REASON_NOT_APPLICABLE"):
         raise HTTPException(409, {"code": code})
     if code == "COST_CENTER_NOT_FOUND":
         raise HTTPException(404, {"code": "COST_CENTER_NOT_FOUND", **order})
@@ -217,6 +217,7 @@ def patch_order_route(
 @router.delete("/orders/{po_id}", status_code=204)
 def cancel_order_route(
     po_id: int,
+    reason: str | None = Query(None, max_length=2000),
     user: AuthUser = Depends(require_permission("orderbook", "write")),
     db: Session = Depends(get_db),
 ):
@@ -224,7 +225,7 @@ def cancel_order_route(
     or Rejected order is the decision holders' call, like any move out of those statuses."""
     code = q.cancel_order(
         db, po_id=po_id, workspace_id=user.workspace_id, actor_id=user.id,
-        can_decide="approve" in effective_actions(db, user, "orderbook", None),
+        can_decide="approve" in effective_actions(db, user, "orderbook", None), reason=reason,
     )
     if code == "NOT_FOUND":
         raise HTTPException(404, "order not found")

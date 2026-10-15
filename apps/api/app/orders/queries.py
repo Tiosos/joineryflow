@@ -74,7 +74,9 @@ _ORDER_COLS = """
     po.stock_tracked, po.gst_applicable, po.gst_included_in_price, po.gst_amount, po.grand_total,
     po.line_item_comments, po.changelog, po.product_website,
     EXISTS (SELECT 1 FROM po_attachments pa WHERE pa.po_id = po.po_id) AS has_attachment,
-    po.po_document_id, pd.po_no
+    po.po_document_id, pd.po_no,
+    po.cancelled_at, cbu.full_name AS cancelled_by_name, po.cancel_reason, po.received_by,
+    (po.image_blob IS NOT NULL) AS has_image
 """
 
 _ORDER_FROM = """
@@ -84,6 +86,7 @@ _ORDER_FROM = """
     LEFT JOIN cost_centers cc ON cc.cost_center_id = po.cost_center_id
     LEFT JOIN app_user ru ON ru.id = po.requester_id
     LEFT JOIN po_document pd ON pd.po_document_id = po.po_document_id
+    LEFT JOIN app_user cbu ON cbu.id = po.cancelled_by
 """
 
 # `FROZEN_STATUSES` (Cancelled / Delivered) is defined in schemas.py beside
@@ -106,7 +109,7 @@ _PATCHABLE = frozenset({
     "total_amount", "required_date", "date_ordered", "due_date",
     "notes", "internal_comments", "attributes", "rejection_note", "cost_center_id",
     "arrived_date", "stock_tracked", "gst_applicable", "gst_included_in_price",
-    "line_item_comments", "product_website",
+    "line_item_comments", "product_website", "received_by", "cancel_reason",
 })
 
 
@@ -606,7 +609,7 @@ def patch_order(
     # asking for {status, notes} gets a 409 and can send two calls, rather than
     # a 200 that quietly dropped half the request.
     if current["status"] in FROZEN_STATUSES:
-        blocked = sorted(set(fields) - {"status"})
+        blocked = sorted(set(fields) - {"status", "cancel_reason"})
         if blocked:
             return "ORDER_LOCKED", {"status": current["status"], "blocked_fields": blocked}
     # The decision on an order (Approved / Rejected) is a purchase officer's, manager's or admin's:
@@ -633,6 +636,12 @@ def patch_order(
         fields["rejection_note"] = None
     elif "rejection_note" in fields:
         fields.pop("rejection_note")
+    # Why an order was cancelled (shown on the ADMIN tab): only with the status Cancelled.
+    if "cancel_reason" in fields:
+        reason = (fields["cancel_reason"] or "").strip() or None
+        if reason is not None and new_status != "Cancelled":
+            return "CANCEL_REASON_NOT_APPLICABLE", None
+        fields["cancel_reason"] = reason
     # References are checked before anything is written or versioned. `vendor_id`
     # went straight into the UPDATE unchecked: another workspace's vendor was
     # accepted, and the response then carried that workspace's supplier name.
@@ -679,6 +688,11 @@ def patch_order(
         else:
             sets.append(f"{col} = :{key}")
             params[key] = val
+    if status_changes and new_status == "Cancelled":
+        sets += ["cancelled_at = now()", "cancelled_by = :cb"]
+        params["cb"] = actor_id
+    elif status_changes and current["status"] == "Cancelled":
+        sets += ["cancelled_at = NULL", "cancelled_by = NULL", "cancel_reason = NULL"]
     if "date_ordered" in fields:
         sets.append("date_ordered_from_po = false")  # typed by hand: a PO no longer owns that date
     db.execute(
@@ -705,7 +719,8 @@ def patch_order(
 
 
 def cancel_order(
-    db: Session, *, po_id: int, workspace_id: int, actor_id: int, can_decide: bool = False
+    db: Session, *, po_id: int, workspace_id: int, actor_id: int, can_decide: bool = False,
+    reason: str | None = None,
 ) -> str:
     """Soft-cancel, matching #4's batch rule. 'OK' | 'NOT_FOUND' | 'ALREADY_CANCELLED' |
     'DECISION_FORBIDDEN' (the order is Approved or Rejected and the caller lacks `can_decide`, the
@@ -728,8 +743,9 @@ def cancel_order(
     new_versions = bump_field_versions(current.get("field_versions"), ["status"])
     db.execute(
         text("UPDATE purchase_orders SET status = 'Cancelled', rejection_note = NULL,"
+             " cancelled_at = now(), cancelled_by = :cb, cancel_reason = :r,"
              " updated_at = now(), field_versions = CAST(:fv AS jsonb) WHERE po_id = :o"),
-        {"o": po_id, "fv": json.dumps(new_versions)},
+        {"o": po_id, "fv": json.dumps(new_versions), "cb": actor_id, "r": (reason or "").strip() or None},
     )
     db.flush()
     write_audit(

@@ -10,13 +10,26 @@ import { AreaRow, CheckRow, Row, SelectRow, TextRow } from "./DetailRows";
 import { OrderTypeFields } from "./OrderTypeFields";
 import { LinesSection } from "./LinesSection";
 import { OrderAttachments } from "./OrderAttachments";
+import { ProductImage } from "./ProductImage";
+import { AdminTab } from "./tabs/AdminTab";
+import { CutlistsTab } from "./tabs/CutlistsTab";
+import { DeliveryTab } from "./tabs/DeliveryTab";
+import { StockTab } from "./tabs/StockTab";
+import { SupplierTab } from "./tabs/SupplierTab";
+import { TrackingTab } from "./tabs/TrackingTab";
 
 /**
  * The order pop-up: the old Orderbook's Details window. Left, the fields every order has and the
- * ones that belong to its type; right, the HOME tab. The other tabs (Delivery, Glass C, Timber...)
- * are shown disabled: nothing in the screens says what they hold.
+ * ones that belong to its type; right, the tabs: HOME and the old screen's others. Tabs not built yet
+ * (Glass C, Timber, TGSolid) are shown disabled.
  */
-const OTHER_TABS = ["Delivery", "Glass C", "Timber", "Stock", "Tracking", "Supplier", "TGSolid", "Cutlists", "ADMIN"];
+type Tab = "HOME" | "Delivery" | "Stock" | "Tracking" | "Supplier" | "Cutlists" | "ADMIN";
+const TABS: { key: string; tab: Tab | null }[] = [
+  { key: "HOME", tab: "HOME" }, { key: "Delivery", tab: "Delivery" }, { key: "Glass C", tab: null },
+  { key: "Timber", tab: null }, { key: "Stock", tab: "Stock" }, { key: "Tracking", tab: "Tracking" },
+  { key: "Supplier", tab: "Supplier" }, { key: "TGSolid", tab: null }, { key: "Cutlists", tab: "Cutlists" },
+  { key: "ADMIN", tab: "ADMIN" },
+];
 
 export function OrderDetailPanel({
   poId, canEdit, onChanged, canApprove, costCentres, categories, onClose, onOpenPo,
@@ -37,6 +50,10 @@ export function OrderDetailPanel({
   // Choosing Rejected asks for the reason first; the status is not sent until it is given.
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  // Choosing Cancelled asks for a short reason first (shown on the ADMIN tab).
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [tab, setTab] = useState<Tab>("HOME");
 
   const [creatingPo, setCreatingPo] = useState(false);
   const [poError, setPoError] = useState<string | null>(null);
@@ -265,6 +282,7 @@ export function OrderDetailPanel({
               value={order.status}
               onChange={e => {
                 if (e.target.value === "Rejected") { setRejecting(true); return; }
+                if (e.target.value === "Cancelled") { setCancelling(true); return; }
                 void patchField("status", e.target.value);
               }}
               // Once an order is Approved or Rejected only a decider (purchase officer, manager, admin)
@@ -335,6 +353,24 @@ export function OrderDetailPanel({
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          )}
+          {cancelling && (
+            <div data-testid="order-cancel-form" className="mb-3 rounded border border-h-line bg-h-bg p-2">
+              <label className="mb-1 block text-[10px] uppercase tracking-wide text-h-muted" htmlFor="cancel-reason">
+                Why is this order cancelled?
+              </label>
+              <textarea id="cancel-reason" value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2}
+                data-testid="order-cancel-reason" className="w-full rounded border border-h-line bg-h-surface px-1.5 py-1 text-h-ink" />
+              <div className="mt-1 flex gap-2">
+                <button type="button" data-testid="order-cancel-confirm" disabled={!cancelReason.trim()}
+                  onClick={async () => {
+                    if (await patchField("status", "Cancelled", { cancel_reason: cancelReason.trim() })) { setCancelling(false); setCancelReason(""); }
+                  }}
+                  className="rounded border border-h-line bg-h-surface px-2 py-0.5 hover:text-h-ink disabled:opacity-50">Cancel order</button>
+                <button type="button" onClick={() => { setCancelling(false); setCancelReason(""); }}
+                  className="rounded border border-h-line bg-h-surface px-2 py-0.5 text-h-muted hover:text-h-ink">Keep order</button>
               </div>
             </div>
           )}
@@ -419,13 +455,22 @@ export function OrderDetailPanel({
 
           <div className="grid content-start gap-3">
             <div className="flex flex-wrap items-center gap-1 border-b border-h-line pb-2">
-              <span className="rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white">HOME</span>
-              {OTHER_TABS.map(t => (
-                <button key={t} type="button" disabled
-                  title="Not built: nothing in the customer's screens says what this tab holds"
-                  className="rounded px-2 py-1 text-[11px] text-h-muted opacity-40">{t}</button>
+              {TABS.map(t => t.tab ? (
+                <button key={t.key} type="button" data-testid={`order-tab-${t.key}`} onClick={() => setTab(t.tab!)}
+                  aria-pressed={tab === t.tab}
+                  className={tab === t.tab ? "rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white" : "rounded px-2 py-1 text-[11px] text-h-muted hover:text-h-ink"}>{t.key}</button>
+              ) : (
+                <button key={t.key} type="button" disabled title="Not built yet"
+                  className="rounded px-2 py-1 text-[11px] text-h-muted opacity-40">{t.key}</button>
               ))}
             </div>
+            {tab === "Delivery" && <DeliveryTab order={order} canEdit={canEdit && !order.locked} patchField={patchField} onChanged={onChanged} />}
+            {tab === "Stock" && <StockTab order={order} />}
+            {tab === "Tracking" && <TrackingTab order={order} />}
+            {tab === "Supplier" && <SupplierTab order={order} />}
+            {tab === "Cutlists" && <CutlistsTab order={order} />}
+            {tab === "ADMIN" && <AdminTab order={order} />}
+            {tab === "HOME" && <>
             <div>
               {order.po_document_id != null ? (
                 <button type="button" data-testid="order-create-po" onClick={() => onOpenPo(order.po_document_id!)}
@@ -443,9 +488,7 @@ export function OrderDetailPanel({
             </div>
             <OrderAttachments poId={order.po_id} canEdit={canEdit} locked={order.locked} onChanged={onChanged} />
             <div className="grid grid-cols-[8rem_1fr] gap-3">
-              <div className="flex h-28 items-center justify-center rounded border border-h-line bg-h-bg text-h-muted">
-                Product image
-              </div>
+              <ProductImage poId={order.po_id} hasImage={order.has_image} canEdit={canEdit && !order.locked} onChanged={() => { void refetch(); onChanged(); }} />
               <dl className="rounded border border-h-line">
                 <TextRow label="Website" value={order.product_website} canEdit={canEditFields}
                   onSave={v => patchField("product_website", v || null)} error={errors.product_website} />
@@ -495,6 +538,7 @@ export function OrderDetailPanel({
                 </div>
               ))}
             </dl>
+            </>}
           </div>
         </div>
 

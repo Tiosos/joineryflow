@@ -1706,3 +1706,12 @@ Model (`0063`): `payment_method`; `po_invoice` gains `payment_method_id`, `total
 Found while building it: the file store dedupes by content, so a blob's `original_filename` is the first uploader's, not the name given to this box. The windows therefore show a thumbnail or a PDF icon from the stored mime type, never a name (rule in CLAUDE.md §7 Files). Also found by the e2e spec: a save started by leaving a field and a Close click right after it must queue, not drop the second (`InvoiceWindow.commit`).
 
 The old blank `GET /purchase-orders/{id}/authorisation-form` is replaced by Create Form (a stored, dated PDF made from the saved details). Tests: `test_po_invoice_authorisation.py` (payment list, GST rules, files, form + signed copy, photos, isolation), `po_invoice_authorisation.spec.ts`; `po.spec.ts` now invoices through the window.
+
+
+## The order pop-up's tabs, part 1 (October 2026, `0064`)
+
+The customer sent a screenshot of each old tab; the settled answers (asked first): **Delivery** is a log only (the status stays by hand; rows are partial deliveries with the docket attached per row); **Tracking**: the blank column was dropped and `102883` is the order's own number; **Supplier** is read-only in the pop-up and edited in the Supplier list (which gained website, notes, metadata and a logo); **every tab shows on every order**; **Stock** = stock-tracked orders of the same product code; **ADMIN** = date, who and a Cancel reason (the old duplicate "Date canceled", Date deleted, Deleted by and Tag_Active were dropped: orders are cancelled, never deleted); **Product image** = one picture uploaded on the order.
+
+Assumptions (not asked, say if wrong): the **Cutlists** tab finds the product by the order's product code matching a catalog SKU (an order has no catalog link of its own); **Received by** is typed text (the old screen showed a code like `JOEF`); the cancel date of an order cancelled before `0064` is backfilled from the latest `order.cancel` / `order.update` audit row of that order.
+
+Tests: `test_order_tabs.py` (cancel stamp, delivery log and docket, stock, tracking, cutlists, image, supplier card, cross-workspace), `order_tabs.spec.ts`. Parts still to build: Glass C (a price calculator), Timber (the Timberwood Panels order form), TGSolid (production rows).

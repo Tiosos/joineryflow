@@ -40,9 +40,17 @@ _PO_REASON = ("the seed has no PO document; every operation is called by another
 _PO_WINDOWS = ("the seed has no PO document; called by another workspace in "
                "test_po_invoice_authorisation.test_other_workspace_is_404")
 
+_TABS = ("the seed has no delivery, docket, logo or image; called by another workspace in "
+         "test_order_tabs.test_other_workspace_is_404")
+
 NOT_PROBED: dict[tuple[str, str], str] = {
     ("GET", "/orders/{po_id}/attachments/{attachment_id}/download"):
         "the seed has no order attachment; test_order_attachments.test_other_workspace_is_404 downloads one as another workspace",
+    ("DELETE", "/orders/{po_id}/deliveries/{delivery_id}/docket"): _TABS,
+    ("GET", "/orders/{po_id}/deliveries/{delivery_id}/docket"): _TABS,
+    ("GET", "/suppliers/{vendor_id}/logo"): _TABS,
+    ("PUT", "/orders/{po_id}/image"): _TABS,
+    ("PUT", "/suppliers/{vendor_id}/logo"): _TABS,
     ("DELETE", "/purchase-orders/{doc_id}/authorisation/signed"): _PO_WINDOWS,
     ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}/files/{slot}"): _PO_WINDOWS,
     ("GET", "/purchase-orders/staff/{user_id}/photo"):

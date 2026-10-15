@@ -25,6 +25,11 @@ class SupplierOut(BaseModel):
     rating: Decimal | None
     tax_id: str | None
     payment_terms: str | None
+    # The order pop-up's Supplier tab (0064): the company card.
+    website: str | None = None
+    notes: str | None = None
+    metadata: str | None = None
+    has_logo: bool = False
     # How many catalog rows point here, across the six tables (Q506's repoint).
     linked_material_count: int = 0
     created_at: datetime
@@ -46,6 +51,9 @@ class CreateSupplierIn(BaseModel):
     address: str | None = None
     tax_id: str | None = Field(default=None, max_length=100)
     payment_terms: str | None = Field(default=None, max_length=100)
+    website: str | None = Field(default=None, max_length=500)
+    notes: str | None = None
+    metadata: str | None = None
 
 
 class PatchSupplierIn(BaseModel):
@@ -63,6 +71,9 @@ class PatchSupplierIn(BaseModel):
     rating: Decimal | None = Field(default=None, ge=0, le=5)
     tax_id: str | None = Field(default=None, max_length=100)
     payment_terms: str | None = Field(default=None, max_length=100)
+    website: str | None = Field(default=None, max_length=500)
+    notes: str | None = None
+    metadata: str | None = None
 
 
 class LinkMaterialIn(BaseModel):

@@ -137,6 +137,13 @@ class OrderOut(BaseModel):
     po_document_id: int | None = None
     po_no: int | None = None
     has_attachment: bool = False
+    # ADMIN tab: when an order was cancelled, by whom and why (0064), and the Delivery log's final
+    # "Received by" (the final date is `arrived_date`).
+    cancelled_at: datetime | None = None
+    cancelled_by_name: str | None = None
+    cancel_reason: str | None = None
+    received_by: str | None = None
+    has_image: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -232,6 +239,9 @@ class PatchOrderIn(BaseModel):
     gst_included_in_price: bool | None = None
     line_item_comments: str | None = None
     product_website: str | None = Field(default=None, max_length=500)
+    received_by: str | None = Field(default=None, max_length=100)
+    # Only with status "Cancelled" (409 CANCEL_REASON_NOT_APPLICABLE otherwise).
+    cancel_reason: str | None = Field(default=None, max_length=2000)
     # Required with status "Rejected", refused otherwise (the reason the order was rejected).
     rejection_note: str | None = Field(default=None, max_length=2000)
     # Optional; an explicit null clears it. Another workspace's, or an inactive, one is a 404.
