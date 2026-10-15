@@ -43,11 +43,19 @@ from ..catalog import queries as catalog_queries
 
 ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered", "QTY", "_Cost_Sub")
 REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Type", "Table", "Reason", "Confidence", "Note")
-TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "skip")
+TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "hire", "skip")
+# The Catalog screen's tabs are the product types; each type's items live in one of the six tables until
+# the types get tables of their own. A person never sees or edits this: Type (column F) is the only input.
+TYPE_TABLE = {
+    "laminate benchtop": "benchtop", "hardware": "hardware", "glass": "custom_made", "supplies": "hardware",
+    "contractor manufacturing": "custom_made", "board": "board", "laminate": "board", "delivery": "custom_made",
+    "edging": "hardware", "solid timber": "benchtop", "paint": "hardware", "tg solid": "benchtop",
+    "appliance": "appliance", "equipment hire": "hire",
+}
 
 # catalog type -> (the type's own code column; both it and `sku` get the product code)
 CODE_COLUMN = {"board": "code", "hardware": "sku", "custom_made": "internal_ref",
-               "benchtop": "slab_id", "appliance": "model_number"}
+               "benchtop": "slab_id", "appliance": "model_number", "hire": "contract_ref"}
 MAX_CODE = {"board": 32}        # the others take 64 (the schemas' limits)
 
 
@@ -214,13 +222,15 @@ def read_review(path: str | Path) -> list[ReviewRow]:
     ws = wb["Review"] if "Review" in wb.sheetnames else wb.worksheets[0]
     it = ws.iter_rows(values_only=True)
     header = [(_clean(h) or "") for h in next(it)]
-    missing = [h for h in ("Code", "Description", "Supplier", "Table") if h not in header]
+    missing = [h for h in ("Code", "Description", "Supplier", "Type") if h not in header]
     if missing:
         raise ImportErrorReport(f"the review sheet is missing columns: {', '.join(missing)}")
     out, bad = [], []
     for n, r in enumerate(it, start=2):
         rec = dict(zip(header, r))
-        table = (_clean(rec.get("Table")) or "skip").lower()
+        ptype = _clean(rec.get("Type"))
+        # A Table column (the old review sheets) wins; otherwise the table follows from the Type.
+        table = (_clean(rec.get("Table")) or TYPE_TABLE.get((ptype or "").lower()) or "skip").lower()
         if table not in TABLES:
             bad.append(f"row {n}: {table!r}")
             continue
@@ -236,7 +246,6 @@ def read_review(path: str | Path) -> list[ReviewRow]:
             except Exception:
                 bad.append(f"row {n}: unit cost {rec.get('Unit cost')!r}")
                 continue
-        ptype = _clean(rec.get("Type"))
         if ptype is not None and len(ptype) > 64:
             bad.append(f"row {n}: type {ptype[:20]!r}... is longer than 64 characters")
             continue
@@ -258,7 +267,7 @@ class Result:
 
 
 def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: int, source_sha256: str,
-          anomalies: list[tuple[str, str]]) -> Result:
+          anomalies: list[tuple[str, str]], hire_project_id: int | None = None) -> Result:
     """Write the reviewed rows. Flushes, never commits: the caller commits (`--commit`) or rolls back."""
     res = Result(created=Counter())
     by_name = catalog_queries.supplier_ids_by_name(db, workspace_id=workspace_id)
@@ -277,6 +286,10 @@ def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: in
         if not r.description:
             anomalies.append(("no_description", f"row {r.row}: {r.code} has no description; skipped"))
             continue
+        if r.table == "hire" and hire_project_id is None:
+            anomalies.append(("hire_needs_project", f"row {r.row}: {r.code} is equipment hire, which belongs to a "
+                                                    "project; give --project-code. Skipped"))
+            continue
         table, _id, _cols, _ins = catalog_queries.REGISTRY[r.table]
         code_col = CODE_COLUMN[r.table]
         hit = db.execute(text(f"SELECT workspace_id FROM {table} WHERE {code_col} = :c OR "
@@ -292,6 +305,8 @@ def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: in
                   "default_supplier": (r.supplier or "")[:128] or None, "default_supplier_id": None,
                   "default_lead_time_days": None, "unit_cost": r.unit_cost,
                   "product_type": r.product_type}
+        if r.table == "hire":
+            fields["project_id"] = hire_project_id
         key = (r.supplier or "").strip().lower()
         if key and by_name.get(key) is not None:
             fields["default_supplier_id"] = by_name[key]
@@ -337,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     p2.add_argument("file")
     p2.add_argument("--workspace-slug", required=True)
     p2.add_argument("--actor-email", required=True)
+    p2.add_argument("--project-code", help="the project equipment-hire rows are attached to (required if the sheet has any)")
     p2.add_argument("--commit", action="store_true", help="keep the result (default: a dry run, rolled back)")
     args = ap.parse_args(argv)
 
@@ -360,8 +376,15 @@ def main(argv: list[str] | None = None) -> int:
                 print("unknown workspace or actor", file=sys.stderr)
                 return 2
             anomalies: list[tuple[str, str]] = []
+            hire_project = None
+            if args.project_code:
+                hire_project = db.execute(text("SELECT project_id FROM projects WHERE project_code = :c AND workspace_id = :w"),
+                                          {"c": args.project_code, "w": ws}).scalar()
+                if hire_project is None:
+                    print(f"unknown project code {args.project_code!r}", file=sys.stderr)
+                    return 2
             res = apply(db, rows, workspace_id=ws, actor_id=actor, source_sha256=hashlib.sha256(data).hexdigest(),
-                        anomalies=anomalies)
+                        anomalies=anomalies, hire_project_id=hire_project)
             (db.commit if args.commit else db.rollback)()
             print(report_import(res, anomalies, committed=args.commit))
             return 0

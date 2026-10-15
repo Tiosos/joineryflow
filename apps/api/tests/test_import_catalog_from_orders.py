@@ -106,11 +106,12 @@ def _review(tmp_path, rows):
     return co.read_review(_xlsx(tmp_path, "r.xlsx", co.REVIEW_HEADERS, rows))
 
 
-def _apply(wid, uid, rows, *, commit=True):
+def _apply(wid, uid, rows, *, commit=True, hire_project_id=None):
     db = SessionLocal()
     anomalies: list = []
     try:
-        res = co.apply(db, rows, workspace_id=wid, actor_id=uid, source_sha256="z" * 64, anomalies=anomalies)
+        res = co.apply(db, rows, workspace_id=wid, actor_id=uid, source_sha256="z" * 64, anomalies=anomalies,
+                       hire_project_id=hire_project_id)
         (db.commit if commit else db.rollback)()
         return res, anomalies
     finally:
@@ -177,3 +178,32 @@ def test_a_code_another_workspace_already_uses_is_reported_not_crashed_on(tmp_pa
         db.close()
     res, anomalies = _apply(wid, uid, _review(tmp_path, [{"Code": "SHARED-1", "Description": "mine", "Table": "hardware"}]))
     assert dict(res.created) == {} and [k for k, _ in anomalies] == ["code_used_elsewhere"]
+
+
+def test_a_sheet_with_no_table_column_takes_the_table_from_the_type_and_hire_needs_a_project(tmp_path):
+    _, wid, uid = login("admin")
+    headers = ("Code", "Description", "Supplier", "Unit cost", "Type")        # column G (Table) deleted
+    rows = co.read_review(_xlsx(tmp_path, "t.xlsx", headers, [
+        {"Code": "G-1", "Description": "Cut glass", "Type": "Glass"},
+        {"Code": "L-1", "Description": "Benchtop sheet", "Type": "laminate benchtop"},
+        {"Code": "E-1", "Description": "Edge tape", "Type": "Edging"},
+        {"Code": "Q-1", "Description": "Scissor lift", "Type": "Equipment Hire"},
+        {"Code": "N-1", "Description": "No type given"},
+        {"Code": "U-1", "Description": "A type the list lacks", "Type": "Whatever"},
+    ]))
+    assert [r.table for r in rows] == ["custom_made", "benchtop", "hardware", "hire", "skip", "skip"]
+    res, anomalies = _apply(wid, uid, rows)                                # hire without a project is reported
+    assert dict(res.created) == {"custom_made": 1, "benchtop": 1, "hardware": 1} and res.skipped == 2
+    assert [k for k, _ in anomalies] == ["hire_needs_project"]
+    assert _q("SELECT product_type FROM custom_made WHERE workspace_id = :w", w=wid) == [("Glass",)]
+    db = SessionLocal()
+    try:
+        pid = db.execute(text("INSERT INTO projects(workspace_id, project_code, name) VALUES (:w, 'P-1', 'P')"
+                              " RETURNING project_id"), {"w": wid}).scalar()
+        db.commit()
+    finally:
+        db.close()
+    res, anomalies = _apply(wid, uid, rows, hire_project_id=pid)
+    assert res.created["hire"] == 1 and anomalies == []
+    assert _q("SELECT contract_ref, project_id, product_type FROM equipment_hire WHERE workspace_id = :w", w=wid) == [
+        ("Q-1", pid, "Equipment Hire")]
