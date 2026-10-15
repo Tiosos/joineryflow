@@ -84,6 +84,13 @@ export interface OrderRow {
   changelog: string | null;
   product_website: string | null;
   has_attachment: boolean;
+  /** ADMIN tab: when the order was cancelled, by whom and why (set only while it is Cancelled). */
+  cancelled_at: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
+  /** The Delivery log's final "Received by" (the final date is `arrived_date`). */
+  received_by: string | null;
+  has_image: boolean;
 }
 
 /** Pydantic `Decimal`, so the budget arrives as a string. */
@@ -136,6 +143,11 @@ export interface SupplierRecord {
   contact_phone: string | null;
   address: string | null;
   payment_terms: string | null;
+  /** The order pop-up's Supplier tab shows these (0064). */
+  website: string | null;
+  notes: string | null;
+  metadata: string | null;
+  has_logo: boolean;
 }
 
 /** The statuses `vendors_status_check` allows. */

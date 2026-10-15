@@ -5,12 +5,16 @@ ordered from. **Q565** retired the legacy `/procurement/vendors*` endpoints in
 favour of these, so there is one surface over the table rather than two — the
 same convergence #7a made for `/catalogs/*`.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
+from ..auth.audit import write_audit
 from ..db import get_db
+from ..files import uploads
+from ..files.store import FileStore, get_default_store
 from . import queries as q
 from .schemas import (
     ContactIn,
@@ -192,3 +196,63 @@ def delete_contact_route(
         raise HTTPException(404, "contact not found")
     db.commit()
     return None
+
+
+# ── the company logo (0064): one PNG / JPEG per supplier ───────────────────────────────────────
+
+def _set_logo(db: Session, user: AuthUser, vendor_id: int, blob_id: int | None) -> None:
+    found = db.execute(
+        text("UPDATE vendors SET logo_blob = :b, updated_at = now()"
+             " WHERE vendor_id = :v AND workspace_id = :w RETURNING vendor_id"),
+        {"b": blob_id, "v": vendor_id, "w": user.workspace_id},
+    ).first()
+    if not found:
+        raise HTTPException(404, "supplier not found")
+    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id,
+                event="supplier.logo.set" if blob_id is not None else "supplier.logo.remove",
+                target=str(vendor_id), payload={})
+
+
+@router.put("/suppliers/{vendor_id}/logo", status_code=204)
+async def put_logo_route(
+    vendor_id: int,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(get_default_store),
+):
+    stored = None
+    try:
+        stored = await uploads.store_upload(db, store, user=user, file=file, allowed=uploads.IMAGE)
+        _set_logo(db, user, vendor_id, stored.blob_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        uploads.discard(db, store, stored)
+        raise
+
+
+@router.get("/suppliers/{vendor_id}/logo")
+def get_logo_route(
+    vendor_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(get_default_store),
+):
+    blob = db.execute(
+        text("SELECT logo_blob FROM vendors WHERE vendor_id = :v AND workspace_id = :w"),
+        {"v": vendor_id, "w": user.workspace_id},
+    ).scalar()
+    if blob is None:
+        raise HTTPException(404, "logo not found")
+    return uploads.stream_blob(db, store, workspace_id=user.workspace_id, blob_id=blob)
+
+
+@router.delete("/suppliers/{vendor_id}/logo", status_code=204)
+def delete_logo_route(
+    vendor_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "write")),
+    db: Session = Depends(get_db),
+):
+    _set_logo(db, user, vendor_id, None)
+    db.commit()

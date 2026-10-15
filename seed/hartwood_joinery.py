@@ -2943,6 +2943,18 @@ def main() -> None:
             for _method in ("Account", "Credit card", "Deposit", "COD / Pay on delivery"):
                 _create_payment_method(s, workspace_id=workspace_id, actor_id=mina_id, name=_method)
 
+            # The Glass C tab's price list (0065): made-up demo rates, per m2 for glass and per metre or per
+            # each for processing. Made through the query the API uses; a name already there is left alone.
+            from app.order_tabs.glass import RateIn as _RateIn, create_rate as _create_glass_rate
+            for _i, (_kind, _name, _rate, _um) in enumerate([
+                ("glass", "4mm Clear Float", "36.50", "m2"), ("glass", "6mm Silver Float", "42.00", "m2"),
+                ("glass", "6mm Clear Float Toughened", "61.00", "m2"), ("glass", "10mm Clear Float Toughened", "114.00", "m2"),
+                ("process", "4-6mm Flat Polish", "3.20", "Lm"), ("process", "Notch Out", "6.50", "ea"),
+                ("process", "Mitre", "6.50", "ea"), ("process", "Cut Out", "6.50", "ea"),
+            ]):
+                _create_glass_rate(s, workspace_id=workspace_id, actor_id=mina_id, payload=_RateIn(
+                    kind=_kind, name=_name, rate=_rate, um=_um, supplier_no="1221", sort_order=_i))
+
             # Demo orders for the Orderbook list and pop-up: one or two in each order type, made
             # up (no real supplier, project or product). They go through the query functions the
             # API uses, so the audit rows are real; the marker in `internal_comments` makes a

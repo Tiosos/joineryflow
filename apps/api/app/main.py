@@ -25,6 +25,10 @@ from .notifications.routes import router as notifications_router
 from .orders.attachments import router as order_attachments_router
 from .orders.routes import router as orders_router
 from .printing.routes import router as printing_router
+from .order_tabs.glass import router as glass_router
+from .order_tabs.routes import router as order_tabs_router
+from .order_tabs.tg_solid import router as tg_solid_router
+from .order_tabs.timber import router as timber_router
 from .payment_methods.routes import router as payment_methods_router
 from .purchase_orders.routes import router as purchase_orders_router
 from .procurement_v1.allocations.routes import router as proc_v1_alloc_router
@@ -58,6 +62,10 @@ app.include_router(areas_router)
 app.include_router(cutlists_router)
 app.include_router(orders_router)
 app.include_router(order_attachments_router)
+app.include_router(order_tabs_router)
+app.include_router(glass_router)
+app.include_router(timber_router)
+app.include_router(tg_solid_router)
 app.include_router(payment_methods_router)
 app.include_router(purchase_orders_router)
 app.include_router(related_parts_router)

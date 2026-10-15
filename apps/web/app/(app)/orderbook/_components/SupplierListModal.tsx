@@ -6,18 +6,19 @@ import { SUPPLIER_STATUSES, type OrderCategory, type SupplierRecord } from "@/li
 
 type Draft = {
   name: string; category: string; status: string; contact_name: string; contact_email: string;
-  contact_phone: string; address: string; payment_terms: string;
+  contact_phone: string; address: string; payment_terms: string; website: string; notes: string; metadata: string;
 };
 
 const EMPTY: Draft = {
   name: "", category: "Other", status: "Active", contact_name: "", contact_email: "",
-  contact_phone: "", address: "", payment_terms: "",
+  contact_phone: "", address: "", payment_terms: "", website: "", notes: "", metadata: "",
 };
 
 const toDraft = (s: SupplierRecord): Draft => ({
   name: s.name, category: s.category, status: s.status, contact_name: s.contact_name ?? "",
   contact_email: s.contact_email ?? "", contact_phone: s.contact_phone ?? "",
   address: s.address ?? "", payment_terms: s.payment_terms ?? "",
+  website: s.website ?? "", notes: s.notes ?? "", metadata: s.metadata ?? "",
 });
 
 const INPUT = "w-full rounded border border-h-line bg-h-bg px-1.5 py-1 text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent";
@@ -40,6 +41,8 @@ export function SupplierListModal({
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Bumped after a logo change so the browser fetches the new picture.
+  const [logoVersion, setLogoVersion] = useState(0);
 
   const load = useCallback(() => {
     fetch("/api/suppliers", { cache: "no-store" })
@@ -65,6 +68,19 @@ export function SupplierListModal({
   function startEdit(s: SupplierRecord) { setErr(null); setDraft(toDraft(s)); setOpen(s.vendor_id); }
   function startAdd() { setErr(null); setDraft(EMPTY); setOpen("new"); }
 
+  async function uploadLogo(id: number, file: File) {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await fetch(`/api/suppliers/${id}/logo`, { method: "PUT", body: fd }).catch(() => null);
+    if (!r || !r.ok) { setErr(r?.status === 415 ? "A logo must be a PNG or JPEG" : "Could not save the logo"); return; }
+    setErr(null); setLogoVersion(v => v + 1); load(); onChanged();
+  }
+
+  async function removeLogo(id: number) {
+    const r = await fetch(`/api/suppliers/${id}/logo`, { method: "DELETE" }).catch(() => null);
+    if (!r || !r.ok) { setErr("Could not remove the logo"); return; }
+    setErr(null); setLogoVersion(v => v + 1); load(); onChanged();
+  }
+
   async function save() {
     if (open == null) return;
     if (!draft.name.trim()) { setErr("A supplier needs a name"); return; }
@@ -74,7 +90,7 @@ export function SupplierListModal({
     const body = open === "new"
       ? {
           name: draft.name.trim(), category: draft.category,
-          ...Object.fromEntries((["contact_name", "contact_email", "contact_phone", "address", "payment_terms"] as const)
+          ...Object.fromEntries((["contact_name", "contact_email", "contact_phone", "address", "payment_terms", "website", "notes", "metadata"] as const)
             .filter(k => draft[k].trim() !== "").map(k => [k, draft[k].trim()])),
         }
       : {
@@ -82,6 +98,7 @@ export function SupplierListModal({
           contact_name: optional(draft.contact_name), contact_email: optional(draft.contact_email),
           contact_phone: optional(draft.contact_phone), address: optional(draft.address),
           payment_terms: optional(draft.payment_terms),
+          website: optional(draft.website), notes: optional(draft.notes), metadata: optional(draft.metadata),
         };
     const res = await fetch(open === "new" ? "/api/suppliers" : `/api/suppliers/${open}`, {
       method: open === "new" ? "POST" : "PATCH",
@@ -122,6 +139,27 @@ export function SupplierListModal({
         <input value={draft.address} onChange={e => set("address", e.target.value)} className={INPUT} /></label>
       <label className="grid gap-0.5 sm:col-span-2">Payment terms
         <input value={draft.payment_terms} onChange={e => set("payment_terms", e.target.value)} className={INPUT} /></label>
+      <label className="grid gap-0.5 sm:col-span-2">Website
+        <input value={draft.website} onChange={e => set("website", e.target.value)} data-testid="supplier-website-input" className={INPUT} /></label>
+      <label className="grid gap-0.5 sm:col-span-2">Notes
+        <textarea rows={2} value={draft.notes} onChange={e => set("notes", e.target.value)} data-testid="supplier-notes-input" className={INPUT} /></label>
+      <label className="grid gap-0.5 sm:col-span-2">Metadata
+        <textarea rows={2} value={draft.metadata} onChange={e => set("metadata", e.target.value)} className={INPUT} /></label>
+      {open !== "new" && open != null && (
+        <div className="flex items-center gap-2 sm:col-span-2" data-testid="supplier-logo-box">
+          <span>Logo</span>
+          {rows.find(r => r.vendor_id === open)?.has_logo
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={`/api/suppliers/${open}/logo?v=${logoVersion}`} alt="Logo" className="h-10 w-10 rounded object-contain" />
+            : <span className="text-h-muted">none</span>}
+          <label className="cursor-pointer rounded border border-h-line bg-h-surface px-2 py-0.5 text-h-muted hover:text-h-ink">Upload
+            <input type="file" accept="image/png,image/jpeg" className="sr-only" data-testid="supplier-logo-file" aria-label="Logo"
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadLogo(open, f); }} /></label>
+          {rows.find(r => r.vendor_id === open)?.has_logo && (
+            <button type="button" className="text-h-muted underline hover:text-h-ink" onClick={() => void removeLogo(open)}>Remove</button>
+          )}
+        </div>
+      )}
       {err && <p className="text-[#b4443d] sm:col-span-2">{err}</p>}
       <div className="flex gap-2 sm:col-span-2">
         <button type="button" disabled={saving} onClick={() => void save()} data-testid="supplier-save"

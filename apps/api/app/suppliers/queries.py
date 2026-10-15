@@ -44,6 +44,7 @@ _SUPPLIER_COLS = f"""
     v.vendor_id, v.name, v.category, v.status,
     v.contact_name, v.contact_email, v.contact_phone, v.address,
     v.rating, v.tax_id, v.payment_terms,
+    v.website, v.notes, v.metadata, (v.logo_blob IS NOT NULL) AS has_logo,
     ({_LINKED_COUNT}) AS linked_material_count,
     v.created_at, v.updated_at
 """
@@ -51,6 +52,7 @@ _SUPPLIER_COLS = f"""
 _PATCHABLE = frozenset({
     "name", "category", "status", "contact_name", "contact_email",
     "contact_phone", "address", "rating", "tax_id", "payment_terms",
+    "website", "notes", "metadata",
 })
 
 
@@ -107,9 +109,9 @@ def create_supplier(
             """
             INSERT INTO vendors (
                 workspace_id, name, category, contact_name, contact_email,
-                contact_phone, address, tax_id, payment_terms
+                contact_phone, address, tax_id, payment_terms, website, notes, metadata
             )
-            VALUES (:w, :name, :cat, :cn, :ce, :cp, :addr, :tax, :terms)
+            VALUES (:w, :name, :cat, :cn, :ce, :cp, :addr, :tax, :terms, :web, :notes, :meta)
             RETURNING vendor_id
             """
         ),
@@ -119,6 +121,7 @@ def create_supplier(
             "ce": str(payload.contact_email) if payload.contact_email else None,
             "cp": payload.contact_phone, "addr": payload.address,
             "tax": payload.tax_id, "terms": payload.payment_terms,
+            "web": payload.website, "notes": payload.notes, "meta": payload.metadata,
         },
     ).scalar()
     db.flush()
