@@ -138,6 +138,9 @@ test("an admin sets a staff photo and the PO staff list shows it", async ({ page
   } finally {
     await page.goto("/it");
     const again = page.getByTestId("staff-photo-row").filter({ hasText: "Mina Klee" });
+    // The panel loads its users after the page does: wait for the row, or the Remove button is not there yet to be found
+    // (the old check then skipped it, left the photo behind, and failed when the list appeared a moment later).
+    await expect(again).toBeVisible();
     if (await again.getByRole("button", { name: "Remove" }).count()) await again.getByRole("button", { name: "Remove" }).click();
     await expect(again.locator("img")).toHaveCount(0);
   }
