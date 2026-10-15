@@ -69,6 +69,7 @@ export default function CatalogClient(props: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [productType, setProductType] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   // null = not loaded or unreadable. `GET /suppliers` needs `orderbook:read`, a
@@ -115,12 +116,19 @@ export default function CatalogClient(props: Props) {
     return Array.from(seen).sort();
   }, [list]);
 
+  const productTypes = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of list?.rows ?? []) if (r.product_type) seen.add(r.product_type);
+    return Array.from(seen).sort();
+  }, [list]);
+
   const rows = useMemo(() => {
-    const all = list?.rows ?? [];
+    let all = list?.rows ?? [];
+    if (productType) all = all.filter((r) => r.product_type === productType);
     if (link === "linked") return all.filter((r) => r.default_supplier_id != null);
     if (link === "unlinked") return all.filter((r) => r.default_supplier_id == null);
     return all;
-  }, [list, link]);
+  }, [list, link, productType]);
   const unlinkedCount = (list?.rows ?? []).filter((r) => r.default_supplier_id == null).length;
 
   const headerText =
@@ -158,6 +166,9 @@ export default function CatalogClient(props: Props) {
           archived={archived}
           link={link}
           suppliers={suppliers}
+          productTypes={productTypes}
+          selectedType={productType}
+          onTypeChange={setProductType}
           onSearchChange={(s) => updateUrl({ q: s || null })}
           onSupplierChange={(s) => updateUrl({ supplier: s })}
           onArchivedChange={(a) => updateUrl({ archived: a ? "true" : null })}

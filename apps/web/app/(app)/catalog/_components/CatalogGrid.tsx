@@ -26,7 +26,7 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
 export default function CatalogGrid(p: Props) {
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
-  const colCount = hasGrain ? 11 : 10;
+  const colCount = hasGrain ? 12 : 11;
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -34,6 +34,7 @@ export default function CatalogGrid(p: Props) {
         <thead className="bg-h-surface text-h-muted">
           <tr className="text-left">
             <th className="px-3 py-2">Description</th>
+            <th className="px-3 py-2" title="The old system's product type">Type</th>
             <th className="px-3 py-2">SKU</th>
             <th className="px-3 py-2">{legacyLabel}</th>
             <th className="px-3 py-2">Default supplier</th>

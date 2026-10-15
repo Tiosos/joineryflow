@@ -62,7 +62,7 @@ def _resolve_type(slug: str) -> str:
 
 
 # Nullable columns a PATCH may clear: everything else drops an explicit null.
-_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost")
+_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost", "product_type")
 
 
 def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:

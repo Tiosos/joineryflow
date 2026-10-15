@@ -7,6 +7,9 @@ interface Props {
   selectedSupplier: string | null;
   archived: boolean;
   suppliers: string[];
+  productTypes: string[];
+  selectedType: string;
+  onTypeChange: (t: string) => void;
   link: "all" | "linked" | "unlinked";
   onSearchChange: (s: string) => void;
   onSupplierChange: (s: string | null) => void;
@@ -44,6 +47,15 @@ export default function CatalogFilters(p: Props) {
       >
         <option value="">All suppliers</option>
         {p.suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select
+        aria-label="Type filter"
+        value={p.selectedType}
+        onChange={(e) => p.onTypeChange(e.target.value)}
+        className="rounded border border-h-line px-2 py-1 text-sm"
+      >
+        <option value="">All types</option>
+        {p.productTypes.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>
       <select
         aria-label="Supplier link filter"

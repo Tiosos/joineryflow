@@ -89,6 +89,10 @@ def test_the_review_sheet_round_trips_and_a_bad_table_is_refused(tmp_path):
                 [{"Code": "A", "Description": "d", "Table": "glass"}])
     with pytest.raises(co.ImportErrorReport, match="glass"):
         co.read_review(bad)
+    long_type = _xlsx(tmp_path, "long.xlsx", co.REVIEW_HEADERS,
+                      [{"Code": "A", "Description": "d", "Table": "board", "Type": "x" * 65}])
+    with pytest.raises(co.ImportErrorReport, match="type"):
+        co.read_review(long_type)
     for cost in (-1, "abc"):
         worse = _xlsx(tmp_path, "worse.xlsx", co.REVIEW_HEADERS,
                       [{"Code": "A", "Description": "d", "Table": "board", "Unit cost": cost}])
@@ -133,7 +137,7 @@ def test_the_import_writes_each_table_links_suppliers_and_is_safe_to_rerun(tmp_p
     rows = _review(tmp_path, [
         {"Code": "B-1", "Description": "3600 x 1800 x 18 MR PB", "Supplier": "boards ltd", "Table": "board",
          "Unit cost": 45.5},
-        {"Code": "H-1", "Description": "Hinge", "Supplier": "Nobody Ltd", "Table": "hardware"},
+        {"Code": "H-1", "Description": "Hinge", "Supplier": "Nobody Ltd", "Table": "hardware", "Type": "Supplies"},
         {"Code": "C-1", "Description": "Cut glass", "Table": "custom_made"},
         {"Code": "T-1", "Description": "Solid top", "Table": "benchtop"},
         {"Code": "A-1", "Description": "Dishwasher", "Table": "appliance"},
@@ -149,7 +153,9 @@ def test_the_import_writes_each_table_links_suppliers_and_is_safe_to_rerun(tmp_p
     assert {k for k, _ in anomalies} == {"duplicate_code", "code_too_long"}
     assert _q("SELECT code, sku, default_supplier, default_supplier_id, unit_cost FROM board_materials"
               " WHERE workspace_id = :w", w=wid) == [("B-1", "B-1", "boards ltd", vid, Decimal("45.5000"))]
-    assert _q("SELECT unit_cost FROM hardware_materials WHERE workspace_id = :w", w=wid) == [(None,)]   # no cost on the sheet
+    assert _q("SELECT unit_cost, product_type FROM hardware_materials WHERE workspace_id = :w", w=wid) == [
+        (None, "Supplies")]                                          # no cost on the sheet; the old type is kept
+    assert _q("SELECT product_type FROM board_materials WHERE workspace_id = :w", w=wid) == [(None,)]   # Type is optional
     assert _q("SELECT internal_ref, sku FROM custom_made WHERE workspace_id = :w", w=wid) == [("C-1", "C-1")]
     assert _q("SELECT slab_id FROM benchtop_materials WHERE workspace_id = :w", w=wid) == [("T-1",)]
     assert _q("SELECT model_number FROM appliances WHERE workspace_id = :w", w=wid) == [("A-1",)]

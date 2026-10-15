@@ -139,6 +139,10 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         <Cell value={row.description} canWrite={canWrite}
               onSave={(v) => save({ description: v })} />
       </td>
+      <td className="px-3 py-1">
+        <Cell value={row.product_type} label="Type" canWrite={canWrite}
+              onSave={(v) => save({ product_type: v.trim() || null })} />
+      </td>
       <td className="px-3 py-1 font-mono">
         <Cell value={row.sku} canWrite={canWrite}
               onSave={(v) => save({ sku: v })} />

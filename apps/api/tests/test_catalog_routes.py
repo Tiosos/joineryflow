@@ -433,3 +433,20 @@ def test_a_negative_or_oversized_unit_cost_is_refused_and_bulk_import_takes_one(
     assert r.status_code == 200 and r.json()["created"] == 1, r.text
     row = [x for x in c.get("/catalog/board-materials").json()["rows"] if x["sku"] == "BK-1"][0]
     assert row["unit_cost"] == 45.5
+
+
+# ── Product type (the old system's type, kept beside the tab) ─────────────────
+
+def test_product_type_is_created_listed_searched_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/hardware-materials", json={"sku": "pt-1", "description": "Silicone", "product_type": "Supplies"})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    assert r.json()["product_type"] == "Supplies"
+    found = c.get("/catalog/hardware-materials", params={"q": "suppl"}).json()["rows"]       # search finds it by type
+    assert [x["material_id"] for x in found] == [mid]
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"product_type": "Paint"}).json()["product_type"] == "Paint"
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"description": "x"}).json()["product_type"] == "Paint"
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"product_type": None}).json()["product_type"] is None
+    assert c.post("/catalog/hardware-materials",
+                  json={"sku": "pt-2", "description": "x", "product_type": "x" * 65}).status_code == 422

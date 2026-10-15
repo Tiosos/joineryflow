@@ -14,10 +14,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 ENRICHMENT_SELECT = (
-    "synonyms, default_supplier, default_lead_time_days, unit_cost, archived_at, archived_by"
+    "synonyms, default_supplier, default_lead_time_days, unit_cost, product_type, archived_at, archived_by"
 )
 ENRICHMENT_INSERT = (
-    "synonyms", "default_supplier", "default_lead_time_days", "unit_cost",
+    "synonyms", "default_supplier", "default_lead_time_days", "unit_cost", "product_type",
     # The supplier link (`0029`): settable at create as well as on PATCH.
     "default_supplier_id",
 )
@@ -163,7 +163,7 @@ def list_catalog(
     if not archived:
         where.append("archived_at IS NULL")
     if q:
-        where.append("(description ILIKE :q OR sku ILIKE :q)")
+        where.append("(description ILIKE :q OR sku ILIKE :q OR product_type ILIKE :q)")
         params["q"] = f"%{q}%"
     if supplier:
         where.append("default_supplier = :sup")

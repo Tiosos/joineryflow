@@ -18,7 +18,7 @@ thing (migration 0066).
 
 What it writes is what the catalog itself takes (`catalog.queries.create_catalog_row`): the code, the SKU
 (= the code, which is what the order pop-up's Cutlists tab matches on), the description and the supplier
-(linked when exactly one supplier has that name), and the **unit cost**: the latest order's line total
+(linked when exactly one supplier has that name), the old system's **product type** (the optional Type column of the sheet: Glass, Supplies, Paint..., kept as text beside the tab) and the **unit cost**: the latest order's line total
 divided by its quantity, ex GST, a cost of 0 stored as 0 (settled with the user, 2026-10-15; Generate Orders
 and "add from catalog" start an order line's price from it). Equipment hire is never written (a hire row
 belongs to a project). A code already in the catalog is left as it is; a code another workspace already
@@ -42,7 +42,7 @@ from ..auth.audit import write_audit
 from ..catalog import queries as catalog_queries
 
 ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered", "QTY", "_Cost_Sub")
-REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Table", "Reason", "Confidence", "Note")
+REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Type", "Table", "Reason", "Confidence", "Note")
 TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "skip")
 
 # catalog type -> (the type's own code column; both it and `sku` get the product code)
@@ -177,15 +177,15 @@ def write_review(products: list[Product], out: str | Path) -> None:
     ws.append(list(REVIEW_HEADERS))
     for p in products:
         ws.append([p.code, p.description, p.supplier, None if p.unit_cost is None else float(p.unit_cost),
-                   p.orders, p.table, p.reason, p.confidence, p.note])
+                   p.orders, None, p.table, p.reason, p.confidence, p.note])
     dv = DataValidation(type="list", formula1='"' + ",".join(TABLES) + '"', allow_blank=False)
     ws.add_data_validation(dv)
-    dv.add(f"F2:F{len(products) + 1}")
-    for col, width in zip("ABCDEFGHI", (22, 70, 28, 11, 8, 14, 44, 11, 40)):
+    dv.add(f"G2:G{len(products) + 1}")
+    for col, width in zip("ABCDEFGHIJ", (22, 70, 28, 11, 8, 18, 14, 44, 11, 40)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     guide = wb.create_sheet("Read me")
-    for line in ("Correct the Table column (F), then keep the file for the import step.",
+    for line in ("Correct the Table column (G), then keep the file for the import step. Type (F) is optional free text: the old system's product type, kept on the catalog item.",
                  "Table is one of: " + ", ".join(TABLES) + ". `skip` leaves the product out of the catalog.",
                  "Unit cost is the latest order's line total divided by its quantity, ex GST; clear a cell to import no price.",
                  "Equipment hire is never imported (it belongs to a project).",
@@ -204,6 +204,7 @@ class ReviewRow:
     supplier: str | None
     table: str
     unit_cost: Decimal | None
+    product_type: str | None
 
 
 def read_review(path: str | Path) -> list[ReviewRow]:
@@ -235,7 +236,12 @@ def read_review(path: str | Path) -> list[ReviewRow]:
             except Exception:
                 bad.append(f"row {n}: unit cost {rec.get('Unit cost')!r}")
                 continue
-        out.append(ReviewRow(n, code, _squash(rec.get("Description"))[:255], _clean(rec.get("Supplier")), table, cost))
+        ptype = _clean(rec.get("Type"))
+        if ptype is not None and len(ptype) > 64:
+            bad.append(f"row {n}: type {ptype[:20]!r}... is longer than 64 characters")
+            continue
+        out.append(ReviewRow(n, code, _squash(rec.get("Description"))[:255], _clean(rec.get("Supplier")), table, cost,
+                             ptype))
     if bad:
         raise ImportErrorReport("Table must be one of " + ", ".join(TABLES) + " and Unit cost a number of 0 or more; got "
                                 + "; ".join(bad[:10]))
@@ -284,7 +290,8 @@ def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: in
             continue
         fields = {code_col: r.code, "sku": r.code, "description": r.description, "synonyms": [],
                   "default_supplier": (r.supplier or "")[:128] or None, "default_supplier_id": None,
-                  "default_lead_time_days": None, "unit_cost": r.unit_cost}
+                  "default_lead_time_days": None, "unit_cost": r.unit_cost,
+                  "product_type": r.product_type}
         key = (r.supplier or "").strip().lower()
         if key and by_name.get(key) is not None:
             fields["default_supplier_id"] = by_name[key]

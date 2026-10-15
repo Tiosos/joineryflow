@@ -35,6 +35,8 @@ export interface CatalogRow {
   default_lead_time_days: number | null;
   /** Starts an order line's price (Generate Orders, add from catalog). The API sends it as a JSON number. */
   unit_cost: number | null;
+  /** The old system's product type (Glass, Supplies...), free text; the tab is separate. */
+  product_type: string | null;
   archived_at: string | null;
   archived_by: number | null;
   grain_locked?: boolean; // board + benchtop only (migration 0024)
