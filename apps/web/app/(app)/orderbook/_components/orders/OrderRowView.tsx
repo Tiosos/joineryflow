@@ -7,7 +7,7 @@ import { statusClasses, priorityClasses, money, qty, fmtDate } from "./shared";
 
 /** The columns, in the old Orderbook's order. The Orders table's header and group rows read this. */
 export const COLUMNS = [
-  "", "Priority", "Order", "PO", "Requester", "Qty", "Item", "Location", "Pdf", "Project", "Supplier",
+  "", "Priority", "Order", "Order no.", "PO", "Requester", "Qty", "Item", "Location", "Pdf", "Project", "Supplier",
   "Stock", "Cost", "Product code", "Required", "Ordered", "Due", "Arrived", "Status",
 ] as const;
 
@@ -49,6 +49,7 @@ export function OrderRowView({
         </span>
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 h-mono text-h-ink">{row.po_number}</td>
+      <td className="whitespace-nowrap px-2 py-1.5 h-mono text-h-muted" data-testid="order-no">{row.order_number ?? ""}</td>
       <td className="whitespace-nowrap px-2 py-1.5 h-mono" onClick={e => e.stopPropagation()}>
         {row.po_document_id != null && (
           <button type="button" data-testid="order-po-link" onClick={() => onOpenPo(row.po_document_id!)}

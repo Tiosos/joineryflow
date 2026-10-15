@@ -17,8 +17,13 @@ Settled with the user (2026-10-15):
   number and no `Date_Ordered`: requests not yet ordered.)
 - `_Cost_Sub` is the **line total, ex GST**: `total_amount` = it, `unit_cost` = it / `QTY`.
 - A missing supplier is **created** by its exact name (case-insensitive match first); a row with no
-  supplier is skipped and listed. The requester is only a first name (`Bill`), so it is kept in the notes
-  (`Requested by: Bill`) and the order is raised by the importing user.
+  supplier is skipped and listed.
+- The requester is only a first name (`Bill`). It is matched to a staff member when exactly one active user
+  has that first name; otherwise the order is raised by the importing user and the name is kept in the
+  order's **internal comments** (`Requested by: Bill`), which the pop-up shows (2026-10-15).
+- An order is tied to a Tracking item (`item_id`) only when its `CutlistNumber` is a cutlist of the same
+  project with **exactly one** live item; a cutlist with several items (or none found) stays unlinked and
+  is counted in the report (2026-10-15).
 
 Departures I chose and the report counts (change them by saying so):
 
@@ -26,7 +31,7 @@ Departures I chose and the report counts (change them by saying so):
 - `SumTotla` (stock control, qty received) becomes **one delivery-log row** (`order_delivery`) dated
   `Date_Arrived`, only on a Delivered order and only when it is above zero.
 - `Doc_PDF` holds FileMaker container paths, not file bytes: no file is imported (counted).
-  `CutlistNumber` is kept as text on the order (`cutlist_no`); no item link is made.
+  `CutlistNumber` is kept as text on the order (`cutlist_no`).
   The staff photo and `_Tag_Select` columns are not imported.
 - No cost centre is set, so nothing is committed or spent against a budget.
 
@@ -49,6 +54,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..row_types import live_joinery_items, not_deleted
 
 REQUIRED_HEADERS = (
     "OrderNumber", "_RequestedByName", "QTY", "_BoardGroup", "Location", "Doc_PDF", "_ProjectName",
@@ -85,7 +91,7 @@ class OrderPlan:
     due: dt.date | None
     arrived: dt.date | None
     received_qty: Decimal | None   # delivery-log row, Delivered orders only
-    notes: str | None
+    requester: str | None          # FileMaker's first name only
     has_file: bool
 
 
@@ -214,7 +220,7 @@ def build_plan(rows: list[dict]) -> Plan:
             location=cut("location", _clean(r.get("Location"))), cutlist_no=cut("cutlist_no", cutlist),
             quantity=qty, total=total, unit_cost=unit, status=status, priority=priority,
             required=required, ordered=ordered, due=due, arrived=arrived, received_qty=received,
-            notes=f"Requested by: {requester}" if requester else None,
+            requester=requester,
             has_file=_clean(r.get("Doc_PDF")) is not None,
         ))
         if supplier not in plan.suppliers:
@@ -230,6 +236,12 @@ class Result:
     orders_created: int = 0
     orders_skipped_existing: int = 0
     deliveries: int = 0
+    requester_matched: int = 0
+    requester_unmatched: int = 0
+    requester_ambiguous: int = 0
+    linked: int = 0
+    cutlist_many_items: int = 0
+    cutlist_not_found: int = 0
 
 
 def apply(
@@ -263,6 +275,24 @@ def apply(
             res.vendors_created += 1
         vendor_ids[name] = row[0]
 
+    # The requester is a first name: matched to a staff member only when exactly one active user has it.
+    by_first: dict[str, list[int]] = {}
+    for uid, full_name in db.execute(text("SELECT id, full_name FROM app_user WHERE workspace_id = :w AND is_active"),
+                                     {"w": workspace_id}):
+        by_first.setdefault(full_name.split()[0].lower(), []).append(uid)
+    # An order is tied to an item only when its cutlist has exactly one live item.
+    item_for_cutlist: dict[str, int | None | str] = {}
+
+    def item_of(cutlist_no: str) -> int | None:
+        if cutlist_no not in item_for_cutlist:
+            cl = db.execute(text(f"SELECT c.cutlist_id FROM cutlist c WHERE c.cutlist_no::text = :n"
+                                 f" AND c.project_id = :p AND {not_deleted('c')}"),
+                            {"n": cutlist_no, "p": res.project_id}).scalar()
+            ids = [r[0] for r in db.execute(text(f"SELECT i.item_id FROM items i WHERE i.cutlist_id = :c"
+                                                 f" AND {live_joinery_items('i')}"), {"c": cl})] if cl else []
+            item_for_cutlist[cutlist_no] = ids[0] if len(ids) == 1 else ("many" if ids else None)
+        return item_for_cutlist[cutlist_no]  # type: ignore[return-value]
+
     keys = [o.key for o in plan.orders]
     existing = {r[0] for r in db.execute(
         text("SELECT attributes->>'fm_import' FROM purchase_orders WHERE attributes->>'fm_import' = ANY(:k)"
@@ -272,24 +302,42 @@ def apply(
         if o.key in existing:
             res.orders_skipped_existing += 1
             continue
+        matches = by_first.get(o.requester.split()[0].lower(), []) if o.requester else []
+        requester_id = matches[0] if len(matches) == 1 else actor_id
+        internal = None
+        if o.requester and len(matches) != 1:
+            internal = f"Requested by: {o.requester}"
+            res.requester_ambiguous += len(matches) > 1
+            res.requester_unmatched += not matches
+        res.requester_matched += len(matches) == 1
+        item_id = None
+        if o.cutlist_no:
+            found = item_of(o.cutlist_no)
+            if isinstance(found, int):
+                item_id = found
+                res.linked += 1
+            elif found == "many":
+                res.cutlist_many_items += 1
+            else:
+                res.cutlist_not_found += 1
         po_id = db.execute(
             text("""
                 INSERT INTO purchase_orders (
                     po_number, status, vendor_id, requester_id, description, category, project_id,
                     project_name, location, cutlist_no, order_number, priority, product_code,
                     quantity, unit_cost, total_amount, required_date, date_ordered, due_date, arrived_date,
-                    notes, attributes)
+                    internal_comments, item_id, attributes)
                 VALUES (
                     'PO-' || EXTRACT(year FROM now())::int || '-' || lpad(nextval('po_number_seq')::text, 4, '0'),
                     :status, :vendor, :actor, :descr, :cat, :proj, :pname, :loc, :cutlist, :order_no, :prio,
-                    :pcode, :qty, :ucost, :total, :req, :ord, :due, :arr, :notes,
+                    :pcode, :qty, :ucost, :total, :req, :ord, :due, :arr, :internal, :item,
                     CAST(:attrs AS jsonb))
                 RETURNING po_id"""),
-            {"status": o.status, "vendor": vendor_ids[o.supplier], "actor": actor_id, "descr": o.description,
+            {"status": o.status, "vendor": vendor_ids[o.supplier], "actor": requester_id, "descr": o.description,
              "cat": CATEGORY, "proj": res.project_id, "pname": name_on_orders, "loc": o.location,
              "cutlist": o.cutlist_no, "order_no": o.order_number, "prio": o.priority, "pcode": o.product_code,
              "qty": o.quantity, "ucost": o.unit_cost, "total": o.total, "req": o.required, "ord": o.ordered,
-             "due": o.due, "arr": o.arrived, "notes": o.notes, "attrs": json.dumps({"fm_import": o.key})},
+             "due": o.due, "arr": o.arrived, "internal": internal, "item": item_id, "attrs": json.dumps({"fm_import": o.key})},
         ).scalar()
         res.orders_created += 1
         if o.received_qty is not None:
@@ -305,6 +353,7 @@ def apply(
                     "project_created": res.project_created, "orders_created": res.orders_created,
                     "orders_skipped_existing": res.orders_skipped_existing,
                     "vendors_created": res.vendors_created, "deliveries": res.deliveries,
+                    "linked_to_item": res.linked, "requester_matched": res.requester_matched,
                     "anomalies": len(plan.anomalies)})
     db.flush()
     return res
@@ -321,6 +370,10 @@ def report(plan: Plan, res: Result | None, *, committed: bool) -> str:
         out.append(f"  would create (or created): project {'new' if res.project_created else 'existing'},"
                    f" {res.vendors_created} suppliers, {res.orders_created} orders,"
                    f" {res.deliveries} delivery-log rows; {res.orders_skipped_existing} orders already existed")
+        out.append(f"  requester: {res.requester_matched} matched to staff, {res.requester_unmatched} no match,"
+                   f" {res.requester_ambiguous} ambiguous (kept in internal comments)")
+        out.append(f"  item link: {res.linked} linked; {res.cutlist_many_items} cutlists with several items,"
+                   f" {res.cutlist_not_found} cutlist numbers not found in the project (left unlinked)")
     by_kind = Counter(k for k, _ in plan.anomalies)
     out.append(f"  anomalies: {sum(by_kind.values())} ({', '.join(f'{k} {n}' for k, n in sorted(by_kind.items())) or 'none'})")
     for kind in sorted(by_kind):

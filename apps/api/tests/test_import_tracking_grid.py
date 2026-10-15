@@ -162,8 +162,15 @@ def test_commit_creates_everything_with_the_fileMaker_numbers(tmp_path):
             ("A460", "A170", "A302", "8m2")
         stages = {r["stage_key"]: (r["due_date"], r["done_date"]) for r in db.execute(
             text("SELECT * FROM item_stages WHERE item_id = :i"), {"i": item["item_id"]}).mappings()}
-        assert stages["REQ"] == (dt.date(2026, 7, 27), None) and stages["SM"] == (None, dt.date(2026, 7, 17))
+        # REQ is a due date; an installed item also has it done (on the Installed date), or every installed
+        # item would count as overdue in Tracking
+        assert stages["REQ"] == (dt.date(2026, 7, 27), dt.date(2026, 8, 25)) and stages["SM"] == (None, dt.date(2026, 7, 17))
         assert "CNC" not in stages
+        # no Installed date, no REQ done: 700001 (a billing line) has a REQ due date only
+        not_installed = {r[0]: r[1] for r in db.execute(text(
+            "SELECT i.num, s.done_date FROM item_stages s JOIN items i USING (item_id)"
+            " WHERE s.stage_key = 'REQ' AND i.num = 700001"))}
+        assert not_installed == {700001: None}
         note = db.execute(text("SELECT status, note FROM item_status_log WHERE item_id = :i"),
                           {"i": item["item_id"]}).one()
         assert tuple(note) == ("LIVE", "Check orientation")
