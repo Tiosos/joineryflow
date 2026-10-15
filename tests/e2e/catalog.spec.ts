@@ -12,14 +12,16 @@ test.describe("catalog (#7a)", () => {
     await login(page);
   });
 
-  test("/catalog renders the 7-tab strip + board grid", async ({ page }) => {
+  test("/catalog renders the type tabs, Sheet Stock and CV Mappings", async ({ page }) => {
     await page.goto("/catalog");
     await expect(page.getByRole("heading", { name: "Catalog", level: 1 })).toBeVisible({
       timeout: 15_000,
     });
-    for (const label of ["Board", "Hardware", "Custom", "Benchtop", "Appliances", "Equipment Hire", "CV Mappings"]) {
+    for (const label of ["Sheet Stock", "CV Mappings"]) {
       await expect(page.getByRole("button", { name: label })).toBeVisible();
     }
+    // The seed has no product types, so its materials sit under "No type".
+    await page.getByRole("button", { name: /^No type/ }).click();
     // Seeded board rows render in inline-edit <input value="..."> cells, so
     // assert on the input's value rather than on text content. (Playwright has
     // no getByDisplayValue — that is a Testing Library API.)

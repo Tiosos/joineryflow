@@ -172,6 +172,42 @@ def delete_cv_mapping_route(
 
 
 # ============================================================
+# Product types (literal paths: declared before `/catalog/{slug}`)
+# ============================================================
+
+@router.get("/catalog/product-types")
+def list_product_types_route(
+    archived: bool = False,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+):
+    """The tabs of the Catalog screen: every product type in use, with its item count."""
+    return q.product_type_counts(db, workspace_id=user.workspace_id, archived=archived)
+
+
+@router.get("/catalog/by-type")
+def list_by_type_route(
+    product_type: str | None = None,
+    untyped: bool = False,
+    q_search: str | None = Query(None, alias="q"),
+    supplier: str | None = None,
+    archived: bool = False,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+):
+    """The items of one product type (or of none: `untyped=true`) across the six tables, grouped by table."""
+    groups = []
+    for type_ in q.REGISTRY:
+        rows = q.list_catalog(
+            db, type_=type_, workspace_id=user.workspace_id, q=q_search, supplier=supplier,
+            archived=archived, product_type=product_type, untyped=untyped,
+        )
+        if rows:
+            groups.append({"type": type_, "rows": rows})
+    return {"product_type": None if untyped else product_type, "groups": groups}
+
+
+# ============================================================
 # Generic 6-table sub-routers
 # ============================================================
 

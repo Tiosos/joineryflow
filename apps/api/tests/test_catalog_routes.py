@@ -450,3 +450,41 @@ def test_product_type_is_created_listed_searched_patched_and_cleared():
     assert c.patch(f"/catalog/hardware-materials/{mid}", json={"product_type": None}).json()["product_type"] is None
     assert c.post("/catalog/hardware-materials",
                   json={"sku": "pt-2", "description": "x", "product_type": "x" * 65}).status_code == 422
+
+
+# ── Tabs by product type (the six tables stay behind) ─────────────────────────
+
+def test_product_types_count_across_the_six_tables_and_by_type_groups_them():
+    c, wid, _ = login("drafter")
+    for sku, ptype in (("g-1", "Glass"), ("g-2", "glass "), ("s-1", "Supplies"), ("n-1", None)):
+        assert c.post("/catalog/hardware-materials",
+                      json={"sku": sku, "description": f"HW {sku}", "product_type": ptype}).status_code == 201
+    assert c.post("/catalog/custom-made", json={"internal_ref": "cm-g", "sku": "cm-g", "description": "Cut glass",
+                                                "product_type": "Glass"}).status_code == 201
+    gone = c.post("/catalog/hardware-materials", json={"sku": "g-arch", "description": "x", "product_type": "Glass"}).json()
+    c.post(f"/catalog/hardware-materials/{gone['material_id']}/archive")
+
+    r = c.get("/catalog/product-types")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"types": [{"product_type": "Glass", "count": 3}, {"product_type": "Supplies", "count": 1}],
+                        "untyped": 1}                                      # 'glass ' is the same type; archived is out
+    assert c.get("/catalog/product-types", params={"archived": True}).json()["types"][0]["count"] == 4
+
+    body = c.get("/catalog/by-type", params={"product_type": "GLASS"}).json()
+    assert body["product_type"] == "GLASS"
+    assert {g["type"]: len(g["rows"]) for g in body["groups"]} == {"hardware": 2, "custom_made": 1}
+    assert all(row["type"] == g["type"] for g in body["groups"] for row in g["rows"])   # a row names its own table
+    none = c.get("/catalog/by-type", params={"untyped": True}).json()
+    assert none["product_type"] is None and [(g["type"], len(g["rows"])) for g in none["groups"]] == [("hardware", 1)]
+    assert c.get("/catalog/by-type", params={"product_type": "Glass", "q": "Cut"}).json()["groups"][0]["type"] == "custom_made"
+    assert c.get("/catalog/by-type", params={"product_type": "Nope"}).json()["groups"] == []
+
+
+def test_product_types_and_by_type_never_show_another_workspaces_items():
+    a, _, _ = login("drafter")
+    b, _, _ = login("drafter")                         # a different workspace
+    assert b.post("/catalog/hardware-materials",
+                  json={"sku": "b-only", "description": "B's", "product_type": "Secret"}).status_code == 201
+    assert a.get("/catalog/product-types").json() == {"types": [], "untyped": 0}
+    assert a.get("/catalog/by-type", params={"product_type": "Secret"}).json()["groups"] == []
+    assert a.get("/catalog/by-type", params={"untyped": True}).json()["groups"] == []

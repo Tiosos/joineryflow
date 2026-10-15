@@ -156,12 +156,19 @@ def list_catalog(
     q: str | None = None,
     supplier: str | None = None,
     archived: bool = False,
+    product_type: str | None = None,
+    untyped: bool = False,
 ) -> list[dict]:
     table, id_col, cols, _ = REGISTRY[type_]
     where = ["workspace_id = :w"]
     params: dict = {"w": workspace_id}
     if not archived:
         where.append("archived_at IS NULL")
+    if untyped:
+        where.append("(product_type IS NULL OR btrim(product_type) = '')")
+    elif product_type:
+        where.append("lower(btrim(product_type)) = lower(btrim(:ptype))")
+        params["ptype"] = product_type
     if q:
         where.append("(description ILIKE :q OR sku ILIKE :q OR product_type ILIKE :q)")
         params["q"] = f"%{q}%"
@@ -174,6 +181,32 @@ def list_catalog(
         f"ORDER BY {id_col} DESC"
     )
     return [dict(r) | {"type": type_} for r in db.execute(text(sql), params).mappings()]
+
+
+def product_type_counts(db: Session, *, workspace_id: int, archived: bool = False) -> dict:
+    """The product types in use across the six tables, with how many items each has.
+
+    Types are free text, so 'Glass' and 'glass ' are one type (shown as its most used spelling, else the first alphabetically).
+    `untyped` counts the items with no type."""
+    spellings: dict[str, dict[str, int]] = {}      # lower-cased type -> {spelling: items}
+    untyped = 0
+    for table, *_ in REGISTRY.values():
+        sql = (
+            f"SELECT btrim(product_type) AS t, count(*) FROM {table} WHERE workspace_id = :w"
+            + ("" if archived else " AND archived_at IS NULL")
+            + " GROUP BY btrim(product_type)"
+        )
+        for t, n in db.execute(text(sql), {"w": workspace_id}).all():
+            if not t:
+                untyped += n
+            else:
+                by_spelling = spellings.setdefault(t.lower(), {})
+                by_spelling[t] = by_spelling.get(t, 0) + n
+    types = sorted(
+        ({"product_type": min(sp, key=lambda t: (-sp[t], t)), "count": sum(sp.values())} for sp in spellings.values()),
+        key=lambda x: x["product_type"].lower(),
+    )
+    return {"types": types, "untyped": untyped}
 
 
 def get_catalog_row(

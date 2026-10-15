@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
@@ -37,7 +37,16 @@ function Cell({
   label?: string;
 }) {
   const [local, setLocal] = useState(value == null ? "" : String(value));
-  useEffect(() => { setLocal(value == null ? "" : String(value)); }, [value]);
+  // What the server holds as far as this cell knows: the prop, until we save something newer.
+  // Comparing with the prop alone skips a second edit made before the grid reloads.
+  const saved = useRef(value == null ? "" : String(value));
+  useEffect(() => {
+    const fresh = value == null ? "" : String(value);
+    const was = saved.current;
+    saved.current = fresh;
+    // A reload landing while the user is mid-edit must not overwrite what they typed.
+    setLocal((cur) => (cur === was || cur === fresh ? fresh : cur));
+  }, [value]);
 
   if (!canWrite) return <span>{local || "—"}</span>;
 
@@ -49,8 +58,7 @@ function Cell({
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
-        const orig = value == null ? "" : String(value);
-        if (local !== orig) void onSave(local);
+        if (local !== saved.current) { saved.current = local; void onSave(local); }
       }}
       className="w-full bg-transparent px-1 py-0.5 text-sm focus:bg-h-surface focus:outline focus:outline-1 focus:outline-h-line"
     />

@@ -80,3 +80,16 @@ export interface CvMappingListResp {
   rows: CvMapping[];
   total: number;
 }
+
+/** `GET /catalog/product-types`: the tabs of the Catalog screen. */
+export interface ProductTypesResp {
+  types: { product_type: string; count: number }[];
+  /** Items with no product type. */
+  untyped: number;
+}
+
+/** `GET /catalog/by-type`: one type's items, grouped by the table each lives in. */
+export interface ByTypeResp {
+  product_type: string | null;
+  groups: { type: "board" | "hardware" | "custom_made" | "benchtop" | "appliance" | "hire"; rows: CatalogRow[] }[];
+}

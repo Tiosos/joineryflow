@@ -12,6 +12,8 @@ interface Project { id: number; project_code: string; name: string; }
 interface Props {
   tab: MaterialTab;
   slug: CatalogSlug;
+  /** The type of the tab the item is added from; the new item starts with it. */
+  productType?: string | null;
   projects: Project[];
   /** null while loading or when the list could not be read (the picker is then disabled). */
   suppliers: SupplierOption[] | null;
@@ -50,6 +52,7 @@ export default function NewCatalogRowDialog(p: Props) {
       synonyms: synonyms.split(/\s*,\s*/).filter(Boolean),
     };
     if (legacy) body[legacy.key] = legacyVal;
+    if (p.productType) body.product_type = p.productType;
     if (supplier) body.default_supplier = supplier;
     if (supplierId) body.default_supplier_id = Number(supplierId);
     if (leadTime !== "") body.default_lead_time_days = Number(leadTime);
