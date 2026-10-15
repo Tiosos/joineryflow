@@ -80,3 +80,15 @@ user names are known.
 
 ## Tests
 `apps/api/tests/test_import_tracking_grid.py` (16), the `ALLOWED` entries in `test_items_deleted_filter.py` (the importer reads deleted rows on purpose), e2e `tracking_factory_tg_solid.spec.ts`; the seed puts TG / SI on two TRT-014 items.
+
+---
+
+# Slice 2: orders grid (2026-10-15)
+
+`python -m app.importers.orders_grid FILE.xlsx --workspace-slug … --actor-email … --project-code … [--commit]` (dry run by default, same shape as the tracking importer). One sheet, one project, a row per ordered item. Code and mapping notes are in the module docstring; tests are `apps/api/tests/test_import_orders_grid.py` (synthetic workbook only).
+
+**Settled with the user (2026-10-15):** `OrderNumber` is kept as `order_number` and **no PO document is built**; status is `ORDERED` + `Date_Arrived` = Delivered, `ORDERED` without = Approved, `ON HOLD`/`NEXT`/`QUOTE` = Hold/Next/Quote, `URGENT` and blank = Pending (`URGENT` also priority High, the rest Medium); `_Cost_Sub` is the line total ex GST; a missing supplier is created by name and a row with none is skipped; the requester (first name only) goes in the notes.
+
+**Chosen without asking (say so to change):** category `Other` for every order; `SumTotla` becomes one `order_delivery` row on a Delivered order when above zero; `Doc_PDF` (FileMaker container paths, no bytes), `_Tag_Select`, the staff photo and the empty `UniformPersonal` are not imported; `CutlistNumber` is kept as text only (no item link); no cost centre, so no budget movement. Each order carries `attributes.fm_import` (row hash + count of identical rows before it) so a re-run skips what is already there. Imported orders take fresh `PO-<year>-nnnn` numbers from `po_number_seq`.
+
+**The pilot file (aggregates):** 192 rows, one project, 27 suppliers, 65 order numbers; 191 importable (1 has no supplier). Dry run: 173 Delivered, 1 Approved, 8 Hold, 4 Next, 2 Quote, 3 Pending; 115 delivery rows; 44 rows had a file reference that cannot be imported; total ex GST 229,374.93.

@@ -295,7 +295,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **Counts and warnings.** `comment_count` rides existing payloads; deleting a module or CV-replace warns first (advisory, API unchanged).
 
 ### Data migration (E3) — `09-e3-pilot-data-import.md`
-- **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered: modules, parts, hardware, drawings, QC and orders need their own exports.
+- **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered here. **Orders grid (second slice):** `python -m app.importers.orders_grid FILE.xlsx …` imports one project's orders (one `purchase_orders` row per FileMaker row, `OrderNumber` kept as `order_number`, no PO documents; mapping in the module docstring and `docs/sub-projects/09-e3-pilot-data-import.md`). Modules, parts, hardware, drawings and QC still need their own exports.
 
 ### Audits and CI — `08-audits-and-ci.md`
 - **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.
