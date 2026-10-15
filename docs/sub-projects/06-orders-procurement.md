@@ -1714,4 +1714,12 @@ The customer sent a screenshot of each old tab; the settled answers (asked first
 
 Assumptions (not asked, say if wrong): the **Cutlists** tab finds the product by the order's product code matching a catalog SKU (an order has no catalog link of its own); **Received by** is typed text (the old screen showed a code like `JOEF`); the cancel date of an order cancelled before `0064` is backfilled from the latest `order.cancel` / `order.update` audit row of that order.
 
-Tests: `test_order_tabs.py` (cancel stamp, delivery log and docket, stock, tracking, cutlists, image, supplier card, cross-workspace), `order_tabs.spec.ts`. Parts still to build: Glass C (a price calculator), Timber (the Timberwood Panels order form), TGSolid (production rows).
+Tests: `test_order_tabs.py` (cancel stamp, delivery log and docket, stock, tracking, cutlists, image, supplier card, cross-workspace), `order_tabs.spec.ts`.
+
+### Part 2 (`0065`): Glass C, Timber, TGSolid
+
+Settled (asked first): **Glass C is a calculator only**: rates live in a price list the purchase officer edits, Copy Size takes the size from the order, the total is shown and nothing but the ticks is saved. **Timber's CREATE makes a printable PDF** (saved on the order, emailed by hand; the Timberwood logo is not reproduced, the sheet has the heading text). Every tab shows on every order.
+
+Assumptions (not asked, say if wrong): Copy Size reads the size from the **start of the order's description** (`1471 x 1000 x 6`), because the old screen's descriptions begin that way; the old screen's unit rule is read from its figures (`m2` × area, `Lm` × perimeter, `ea` × 1: 6mm Silver Float $43.00 × 1.471 m2 = $63.25, 4-6mm FPAR $3.23 × 4.942 m = $15.96, TOTAL $79.22 from the unrounded sum); the `1221` supplier column is a supplier number, kept as text; **TGSolid** has several rows per order (the old table had room for more than one); `made_by` is typed text. A switched-off rate stays on an order while it is ticked there. The dev seed has made-up rates.
+
+Tests: `test_order_tabs_b.py`, `order_tabs_b.spec.ts`.

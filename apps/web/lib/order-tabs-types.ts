@@ -54,3 +54,61 @@ export interface SupplierCard {
   metadata: string | null;
   has_logo: boolean;
 }
+
+export interface GlassRate {
+  glass_rate_id: number;
+  kind: "glass" | "process";
+  name: string;
+  rate: string;
+  um: string;
+  supplier_no: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface GlassCalcLine {
+  glass_rate_id: number;
+  kind: "glass" | "process";
+  name: string;
+  rate: string;
+  um: string;
+  supplier_no: string | null;
+  qty: string;
+  ticked: boolean;
+  cost: string;
+}
+
+export interface GlassCalc {
+  length_mm: number | null;
+  width_mm: number | null;
+  thick_mm: number | null;
+  area_m2: string | null;
+  perimeter_m: string | null;
+  lines: GlassCalcLine[];
+  total: string;
+  suggested_size: { length_mm: number; width_mm: number; thick_mm: number | null } | null;
+}
+
+export interface TimberForm {
+  face: string | null;
+  back: string | null;
+  substrate: string | null;
+  face_by_tg: boolean;
+  back_by_tg: boolean;
+  substrate_by_tg: boolean;
+  finished_description: string | null;
+  deliver_to: string | null;
+  special_instructions: string | null;
+  has_form: boolean;
+  form_created_at: string | null;
+}
+
+export interface TgRun {
+  run_id: number;
+  production_start: string | null;
+  date_made: string | null;
+  made_by: string | null;
+  date_ex_factory: string | null;
+  location: string | null;
+  notes: string | null;
+}

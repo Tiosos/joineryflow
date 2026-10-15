@@ -14,27 +14,26 @@ import { ProductImage } from "./ProductImage";
 import { AdminTab } from "./tabs/AdminTab";
 import { CutlistsTab } from "./tabs/CutlistsTab";
 import { DeliveryTab } from "./tabs/DeliveryTab";
+import { GlassTab } from "./tabs/GlassTab";
 import { StockTab } from "./tabs/StockTab";
 import { SupplierTab } from "./tabs/SupplierTab";
+import { TgSolidTab } from "./tabs/TgSolidTab";
+import { TimberTab } from "./tabs/TimberTab";
 import { TrackingTab } from "./tabs/TrackingTab";
 
 /**
  * The order pop-up: the old Orderbook's Details window. Left, the fields every order has and the
- * ones that belong to its type; right, the tabs: HOME and the old screen's others. Tabs not built yet
- * (Glass C, Timber, TGSolid) are shown disabled.
+ * ones that belong to its type; right, the old screen's tabs (every tab on every order).
  */
-type Tab = "HOME" | "Delivery" | "Stock" | "Tracking" | "Supplier" | "Cutlists" | "ADMIN";
-const TABS: { key: string; tab: Tab | null }[] = [
-  { key: "HOME", tab: "HOME" }, { key: "Delivery", tab: "Delivery" }, { key: "Glass C", tab: null },
-  { key: "Timber", tab: null }, { key: "Stock", tab: "Stock" }, { key: "Tracking", tab: "Tracking" },
-  { key: "Supplier", tab: "Supplier" }, { key: "TGSolid", tab: null }, { key: "Cutlists", tab: "Cutlists" },
-  { key: "ADMIN", tab: "ADMIN" },
-];
+type Tab = "HOME" | "Delivery" | "Glass C" | "Timber" | "Stock" | "Tracking" | "Supplier" | "TGSolid" | "Cutlists" | "ADMIN";
+const TABS: Tab[] = ["HOME", "Delivery", "Glass C", "Timber", "Stock", "Tracking", "Supplier", "TGSolid", "Cutlists", "ADMIN"];
 
 export function OrderDetailPanel({
-  poId, canEdit, onChanged, canApprove, costCentres, categories, onClose, onOpenPo,
+  poId, canEdit, onChanged, canApprove, canKeepLists, costCentres, categories, onClose, onOpenPo,
 }: {
   poId: number; canEdit: boolean; onChanged: () => void;
+  /** The purchase officer or admin: keeps the Glass C price list. */
+  canKeepLists: boolean;
   /** Open a PO document's edit panel (this pop-up closes). */
   onOpenPo: (docId: number) => void;
   categories: OrderCategory[];
@@ -455,16 +454,15 @@ export function OrderDetailPanel({
 
           <div className="grid content-start gap-3">
             <div className="flex flex-wrap items-center gap-1 border-b border-h-line pb-2">
-              {TABS.map(t => t.tab ? (
-                <button key={t.key} type="button" data-testid={`order-tab-${t.key}`} onClick={() => setTab(t.tab!)}
-                  aria-pressed={tab === t.tab}
-                  className={tab === t.tab ? "rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white" : "rounded px-2 py-1 text-[11px] text-h-muted hover:text-h-ink"}>{t.key}</button>
-              ) : (
-                <button key={t.key} type="button" disabled title="Not built yet"
-                  className="rounded px-2 py-1 text-[11px] text-h-muted opacity-40">{t.key}</button>
+              {TABS.map(t => (
+                <button key={t} type="button" data-testid={`order-tab-${t}`} onClick={() => setTab(t)} aria-pressed={tab === t}
+                  className={tab === t ? "rounded bg-h-accent px-2.5 py-1 text-[11px] font-medium text-white" : "rounded px-2 py-1 text-[11px] text-h-muted hover:text-h-ink"}>{t}</button>
               ))}
             </div>
             {tab === "Delivery" && <DeliveryTab order={order} canEdit={canEdit && !order.locked} patchField={patchField} onChanged={onChanged} />}
+            {tab === "Glass C" && <GlassTab order={order} canEdit={canEdit && !order.locked} canKeep={canKeepLists} />}
+            {tab === "Timber" && <TimberTab order={order} canEdit={canEdit && !order.locked} />}
+            {tab === "TGSolid" && <TgSolidTab order={order} canEdit={canEdit && !order.locked} />}
             {tab === "Stock" && <StockTab order={order} />}
             {tab === "Tracking" && <TrackingTab order={order} />}
             {tab === "Supplier" && <SupplierTab order={order} />}

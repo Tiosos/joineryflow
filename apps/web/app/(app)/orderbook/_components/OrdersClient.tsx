@@ -393,6 +393,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
           onChanged={() => { fetchRows(); loadCostCentres(); }}
           onClose={() => setParam("order", "")}
           canApprove={canApprove}
+          canKeepLists={canManageCostCentres}
           costCentres={costCentres}
           categories={categories}
           onOpenPo={id => setParams({ order: "", po: String(id) })}

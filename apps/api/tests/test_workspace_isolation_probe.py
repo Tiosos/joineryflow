@@ -47,6 +47,7 @@ NOT_PROBED: dict[tuple[str, str], str] = {
     ("GET", "/orders/{po_id}/attachments/{attachment_id}/download"):
         "the seed has no order attachment; test_order_attachments.test_other_workspace_is_404 downloads one as another workspace",
     ("DELETE", "/orders/{po_id}/deliveries/{delivery_id}/docket"): _TABS,
+    ("GET", "/orders/{po_id}/timber/form"): "the seed has no created form; called by another workspace in test_order_tabs_b.test_other_workspace_is_404",
     ("GET", "/orders/{po_id}/deliveries/{delivery_id}/docket"): _TABS,
     ("GET", "/suppliers/{vendor_id}/logo"): _TABS,
     ("PUT", "/orders/{po_id}/image"): _TABS,

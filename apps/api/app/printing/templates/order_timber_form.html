@@ -1,0 +1,27 @@
+{% extends "_base.html" %}
+{% set title = "Custom pressing order form " ~ order.po_number %}
+{% block body %}
+  <h1>Timberwood Panels</h1>
+  <h2>Custom pressing &mdash; order form</h2>
+
+  <div class="item-header">
+    <div class="label">Order</div><div class="value mono">{{ order.po_number }}</div>
+    <div class="label">Supplier</div><div class="value">{{ vendor_name }}</div>
+    <div class="label">Date</div><div class="value mono">{{ today }}</div>
+  </div>
+
+  <table class="po">
+    <thead><tr><th></th><th>Material</th><th>Supplied by TG</th></tr></thead>
+    <tbody>
+      <tr><td>Face</td><td>{{ f.face or '' }}</td><td>{{ 'Yes' if f.face_by_tg else 'No' }}</td></tr>
+      <tr><td>Back</td><td>{{ f.back or '' }}</td><td>{{ 'Yes' if f.back_by_tg else 'No' }}</td></tr>
+      <tr><td>Substrate</td><td>{{ f.substrate or '' }}</td><td>{{ 'Yes' if f.substrate_by_tg else 'No' }}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="item-header">
+    <div class="label">Finished product description</div><div class="value">{{ f.finished_description or '' }}</div>
+    <div class="label">Deliver to</div><div class="value" style="white-space: pre-line">{{ f.deliver_to or '' }}</div>
+    <div class="label">Special instructions</div><div class="value" style="white-space: pre-line">{{ f.special_instructions or '' }}</div>
+  </div>
+{% endblock %}
