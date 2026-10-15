@@ -27,12 +27,14 @@ const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
 };
 
 function Cell({
-  value, onSave, canWrite, type = "text",
+  value, onSave, canWrite, type = "text", step, label,
 }: {
   value: string | number | null;
   onSave: (v: string) => void | Promise<void>;
   canWrite: boolean;
   type?: "text" | "number";
+  step?: string;
+  label?: string;
 }) {
   const [local, setLocal] = useState(value == null ? "" : String(value));
   useEffect(() => { setLocal(value == null ? "" : String(value)); }, [value]);
@@ -42,6 +44,8 @@ function Cell({
   return (
     <input
       type={type}
+      step={step}
+      aria-label={label}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
@@ -156,6 +160,10 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
       <td className="px-3 py-1 w-20">
         <Cell value={row.default_lead_time_days} type="number" canWrite={canWrite}
               onSave={(v) => save({ default_lead_time_days: v === "" ? null : Number(v) })} />
+      </td>
+      <td className="px-3 py-1 w-24">
+        <Cell value={row.unit_cost} type="number" step="0.01" label="Unit cost" canWrite={canWrite}
+              onSave={(v) => save({ unit_cost: v === "" ? null : Number(v) })} />
       </td>
       <td className="px-3 py-1">
         <Cell value={row.synonyms.join(", ")} canWrite={canWrite}

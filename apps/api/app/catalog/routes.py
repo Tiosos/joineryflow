@@ -9,6 +9,7 @@ Layout:
 All gated by ("catalog", action). Workspace isolation via
 `AuthUser.workspace_id`. Mutations write `audit_log`.
 """
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -61,7 +62,7 @@ def _resolve_type(slug: str) -> str:
 
 
 # Nullable columns a PATCH may clear: everything else drops an explicit null.
-_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days")
+_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost")
 
 
 def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:
@@ -340,7 +341,7 @@ def patch_catalog_row_route(
     write_audit(
         db, workspace_id=user.workspace_id, actor_id=user.id,
         event=f"catalog.{type_}.update", target=f"catalog.{type_}:{mid}",
-        payload=validated,
+        payload={k: str(v) if isinstance(v, Decimal) else v for k, v in validated.items()},   # json has no Decimal
     )
     db.commit()
     return q.get_catalog_row(db, type_=type_, mid=mid, workspace_id=user.workspace_id)

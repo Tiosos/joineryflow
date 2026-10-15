@@ -14,10 +14,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 ENRICHMENT_SELECT = (
-    "synonyms, default_supplier, default_lead_time_days, archived_at, archived_by"
+    "synonyms, default_supplier, default_lead_time_days, unit_cost, archived_at, archived_by"
 )
 ENRICHMENT_INSERT = (
-    "synonyms", "default_supplier", "default_lead_time_days",
+    "synonyms", "default_supplier", "default_lead_time_days", "unit_cost",
     # The supplier link (`0029`): settable at create as well as on PATCH.
     "default_supplier_id",
 )

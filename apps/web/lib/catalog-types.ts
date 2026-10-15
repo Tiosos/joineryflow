@@ -33,6 +33,8 @@ export interface CatalogRow {
   default_supplier_id: number | null;
   default_supplier_name: string | null;
   default_lead_time_days: number | null;
+  /** Starts an order line's price (Generate Orders, add from catalog). The API sends it as a JSON number. */
+  unit_cost: number | null;
   archived_at: string | null;
   archived_by: number | null;
   grain_locked?: boolean; // board + benchtop only (migration 0024)

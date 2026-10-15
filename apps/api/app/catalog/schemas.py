@@ -1,5 +1,6 @@
 """Pydantic v2 schemas for the catalog module."""
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,6 +24,8 @@ class _EnrichmentFields(BaseModel):
     # the route. Bulk import ignores it and matches `default_supplier` by name.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
+    # What Generate Orders and "add from catalog" start an order line's price from.
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
 
 
 class CreateBoardIn(_EnrichmentFields):
@@ -72,6 +75,7 @@ class PatchBaseIn(BaseModel):
     # reads `model_fields_set`.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)
 

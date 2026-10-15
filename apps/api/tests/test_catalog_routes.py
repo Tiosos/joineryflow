@@ -399,3 +399,37 @@ def test_a_bug_inside_validation_is_a_server_error_not_a_bad_row(monkeypatch):
         c.post("/catalog/board-materials", json={"code": "B2", "description": "x"})
     with pytest.raises(RuntimeError):
         c.patch(f"/catalog/board-materials/{mid}", json={"description": "y"})
+
+
+# ── Unit cost (what an order line starts its price from) ──────────────────────
+
+def test_unit_cost_is_created_listed_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/hardware-materials", json={"sku": "hw-cost", "description": "Hinge", "unit_cost": "12.5"})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    assert r.json()["unit_cost"] == 12.5                                   # a JSON number, like the other catalog numbers
+    listed = [x for x in c.get("/catalog/hardware-materials").json()["rows"] if x["material_id"] == mid][0]
+    assert listed["unit_cost"] == 12.5
+
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": 13.25})
+    assert r.status_code == 200 and r.json()["unit_cost"] == 13.25
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"description": "Hinge 110"})   # another field leaves it alone
+    assert r.json()["unit_cost"] == 13.25
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": None})            # an explicit null clears it
+    assert r.status_code == 200 and r.json()["unit_cost"] is None
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": 0})               # zero is a price, not "none"
+    assert r.json()["unit_cost"] == 0
+
+
+def test_a_negative_or_oversized_unit_cost_is_refused_and_bulk_import_takes_one():
+    c, _, _ = login("drafter")
+    assert c.post("/catalog/hardware-materials",
+                  json={"sku": "neg", "description": "x", "unit_cost": -1}).status_code == 422
+    mid = c.post("/catalog/hardware-materials", json={"sku": "ok", "description": "x"}).json()["material_id"]
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": -0.01}).status_code == 422
+    r = c.post("/catalog/board-materials/bulk", json={"rows": [
+        {"code": "BK-1", "sku": "BK-1", "description": "Board", "unit_cost": "45.5"}]})
+    assert r.status_code == 200 and r.json()["created"] == 1, r.text
+    row = [x for x in c.get("/catalog/board-materials").json()["rows"] if x["sku"] == "BK-1"][0]
+    assert row["unit_cost"] == 45.5

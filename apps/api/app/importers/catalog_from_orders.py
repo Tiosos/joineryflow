@@ -18,8 +18,9 @@ thing (migration 0066).
 
 What it writes is what the catalog itself takes (`catalog.queries.create_catalog_row`): the code, the SKU
 (= the code, which is what the order pop-up's Cutlists tab matches on), the description and the supplier
-(linked when exactly one supplier has that name). **No prices**: the catalog has no price in the app,
-and the prices in the file are what an order was bought at. Equipment hire is never written (a hire row
+(linked when exactly one supplier has that name), and the **unit cost**: the latest order's line total
+divided by its quantity, ex GST, a cost of 0 stored as 0 (settled with the user, 2026-10-15; Generate Orders
+and "add from catalog" start an order line's price from it). Equipment hire is never written (a hire row
 belongs to a project). A code already in the catalog is left as it is; a code another workspace already
 uses is reported (the code columns are unique across workspaces, a `0001` artefact).
 """
@@ -31,6 +32,7 @@ import re
 import sys
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from sqlalchemy import text
@@ -39,8 +41,8 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..catalog import queries as catalog_queries
 
-ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered")
-REVIEW_HEADERS = ("Code", "Description", "Supplier", "Orders", "Table", "Reason", "Confidence", "Note")
+ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered", "QTY", "_Cost_Sub")
+REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Table", "Reason", "Confidence", "Note")
 TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "skip")
 
 # catalog type -> (the type's own code column; both it and `sku` get the product code)
@@ -60,6 +62,15 @@ def _clean(v) -> str | None:
 
 def _squash(v) -> str:
     return " ".join(str(v or "").split())
+
+
+def _unit_cost(row: dict) -> Decimal | None:
+    """The order line's total divided by its quantity (ex GST); None when either is unusable."""
+    try:
+        qty, total = Decimal(str(row.get("QTY"))), Decimal(str(row.get("_Cost_Sub")))
+    except Exception:
+        return None
+    return (total / qty).quantize(Decimal("0.0001"), ROUND_HALF_UP) if qty > 0 and total >= 0 else None
 
 
 # ---- the guess ---------------------------------------------------------------------------------------
@@ -113,6 +124,7 @@ class Product:
     code: str | None
     description: str
     supplier: str | None
+    unit_cost: Decimal | None
     orders: int
     table: str
     reason: str
@@ -147,7 +159,7 @@ def propose(rows: list[dict]) -> list[Product]:
         note = f"{len(others)} other wording(s) on earlier orders" if others else ""
         if len({_clean(r.get("Supplier")) for r in rs}) > 1:
             note = (note + "; " if note else "") + "ordered from more than one supplier"
-        out.append(Product(code, desc[:255], supplier, len(rs), table, reason, confidence, note))
+        out.append(Product(code, desc[:255], supplier, _unit_cost(newest), len(rs), table, reason, confidence, note))
     same = Counter(p.description.lower() for p in out)
     for p in out:
         if p.table != "skip" and same[p.description.lower()] > 1:
@@ -164,17 +176,19 @@ def write_review(products: list[Product], out: str | Path) -> None:
     ws.title = "Review"
     ws.append(list(REVIEW_HEADERS))
     for p in products:
-        ws.append([p.code, p.description, p.supplier, p.orders, p.table, p.reason, p.confidence, p.note])
+        ws.append([p.code, p.description, p.supplier, None if p.unit_cost is None else float(p.unit_cost),
+                   p.orders, p.table, p.reason, p.confidence, p.note])
     dv = DataValidation(type="list", formula1='"' + ",".join(TABLES) + '"', allow_blank=False)
     ws.add_data_validation(dv)
-    dv.add(f"E2:E{len(products) + 1}")
-    for col, width in zip("ABCDEFGH", (22, 70, 28, 8, 14, 44, 11, 40)):
+    dv.add(f"F2:F{len(products) + 1}")
+    for col, width in zip("ABCDEFGHI", (22, 70, 28, 11, 8, 14, 44, 11, 40)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     guide = wb.create_sheet("Read me")
-    for line in ("Correct the Table column (E), then keep the file for the import step.",
+    for line in ("Correct the Table column (F), then keep the file for the import step.",
                  "Table is one of: " + ", ".join(TABLES) + ". `skip` leaves the product out of the catalog.",
-                 "Equipment hire is never imported (it belongs to a project). No prices are imported.",
+                 "Unit cost is the latest order's line total divided by its quantity, ex GST; clear a cell to import no price.",
+                 "Equipment hire is never imported (it belongs to a project).",
                  "Confidence `low` marks the guesses most worth a look."):
         guide.append([line])
     wb.save(out)
@@ -189,6 +203,7 @@ class ReviewRow:
     description: str
     supplier: str | None
     table: str
+    unit_cost: Decimal | None
 
 
 def read_review(path: str | Path) -> list[ReviewRow]:
@@ -211,9 +226,19 @@ def read_review(path: str | Path) -> list[ReviewRow]:
         code = _clean(rec.get("Code"))
         if code is None:
             continue
-        out.append(ReviewRow(n, code, _squash(rec.get("Description"))[:255], _clean(rec.get("Supplier")), table))
+        cost = None
+        if _clean(rec.get("Unit cost")) is not None:
+            try:
+                cost = Decimal(str(rec.get("Unit cost"))).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+                if cost < 0 or cost >= Decimal(10) ** 11:
+                    raise ValueError
+            except Exception:
+                bad.append(f"row {n}: unit cost {rec.get('Unit cost')!r}")
+                continue
+        out.append(ReviewRow(n, code, _squash(rec.get("Description"))[:255], _clean(rec.get("Supplier")), table, cost))
     if bad:
-        raise ImportErrorReport("Table must be one of " + ", ".join(TABLES) + "; got " + "; ".join(bad[:10]))
+        raise ImportErrorReport("Table must be one of " + ", ".join(TABLES) + " and Unit cost a number of 0 or more; got "
+                                + "; ".join(bad[:10]))
     return out
 
 
@@ -259,7 +284,7 @@ def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: in
             continue
         fields = {code_col: r.code, "sku": r.code, "description": r.description, "synonyms": [],
                   "default_supplier": (r.supplier or "")[:128] or None, "default_supplier_id": None,
-                  "default_lead_time_days": None}
+                  "default_lead_time_days": None, "unit_cost": r.unit_cost}
         key = (r.supplier or "").strip().lower()
         if key and by_name.get(key) is not None:
             fields["default_supplier_id"] = by_name[key]
