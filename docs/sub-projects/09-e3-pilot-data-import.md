@@ -92,3 +92,14 @@ user names are known.
 **Chosen without asking (say so to change):** category `Other` for every order; `SumTotla` becomes one `order_delivery` row on a Delivered order when above zero; `Doc_PDF` (FileMaker container paths, no bytes), `_Tag_Select`, the staff photo and the empty `UniformPersonal` are not imported; `CutlistNumber` is kept as text only (no item link); no cost centre, so no budget movement. Each order carries `attributes.fm_import` (row hash + count of identical rows before it) so a re-run skips what is already there. Imported orders take fresh `PO-<year>-nnnn` numbers from `po_number_seq`.
 
 **The pilot file (aggregates):** 192 rows, one project, 27 suppliers, 65 order numbers; 191 importable (1 has no supplier). Dry run: 173 Delivered, 1 Approved, 8 Hold, 4 Next, 2 Quote, 3 Pending; 115 delivery rows; 44 rows had a file reference that cannot be imported; total ex GST 229,374.93.
+
+
+## Verification run and what it changed (2026-10-15)
+
+Both importers were run into a throwaway database (the demo seed, with its own cutlist and item numbers moved aside because they fall in the same 297xxx range as the pilot's) and the result opened in Tracking, the Orderbook and the order pop-up. Findings, and what the user settled:
+
+- **Tracking called every item overdue** (217 of 219, with 159 installed). Overdue counts a stage with a due date and no done date, and REQ only ever had a due date. **Settled:** REQ is also done on the Installed date (157 items); Overdue is then 60.
+- **The requester was invisible**: the real first name sat in `notes`, which the pop-up does not show. **Settled:** match the first name to a staff member when exactly one active user has it, otherwise the importing user raises the order and `Requested by: Name` goes in **internal comments**.
+- **Orders were not tied to items.** **Settled:** `item_id` is set only when the `CutlistNumber` is a cutlist of the same project with exactly one live item (31 linked, 24 cutlists with several items, 3 not found; the report lists the counts). The cutlist number is still kept as text.
+- **The old order number was only in the pop-up.** **Settled:** the Orders list has an **Order no.** column beside the PO-year number. (The list has no text search; adding one was not asked for.)
+- Not a defect, but worth knowing: the Cutlists tab is empty for imported orders because their product codes are not catalog SKUs and the catalog is not imported yet.

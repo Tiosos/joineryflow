@@ -93,7 +93,7 @@ def test_plan_maps_status_priority_and_money(tmp_path):
     assert (first.total, first.unit_cost, first.received_qty) == (Decimal("100.00"), Decimal("25.0000"), Decimal(4))
     assert plan.orders[1].received_qty is None                       # SumTotla 0: no delivery row
     assert first.order_number == "100001" and first.cutlist_no == "298001"
-    assert first.notes == "Requested by: Bill"
+    assert first.requester == "Bill"
     assert [k for k, _ in plan.anomalies] == ["no_supplier"]
     assert len({o.key for o in plan.orders}) == len(plan.orders)     # identical rows still get distinct keys
 
@@ -127,3 +127,61 @@ def test_apply_writes_orders_vendors_and_deliveries_and_reruns_safely(tmp_path):
     again = _apply(wid, uid, plan)
     assert (again.orders_created, again.orders_skipped_existing) == (0, 10)
     assert _q("SELECT count(*) FROM purchase_orders WHERE attributes ? 'fm_import'")[0][0] == 10
+
+
+# ---- requester and item link (settled 2026-10-15) --------------------------------------------------------
+
+def _tracking_rows():
+    from app.importers import tracking_grid as tg
+    base = {h: None for h in tg.REQUIRED_HEADERS}
+    base.update({"PID": 1, "QTY": 1, "Tag_TgSolid": 0, "Tag_TgSolidItem": 0})
+    return tg, [
+        {**base, "ItemId": 710001, "CutlistNumber": "298101", "Item": "Only item on its cutlist"},
+        {**base, "ItemId": 710002, "CutlistNumber": "298102", "Item": "One of two"},
+        {**base, "ItemId": 710003, "CutlistNumber": "298102", "Item": "Two of two"},
+    ]
+
+
+def test_requester_is_matched_to_one_staff_member_else_kept_in_internal_comments(tmp_path):
+    _, wid, uid = login("admin")
+    db = SessionLocal()
+    try:
+        ids = {}
+        for email, name in (("solo@example.test", "Quill Solo"), ("d1@example.test", "Dup One"),
+                            ("d2@example.test", "Dup Two"), ("gone@example.test", "Gone Away")):
+            ids[name] = db.execute(text("""INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role, is_active)
+                                           VALUES (:w, :e, :n, 'x', 'viewer', :a) RETURNING id"""),
+                                   {"w": wid, "e": email, "n": name, "a": name != "Gone Away"}).scalar()
+        db.commit()
+    finally:
+        db.close()
+    # one active user called Quill: matched; two called Dup: ambiguous; Gone is inactive and Zzyzx is unknown
+    rows = [_row(OrderNumber=i, _RequestedByName=n) for i, n in enumerate(["quill", "Dup", "Gone", "Zzyzx"], start=1)]
+    res = _apply(wid, uid, og.build_plan(og.read_rows(_xlsx(tmp_path, rows))))
+    assert (res.requester_matched, res.requester_ambiguous, res.requester_unmatched) == (1, 1, 2)
+    got = {r[0]: (r[1], r[2]) for r in _q(
+        "SELECT order_number, requester_id, internal_comments FROM purchase_orders WHERE attributes ? 'fm_import'")}
+    assert got["1"] == (ids["Quill Solo"], None)                    # one match: raised by that person
+    assert got["2"] == (uid, "Requested by: Dup")                   # two people share it: the importer, name kept
+    assert got["3"] == (uid, "Requested by: Gone")                  # an inactive user does not count
+    assert got["4"] == (uid, "Requested by: Zzyzx")                 # nobody: the importer, name kept
+
+
+def test_an_order_is_linked_to_an_item_only_when_its_cutlist_has_exactly_one(tmp_path):
+    _, wid, uid = login("admin")
+    tg, trows = _tracking_rows()
+    db = SessionLocal()
+    try:
+        tg.apply(db, tg.build_plan(trows), workspace_id=wid, actor_id=uid, project_code="PILOT",
+                 project_name="Pilot fitout", source_sha256="y" * 64, advance_sequence=False)
+        db.commit()
+    finally:
+        db.close()
+    rows = [_row(OrderNumber=1, CutlistNumber=298101), _row(OrderNumber=2, CutlistNumber=298102),
+            _row(OrderNumber=3, CutlistNumber=299999), _row(OrderNumber=4)]
+    res = _apply(wid, uid, og.build_plan(og.read_rows(_xlsx(tmp_path, rows))))
+    assert (res.linked, res.cutlist_many_items, res.cutlist_not_found) == (1, 1, 1)
+    linked = {r[0]: r[1] for r in _q(
+        "SELECT order_number, (SELECT num FROM items WHERE item_id = po.item_id) FROM purchase_orders po"
+        " WHERE attributes ? 'fm_import'")}
+    assert linked == {"1": 710001, "2": None, "3": None, "4": None}

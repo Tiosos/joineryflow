@@ -122,7 +122,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
-| `tests/e2e/` | Playwright specs (40 spec files, plus `helpers.ts`; see §3) |
+| `tests/e2e/` | Playwright specs (46 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -295,7 +295,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **Counts and warnings.** `comment_count` rides existing payloads; deleting a module or CV-replace warns first (advisory, API unchanged).
 
 ### Data migration (E3) — `09-e3-pilot-data-import.md`
-- **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered here. **Orders grid (second slice):** `python -m app.importers.orders_grid FILE.xlsx …` imports one project's orders (one `purchase_orders` row per FileMaker row, `OrderNumber` kept as `order_number`, no PO documents; mapping in the module docstring and `docs/sub-projects/09-e3-pilot-data-import.md`). Modules, parts, hardware, drawings and QC still need their own exports.
+- **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered here (an installed item also gets REQ done, or Tracking's Overdue counts it). **Orders grid (second slice):** `python -m app.importers.orders_grid FILE.xlsx …` imports one project's orders (one `purchase_orders` row per FileMaker row, `OrderNumber` kept as `order_number` and shown in the Orders list's **Order no.** column, no PO documents; the requester is matched to a staff member by first name or kept in internal comments; an order is linked to an item only when its cutlist has exactly one; mapping in the module docstring and `docs/sub-projects/09-e3-pilot-data-import.md`). Modules, parts, hardware, drawings and QC still need their own exports.
 
 ### Audits and CI — `08-audits-and-ci.md`
 - **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.

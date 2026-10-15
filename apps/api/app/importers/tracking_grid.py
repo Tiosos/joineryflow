@@ -12,7 +12,8 @@ Settled with the user (2026-10-08):
 - Item IDs (`ItemId`) and cutlist numbers (`CutlistNumber`) are **kept as they are** (`items.num`,
   `cutlist.cutlist_no`); the shared `joinery_number_seq` is moved past the highest of them afterwards.
 - The date columns are **done dates** (`item_stages.done_date`), except `Date_ReqOnSite`, which is the REQ
-  stage's **due** date. `Date_Optimized` has no stage and is not imported (it is counted in the report).
+  stage's **due** date; an item that has a `Date_Installed` also gets REQ **done** on that date (2026-10-15),
+  otherwise Tracking's Overdue counts every installed item. `Date_Optimized` has no stage and is not imported (it is counted in the report).
   `Date_Created` becomes `items.created_at`.
 - `_Contractor` (e.g. `TG`) is a **factory** (`factory`, `items.factory_id`); `Tag_TgSolidItem` is the
   separate `items.tg_solid` tag.
@@ -288,6 +289,7 @@ class Result:
     items_created: int = 0
     items_skipped_existing: int = 0
     stage_rows: int = 0
+    req_done: int = 0
     status_notes: int = 0
     sequence_to: int | None = None
 
@@ -414,9 +416,15 @@ def apply(
         ).scalar()
         res.items_created += 1
         for stage_key, (target, d) in it.stages.items():
-            db.execute(text(f"INSERT INTO item_stages(item_id, stage_key, {target}) VALUES (:i, :s, :d)"),
-                       {"i": item_id, "s": stage_key, "d": d})
+            # REQ is a due date only in the export; once the item is installed it is done too, or
+            # Tracking would call every installed item overdue (settled with the user, 2026-10-15).
+            done = it.stages["INST"][1] if stage_key == "REQ" and "INST" in it.stages else None
+            db.execute(text(f"INSERT INTO item_stages(item_id, stage_key, {target}, done_date)"
+                            " VALUES (:i, :s, :d, :done)" if done else
+                            f"INSERT INTO item_stages(item_id, stage_key, {target}) VALUES (:i, :s, :d)"),
+                       {"i": item_id, "s": stage_key, "d": d, **({"done": done} if done else {})})
             res.stage_rows += 1
+            res.req_done += 1 if done else 0
         if it.status_note:
             db.execute(text("INSERT INTO item_status_log(item_id, status, note, changed_by)"
                             " VALUES (:i, :s, :n, :by)"),
@@ -457,7 +465,8 @@ def report(plan: Plan, res: Result | None, *, committed: bool) -> str:
         out.append(f"  would create (or created): project {'new' if res.project_created else 'existing'},"
                    f" {res.factories_created} factories, {res.areas_created} areas, {res.rooms_created} rooms,"
                    f" {res.cutlists_created} cutlists, {res.items_created} items, {res.stage_rows} stage rows,"
-                   f" {res.status_notes} status notes; {res.items_skipped_existing} items already existed")
+                   f" {res.status_notes} status notes, REQ done on {res.req_done} installed items;"
+                   f" {res.items_skipped_existing} items already existed")
         if res.sequence_to is not None:
             out.append(f"  joinery_number_seq moved to {res.sequence_to}")
     by_kind = Counter(k for k, _ in plan.anomalies)
