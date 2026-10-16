@@ -5,6 +5,7 @@ import { useState } from "react";
 import { createRow } from "@/lib/catalog-fetch";
 import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
+import { BOARD_TEXT_FIELDS } from "./boardFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Project { id: number; project_code: string; name: string; }
@@ -42,6 +43,7 @@ export default function NewCatalogRowDialog(p: Props) {
   const [leadTime, setLeadTime] = useState("");
   const [synonyms, setSynonyms] = useState("");
   const [projectId, setProjectId] = useState<number | "">(p.tab === "hire" ? (p.projects[0]?.id ?? "") : "");
+  const [boardVals, setBoardVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -53,6 +55,7 @@ export default function NewCatalogRowDialog(p: Props) {
     };
     if (legacy) body[legacy.key] = legacyVal;
     if (p.productType) body.product_type = p.productType;
+    if (p.tab === "board") for (const f of BOARD_TEXT_FIELDS) if (boardVals[f.key]?.trim()) body[f.key] = boardVals[f.key].trim();
     if (supplier) body.default_supplier = supplier;
     if (supplierId) body.default_supplier_id = Number(supplierId);
     if (leadTime !== "") body.default_lead_time_days = Number(leadTime);
@@ -72,7 +75,7 @@ export default function NewCatalogRowDialog(p: Props) {
 
   return (
     <div className="fixed inset-0 grid place-items-center bg-black/50">
-      <div className="w-[480px] rounded-md bg-h-surface p-6 text-h-ink">
+      <div className="max-h-[90vh] w-[480px] overflow-y-auto rounded-md bg-h-surface p-6 text-h-ink">
         <h2 className="mb-4 text-lg font-semibold">+ New {p.tab}</h2>
         <div className="space-y-3">
           <Field label="Description">
@@ -89,6 +92,12 @@ export default function NewCatalogRowDialog(p: Props) {
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
           )}
+          {p.tab === "board" && BOARD_TEXT_FIELDS.map((f) => (
+            <Field key={f.key} label={f.label}>
+              <input value={boardVals[f.key] ?? ""} onChange={(e) => setBoardVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                     className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+            </Field>
+          ))}
           <Field label="Default supplier">
             <input value={supplier} onChange={(e) => setSupplier(e.target.value)}
                    className="w-full rounded border border-h-line px-2 py-1 text-sm" />

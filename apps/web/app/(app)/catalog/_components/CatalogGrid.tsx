@@ -3,6 +3,7 @@
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import type { MaterialTab } from "./CatalogClient";
+import { BOARD_TEXT_FIELDS } from "./boardFields";
 import CatalogRow from "./CatalogRow";
 
 interface Props {
@@ -26,7 +27,8 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
 export default function CatalogGrid(p: Props) {
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
-  const colCount = hasGrain ? 12 : 11;
+  const isBoard = p.tab === "board";
+  const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0);
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -41,8 +43,10 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2" title="The supplier Generate Orders orders this material from">Supplier link</th>
             <th className="px-3 py-2">Lead (d)</th>
             <th className="px-3 py-2" title="Per unit, ex GST. An order made from this material starts at this price">Unit cost</th>
+            {isBoard && BOARD_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isBoard && <th className="px-3 py-2">Image</th>}
             <th className="px-3 py-2">Synonyms</th>
-            {hasGrain && <th className="px-3 py-2">Grain</th>}
+            {hasGrain && <th className="px-3 py-2" title="Parts on this board are not rotated when nesting">Grain lock</th>}
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2"></th>
           </tr>

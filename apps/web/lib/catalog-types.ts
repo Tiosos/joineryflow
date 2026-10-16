@@ -40,6 +40,16 @@ export interface CatalogRow {
   archived_at: string | null;
   archived_by: number | null;
   grain_locked?: boolean; // board + benchtop only (migration 0024)
+  // Board only (migration 0068): the old Orders screen's board fields, plain text.
+  colour?: string | null;
+  substrate?: string | null;
+  finish?: string | null;
+  sided?: string | null;
+  grain?: string | null;
+  rating?: string | null;
+  hmr?: string | null;
+  product_website?: string | null;
+  has_image?: boolean;
 }
 
 /** A supplier as the picker needs it (`GET /suppliers`). */

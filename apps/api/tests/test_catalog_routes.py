@@ -488,3 +488,57 @@ def test_product_types_and_by_type_never_show_another_workspaces_items():
     assert a.get("/catalog/product-types").json() == {"types": [], "untyped": 0}
     assert a.get("/catalog/by-type", params={"product_type": "Secret"}).json()["groups"] == []
     assert a.get("/catalog/by-type", params={"untyped": True}).json()["groups"] == []
+
+
+# ── Board fields (0068) and the board image ───────────────────────────────────
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+BOARD_FIELDS = {"colour": "Tas Oak QTR", "substrate": "Paperback", "finish": "Veneer", "sided": "Single",
+                "grain": "1/4 Cut", "rating": "E0", "hmr": "MR", "product_website": "https://example.test/oak"}
+
+
+def test_board_fields_are_created_listed_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/board-materials", json={"code": "B-F", "sku": "b-f", "description": "Oak ply", **BOARD_FIELDS})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    row = c.get(f"/catalog/board-materials/{mid}").json()
+    assert {k: row[k] for k in BOARD_FIELDS} == BOARD_FIELDS and row["has_image"] is False
+    listed = [x for x in c.get("/catalog/board-materials").json()["rows"] if x["material_id"] == mid][0]
+    assert listed["colour"] == "Tas Oak QTR"
+
+    r = c.patch(f"/catalog/board-materials/{mid}", json={"colour": "Black", "hmr": None})
+    assert r.status_code == 200 and r.json()["colour"] == "Black" and r.json()["hmr"] is None
+    assert r.json()["finish"] == "Veneer"                                        # another field is left alone
+    assert c.patch(f"/catalog/board-materials/{mid}", json={"rating": "x" * 65}).status_code == 422
+
+
+def test_other_tables_ignore_board_fields():
+    c, _, _ = login("drafter")
+    mid = c.post("/catalog/hardware-materials", json={"sku": "hw-nb", "description": "Hinge"}).json()["material_id"]
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"colour": "Red"})
+    assert r.status_code == 200 and "colour" not in r.json()
+
+
+def test_board_image_is_stored_served_replaced_and_removed():
+    c, _, _ = login("drafter")
+    mid = c.post("/catalog/board-materials", json={"code": "B-I", "sku": "b-i", "description": "Pic"}).json()["material_id"]
+    assert c.get(f"/catalog/board-materials/{mid}/image").status_code == 404           # none yet
+    assert c.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)}).status_code == 204
+    got = c.get(f"/catalog/board-materials/{mid}/image")
+    assert got.status_code == 200 and got.content == PNG and got.headers["content-type"] == "image/png"
+    assert c.get(f"/catalog/board-materials/{mid}").json()["has_image"] is True
+    assert c.put(f"/catalog/board-materials/{mid}/image", files={"file": ("x.pdf", b"%PDF-1.4 x")}).status_code in (400, 415, 422)
+    assert c.delete(f"/catalog/board-materials/{mid}/image").status_code == 204
+    assert c.get(f"/catalog/board-materials/{mid}").json()["has_image"] is False
+
+
+def test_board_image_of_another_workspace_is_a_404():
+    a, _, _ = login("drafter")
+    mid = a.post("/catalog/board-materials", json={"code": "B-W", "sku": "b-w", "description": "Mine"}).json()["material_id"]
+    a.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)})
+    b, _, _ = login("admin")
+    assert b.get(f"/catalog/board-materials/{mid}/image").status_code == 404
+    assert b.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)}).status_code == 404
+    assert b.delete(f"/catalog/board-materials/{mid}/image").status_code == 404
+    assert a.get(f"/catalog/board-materials/{mid}/image").content == PNG            # still there for its owner

@@ -12,7 +12,7 @@ All gated by ("catalog", action). Workspace isolation via
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,6 +21,8 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..files import uploads
+from ..files.store import FileStore, get_default_store
 from . import queries as q
 from .schemas import (
     BulkImportIn,
@@ -62,7 +64,8 @@ def _resolve_type(slug: str) -> str:
 
 
 # Nullable columns a PATCH may clear: everything else drops an explicit null.
-_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost", "product_type")
+_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost", "product_type",
+              *q.BOARD_FIELDS_TUPLE)
 
 
 def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:
@@ -169,6 +172,65 @@ def delete_cv_mapping_route(
     )
     db.commit()
     return None
+
+
+# ============================================================
+# Board product image (`0068`): one PNG/JPEG per board, in the shared file store
+# ============================================================
+
+def _store() -> FileStore:
+    return get_default_store()
+
+
+@router.put("/catalog/board-materials/{mid}/image", status_code=204)
+async def put_board_image(
+    mid: int,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_permission("catalog", "write")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_store),
+):
+    stored = None
+    try:
+        exists, _ = q.board_image_blob(db, mid=mid, workspace_id=user.workspace_id)
+        if not exists:
+            raise HTTPException(404, "Catalog row not found")
+        stored = await uploads.store_upload(db, store, user=user, file=file, allowed=uploads.IMAGE)
+        q.set_board_image(db, mid=mid, workspace_id=user.workspace_id, blob_id=stored.blob_id)
+        write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="catalog.board.image.set",
+                    target=f"catalog.board:{mid}", payload={})
+        db.commit()
+    except Exception:
+        db.rollback()
+        uploads.discard(db, store, stored)
+        raise
+
+
+@router.get("/catalog/board-materials/{mid}/image")
+def get_board_image(
+    mid: int,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_store),
+):
+    exists, blob = q.board_image_blob(db, mid=mid, workspace_id=user.workspace_id)
+    if not exists or blob is None:
+        raise HTTPException(404, "image not found")
+    return uploads.stream_blob(db, store, workspace_id=user.workspace_id, blob_id=blob)
+
+
+@router.delete("/catalog/board-materials/{mid}/image", status_code=204)
+def delete_board_image(
+    mid: int,
+    user: AuthUser = Depends(require_permission("catalog", "write")),
+    db: Session = Depends(get_db),
+):
+    if not q.set_board_image(db, mid=mid, workspace_id=user.workspace_id, blob_id=None):
+        db.rollback()
+        raise HTTPException(404, "Catalog row not found")
+    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="catalog.board.image.remove",
+                target=f"catalog.board:{mid}", payload={})
+    db.commit()
 
 
 # ============================================================

@@ -34,6 +34,14 @@ class CreateBoardIn(_EnrichmentFields):
     code: str = Field(min_length=1, max_length=32)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    substrate: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    sided: str | None = Field(default=None, max_length=64)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    hmr: str | None = Field(default=None, max_length=64)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateHardwareIn(_EnrichmentFields):
@@ -86,6 +94,14 @@ class PatchBaseIn(BaseModel):
 class PatchBoardIn(PatchBaseIn):
     code: str | None = Field(default=None, max_length=32)
     grain_locked: bool | None = None
+    colour: str | None = Field(default=None, max_length=128)
+    substrate: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    sided: str | None = Field(default=None, max_length=64)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    hmr: str | None = Field(default=None, max_length=64)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchHardwareIn(PatchBaseIn):

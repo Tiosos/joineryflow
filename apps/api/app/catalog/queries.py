@@ -69,13 +69,17 @@ def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | N
         out[key] = None if key in out else vid
     return out
 
+# Board's own fields (`0068`): the old Orders screen's board attributes. All plain text.
+BOARD_FIELDS_TUPLE = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "product_website")
+BOARD_FIELDS = ", ".join(BOARD_FIELDS_TUPLE)
+
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
         "board_materials",
         "material_id",
         f"material_id, code, description, sku, grain_locked, workspace_id, "
-        f"{ENRICHMENT_SELECT}",
-        ("code", "description", "sku", "grain_locked", *ENRICHMENT_INSERT),
+        f"{BOARD_FIELDS}, (image_blob IS NOT NULL) AS has_image, {ENRICHMENT_SELECT}",
+        ("code", "description", "sku", "grain_locked", *BOARD_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "hardware": (
         "hardware_materials",
@@ -349,3 +353,21 @@ def delete_cv_mapping(db: Session, *, mid: int, workspace_id: int) -> int | None
         "WHERE cv_material_mapping_id = :id AND workspace_id = :w "
         "RETURNING cv_material_mapping_id"
     ), {"id": mid, "w": workspace_id}).scalar()
+
+
+def set_board_image(db: Session, *, mid: int, workspace_id: int, blob_id: int | None) -> bool:
+    """Point a board at its picture (or clear it). False when the board is not this workspace's."""
+    return db.execute(
+        text("UPDATE board_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+             "RETURNING material_id"),
+        {"b": blob_id, "m": mid, "w": workspace_id},
+    ).scalar() is not None
+
+
+def board_image_blob(db: Session, *, mid: int, workspace_id: int) -> tuple[bool, int | None]:
+    """(board exists in this workspace, its image blob id)."""
+    r = db.execute(
+        text("SELECT image_blob FROM board_materials WHERE material_id = :m AND workspace_id = :w"),
+        {"m": mid, "w": workspace_id},
+    ).first()
+    return (r is not None, r[0] if r else None)

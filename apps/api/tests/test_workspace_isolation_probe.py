@@ -51,6 +51,8 @@ NOT_PROBED: dict[tuple[str, str], str] = {
     ("GET", "/orders/{po_id}/deliveries/{delivery_id}/docket"): _TABS,
     ("GET", "/suppliers/{vendor_id}/logo"): _TABS,
     ("PUT", "/orders/{po_id}/image"): _TABS,
+    ("GET", "/catalog/board-materials/{mid}/image"):
+        "the seed has no board image; test_catalog_routes.test_board_image_of_another_workspace_is_a_404 reads one as another workspace",
     ("PUT", "/suppliers/{vendor_id}/logo"): _TABS,
     ("DELETE", "/purchase-orders/{doc_id}/authorisation/signed"): _PO_WINDOWS,
     ("DELETE", "/purchase-orders/{doc_id}/invoices/{invoice_id}/files/{slot}"): _PO_WINDOWS,

@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
+import BoardImageCell from "./BoardImageCell";
+import { BOARD_TEXT_FIELDS } from "./boardFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Props {
@@ -177,6 +179,18 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         <Cell value={row.unit_cost} type="number" step="0.01" label="Unit cost" canWrite={canWrite}
               onSave={(v) => save({ unit_cost: v === "" ? null : Number(v) })} />
       </td>
+      {tab === "board" && BOARD_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "board" && (
+        <td className="px-3 py-1">
+          <BoardImageCell mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
+                          onChanged={onChanged} />
+        </td>
+      )}
       <td className="px-3 py-1">
         <Cell value={row.synonyms.join(", ")} canWrite={canWrite}
               onSave={(v) => save({ synonyms: v.split(/\s*,\s*/).filter(Boolean) })} />
