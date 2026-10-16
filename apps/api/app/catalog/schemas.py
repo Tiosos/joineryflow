@@ -142,6 +142,8 @@ class CreateEquipmentHireIn(_EnrichmentFields):
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
     project_id: int
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchBaseIn(BaseModel):
@@ -251,6 +253,8 @@ class PatchApplianceIn(PatchBaseIn):
 class PatchEquipmentHireIn(PatchBaseIn):
     contract_ref: str | None = Field(default=None, max_length=64)
     project_id: int | None = None
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CatalogRowOut(BaseModel):
