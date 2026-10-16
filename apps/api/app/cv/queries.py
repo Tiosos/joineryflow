@@ -37,6 +37,7 @@ _TABLE_REGISTRY: dict[str, tuple[str, str | None]] = {
     "appliances":          ("appliance",   "model_number"),
     "equipment_hire":      ("hire",        "contract_ref"),
     "edging_materials":    ("edging",      None),
+    "glass_materials":     ("glass",       None),
 }
 
 

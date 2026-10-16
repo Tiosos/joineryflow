@@ -32,6 +32,7 @@ CATALOG_TABLES: tuple[tuple[str, str], ...] = (
     ("appliances",          "material_id"),
     ("equipment_hire",      "hire_id"),
     ("edging_materials",    "material_id"),
+    ("glass_materials",     "material_id"),
 )
 
 

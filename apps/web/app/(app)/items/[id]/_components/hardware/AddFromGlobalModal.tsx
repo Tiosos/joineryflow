@@ -17,6 +17,7 @@ const SOURCE_TABLES: SourceTable[] = [
   "appliances",
   "equipment_hire",
   "edging_materials",
+  "glass_materials",
 ];
 
 interface SourceRow {

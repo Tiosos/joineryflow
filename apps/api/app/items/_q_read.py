@@ -646,6 +646,9 @@ def get_item_detail(
                 UNION ALL
                 SELECT 'EDGING', material_id, description, supplier
                 FROM edging_materials
+                UNION ALL
+                SELECT 'GLASS', material_id, description, supplier
+                FROM glass_materials
             )
             SELECT
                 hl.line_id              AS id,

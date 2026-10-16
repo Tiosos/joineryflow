@@ -18,6 +18,7 @@ const SIMPLE_TABLES: SimpleCatalogTable[] = [
   "benchtop_materials",
   "appliances",
   "edging_materials",
+  "glass_materials",
 ];
 
 const TABLE_LABEL: Record<CatalogTable, string> = {
@@ -28,6 +29,7 @@ const TABLE_LABEL: Record<CatalogTable, string> = {
   appliances: "Appliance",
   equipment_hire: "Equipment hire",
   edging_materials: "Edging",
+  glass_materials: "Glass",
 };
 
 interface Props {

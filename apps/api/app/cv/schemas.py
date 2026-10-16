@@ -15,6 +15,7 @@ CatalogTable = Literal[
     "appliances",
     "equipment_hire",
     "edging_materials",
+    "glass_materials",
 ]
 SimpleCatalogTable = Literal[
     "board_materials",
@@ -23,6 +24,7 @@ SimpleCatalogTable = Literal[
     "benchtop_materials",
     "appliances",
     "edging_materials",
+    "glass_materials",
 ]
 
 ResolutionKind = Literal["mapped", "synonym_match", "unknown"]

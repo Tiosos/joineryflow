@@ -3,7 +3,7 @@ import type { MaterialType } from "@/lib/procurement-types";
 
 const LABEL: Record<MaterialType, string> = {
   BOARD:"Board", HARDWARE:"Hardware", CUSTOM:"Custom",
-  BENCHTOP:"Benchtop", APPLIANCE:"Appliance", HIRE:"Hire", EDGING:"Edging",
+  BENCHTOP:"Benchtop", APPLIANCE:"Appliance", HIRE:"Hire", EDGING:"Edging", GLASS:"Glass",
 };
 
 export function MaterialTypeTag({ type }: { type: MaterialType }) {

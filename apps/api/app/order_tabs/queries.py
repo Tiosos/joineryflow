@@ -23,6 +23,7 @@ _CATALOG_REGISTRY = {
     "appliances": ("APPLIANCE", "material_id"),
     "equipment_hire": ("HIRE", "hire_id"),
     "edging_materials": ("EDGING", "material_id"),
+    "glass_materials": ("GLASS", "material_id"),
 }
 
 

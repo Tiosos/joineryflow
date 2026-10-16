@@ -18,6 +18,7 @@ const TABLE_OPTIONS: { table: CatalogTable; slug: CatalogSlug; label: string }[]
   { table: "appliances",         slug: "appliances",         label: "Appliances" },
   { table: "equipment_hire",     slug: "equipment-hire",     label: "Equipment Hire" },
   { table: "edging_materials",   slug: "edging-materials",   label: "Edging" },
+  { table: "glass_materials",    slug: "glass-materials",    label: "Glass" },
 ];
 
 export default function NewMappingDialog(p: Props) {

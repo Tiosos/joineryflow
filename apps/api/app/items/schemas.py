@@ -168,7 +168,7 @@ class AvailabilityLine(BaseModel):
     seq: int | None = None
     catalog_id: int | None = None
     material_type: Literal[
-        "BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING"
+        "BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS"
     ] | None = None
     material_id: int | None = None
     qty_needed: Decimal = Decimal("0")

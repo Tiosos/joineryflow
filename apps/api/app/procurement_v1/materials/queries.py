@@ -82,6 +82,7 @@ _CATALOG_LOOKUP = {
     "APPLIANCE": ("appliances",         "material_id", "description", "sku"),
     "HIRE":      ("equipment_hire",     "hire_id",     "description", "sku"),
     "EDGING":    ("edging_materials",   "material_id", "description", "sku"),
+    "GLASS":     ("glass_materials",    "material_id", "description", "sku"),
 }
 
 

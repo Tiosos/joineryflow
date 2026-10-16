@@ -7,7 +7,8 @@ export type CatalogTable =
   | "benchtop_materials"
   | "appliances"
   | "equipment_hire"
-  | "edging_materials";
+  | "edging_materials"
+  | "glass_materials";
 
 export type SimpleCatalogTable =
   | "board_materials"
@@ -15,7 +16,8 @@ export type SimpleCatalogTable =
   | "custom_made"
   | "benchtop_materials"
   | "appliances"
-  | "edging_materials";
+  | "edging_materials"
+  | "glass_materials";
 
 export type ResolutionKind = "mapped" | "synonym_match" | "unknown";
 

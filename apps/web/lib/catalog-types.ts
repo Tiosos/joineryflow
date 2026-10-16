@@ -5,7 +5,8 @@ export type CatalogTable =
   | "benchtop_materials"
   | "appliances"
   | "equipment_hire"
-  | "edging_materials";
+  | "edging_materials"
+  | "glass_materials";
 
 export type CatalogSlug =
   | "board-materials"
@@ -14,7 +15,8 @@ export type CatalogSlug =
   | "benchtop-materials"
   | "appliances"
   | "equipment-hire"
-  | "edging-materials";
+  | "edging-materials"
+  | "glass-materials";
 
 export interface CatalogRow {
   type: string;
@@ -59,6 +61,14 @@ export interface CatalogRow {
   edge_width_mm?: number | null;
   edge_thickness_mm?: number | null;
   glued?: boolean;
+  // Glass only (migration 0070). Sizes in mm: JSON numbers. Glass type and power point are free text.
+  edge_finish?: string | null;
+  glass_type?: string | null;
+  power_point?: string | null;
+  length_mm?: number | null;
+  width_mm?: number | null;
+  thickness_mm?: number | null;
+  shaped?: boolean;
 }
 
 /** A supplier as the picker needs it (`GET /suppliers`). */

@@ -77,10 +77,16 @@ EDGING_TEXT_FIELDS = ("colour", "edge_type", "um", "product_website")
 EDGING_NUMBER_FIELDS = ("roll_length_m", "edge_width_mm", "edge_thickness_mm")
 EDGING_FIELDS_TUPLE = (*EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS, "glued")
 EDGING_FIELDS = ", ".join(EDGING_FIELDS_TUPLE)
+# Glass's own fields (`0070`). Length, width, thickness in mm; glass type and power point are free text.
+GLASS_TEXT_FIELDS = ("colour", "edge_finish", "glass_type", "power_point", "um", "product_website")
+GLASS_NUMBER_FIELDS = ("length_mm", "width_mm", "thickness_mm")
+GLASS_FIELDS_TUPLE = (*GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, "shaped")
+GLASS_FIELDS = ", ".join(GLASS_FIELDS_TUPLE)
 # Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
-CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS)
+CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
+                         *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS)
 # Tables that keep one picture per row (`image_blob`).
-IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials"}
+IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials", "glass": "glass_materials"}
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -89,6 +95,13 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
         f"material_id, code, description, sku, grain_locked, workspace_id, "
         f"{BOARD_FIELDS}, (image_blob IS NOT NULL) AS has_image, {ENRICHMENT_SELECT}",
         ("code", "description", "sku", "grain_locked", *BOARD_FIELDS_TUPLE, *ENRICHMENT_INSERT),
+    ),
+    "glass": (
+        "glass_materials",
+        "material_id",
+        f"material_id, sku, description, workspace_id, {GLASS_FIELDS}, (image_blob IS NOT NULL) AS has_image, "
+        f"{ENRICHMENT_SELECT}",
+        ("sku", "description", *GLASS_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "hardware": (
         "hardware_materials",
@@ -136,7 +149,7 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
 MATERIAL_TABLE_BY_TYPE: dict[str, str] = {
     "BOARD": "board_materials", "HARDWARE": "hardware_materials", "CUSTOM": "custom_made",
     "BENCHTOP": "benchtop_materials", "APPLIANCE": "appliances", "HIRE": "equipment_hire",
-    "EDGING": "edging_materials",
+    "EDGING": "edging_materials", "GLASS": "glass_materials",
 }
 _ID_COLUMN_BY_TABLE: dict[str, str] = {table: id_col for table, id_col, *_ in REGISTRY.values()}
 
@@ -309,6 +322,7 @@ def list_cv_mappings(
                  WHEN 'appliances'         THEN (SELECT description FROM appliances         WHERE material_id = m.target_material_id)
                  WHEN 'equipment_hire'     THEN (SELECT description FROM equipment_hire     WHERE hire_id     = m.target_material_id)
                  WHEN 'edging_materials'   THEN (SELECT description FROM edging_materials   WHERE material_id = m.target_material_id)
+                 WHEN 'glass_materials'    THEN (SELECT description FROM glass_materials    WHERE material_id = m.target_material_id)
                END AS target_description
           FROM cv_material_mapping m
          WHERE {' AND '.join(where)}
@@ -378,6 +392,8 @@ _SET_IMAGE = {
              "RETURNING material_id",
     "edging": "UPDATE edging_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
               "RETURNING material_id",
+    "glass": "UPDATE glass_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+             "RETURNING material_id",
 }
 
 

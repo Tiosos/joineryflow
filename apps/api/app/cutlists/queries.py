@@ -210,6 +210,10 @@ def get_cutlist(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | No
                     SELECT 'EDGING', material_id, description,
                            COALESCE(supplier, default_supplier)
                     FROM edging_materials
+                    UNION ALL
+                    SELECT 'GLASS', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM glass_materials
                 )
                 SELECT hl.line_id,
                        i.item_id,

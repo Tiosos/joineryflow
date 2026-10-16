@@ -32,7 +32,7 @@ export const TENDER_STAGE_LABELS: Record<EstimateStatus, string> = {
   WITHDRAWN: "Withdrawn",
 };
 
-export type PartMaterialType = "BOARD" | "CUSTOM" | "BENCHTOP";
+export type PartMaterialType = "BOARD" | "CUSTOM" | "BENCHTOP" | "GLASS";
 export type HardwareMaterialType = "HARDWARE" | "APPLIANCE" | "EDGING";
 export type StageKey =
   | "REQ" | "SM" | "LISTED" | "DOWN" | "CNC" | "EDGED"

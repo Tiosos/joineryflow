@@ -86,8 +86,8 @@ def test_the_review_sheet_round_trips_and_a_bad_table_is_refused(tmp_path):
     assert [(r.code, r.table, r.supplier, r.unit_cost) for r in rows] == [
         ("708321", "board", "Boards Ltd", Decimal("10.0000")), ("X", "skip", "Acme", Decimal("10.0000"))]
     bad = _xlsx(tmp_path, "bad.xlsx", co.REVIEW_HEADERS,
-                [{"Code": "A", "Description": "d", "Table": "glass"}])
-    with pytest.raises(co.ImportErrorReport, match="glass"):
+                [{"Code": "A", "Description": "d", "Table": "paint"}])
+    with pytest.raises(co.ImportErrorReport, match="paint"):
         co.read_review(bad)
     long_type = _xlsx(tmp_path, "long.xlsx", co.REVIEW_HEADERS,
                       [{"Code": "A", "Description": "d", "Table": "board", "Type": "x" * 65}])
@@ -191,11 +191,11 @@ def test_a_sheet_with_no_table_column_takes_the_table_from_the_type_and_hire_nee
         {"Code": "N-1", "Description": "No type given"},
         {"Code": "U-1", "Description": "A type the list lacks", "Type": "Whatever"},
     ]))
-    assert [r.table for r in rows] == ["custom_made", "benchtop", "edging", "hire", "skip", "skip"]
+    assert [r.table for r in rows] == ["glass", "benchtop", "edging", "hire", "skip", "skip"]
     res, anomalies = _apply(wid, uid, rows)                                # hire without a project is reported
-    assert dict(res.created) == {"custom_made": 1, "benchtop": 1, "edging": 1} and res.skipped == 2
+    assert dict(res.created) == {"glass": 1, "benchtop": 1, "edging": 1} and res.skipped == 2
     assert [k for k, _ in anomalies] == ["hire_needs_project"]
-    assert _q("SELECT product_type FROM custom_made WHERE workspace_id = :w", w=wid) == [("Glass",)]
+    assert _q("SELECT product_type FROM glass_materials WHERE workspace_id = :w", w=wid) == [("Glass",)]
     db = SessionLocal()
     try:
         pid = db.execute(text("INSERT INTO projects(workspace_id, project_code, name) VALUES (:w, 'P-1', 'P')"

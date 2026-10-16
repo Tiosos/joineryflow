@@ -14,6 +14,7 @@ CatalogTable = Literal[
     "appliances",
     "equipment_hire",
     "edging_materials",
+    "glass_materials",
 ]
 
 
@@ -43,6 +44,22 @@ class CreateBoardIn(_EnrichmentFields):
     rating: str | None = Field(default=None, max_length=64)
     hmr: str | None = Field(default=None, max_length=64)
     product_website: str | None = Field(default=None, max_length=255)
+
+
+class CreateGlassIn(_EnrichmentFields):
+    """Glass (`0070`): the old Orders screen's glass fields. Sizes in mm; glass type and power point are free text."""
+    sku: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    edge_finish: str | None = Field(default=None, max_length=128)
+    glass_type: str | None = Field(default=None, max_length=128)
+    power_point: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    shaped: bool = False
 
 
 class CreateEdgingIn(_EnrichmentFields):
@@ -121,6 +138,19 @@ class PatchBoardIn(PatchBaseIn):
 
 class PatchHardwareIn(PatchBaseIn):
     pass
+
+
+class PatchGlassIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    edge_finish: str | None = Field(default=None, max_length=128)
+    glass_type: str | None = Field(default=None, max_length=128)
+    power_point: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    shaped: bool | None = None         # NOT NULL column: an explicit null is dropped, never written
 
 
 class PatchEdgingIn(PatchBaseIn):

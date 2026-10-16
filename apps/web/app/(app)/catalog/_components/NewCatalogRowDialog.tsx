@@ -7,6 +7,7 @@ import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
+import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Project { id: number; project_code: string; name: string; }
@@ -31,6 +32,7 @@ const LEGACY_FIELD: Record<MaterialTab, { key: string; label: string } | null> =
   appliance: { key: "model_number", label: "Model number" },
   hire: { key: "contract_ref", label: "Contract ref" },
   edging: null,
+  glass: null,
 };
 
 export default function NewCatalogRowDialog(p: Props) {
@@ -48,6 +50,8 @@ export default function NewCatalogRowDialog(p: Props) {
   const [boardVals, setBoardVals] = useState<Record<string, string>>({});
   const [edgingVals, setEdgingVals] = useState<Record<string, string>>({});
   const [glued, setGlued] = useState(false);
+  const [glassVals, setGlassVals] = useState<Record<string, string>>({});
+  const [shaped, setShaped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -64,6 +68,11 @@ export default function NewCatalogRowDialog(p: Props) {
       for (const f of EDGING_TEXT_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = edgingVals[f.key].trim();
       for (const f of EDGING_NUMBER_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = Number(edgingVals[f.key]);
       body.glued = glued;
+    }
+    if (p.tab === "glass") {
+      for (const f of GLASS_TEXT_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = glassVals[f.key].trim();
+      for (const f of GLASS_NUMBER_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = Number(glassVals[f.key]);
+      body.shaped = shaped;
     }
     if (supplier) body.default_supplier = supplier;
     if (supplierId) body.default_supplier_id = Number(supplierId);
@@ -100,6 +109,26 @@ export default function NewCatalogRowDialog(p: Props) {
               <input value={legacyVal} onChange={(e) => setLegacyVal(e.target.value)}
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
+          )}
+          {p.tab === "glass" && (
+            <>
+              {GLASS_TEXT_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input value={glassVals[f.key] ?? ""} onChange={(e) => setGlassVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              {GLASS_NUMBER_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input type="number" step="0.01" value={glassVals[f.key] ?? ""}
+                         onChange={(e) => setGlassVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              <Field label="Shaped">
+                <input type="checkbox" checked={shaped} onChange={(e) => setShaped(e.target.checked)} />
+              </Field>
+            </>
           )}
           {p.tab === "edging" && (
             <>

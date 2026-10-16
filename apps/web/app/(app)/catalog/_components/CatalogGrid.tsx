@@ -5,6 +5,7 @@ import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catal
 import type { MaterialTab } from "./CatalogClient";
 import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
+import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
 import CatalogRow from "./CatalogRow";
 
 interface Props {
@@ -24,6 +25,7 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
   appliance: "Model #",
   hire: "Contract ref",
   edging: "—",
+  glass: "—",
 };
 
 export default function CatalogGrid(p: Props) {
@@ -31,8 +33,10 @@ export default function CatalogGrid(p: Props) {
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
   const isBoard = p.tab === "board";
   const isEdging = p.tab === "edging";
+  const isGlass = p.tab === "glass";
   const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0)
-    + (isEdging ? EDGING_TEXT_FIELDS.length + EDGING_NUMBER_FIELDS.length + 2 : 0);
+    + (isEdging ? EDGING_TEXT_FIELDS.length + EDGING_NUMBER_FIELDS.length + 2 : 0)
+    + (isGlass ? GLASS_TEXT_FIELDS.length + GLASS_NUMBER_FIELDS.length + 2 : 0);
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -53,6 +57,10 @@ export default function CatalogGrid(p: Props) {
             {isEdging && EDGING_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isEdging && <th className="px-3 py-2">Glued</th>}
             {isEdging && <th className="px-3 py-2">Image</th>}
+            {isGlass && GLASS_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isGlass && GLASS_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isGlass && <th className="px-3 py-2">Shaped</th>}
+            {isGlass && <th className="px-3 py-2">Image</th>}
             <th className="px-3 py-2">Synonyms</th>
             {hasGrain && <th className="px-3 py-2" title="Parts on this board are not rotated when nesting">Grain lock</th>}
             <th className="px-3 py-2">Status</th>

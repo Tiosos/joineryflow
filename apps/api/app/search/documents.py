@@ -43,6 +43,8 @@ MATERIALS = {
                        "COALESCE(m.default_supplier, m.supplier)", []),
     "edging_materials": ("edging", "material_id", None,
                          "COALESCE(m.default_supplier, m.supplier)", ["m.colour", "m.edge_type"]),
+    "glass_materials": ("glass", "material_id", None,
+                        "COALESCE(m.default_supplier, m.supplier)", ["m.colour", "m.glass_type"]),
 }
 
 KINDS: tuple[str, ...] = (

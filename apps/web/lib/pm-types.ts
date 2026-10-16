@@ -542,7 +542,8 @@ export type SourceTable =
   | "benchtop_materials"
   | "appliances"
   | "equipment_hire"
-  | "edging_materials";
+  | "edging_materials"
+  | "glass_materials";
 
 export interface HardwareCatalogRow {
   catalog_id: number;
