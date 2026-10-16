@@ -89,6 +89,8 @@ class CreateCustomMadeIn(_EnrichmentFields):
     internal_ref: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateBenchtopIn(_EnrichmentFields):
@@ -188,6 +190,8 @@ class PatchEdgingIn(PatchBaseIn):
 
 class PatchCustomMadeIn(PatchBaseIn):
     internal_ref: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchBenchtopIn(PatchBaseIn):

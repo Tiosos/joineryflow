@@ -93,13 +93,17 @@ BENCHTOP_FIELDS = ", ".join(BENCHTOP_FIELDS_TUPLE)
 # Hardware's own fields (`0072`, on `hardware_materials`): `brand` and `hardware_type` were already columns.
 HARDWARE_FIELDS_TUPLE = ("brand", "hardware_type", "um", "product_website")
 HARDWARE_FIELDS = ", ".join(HARDWARE_FIELDS_TUPLE)
+# Custom's own fields (`0073`, on `custom_made`): the same three Hardware got.
+CUSTOM_FIELDS_TUPLE = ("um", "product_website")
+CUSTOM_FIELDS = ", ".join(CUSTOM_FIELDS_TUPLE)
 # Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
 CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
                          *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, *BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS,
-                         *BENCHTOP_INT_FIELDS, *HARDWARE_FIELDS_TUPLE)
+                         *BENCHTOP_INT_FIELDS, *HARDWARE_FIELDS_TUPLE, *CUSTOM_FIELDS_TUPLE)
 # Tables that keep one picture per row (`image_blob`).
 IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials", "glass": "glass_materials",
-                "benchtop": "benchtop_materials", "hardware": "hardware_materials"}
+                "benchtop": "benchtop_materials", "hardware": "hardware_materials",
+                "custom_made": "custom_made"}
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -133,8 +137,9 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "custom_made": (
         "custom_made",
         "material_id",
-        f"material_id, internal_ref, description, sku, workspace_id, {ENRICHMENT_SELECT}",
-        ("internal_ref", "description", "sku", *ENRICHMENT_INSERT),
+        f"material_id, internal_ref, description, sku, workspace_id, {CUSTOM_FIELDS}, "
+        f"(image_blob IS NOT NULL) AS has_image, {ENRICHMENT_SELECT}",
+        ("internal_ref", "description", "sku", *CUSTOM_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "benchtop": (
         "benchtop_materials",
@@ -406,6 +411,8 @@ _SET_IMAGE = {
              "RETURNING material_id",
     "edging": "UPDATE edging_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
               "RETURNING material_id",
+    "custom_made": "UPDATE custom_made SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+                   "RETURNING material_id",
     "hardware": "UPDATE hardware_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
                 "RETURNING material_id",
     "benchtop": "UPDATE benchtop_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
