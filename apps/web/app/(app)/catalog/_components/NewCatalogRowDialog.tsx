@@ -9,6 +9,7 @@ import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Project { id: number; project_code: string; name: string; }
@@ -54,6 +55,7 @@ export default function NewCatalogRowDialog(p: Props) {
   const [glassVals, setGlassVals] = useState<Record<string, string>>({});
   const [shaped, setShaped] = useState(false);
   const [benchVals, setBenchVals] = useState<Record<string, string>>({});
+  const [hwVals, setHwVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -76,6 +78,7 @@ export default function NewCatalogRowDialog(p: Props) {
       for (const f of GLASS_NUMBER_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = Number(glassVals[f.key]);
       body.shaped = shaped;
     }
+    if (p.tab === "hardware") for (const f of HARDWARE_TEXT_FIELDS) if (hwVals[f.key]?.trim()) body[f.key] = hwVals[f.key].trim();
     if (p.tab === "benchtop") {
       for (const f of BENCHTOP_TEXT_FIELDS) if (benchVals[f.key]?.trim()) body[f.key] = benchVals[f.key].trim();
       for (const f of BENCHTOP_NUMBER_FIELDS) if (benchVals[f.key]?.trim()) body[f.key] = Number(benchVals[f.key]);
@@ -117,6 +120,12 @@ export default function NewCatalogRowDialog(p: Props) {
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
           )}
+          {p.tab === "hardware" && HARDWARE_TEXT_FIELDS.map((f) => (
+            <Field key={f.key} label={f.label}>
+              <input value={hwVals[f.key] ?? ""} onChange={(e) => setHwVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                     className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+            </Field>
+          ))}
           {p.tab === "benchtop" && (
             <>
               {BENCHTOP_TEXT_FIELDS.map((f) => (

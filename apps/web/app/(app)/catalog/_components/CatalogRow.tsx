@@ -10,6 +10,7 @@ import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Props {
@@ -244,7 +245,13 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                  onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
         </td>
       )}
-      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "benchtop") && (
+      {tab === "hardware" && HARDWARE_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "benchtop" || tab === "hardware") && (
         <td className="px-3 py-1">
           <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
                           onChanged={onChanged} />

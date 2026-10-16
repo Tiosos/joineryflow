@@ -69,6 +69,9 @@ export interface CatalogRow {
   width_mm?: number | null;
   thickness_mm?: number | null;
   shaped?: boolean; // glass + benchtop
+  // Hardware only (migration 0072; brand and hardware_type were already columns).
+  brand?: string | null;
+  hardware_type?: string | null;
   // Benchtop only (migration 0071). Sizes in mm (thickness_mm is the bench thickness): JSON numbers.
   underside?: string | null;
   edge_details?: string | null;

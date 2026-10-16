@@ -18,7 +18,7 @@ test("the Catalog grid shows a material's product type, edits it and filters by 
   try {
     await page.goto("/catalog?tab=hardware");
     const rowA = page.locator("tr").filter({ has: page.locator(`input[value="Typed a ${stamp}"]`) });
-    await expect(rowA.getByLabel("Type")).toHaveValue(type);
+    await expect(rowA.getByLabel("Type", { exact: true })).toHaveValue(type);
 
     await page.getByLabel("Type filter").selectOption(type);       // only the typed row is left
     await expect(page.locator(`input[value="Typed a ${stamp}"]`)).toBeVisible();
@@ -26,11 +26,11 @@ test("the Catalog grid shows a material's product type, edits it and filters by 
     await page.getByLabel("Type filter").selectOption("");
 
     const rowB = page.locator("tr").filter({ has: page.locator(`input[value="Typed b ${stamp}"]`) });
-    await rowB.getByLabel("Type").fill(`${type}B`);
-    await rowB.getByLabel("Type").blur();
+    await rowB.getByLabel("Type", { exact: true }).fill(`${type}B`);
+    await rowB.getByLabel("Type", { exact: true }).blur();
     await expect.poll(() => typeOf(b)).toBe(`${type}B`);
-    await rowB.getByLabel("Type").fill("");                        // empty clears it
-    await rowB.getByLabel("Type").blur();
+    await rowB.getByLabel("Type", { exact: true }).fill("");                        // empty clears it
+    await rowB.getByLabel("Type", { exact: true }).blur();
     await expect.poll(() => typeOf(b)).toBeNull();
   } finally {
     for (const id of [a, b]) await page.request.post(`/api/catalog/hardware-materials/${id}/archive`);
