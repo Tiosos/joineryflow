@@ -4,7 +4,7 @@ import { login } from "./helpers";
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
-test("a Board item shows and edits the board fields and keeps one picture", async ({ page }) => {
+test("a Board item shows and edits the board fields (UM included) and keeps one picture", async ({ page }) => {
   const stamp = Date.now();
   await login(page);
   const desc = `Board fields ${stamp}`;
@@ -26,6 +26,13 @@ test("a Board item shows and edits the board fields and keeps one picture", asyn
     await row.getByLabel("Finish").fill("");                       // empty clears it
     await row.getByLabel("Finish").blur();
     await expect.poll(() => field("finish")).toBeNull();
+
+    await row.getByLabel("UM").fill("sht");                        // UM (0075; the Laminate tab shows the same grid)
+    await row.getByLabel("UM").blur();
+    await expect.poll(() => field("um")).toBe("sht");
+    await row.getByLabel("UM").fill("");
+    await row.getByLabel("UM").blur();
+    await expect.poll(() => field("um")).toBeNull();
 
     await row.getByLabel("Product image").setInputFiles({ name: "b.png", mimeType: "image/png", buffer: PNG });
     await expect(row.getByTestId("board-image")).toBeVisible();

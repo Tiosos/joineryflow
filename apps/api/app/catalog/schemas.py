@@ -44,6 +44,7 @@ class CreateBoardIn(_EnrichmentFields):
     grain: str | None = Field(default=None, max_length=64)
     rating: str | None = Field(default=None, max_length=64)
     hmr: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
 
 
@@ -170,6 +171,7 @@ class PatchBoardIn(PatchBaseIn):
     grain: str | None = Field(default=None, max_length=64)
     rating: str | None = Field(default=None, max_length=64)
     hmr: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
 
 

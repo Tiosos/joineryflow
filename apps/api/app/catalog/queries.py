@@ -70,7 +70,7 @@ def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | N
     return out
 
 # Board's own fields (`0068`): the old Orders screen's board attributes. All plain text.
-BOARD_FIELDS_TUPLE = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "product_website")
+BOARD_FIELDS_TUPLE = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "um", "product_website")
 BOARD_FIELDS = ", ".join(BOARD_FIELDS_TUPLE)
 # Edging's own fields (`0069`). `edge_type` is the old screen's "Type" (not `product_type`, the tab).
 EDGING_TEXT_FIELDS = ("colour", "edge_type", "um", "product_website")
