@@ -82,11 +82,21 @@ GLASS_TEXT_FIELDS = ("colour", "edge_finish", "glass_type", "power_point", "um",
 GLASS_NUMBER_FIELDS = ("length_mm", "width_mm", "thickness_mm")
 GLASS_FIELDS_TUPLE = (*GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, "shaped")
 GLASS_FIELDS = ", ".join(GLASS_FIELDS_TUPLE)
+# Laminate Benchtop's own fields (`0071`, on `benchtop_materials`). `thickness_mm` already existed; the bench
+# size is `bench_length_mm` x `bench_width_mm` (the slab_* columns are the supplier's slab).
+BENCHTOP_TEXT_FIELDS = ("colour", "underside", "edge_details", "laminate_supplier", "laminate_code", "finish", "um",
+                        "product_website")
+BENCHTOP_NUMBER_FIELDS = ("bench_length_mm", "bench_width_mm", "thickness_mm")
+BENCHTOP_INT_FIELDS = ("pieces", "joins", "cable_entry")
+BENCHTOP_FIELDS_TUPLE = (*BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS, *BENCHTOP_INT_FIELDS, "shaped")
+BENCHTOP_FIELDS = ", ".join(BENCHTOP_FIELDS_TUPLE)
 # Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
 CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
-                         *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS)
+                         *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, *BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS,
+                         *BENCHTOP_INT_FIELDS)
 # Tables that keep one picture per row (`image_blob`).
-IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials", "glass": "glass_materials"}
+IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials", "glass": "glass_materials",
+                "benchtop": "benchtop_materials"}
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -126,8 +136,8 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
         "benchtop_materials",
         "material_id",
         f"material_id, slab_id, description, sku, grain_locked, workspace_id, "
-        f"{ENRICHMENT_SELECT}",
-        ("slab_id", "description", "sku", "grain_locked", *ENRICHMENT_INSERT),
+        f"{BENCHTOP_FIELDS}, (image_blob IS NOT NULL) AS has_image, {ENRICHMENT_SELECT}",
+        ("slab_id", "description", "sku", "grain_locked", *BENCHTOP_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "appliance": (
         "appliances",
@@ -392,6 +402,8 @@ _SET_IMAGE = {
              "RETURNING material_id",
     "edging": "UPDATE edging_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
               "RETURNING material_id",
+    "benchtop": "UPDATE benchtop_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+                "RETURNING material_id",
     "glass": "UPDATE glass_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
              "RETURNING material_id",
 }

@@ -91,6 +91,21 @@ class CreateBenchtopIn(_EnrichmentFields):
     slab_id: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    underside: str | None = Field(default=None, max_length=128)
+    edge_details: str | None = Field(default=None, max_length=128)
+    laminate_supplier: str | None = Field(default=None, max_length=128)
+    laminate_code: str | None = Field(default=None, max_length=64)
+    finish: str | None = Field(default=None, max_length=128)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    bench_length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    bench_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
+    pieces: int | None = Field(default=None, ge=0, le=9999)
+    joins: int | None = Field(default=None, ge=0, le=9999)
+    cable_entry: int | None = Field(default=None, ge=0, le=9999)
+    shaped: bool = False
 
 
 class CreateApplianceIn(_EnrichmentFields):
@@ -171,6 +186,21 @@ class PatchCustomMadeIn(PatchBaseIn):
 class PatchBenchtopIn(PatchBaseIn):
     slab_id: str | None = Field(default=None, max_length=64)
     grain_locked: bool | None = None
+    colour: str | None = Field(default=None, max_length=128)
+    underside: str | None = Field(default=None, max_length=128)
+    edge_details: str | None = Field(default=None, max_length=128)
+    laminate_supplier: str | None = Field(default=None, max_length=128)
+    laminate_code: str | None = Field(default=None, max_length=64)
+    finish: str | None = Field(default=None, max_length=128)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    bench_length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    bench_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
+    pieces: int | None = Field(default=None, ge=0, le=9999)
+    joins: int | None = Field(default=None, ge=0, le=9999)
+    cable_entry: int | None = Field(default=None, ge=0, le=9999)
+    shaped: bool | None = None         # NOT NULL column: an explicit null is dropped, never written
 
 
 class PatchApplianceIn(PatchBaseIn):

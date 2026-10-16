@@ -8,6 +8,7 @@ import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catal
 import BoardImageCell from "./BoardImageCell";
 import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
+import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
 import type { MaterialTab } from "./CatalogClient";
 
@@ -225,7 +226,25 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                  onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
         </td>
       )}
-      {(tab === "board" || tab === "edging" || tab === "glass") && (
+      {tab === "benchtop" && BENCHTOP_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "benchtop" && BENCHTOP_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step={f.step} label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "benchtop" && (
+        <td className="px-3 py-1 text-center">
+          <input type="checkbox" checked={row.shaped ?? false} disabled={!canWrite || busy}
+                 onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
+        </td>
+      )}
+      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "benchtop") && (
         <td className="px-3 py-1">
           <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
                           onChanged={onChanged} />

@@ -68,7 +68,17 @@ export interface CatalogRow {
   length_mm?: number | null;
   width_mm?: number | null;
   thickness_mm?: number | null;
-  shaped?: boolean;
+  shaped?: boolean; // glass + benchtop
+  // Benchtop only (migration 0071). Sizes in mm (thickness_mm is the bench thickness): JSON numbers.
+  underside?: string | null;
+  edge_details?: string | null;
+  laminate_supplier?: string | null;
+  laminate_code?: string | null;
+  bench_length_mm?: number | null;
+  bench_width_mm?: number | null;
+  pieces?: number | null;
+  joins?: number | null;
+  cable_entry?: number | null;
 }
 
 /** A supplier as the picker needs it (`GET /suppliers`). */

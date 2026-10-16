@@ -7,6 +7,7 @@ import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
+import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
 import type { MaterialTab } from "./CatalogClient";
 
@@ -52,6 +53,7 @@ export default function NewCatalogRowDialog(p: Props) {
   const [glued, setGlued] = useState(false);
   const [glassVals, setGlassVals] = useState<Record<string, string>>({});
   const [shaped, setShaped] = useState(false);
+  const [benchVals, setBenchVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -72,6 +74,11 @@ export default function NewCatalogRowDialog(p: Props) {
     if (p.tab === "glass") {
       for (const f of GLASS_TEXT_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = glassVals[f.key].trim();
       for (const f of GLASS_NUMBER_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = Number(glassVals[f.key]);
+      body.shaped = shaped;
+    }
+    if (p.tab === "benchtop") {
+      for (const f of BENCHTOP_TEXT_FIELDS) if (benchVals[f.key]?.trim()) body[f.key] = benchVals[f.key].trim();
+      for (const f of BENCHTOP_NUMBER_FIELDS) if (benchVals[f.key]?.trim()) body[f.key] = Number(benchVals[f.key]);
       body.shaped = shaped;
     }
     if (supplier) body.default_supplier = supplier;
@@ -109,6 +116,26 @@ export default function NewCatalogRowDialog(p: Props) {
               <input value={legacyVal} onChange={(e) => setLegacyVal(e.target.value)}
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
+          )}
+          {p.tab === "benchtop" && (
+            <>
+              {BENCHTOP_TEXT_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input value={benchVals[f.key] ?? ""} onChange={(e) => setBenchVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              {BENCHTOP_NUMBER_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input type="number" step={f.step} value={benchVals[f.key] ?? ""}
+                         onChange={(e) => setBenchVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              <Field label="Shaped">
+                <input type="checkbox" checked={shaped} onChange={(e) => setShaped(e.target.checked)} />
+              </Field>
+            </>
           )}
           {p.tab === "glass" && (
             <>
