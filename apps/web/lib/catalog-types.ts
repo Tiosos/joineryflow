@@ -6,7 +6,8 @@ export type CatalogTable =
   | "appliances"
   | "equipment_hire"
   | "edging_materials"
-  | "glass_materials";
+  | "glass_materials"
+  | "timber_materials";
 
 export type CatalogSlug =
   | "board-materials"
@@ -16,7 +17,8 @@ export type CatalogSlug =
   | "appliances"
   | "equipment-hire"
   | "edging-materials"
-  | "glass-materials";
+  | "glass-materials"
+  | "timber-materials";
 
 export interface CatalogRow {
   type: string;
@@ -61,7 +63,8 @@ export interface CatalogRow {
   edge_width_mm?: number | null;
   edge_thickness_mm?: number | null;
   glued?: boolean;
-  // Glass only (migration 0070). Sizes in mm: JSON numbers. Glass type and power point are free text.
+  // Glass (migration 0070; length/width/thickness are shared with Solid Timber, 0074). Sizes in mm: JSON numbers.
+  // Glass type and power point are free text.
   edge_finish?: string | null;
   glass_type?: string | null;
   power_point?: string | null;

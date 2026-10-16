@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from ...schema_guards import no_null
 
-MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS"]
+MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS", "TIMBER"]
 BatchStatus = Literal["OPEN", "IN_TRANSIT", "DELIVERED", "CANCELLED"]
 
 

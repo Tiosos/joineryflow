@@ -1,7 +1,7 @@
 """Laminate Benchtop items get the old Orders screen's benchtop fields
 
-`benchtop_materials` keeps serving the Laminate Benchtop type (and, until their own turns, Solid Timber and
-TG Solid), as `board_materials` does for Board (`0068`). It gains colour, underside, edge details,
+`benchtop_materials` keeps serving the Laminate Benchtop type (and TG Solid; Solid Timber moved out in
+`0074`), as `board_materials` does for Board (`0068`). It gains colour, underside, edge details,
 laminate supplier, laminate code, finish, UM, product website, the bench size (length and width in mm; the
 existing `thickness_mm` is the bench thickness), pieces, joins, cable entry, shaped and one picture
 (`image_blob`). All nullable except `shaped`, so existing rows are untouched. Downgrade drops the columns.

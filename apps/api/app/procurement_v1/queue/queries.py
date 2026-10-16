@@ -28,6 +28,7 @@ _NAME_LOOKUP = {
     "HIRE":      ("equipment_hire",     "hire_id",     "description"),
     "EDGING":    ("edging_materials",   "material_id", "description"),
     "GLASS":     ("glass_materials",    "material_id", "description"),
+    "TIMBER":    ("timber_materials",   "material_id", "description"),
 }
 
 # Derived status: cancelled > delivered > in-transit > open.

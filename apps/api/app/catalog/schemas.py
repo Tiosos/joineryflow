@@ -15,6 +15,7 @@ CatalogTable = Literal[
     "equipment_hire",
     "edging_materials",
     "glass_materials",
+    "timber_materials",
 ]
 
 
@@ -60,6 +61,21 @@ class CreateGlassIn(_EnrichmentFields):
     width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
     thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
     shaped: bool = False
+
+
+class CreateTimberIn(_EnrichmentFields):
+    """Solid Timber (`0074`): the old Orders screen's timber fields. Colour, finish, grain and rating are free text; sizes in mm."""
+    sku: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
 
 
 class CreateEdgingIn(_EnrichmentFields):
@@ -175,6 +191,18 @@ class PatchGlassIn(PatchBaseIn):
     width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
     thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
     shaped: bool | None = None         # NOT NULL column: an explicit null is dropped, never written
+
+
+class PatchTimberIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
 
 
 class PatchEdgingIn(PatchBaseIn):

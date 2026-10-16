@@ -7,6 +7,7 @@ import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "./timberFields";
 import { CUSTOM_TEXT_FIELDS } from "./customFields";
 import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import CatalogRow from "./CatalogRow";
@@ -29,6 +30,7 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
   hire: "Contract ref",
   edging: "—",
   glass: "—",
+  timber: "—",
 };
 
 export default function CatalogGrid(p: Props) {
@@ -37,12 +39,14 @@ export default function CatalogGrid(p: Props) {
   const isBoard = p.tab === "board";
   const isEdging = p.tab === "edging";
   const isGlass = p.tab === "glass";
+  const isTimber = p.tab === "timber";
   const isBench = p.tab === "benchtop";
   const isHardware = p.tab === "hardware";
   const isCustom = p.tab === "custom_made";
   const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0)
     + (isEdging ? EDGING_TEXT_FIELDS.length + EDGING_NUMBER_FIELDS.length + 2 : 0)
     + (isGlass ? GLASS_TEXT_FIELDS.length + GLASS_NUMBER_FIELDS.length + 2 : 0)
+    + (isTimber ? TIMBER_TEXT_FIELDS.length + TIMBER_NUMBER_FIELDS.length + 1 : 0)
     + (isBench ? BENCHTOP_TEXT_FIELDS.length + BENCHTOP_NUMBER_FIELDS.length + 2 : 0)
     + (isHardware ? HARDWARE_TEXT_FIELDS.length + 1 : 0)
     + (isCustom ? CUSTOM_TEXT_FIELDS.length + 1 : 0);
@@ -70,6 +74,9 @@ export default function CatalogGrid(p: Props) {
             {isGlass && GLASS_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isGlass && <th className="px-3 py-2">Shaped</th>}
             {isGlass && <th className="px-3 py-2">Image</th>}
+            {isTimber && TIMBER_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isTimber && TIMBER_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isTimber && <th className="px-3 py-2">Image</th>}
             {isBench && BENCHTOP_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBench && BENCHTOP_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBench && <th className="px-3 py-2">Shaped</th>}

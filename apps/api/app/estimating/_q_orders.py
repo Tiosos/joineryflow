@@ -305,6 +305,7 @@ def _refresh_line_state(db: Session, line_id: int) -> None:
 _CATALOG_EVENT_TYPE = {
     "BOARD": "board", "HARDWARE": "hardware", "CUSTOM": "custom_made",
     "BENCHTOP": "benchtop", "APPLIANCE": "appliance", "EDGING": "edging", "GLASS": "glass",
+    "TIMBER": "timber",
 }
 
 

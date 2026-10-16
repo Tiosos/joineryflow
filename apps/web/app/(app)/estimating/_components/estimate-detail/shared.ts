@@ -19,7 +19,7 @@ export type MaterialKind = PartMaterialType | HardwareMaterialType;
 
 export type CatalogMap = Record<MaterialKind, CatalogRow[]>;
 
-export const PART_KINDS: PartMaterialType[] = ["BOARD", "CUSTOM", "BENCHTOP", "GLASS"];
+export const PART_KINDS: PartMaterialType[] = ["BOARD", "CUSTOM", "BENCHTOP", "GLASS", "TIMBER"];
 export const HW_KINDS: HardwareMaterialType[] = ["HARDWARE", "APPLIANCE", "EDGING"];
 export const ALL_KINDS: MaterialKind[] = [...PART_KINDS, ...HW_KINDS];
 
@@ -31,6 +31,7 @@ export const KIND_LABEL: Record<MaterialKind, string> = {
   APPLIANCE: "Appliance",
   EDGING: "Edging",
   GLASS: "Glass",
+  TIMBER: "Solid Timber",
 };
 
 export const KIND_SLUG: Record<MaterialKind, string> = {
@@ -41,6 +42,7 @@ export const KIND_SLUG: Record<MaterialKind, string> = {
   APPLIANCE: "appliances",
   EDGING: "edging-materials",
   GLASS: "glass-materials",
+  TIMBER: "timber-materials",
 };
 
 
@@ -53,6 +55,7 @@ export const KIND_TAB: Record<MaterialKind, string> = {
   APPLIANCE: "appliance",
   EDGING: "edging",
   GLASS: "glass",
+  TIMBER: "timber",
 };
 
 
@@ -88,7 +91,7 @@ export function fmtMoney(s: string | null | undefined): string {
 }
 
 export function isPartKind(k: MaterialKind): k is PartMaterialType {
-  return k === "BOARD" || k === "CUSTOM" || k === "BENCHTOP" || k === "GLASS";
+  return k === "BOARD" || k === "CUSTOM" || k === "BENCHTOP" || k === "GLASS" || k === "TIMBER";
 }
 
 export function summariseGenerateResult(result: GenerateOrdersResult): string {

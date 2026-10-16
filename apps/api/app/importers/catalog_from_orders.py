@@ -43,20 +43,20 @@ from ..catalog import queries as catalog_queries
 
 ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered", "QTY", "_Cost_Sub")
 REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Type", "Table", "Reason", "Confidence", "Note")
-TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "hire", "edging", "glass", "skip")
+TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "hire", "edging", "glass", "timber", "skip")
 # The Catalog screen's tabs are the product types; each type's items live in one of the six tables until
 # the types get tables of their own. A person never sees or edits this: Type (column F) is the only input.
 TYPE_TABLE = {
     "laminate benchtop": "benchtop", "hardware": "hardware", "glass": "glass", "supplies": "hardware",
     "contractor manufacturing": "custom_made", "board": "board", "laminate": "board", "delivery": "custom_made",
-    "edging": "edging", "solid timber": "benchtop", "paint": "hardware", "tg solid": "benchtop",
+    "edging": "edging", "solid timber": "timber", "paint": "hardware", "tg solid": "benchtop",
     "appliance": "appliance", "equipment hire": "hire",
 }
 
 # catalog type -> (the type's own code column; both it and `sku` get the product code)
 CODE_COLUMN = {"board": "code", "hardware": "sku", "custom_made": "internal_ref",
                "benchtop": "slab_id", "appliance": "model_number", "hire": "contract_ref",
-               "edging": "sku", "glass": "sku"}
+               "edging": "sku", "glass": "sku", "timber": "sku"}
 MAX_CODE = {"board": 32}        # the others take 64 (the schemas' limits)
 
 

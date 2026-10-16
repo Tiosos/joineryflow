@@ -10,6 +10,7 @@ import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "./timberFields";
 import { CUSTOM_TEXT_FIELDS } from "./customFields";
 import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
@@ -33,6 +34,7 @@ const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
   hire: "contract_ref",
   edging: null,
   glass: null,
+  timber: null,
 };
 
 function Cell({
@@ -228,6 +230,18 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                  onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
         </td>
       )}
+      {tab === "timber" && TIMBER_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "timber" && TIMBER_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step="0.01" label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
       {tab === "benchtop" && BENCHTOP_TEXT_FIELDS.map((f) => (
         <td key={f.key} className="px-3 py-1">
           <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
@@ -258,7 +272,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                 onSave={(v) => save({ [f.key]: v.trim() || null })} />
         </td>
       ))}
-      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "benchtop" || tab === "hardware"
+      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "timber" || tab === "benchtop" || tab === "hardware"
         || tab === "custom_made") && (
         <td className="px-3 py-1">
           <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}

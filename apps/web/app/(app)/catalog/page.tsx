@@ -29,6 +29,7 @@ const VALID_TABS = [
   "hire",
   "edging",
   "glass",
+  "timber",
   "stock",
   "cv-mappings",
 ] as const;

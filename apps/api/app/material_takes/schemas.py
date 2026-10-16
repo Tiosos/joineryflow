@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from ..schema_guards import no_null
 
-MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS", "OTHER"]
+MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS", "TIMBER", "OTHER"]
 Unit = Literal["sheet", "each", "m", "m2"]
 
 

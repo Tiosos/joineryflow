@@ -187,15 +187,17 @@ def test_a_sheet_with_no_table_column_takes_the_table_from_the_type_and_hire_nee
         {"Code": "G-1", "Description": "Cut glass", "Type": "Glass"},
         {"Code": "L-1", "Description": "Benchtop sheet", "Type": "laminate benchtop"},
         {"Code": "E-1", "Description": "Edge tape", "Type": "Edging"},
+        {"Code": "T-1", "Description": "Oak board", "Type": "Solid Timber"},
         {"Code": "Q-1", "Description": "Scissor lift", "Type": "Equipment Hire"},
         {"Code": "N-1", "Description": "No type given"},
         {"Code": "U-1", "Description": "A type the list lacks", "Type": "Whatever"},
     ]))
-    assert [r.table for r in rows] == ["glass", "benchtop", "edging", "hire", "skip", "skip"]
+    assert [r.table for r in rows] == ["glass", "benchtop", "edging", "timber", "hire", "skip", "skip"]
     res, anomalies = _apply(wid, uid, rows)                                # hire without a project is reported
-    assert dict(res.created) == {"glass": 1, "benchtop": 1, "edging": 1} and res.skipped == 2
+    assert dict(res.created) == {"glass": 1, "benchtop": 1, "edging": 1, "timber": 1} and res.skipped == 2
     assert [k for k, _ in anomalies] == ["hire_needs_project"]
     assert _q("SELECT product_type FROM glass_materials WHERE workspace_id = :w", w=wid) == [("Glass",)]
+    assert _q("SELECT sku, product_type FROM timber_materials WHERE workspace_id = :w", w=wid) == [("T-1", "Solid Timber")]
     db = SessionLocal()
     try:
         pid = db.execute(text("INSERT INTO projects(workspace_id, project_code, name) VALUES (:w, 'P-1', 'P')"

@@ -36,6 +36,7 @@ from .schemas import (
     CreateCvMappingIn,
     CreateEdgingIn,
     CreateGlassIn,
+    CreateTimberIn,
     CreateEquipmentHireIn,
     CreateHardwareIn,
     PatchApplianceIn,
@@ -45,6 +46,7 @@ from .schemas import (
     PatchCvMappingIn,
     PatchEdgingIn,
     PatchGlassIn,
+    PatchTimberIn,
     PatchEquipmentHireIn,
     PatchHardwareIn,
 )
@@ -60,6 +62,7 @@ URL_TO_TYPE: dict[str, str] = {
     "equipment-hire":      "hire",
     "edging-materials":    "edging",
     "glass-materials":     "glass",
+    "timber-materials":    "timber",
 }
 
 
@@ -181,7 +184,7 @@ def delete_cv_mapping_route(
 
 
 # ============================================================
-# Product image (`0068` Board, `0069` Edging, `0070` Glass): one PNG/JPEG per row, in the shared file store
+# Product image (`0068` Board, `0069` Edging, `0070` Glass, `0074` Solid Timber): one PNG/JPEG per row, in the shared file store
 # ============================================================
 
 def _store() -> FileStore:
@@ -323,6 +326,7 @@ def bulk_import_route(
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
         "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn, "glass": CreateGlassIn,
+        "timber": CreateTimberIn,
     }[type_]
 
     errors: list[BulkRowError] = []
@@ -407,6 +411,7 @@ def create_catalog_row_route(
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
         "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn, "glass": CreateGlassIn,
+        "timber": CreateTimberIn,
     }[type_]
     try:
         validated = schema_cls.model_validate(payload).model_dump()
@@ -442,6 +447,7 @@ def patch_catalog_row_route(
         "board": PatchBoardIn, "hardware": PatchHardwareIn,
         "custom_made": PatchCustomMadeIn, "benchtop": PatchBenchtopIn,
         "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn, "edging": PatchEdgingIn, "glass": PatchGlassIn,
+        "timber": PatchTimberIn,
     }[type_]
     try:
         model = schema_cls.model_validate(payload)

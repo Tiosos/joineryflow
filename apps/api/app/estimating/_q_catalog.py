@@ -22,6 +22,7 @@ _PART_CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
     "CUSTOM":   ("custom_made",        "material_id", "sku", "default_supplier", "cost"),
     "BENCHTOP": ("benchtop_materials", "material_id", "sku", "default_supplier", "cost_per_slab"),
     "GLASS":    ("glass_materials",    "material_id", "sku", "default_supplier", "cost_per_unit"),
+    "TIMBER":   ("timber_materials",   "material_id", "sku", "default_supplier", "cost_per_unit"),
 }
 
 
@@ -84,7 +85,7 @@ _CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
 # verify before relying on it), so this is a fixed, sensible default rather
 # than a DB lookup.
 _ORDER_UNIT_BY_TYPE: dict[str, str] = {
-    "BOARD": "sheet", "CUSTOM": "EA", "BENCHTOP": "slab", "GLASS": "EA",
+    "BOARD": "sheet", "CUSTOM": "EA", "BENCHTOP": "slab", "GLASS": "EA", "TIMBER": "EA",
     "HARDWARE": "EA", "APPLIANCE": "EA", "EDGING": "EA",
 }
 

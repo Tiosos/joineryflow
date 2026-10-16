@@ -28,6 +28,7 @@ export type CatalogTab =
   | "hire"
   | "edging"
   | "glass"
+  | "timber"
   | "stock"
   | "cv-mappings";
 

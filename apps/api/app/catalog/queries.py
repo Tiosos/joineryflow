@@ -82,6 +82,11 @@ GLASS_TEXT_FIELDS = ("colour", "edge_finish", "glass_type", "power_point", "um",
 GLASS_NUMBER_FIELDS = ("length_mm", "width_mm", "thickness_mm")
 GLASS_FIELDS_TUPLE = (*GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, "shaped")
 GLASS_FIELDS = ", ".join(GLASS_FIELDS_TUPLE)
+# Solid Timber's own fields (`0074`). Colour, finish, grain and rating are free text; sizes in mm.
+TIMBER_TEXT_FIELDS = ("colour", "finish", "grain", "rating", "um", "product_website")
+TIMBER_NUMBER_FIELDS = ("thickness_mm", "width_mm", "length_mm")
+TIMBER_FIELDS_TUPLE = (*TIMBER_TEXT_FIELDS, *TIMBER_NUMBER_FIELDS)
+TIMBER_FIELDS = ", ".join(TIMBER_FIELDS_TUPLE)
 # Laminate Benchtop's own fields (`0071`, on `benchtop_materials`). `thickness_mm` already existed; the bench
 # size is `bench_length_mm` x `bench_width_mm` (the slab_* columns are the supplier's slab).
 BENCHTOP_TEXT_FIELDS = ("colour", "underside", "edge_details", "laminate_supplier", "laminate_code", "finish", "um",
@@ -98,11 +103,12 @@ CUSTOM_FIELDS_TUPLE = ("um", "product_website")
 CUSTOM_FIELDS = ", ".join(CUSTOM_FIELDS_TUPLE)
 # Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
 CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
-                         *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, *BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS,
+                         *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, *TIMBER_TEXT_FIELDS, *TIMBER_NUMBER_FIELDS,
+                         *BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS,
                          *BENCHTOP_INT_FIELDS, *HARDWARE_FIELDS_TUPLE, *CUSTOM_FIELDS_TUPLE)
 # Tables that keep one picture per row (`image_blob`).
 IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials", "glass": "glass_materials",
-                "benchtop": "benchtop_materials", "hardware": "hardware_materials",
+                "timber": "timber_materials", "benchtop": "benchtop_materials", "hardware": "hardware_materials",
                 "custom_made": "custom_made"}
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
@@ -119,6 +125,13 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
         f"material_id, sku, description, workspace_id, {GLASS_FIELDS}, (image_blob IS NOT NULL) AS has_image, "
         f"{ENRICHMENT_SELECT}",
         ("sku", "description", *GLASS_FIELDS_TUPLE, *ENRICHMENT_INSERT),
+    ),
+    "timber": (
+        "timber_materials",
+        "material_id",
+        f"material_id, sku, description, workspace_id, {TIMBER_FIELDS}, (image_blob IS NOT NULL) AS has_image, "
+        f"{ENRICHMENT_SELECT}",
+        ("sku", "description", *TIMBER_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "hardware": (
         "hardware_materials",
@@ -169,6 +182,7 @@ MATERIAL_TABLE_BY_TYPE: dict[str, str] = {
     "BOARD": "board_materials", "HARDWARE": "hardware_materials", "CUSTOM": "custom_made",
     "BENCHTOP": "benchtop_materials", "APPLIANCE": "appliances", "HIRE": "equipment_hire",
     "EDGING": "edging_materials", "GLASS": "glass_materials",
+    "TIMBER": "timber_materials",
 }
 _ID_COLUMN_BY_TABLE: dict[str, str] = {table: id_col for table, id_col, *_ in REGISTRY.values()}
 
@@ -342,6 +356,7 @@ def list_cv_mappings(
                  WHEN 'equipment_hire'     THEN (SELECT description FROM equipment_hire     WHERE hire_id     = m.target_material_id)
                  WHEN 'edging_materials'   THEN (SELECT description FROM edging_materials   WHERE material_id = m.target_material_id)
                  WHEN 'glass_materials'    THEN (SELECT description FROM glass_materials    WHERE material_id = m.target_material_id)
+                 WHEN 'timber_materials'   THEN (SELECT description FROM timber_materials   WHERE material_id = m.target_material_id)
                END AS target_description
           FROM cv_material_mapping m
          WHERE {' AND '.join(where)}
@@ -419,6 +434,8 @@ _SET_IMAGE = {
                 "RETURNING material_id",
     "glass": "UPDATE glass_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
              "RETURNING material_id",
+    "timber": "UPDATE timber_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+              "RETURNING material_id",
 }
 
 

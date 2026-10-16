@@ -9,6 +9,7 @@ import { BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "./timberFields";
 import { CUSTOM_TEXT_FIELDS } from "./customFields";
 import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
@@ -36,6 +37,7 @@ const LEGACY_FIELD: Record<MaterialTab, { key: string; label: string } | null> =
   hire: { key: "contract_ref", label: "Contract ref" },
   edging: null,
   glass: null,
+  timber: null,
 };
 
 export default function NewCatalogRowDialog(p: Props) {
@@ -54,6 +56,7 @@ export default function NewCatalogRowDialog(p: Props) {
   const [edgingVals, setEdgingVals] = useState<Record<string, string>>({});
   const [glued, setGlued] = useState(false);
   const [glassVals, setGlassVals] = useState<Record<string, string>>({});
+  const [timberVals, setTimberVals] = useState<Record<string, string>>({});
   const [shaped, setShaped] = useState(false);
   const [benchVals, setBenchVals] = useState<Record<string, string>>({});
   const [hwVals, setHwVals] = useState<Record<string, string>>({});
@@ -79,6 +82,10 @@ export default function NewCatalogRowDialog(p: Props) {
       for (const f of GLASS_TEXT_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = glassVals[f.key].trim();
       for (const f of GLASS_NUMBER_FIELDS) if (glassVals[f.key]?.trim()) body[f.key] = Number(glassVals[f.key]);
       body.shaped = shaped;
+    }
+    if (p.tab === "timber") {
+      for (const f of TIMBER_TEXT_FIELDS) if (timberVals[f.key]?.trim()) body[f.key] = timberVals[f.key].trim();
+      for (const f of TIMBER_NUMBER_FIELDS) if (timberVals[f.key]?.trim()) body[f.key] = Number(timberVals[f.key]);
     }
     if (p.tab === "hardware") for (const f of HARDWARE_TEXT_FIELDS) if (hwVals[f.key]?.trim()) body[f.key] = hwVals[f.key].trim();
     if (p.tab === "custom_made") for (const f of CUSTOM_TEXT_FIELDS) if (customVals[f.key]?.trim()) body[f.key] = customVals[f.key].trim();
@@ -173,6 +180,23 @@ export default function NewCatalogRowDialog(p: Props) {
               <Field label="Shaped">
                 <input type="checkbox" checked={shaped} onChange={(e) => setShaped(e.target.checked)} />
               </Field>
+            </>
+          )}
+          {p.tab === "timber" && (
+            <>
+              {TIMBER_TEXT_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input value={timberVals[f.key] ?? ""} onChange={(e) => setTimberVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              {TIMBER_NUMBER_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input type="number" step="0.01" value={timberVals[f.key] ?? ""}
+                         onChange={(e) => setTimberVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
             </>
           )}
           {p.tab === "edging" && (

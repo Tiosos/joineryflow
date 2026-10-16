@@ -7,7 +7,7 @@ import { ShortfallPill } from "@/components/procurement/ShortfallPill";
 import { EtaPill } from "@/components/procurement/EtaPill";
 import { MaterialTypeTag } from "@/components/procurement/MaterialTypeTag";
 
-const TYPES: MaterialType[] = ["BOARD","HARDWARE","CUSTOM","BENCHTOP","APPLIANCE","HIRE","EDGING","GLASS"];
+const TYPES: MaterialType[] = ["BOARD","HARDWARE","CUSTOM","BENCHTOP","APPLIANCE","HIRE","EDGING","GLASS","TIMBER"];
 
 interface Props {
   projectId: number;

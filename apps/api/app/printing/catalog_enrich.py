@@ -17,6 +17,7 @@ _TYPE_MAP: dict[str, tuple[str, str, str, str]] = {
     "HIRE":      ("equipment_hire",     "hire_id",     "description", "sku"),
     "EDGING":    ("edging_materials",   "material_id", "description", "sku"),
     "GLASS":     ("glass_materials",    "material_id", "description", "sku"),
+    "TIMBER":    ("timber_materials",   "material_id", "description", "sku"),
 }
 
 
