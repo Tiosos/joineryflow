@@ -27,7 +27,7 @@ test("a Board item shows and edits the board fields and keeps one picture", asyn
     await row.getByLabel("Finish").blur();
     await expect.poll(() => field("finish")).toBeNull();
 
-    await row.getByLabel("Board image").setInputFiles({ name: "b.png", mimeType: "image/png", buffer: PNG });
+    await row.getByLabel("Product image").setInputFiles({ name: "b.png", mimeType: "image/png", buffer: PNG });
     await expect(row.getByTestId("board-image")).toBeVisible();
     await expect.poll(() => field("has_image")).toBe(true);
     await row.getByRole("button", { name: "remove" }).click();

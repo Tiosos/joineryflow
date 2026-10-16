@@ -27,6 +27,7 @@ _PART_CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
 _HW_CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
     "HARDWARE":  ("hardware_materials", "material_id", "sku", "default_supplier", "cost_per_unit"),
     "APPLIANCE": ("appliances",         "material_id", "sku", "default_supplier", "cost_per_unit"),
+    "EDGING":    ("edging_materials",   "material_id", "sku", "default_supplier", "cost_per_unit"),
 }
 
 
@@ -83,7 +84,7 @@ _CATALOG_BY_TYPE: dict[str, tuple[str, str, str, str, str]] = {
 # than a DB lookup.
 _ORDER_UNIT_BY_TYPE: dict[str, str] = {
     "BOARD": "sheet", "CUSTOM": "EA", "BENCHTOP": "slab",
-    "HARDWARE": "EA", "APPLIANCE": "EA",
+    "HARDWARE": "EA", "APPLIANCE": "EA", "EDGING": "EA",
 }
 
 

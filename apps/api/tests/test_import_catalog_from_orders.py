@@ -191,9 +191,9 @@ def test_a_sheet_with_no_table_column_takes_the_table_from_the_type_and_hire_nee
         {"Code": "N-1", "Description": "No type given"},
         {"Code": "U-1", "Description": "A type the list lacks", "Type": "Whatever"},
     ]))
-    assert [r.table for r in rows] == ["custom_made", "benchtop", "hardware", "hire", "skip", "skip"]
+    assert [r.table for r in rows] == ["custom_made", "benchtop", "edging", "hire", "skip", "skip"]
     res, anomalies = _apply(wid, uid, rows)                                # hire without a project is reported
-    assert dict(res.created) == {"custom_made": 1, "benchtop": 1, "hardware": 1} and res.skipped == 2
+    assert dict(res.created) == {"custom_made": 1, "benchtop": 1, "edging": 1} and res.skipped == 2
     assert [k for k, _ in anomalies] == ["hire_needs_project"]
     assert _q("SELECT product_type FROM custom_made WHERE workspace_id = :w", w=wid) == [("Glass",)]
     db = SessionLocal()

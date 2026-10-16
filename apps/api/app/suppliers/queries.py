@@ -31,6 +31,7 @@ CATALOG_PK = {
     "benchtop_materials": "material_id",
     "appliances": "material_id",
     "equipment_hire": "hire_id",
+    "edging_materials": "material_id",
 }
 LINK_FIELDS = frozenset({"supplier_id", "default_supplier_id"})
 

@@ -20,7 +20,7 @@ export type MaterialKind = PartMaterialType | HardwareMaterialType;
 export type CatalogMap = Record<MaterialKind, CatalogRow[]>;
 
 export const PART_KINDS: PartMaterialType[] = ["BOARD", "CUSTOM", "BENCHTOP"];
-export const HW_KINDS: HardwareMaterialType[] = ["HARDWARE", "APPLIANCE"];
+export const HW_KINDS: HardwareMaterialType[] = ["HARDWARE", "APPLIANCE", "EDGING"];
 export const ALL_KINDS: MaterialKind[] = [...PART_KINDS, ...HW_KINDS];
 
 export const KIND_LABEL: Record<MaterialKind, string> = {
@@ -29,6 +29,7 @@ export const KIND_LABEL: Record<MaterialKind, string> = {
   BENCHTOP: "Benchtop",
   HARDWARE: "Hardware",
   APPLIANCE: "Appliance",
+  EDGING: "Edging",
 };
 
 export const KIND_SLUG: Record<MaterialKind, string> = {
@@ -37,6 +38,18 @@ export const KIND_SLUG: Record<MaterialKind, string> = {
   BENCHTOP: "benchtop-materials",
   HARDWARE: "hardware-materials",
   APPLIANCE: "appliances",
+  EDGING: "edging-materials",
+};
+
+
+/** The Catalog screen's `?tab=` for each kind (one table's grid). */
+export const KIND_TAB: Record<MaterialKind, string> = {
+  BOARD: "board",
+  CUSTOM: "custom_made",
+  BENCHTOP: "benchtop",
+  HARDWARE: "hardware",
+  APPLIANCE: "appliance",
+  EDGING: "edging",
 };
 
 

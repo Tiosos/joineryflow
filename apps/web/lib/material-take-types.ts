@@ -4,7 +4,7 @@
 // (see orders-types.ts); typing it `number` compiles and then breaks at runtime.
 
 export type MaterialType =
-  | "BOARD" | "HARDWARE" | "CUSTOM" | "BENCHTOP" | "APPLIANCE" | "HIRE" | "OTHER";
+  | "BOARD" | "HARDWARE" | "CUSTOM" | "BENCHTOP" | "APPLIANCE" | "HIRE" | "EDGING" | "OTHER";
 export type Unit = "sheet" | "each" | "m" | "m2";
 
 export interface TakeLine {

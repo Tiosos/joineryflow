@@ -7,6 +7,7 @@ import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catal
 
 import BoardImageCell from "./BoardImageCell";
 import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Props {
@@ -26,6 +27,7 @@ const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
   benchtop: "slab_id",
   appliance: "model_number",
   hire: "contract_ref",
+  edging: null,
 };
 
 function Cell({
@@ -185,9 +187,27 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                 onSave={(v) => save({ [f.key]: v.trim() || null })} />
         </td>
       ))}
-      {tab === "board" && (
+      {tab === "edging" && EDGING_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "edging" && EDGING_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step="0.01" label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "edging" && (
+        <td className="px-3 py-1 text-center">
+          <input type="checkbox" checked={row.glued ?? false} disabled={!canWrite || busy}
+                 onChange={(e) => save({ glued: e.target.checked })} aria-label="Glued" />
+        </td>
+      )}
+      {(tab === "board" || tab === "edging") && (
         <td className="px-3 py-1">
-          <BoardImageCell mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
+          <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
                           onChanged={onChanged} />
         </td>
       )}

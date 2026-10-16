@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { MaterialKind, CatalogMap, ALL_KINDS, KIND_LABEL, KIND_SLUG, PickerPayload } from "./shared";
+import { MaterialKind, CatalogMap, ALL_KINDS, KIND_LABEL, KIND_SLUG, KIND_TAB, PickerPayload } from "./shared";
 
 interface CatalogPickerProps {
   catalogs: CatalogMap;
@@ -137,7 +137,7 @@ export function CatalogPicker({ catalogs, onPick, onClose }: CatalogPickerProps)
             {rows.length === 0 ? (
               <>
                 No {KIND_LABEL[kind].toLowerCase()} rows.{" "}
-                <Link href={`/catalog?tab=${KIND_SLUG[kind]}`} className="text-h-accent underline">
+                <Link href={`/catalog?tab=${KIND_TAB[kind]}`} className="text-h-accent underline">
                   Add some in Catalog
                 </Link>
                 .

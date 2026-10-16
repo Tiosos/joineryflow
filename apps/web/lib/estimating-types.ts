@@ -33,7 +33,7 @@ export const TENDER_STAGE_LABELS: Record<EstimateStatus, string> = {
 };
 
 export type PartMaterialType = "BOARD" | "CUSTOM" | "BENCHTOP";
-export type HardwareMaterialType = "HARDWARE" | "APPLIANCE";
+export type HardwareMaterialType = "HARDWARE" | "APPLIANCE" | "EDGING";
 export type StageKey =
   | "REQ" | "SM" | "LISTED" | "DOWN" | "CNC" | "EDGED"
   | "PAINTED" | "MADE" | "DEL" | "INST";

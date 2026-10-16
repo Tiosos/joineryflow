@@ -26,6 +26,7 @@ _cleanup = truncate_fixture(
     "custom_made",
     "hardware_materials",
     "board_materials",
+    "edging_materials",
 )
 
 

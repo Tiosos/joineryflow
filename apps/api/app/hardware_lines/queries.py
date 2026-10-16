@@ -49,6 +49,7 @@ _SOURCE_TABLE_MAP: dict[str, tuple[str, str]] = {
     "benchtop_materials": ("BENCHTOP",  "material_id"),
     "appliances":         ("APPLIANCE", "material_id"),
     "equipment_hire":     ("HIRE",      "hire_id"),
+    "edging_materials":   ("EDGING",    "material_id"),
 }
 
 # Maps material_type -> source_table name (reverse of above)
@@ -108,6 +109,17 @@ def list_catalog(
                 UNION ALL
 
                 SELECT
+                    'EDGING',
+                    material_id,
+                    sku,
+                    description,
+                    COALESCE(supplier, default_supplier),
+                    unit_cost
+                FROM edging_materials
+
+                UNION ALL
+
+                SELECT
                     'CUSTOM',
                     material_id,
                     sku,
@@ -158,6 +170,7 @@ def list_catalog(
                     WHEN 'BENCHTOP'  THEN 'benchtop_materials'
                     WHEN 'APPLIANCE' THEN 'appliances'
                     WHEN 'HIRE'      THEN 'equipment_hire'
+                    WHEN 'EDGING'    THEN 'edging_materials'
                 END                             AS source_table,
                 phc.material_id                 AS source_id,
                 src.sku,
@@ -466,6 +479,9 @@ def get_hardware_line(
                 UNION ALL
                 SELECT description, supplier FROM equipment_hire
                 WHERE hire_id = phc.material_id AND phc.material_type = 'HIRE'
+                UNION ALL
+                SELECT description, supplier FROM edging_materials
+                WHERE material_id = phc.material_id AND phc.material_type = 'EDGING'
             ) src ON true
             WHERE ihl.line_id = :lid
               AND EXISTS (

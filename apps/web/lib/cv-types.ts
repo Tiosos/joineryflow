@@ -6,14 +6,16 @@ export type CatalogTable =
   | "custom_made"
   | "benchtop_materials"
   | "appliances"
-  | "equipment_hire";
+  | "equipment_hire"
+  | "edging_materials";
 
 export type SimpleCatalogTable =
   | "board_materials"
   | "hardware_materials"
   | "custom_made"
   | "benchtop_materials"
-  | "appliances";
+  | "appliances"
+  | "edging_materials";
 
 export type ResolutionKind = "mapped" | "synonym_match" | "unknown";
 

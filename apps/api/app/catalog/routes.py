@@ -34,6 +34,7 @@ from .schemas import (
     CreateBoardIn,
     CreateCustomMadeIn,
     CreateCvMappingIn,
+    CreateEdgingIn,
     CreateEquipmentHireIn,
     CreateHardwareIn,
     PatchApplianceIn,
@@ -41,6 +42,7 @@ from .schemas import (
     PatchBoardIn,
     PatchCustomMadeIn,
     PatchCvMappingIn,
+    PatchEdgingIn,
     PatchEquipmentHireIn,
     PatchHardwareIn,
 )
@@ -54,6 +56,7 @@ URL_TO_TYPE: dict[str, str] = {
     "benchtop-materials":  "benchtop",
     "appliances":          "appliance",
     "equipment-hire":      "hire",
+    "edging-materials":    "edging",
 }
 
 
@@ -65,7 +68,7 @@ def _resolve_type(slug: str) -> str:
 
 # Nullable columns a PATCH may clear: everything else drops an explicit null.
 _CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost", "product_type",
-              *q.BOARD_FIELDS_TUPLE)
+              *q.CLEARABLE_TYPE_FIELDS)
 
 
 def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:
@@ -175,30 +178,40 @@ def delete_cv_mapping_route(
 
 
 # ============================================================
-# Board product image (`0068`): one PNG/JPEG per board, in the shared file store
+# Product image (`0068` Board, `0069` Edging): one PNG/JPEG per row, in the shared file store
 # ============================================================
 
 def _store() -> FileStore:
     return get_default_store()
 
 
-@router.put("/catalog/board-materials/{mid}/image", status_code=204)
-async def put_board_image(
+def _image_type(slug: str) -> str:
+    """The type of a slug whose rows keep a picture; any other slug answers 404 like an unknown one."""
+    type_ = _resolve_type(slug)
+    if type_ not in q.IMAGE_TABLES:
+        raise HTTPException(404, f"Unknown catalog slug: {slug}")
+    return type_
+
+
+@router.put("/catalog/{slug}/{mid}/image", status_code=204)
+async def put_catalog_image(
+    slug: str,
     mid: int,
     file: UploadFile = File(...),
     user: AuthUser = Depends(require_permission("catalog", "write")),
     db: Session = Depends(get_db),
     store: FileStore = Depends(_store),
 ):
+    type_ = _image_type(slug)
     stored = None
     try:
-        exists, _ = q.board_image_blob(db, mid=mid, workspace_id=user.workspace_id)
+        exists, _ = q.image_blob(db, type_=type_, mid=mid, workspace_id=user.workspace_id)
         if not exists:
             raise HTTPException(404, "Catalog row not found")
         stored = await uploads.store_upload(db, store, user=user, file=file, allowed=uploads.IMAGE)
-        q.set_board_image(db, mid=mid, workspace_id=user.workspace_id, blob_id=stored.blob_id)
-        write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="catalog.board.image.set",
-                    target=f"catalog.board:{mid}", payload={})
+        q.set_image(db, type_=type_, mid=mid, workspace_id=user.workspace_id, blob_id=stored.blob_id)
+        write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event=f"catalog.{type_}.image.set",
+                    target=f"catalog.{type_}:{mid}", payload={})
         db.commit()
     except Exception:
         db.rollback()
@@ -206,30 +219,34 @@ async def put_board_image(
         raise
 
 
-@router.get("/catalog/board-materials/{mid}/image")
-def get_board_image(
+@router.get("/catalog/{slug}/{mid}/image")
+def get_catalog_image(
+    slug: str,
     mid: int,
     user: AuthUser = Depends(require_permission("catalog", "read")),
     db: Session = Depends(get_db),
     store: FileStore = Depends(_store),
 ):
-    exists, blob = q.board_image_blob(db, mid=mid, workspace_id=user.workspace_id)
+    type_ = _image_type(slug)
+    exists, blob = q.image_blob(db, type_=type_, mid=mid, workspace_id=user.workspace_id)
     if not exists or blob is None:
         raise HTTPException(404, "image not found")
     return uploads.stream_blob(db, store, workspace_id=user.workspace_id, blob_id=blob)
 
 
-@router.delete("/catalog/board-materials/{mid}/image", status_code=204)
-def delete_board_image(
+@router.delete("/catalog/{slug}/{mid}/image", status_code=204)
+def delete_catalog_image(
+    slug: str,
     mid: int,
     user: AuthUser = Depends(require_permission("catalog", "write")),
     db: Session = Depends(get_db),
 ):
-    if not q.set_board_image(db, mid=mid, workspace_id=user.workspace_id, blob_id=None):
+    type_ = _image_type(slug)
+    if not q.set_image(db, type_=type_, mid=mid, workspace_id=user.workspace_id, blob_id=None):
         db.rollback()
         raise HTTPException(404, "Catalog row not found")
-    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event="catalog.board.image.remove",
-                target=f"catalog.board:{mid}", payload={})
+    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event=f"catalog.{type_}.image.remove",
+                target=f"catalog.{type_}:{mid}", payload={})
     db.commit()
 
 
@@ -302,7 +319,7 @@ def bulk_import_route(
     schema_cls = {
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
-        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn,
+        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn,
     }[type_]
 
     errors: list[BulkRowError] = []
@@ -386,7 +403,7 @@ def create_catalog_row_route(
     schema_cls = {
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
-        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn,
+        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn,
     }[type_]
     try:
         validated = schema_cls.model_validate(payload).model_dump()
@@ -421,7 +438,7 @@ def patch_catalog_row_route(
     schema_cls = {
         "board": PatchBoardIn, "hardware": PatchHardwareIn,
         "custom_made": PatchCustomMadeIn, "benchtop": PatchBenchtopIn,
-        "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn,
+        "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn, "edging": PatchEdgingIn,
     }[type_]
     try:
         model = schema_cls.model_validate(payload)

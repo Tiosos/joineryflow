@@ -21,6 +21,7 @@ from ._q_loaders import revision_detail
 _PHC_TYPE_MAP = {
     "HARDWARE":  "HARDWARE",
     "APPLIANCE": "APPLIANCE",
+    "EDGING":    "EDGING",
 }
 
 

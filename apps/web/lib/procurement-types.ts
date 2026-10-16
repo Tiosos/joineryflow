@@ -1,4 +1,4 @@
-export type MaterialType   = "BOARD"|"HARDWARE"|"CUSTOM"|"BENCHTOP"|"APPLIANCE"|"HIRE";
+export type MaterialType   = "BOARD"|"HARDWARE"|"CUSTOM"|"BENCHTOP"|"APPLIANCE"|"HIRE"|"EDGING";
 export type BatchStatus    = "OPEN"|"IN_TRANSIT"|"DELIVERED"|"CANCELLED";
 export type MaterialStatus = "OK"|"SHORT"|"OVERDUE";
 

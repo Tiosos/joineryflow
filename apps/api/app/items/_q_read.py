@@ -643,6 +643,9 @@ def get_item_detail(
                 UNION ALL
                 SELECT 'HIRE', hire_id, description, supplier
                 FROM equipment_hire
+                UNION ALL
+                SELECT 'EDGING', material_id, description, supplier
+                FROM edging_materials
             )
             SELECT
                 hl.line_id              AS id,

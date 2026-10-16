@@ -13,6 +13,7 @@ CatalogTable = Literal[
     "benchtop_materials",
     "appliances",
     "equipment_hire",
+    "edging_materials",
 ]
 
 
@@ -42,6 +43,20 @@ class CreateBoardIn(_EnrichmentFields):
     rating: str | None = Field(default=None, max_length=64)
     hmr: str | None = Field(default=None, max_length=64)
     product_website: str | None = Field(default=None, max_length=255)
+
+
+class CreateEdgingIn(_EnrichmentFields):
+    """Edging (`0069`): the old Orders screen's edging fields. Roll length in metres, width and thickness in mm."""
+    sku: str = Field(min_length=1, max_length=64)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    edge_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    roll_length_m: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    edge_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    edge_thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    glued: bool = False
 
 
 class CreateHardwareIn(_EnrichmentFields):
@@ -106,6 +121,17 @@ class PatchBoardIn(PatchBaseIn):
 
 class PatchHardwareIn(PatchBaseIn):
     pass
+
+
+class PatchEdgingIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    edge_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    roll_length_m: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    edge_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    edge_thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    glued: bool | None = None          # NOT NULL column: an explicit null is dropped, never written
 
 
 class PatchCustomMadeIn(PatchBaseIn):

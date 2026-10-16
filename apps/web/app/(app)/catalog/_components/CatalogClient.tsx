@@ -26,6 +26,7 @@ export type CatalogTab =
   | "benchtop"
   | "appliance"
   | "hire"
+  | "edging"
   | "stock"
   | "cv-mappings";
 

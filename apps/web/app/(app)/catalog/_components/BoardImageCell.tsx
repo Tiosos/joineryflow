@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 
-/** A board's one picture (PNG or JPEG, shared file store): thumbnail, replace, remove. */
+/** A board's or edging's one picture (PNG or JPEG, shared file store): thumbnail, replace, remove. */
 export default function BoardImageCell({
-  mid, hasImage, canWrite, onChanged,
-}: { mid: number; hasImage: boolean; canWrite: boolean; onChanged: () => void }) {
+  slug, mid, hasImage, canWrite, onChanged,
+}: { slug: string; mid: number; hasImage: boolean; canWrite: boolean; onChanged: () => void }) {
   const [version, setVersion] = useState(0);
   const [err, setErr] = useState<string | null>(null);
-  const url = `/api/catalog/board-materials/${mid}/image`;
+  const url = `/api/catalog/${slug}/${mid}/image`;
 
   async function upload(file: File) {
     const fd = new FormData(); fd.append("file", file);
@@ -26,12 +26,12 @@ export default function BoardImageCell({
     <div className="flex items-center gap-2">
       {hasImage && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={`${url}?v=${version}`} alt="Board" data-testid="board-image" className="h-8 w-8 rounded object-cover" />
+        <img src={`${url}?v=${version}`} alt="Product" data-testid="board-image" className="h-8 w-8 rounded object-cover" />
       )}
       {canWrite && (
         <label className="cursor-pointer text-xs text-h-muted underline hover:text-h-ink">
           {hasImage ? "replace" : "+ image"}
-          <input type="file" accept="image/png,image/jpeg" className="sr-only" aria-label="Board image"
+          <input type="file" accept="image/png,image/jpeg" className="sr-only" aria-label="Product image"
                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
         </label>
       )}

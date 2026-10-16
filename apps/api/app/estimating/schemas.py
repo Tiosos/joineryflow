@@ -23,8 +23,8 @@ EstimateStatus = Literal[
     "WON", "LOST", "WITHDRAWN",
 ]
 PartMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP"]
-HardwareMaterialType = Literal["HARDWARE", "APPLIANCE"]
-OrderMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE"]
+HardwareMaterialType = Literal["HARDWARE", "APPLIANCE", "EDGING"]
+OrderMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP", "HARDWARE", "APPLIANCE", "EDGING"]
 StageKey = Literal[
     "REQ", "SM", "LISTED", "DOWN", "CNC", "EDGED", "PAINTED",
     "MADE", "DEL", "INST",

@@ -67,6 +67,9 @@ def workspace_stats(
                     UNION ALL
                     SELECT supplier AS s FROM equipment_hire
                      WHERE workspace_id = (SELECT id FROM ws) AND supplier IS NOT NULL
+                    UNION ALL
+                    SELECT supplier AS s FROM edging_materials
+                     WHERE workspace_id = (SELECT id FROM ws) AND supplier IS NOT NULL
                 ) t
             )
             SELECT

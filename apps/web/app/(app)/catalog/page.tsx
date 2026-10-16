@@ -27,6 +27,7 @@ const VALID_TABS = [
   "benchtop",
   "appliance",
   "hire",
+  "edging",
   "stock",
   "cv-mappings",
 ] as const;

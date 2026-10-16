@@ -4,7 +4,8 @@ export type CatalogTable =
   | "custom_made"
   | "benchtop_materials"
   | "appliances"
-  | "equipment_hire";
+  | "equipment_hire"
+  | "edging_materials";
 
 export type CatalogSlug =
   | "board-materials"
@@ -12,7 +13,8 @@ export type CatalogSlug =
   | "custom-made"
   | "benchtop-materials"
   | "appliances"
-  | "equipment-hire";
+  | "equipment-hire"
+  | "edging-materials";
 
 export interface CatalogRow {
   type: string;
@@ -49,7 +51,14 @@ export interface CatalogRow {
   rating?: string | null;
   hmr?: string | null;
   product_website?: string | null;
-  has_image?: boolean;
+  has_image?: boolean; // board + edging
+  // Edging only (migration 0069). Roll length in metres, width and thickness in mm: JSON numbers.
+  edge_type?: string | null;
+  um?: string | null;
+  roll_length_m?: number | null;
+  edge_width_mm?: number | null;
+  edge_thickness_mm?: number | null;
+  glued?: boolean;
 }
 
 /** A supplier as the picker needs it (`GET /suppliers`). */

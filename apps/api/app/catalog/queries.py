@@ -72,6 +72,15 @@ def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | N
 # Board's own fields (`0068`): the old Orders screen's board attributes. All plain text.
 BOARD_FIELDS_TUPLE = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "product_website")
 BOARD_FIELDS = ", ".join(BOARD_FIELDS_TUPLE)
+# Edging's own fields (`0069`). `edge_type` is the old screen's "Type" (not `product_type`, the tab).
+EDGING_TEXT_FIELDS = ("colour", "edge_type", "um", "product_website")
+EDGING_NUMBER_FIELDS = ("roll_length_m", "edge_width_mm", "edge_thickness_mm")
+EDGING_FIELDS_TUPLE = (*EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS, "glued")
+EDGING_FIELDS = ", ".join(EDGING_FIELDS_TUPLE)
+# Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
+CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS)
+# Tables that keep one picture per row (`image_blob`).
+IMAGE_TABLES = {"board": "board_materials", "edging": "edging_materials"}
 
 REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "board": (
@@ -86,6 +95,13 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
         "material_id",
         f"material_id, sku, description, workspace_id, {ENRICHMENT_SELECT}",
         ("sku", "description", *ENRICHMENT_INSERT),
+    ),
+    "edging": (
+        "edging_materials",
+        "material_id",
+        f"material_id, sku, description, workspace_id, {EDGING_FIELDS}, (image_blob IS NOT NULL) AS has_image, "
+        f"{ENRICHMENT_SELECT}",
+        ("sku", "description", *EDGING_FIELDS_TUPLE, *ENRICHMENT_INSERT),
     ),
     "custom_made": (
         "custom_made",
@@ -120,6 +136,7 @@ REGISTRY: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
 MATERIAL_TABLE_BY_TYPE: dict[str, str] = {
     "BOARD": "board_materials", "HARDWARE": "hardware_materials", "CUSTOM": "custom_made",
     "BENCHTOP": "benchtop_materials", "APPLIANCE": "appliances", "HIRE": "equipment_hire",
+    "EDGING": "edging_materials",
 }
 _ID_COLUMN_BY_TABLE: dict[str, str] = {table: id_col for table, id_col, *_ in REGISTRY.values()}
 
@@ -291,6 +308,7 @@ def list_cv_mappings(
                  WHEN 'benchtop_materials' THEN (SELECT description FROM benchtop_materials WHERE material_id = m.target_material_id)
                  WHEN 'appliances'         THEN (SELECT description FROM appliances         WHERE material_id = m.target_material_id)
                  WHEN 'equipment_hire'     THEN (SELECT description FROM equipment_hire     WHERE hire_id     = m.target_material_id)
+                 WHEN 'edging_materials'   THEN (SELECT description FROM edging_materials   WHERE material_id = m.target_material_id)
                END AS target_description
           FROM cv_material_mapping m
          WHERE {' AND '.join(where)}
@@ -355,19 +373,27 @@ def delete_cv_mapping(db: Session, *, mid: int, workspace_id: int) -> int | None
     ), {"id": mid, "w": workspace_id}).scalar()
 
 
-def set_board_image(db: Session, *, mid: int, workspace_id: int, blob_id: int | None) -> bool:
-    """Point a board at its picture (or clear it). False when the board is not this workspace's."""
+_SET_IMAGE = {
+    "board": "UPDATE board_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+             "RETURNING material_id",
+    "edging": "UPDATE edging_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
+              "RETURNING material_id",
+}
+
+
+def set_image(db: Session, *, type_: str, mid: int, workspace_id: int, blob_id: int | None) -> bool:
+    """Point a catalog row at its picture (or clear it). False when the row is not this workspace's."""
     return db.execute(
-        text("UPDATE board_materials SET image_blob = :b WHERE material_id = :m AND workspace_id = :w "
-             "RETURNING material_id"),
+        text(_SET_IMAGE[type_]),
         {"b": blob_id, "m": mid, "w": workspace_id},
     ).scalar() is not None
 
 
-def board_image_blob(db: Session, *, mid: int, workspace_id: int) -> tuple[bool, int | None]:
-    """(board exists in this workspace, its image blob id)."""
+def image_blob(db: Session, *, type_: str, mid: int, workspace_id: int) -> tuple[bool, int | None]:
+    """(the row exists in this workspace, its image blob id)."""
+    table = IMAGE_TABLES[type_]
     r = db.execute(
-        text("SELECT image_blob FROM board_materials WHERE material_id = :m AND workspace_id = :w"),
+        text(f"SELECT image_blob FROM {table} WHERE material_id = :m AND workspace_id = :w"),
         {"m": mid, "w": workspace_id},
     ).first()
     return (r is not None, r[0] if r else None)

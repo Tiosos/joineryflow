@@ -4,6 +4,7 @@ import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catal
 
 import type { MaterialTab } from "./CatalogClient";
 import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import CatalogRow from "./CatalogRow";
 
 interface Props {
@@ -22,13 +23,16 @@ const LEGACY_COL_LABEL: Record<MaterialTab, string> = {
   benchtop: "Slab id",
   appliance: "Model #",
   hire: "Contract ref",
+  edging: "—",
 };
 
 export default function CatalogGrid(p: Props) {
   const legacyLabel = LEGACY_COL_LABEL[p.tab];
   const hasGrain = p.tab === "board" || p.tab === "benchtop";
   const isBoard = p.tab === "board";
-  const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0);
+  const isEdging = p.tab === "edging";
+  const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0)
+    + (isEdging ? EDGING_TEXT_FIELDS.length + EDGING_NUMBER_FIELDS.length + 2 : 0);
 
   return (
     <div className="overflow-x-auto rounded border border-h-line">
@@ -45,6 +49,10 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2" title="Per unit, ex GST. An order made from this material starts at this price">Unit cost</th>
             {isBoard && BOARD_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBoard && <th className="px-3 py-2">Image</th>}
+            {isEdging && EDGING_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isEdging && EDGING_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isEdging && <th className="px-3 py-2">Glued</th>}
+            {isEdging && <th className="px-3 py-2">Image</th>}
             <th className="px-3 py-2">Synonyms</th>
             {hasGrain && <th className="px-3 py-2" title="Parts on this board are not rotated when nesting">Grain lock</th>}
             <th className="px-3 py-2">Status</th>

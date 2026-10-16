@@ -6,6 +6,7 @@ import { createRow } from "@/lib/catalog-fetch";
 import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Project { id: number; project_code: string; name: string; }
@@ -29,6 +30,7 @@ const LEGACY_FIELD: Record<MaterialTab, { key: string; label: string } | null> =
   benchtop: { key: "slab_id", label: "Slab id" },
   appliance: { key: "model_number", label: "Model number" },
   hire: { key: "contract_ref", label: "Contract ref" },
+  edging: null,
 };
 
 export default function NewCatalogRowDialog(p: Props) {
@@ -44,6 +46,8 @@ export default function NewCatalogRowDialog(p: Props) {
   const [synonyms, setSynonyms] = useState("");
   const [projectId, setProjectId] = useState<number | "">(p.tab === "hire" ? (p.projects[0]?.id ?? "") : "");
   const [boardVals, setBoardVals] = useState<Record<string, string>>({});
+  const [edgingVals, setEdgingVals] = useState<Record<string, string>>({});
+  const [glued, setGlued] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -56,6 +60,11 @@ export default function NewCatalogRowDialog(p: Props) {
     if (legacy) body[legacy.key] = legacyVal;
     if (p.productType) body.product_type = p.productType;
     if (p.tab === "board") for (const f of BOARD_TEXT_FIELDS) if (boardVals[f.key]?.trim()) body[f.key] = boardVals[f.key].trim();
+    if (p.tab === "edging") {
+      for (const f of EDGING_TEXT_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = edgingVals[f.key].trim();
+      for (const f of EDGING_NUMBER_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = Number(edgingVals[f.key]);
+      body.glued = glued;
+    }
     if (supplier) body.default_supplier = supplier;
     if (supplierId) body.default_supplier_id = Number(supplierId);
     if (leadTime !== "") body.default_lead_time_days = Number(leadTime);
@@ -91,6 +100,26 @@ export default function NewCatalogRowDialog(p: Props) {
               <input value={legacyVal} onChange={(e) => setLegacyVal(e.target.value)}
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
+          )}
+          {p.tab === "edging" && (
+            <>
+              {EDGING_TEXT_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input value={edgingVals[f.key] ?? ""} onChange={(e) => setEdgingVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              {EDGING_NUMBER_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <input type="number" step="0.01" value={edgingVals[f.key] ?? ""}
+                         onChange={(e) => setEdgingVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                         className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+                </Field>
+              ))}
+              <Field label="Glued">
+                <input type="checkbox" checked={glued} onChange={(e) => setGlued(e.target.checked)} />
+              </Field>
+            </>
           )}
           {p.tab === "board" && BOARD_TEXT_FIELDS.map((f) => (
             <Field key={f.key} label={f.label}>

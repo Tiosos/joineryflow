@@ -1,0 +1,177 @@
+"""Edging gets a catalog table of its own
+
+Step 2 of the catalog plan (one table per product type, with that type's own fields). Edging items
+lived in `hardware_materials` with `product_type = 'Edging'`. `edging_materials` has the common
+catalog columns plus the old Orders screen's edging fields: colour, type, roll length (m), edge
+width (mm), edge thickness (mm), glued, unit of measure, product website and one picture.
+
+Data-preserving: every Hardware row typed Edging moves over **keeping its material_id**, and each
+place that names a material by (type, id) is pointed at EDGING / `edging_materials` (project catalog
+and its log, procurement batches, material take and summary lines, quote hardware lines and their
+order coverage, PO lines, CV mappings). Then the CHECK constraints that list the material kinds
+accept the new one. Downgrade moves the rows back to Hardware (new ids, matched by SKU) and drops
+the table; the edging-only fields are lost.
+
+Revision ID: 0069
+Revises: 0068
+Create Date: 2026-10-16
+"""
+from alembic import op
+
+revision = "0069"
+down_revision = "0068"
+branch_labels = None
+depends_on = None
+
+_KINDS = ("BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE")
+_TABLES = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
+           "equipment_hire")
+_ENTITIES = ("project", "item", "cutlist", "order", "supplier", "drawing", "sample", "customer", "estimate")
+
+# (table, column) naming a material kind as 'HARDWARE'-style text
+_TYPE_COLS = (
+    ("project_hardware_catalog", "material_type"),
+    ("project_hardware_catalog_log", "material_type"),
+    ("procurement_batches", "material_type"),
+    ("material_take_line", "material_type"),
+    ("material_summary_line", "material_type"),
+    ("estimate_line_hardware", "material_type"),
+    ("estimate_line_material_order", "material_type"),
+)
+_MOVED = ("SELECT material_id FROM edging_materials",)
+
+
+def _in(values):
+    return ", ".join(f"'{v}'" for v in values)
+
+
+def _recheck(table, name, column, values):
+    op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name};")
+    op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({column} IN ({_in(values)}));")
+
+
+def _widen(add: bool):
+    kinds = _KINDS + (("EDGING",) if add else ())
+    tables = _TABLES + (("edging_materials",) if add else ())
+    for t in ("procurement_batches", "project_hardware_catalog", "project_hardware_catalog_log"):
+        _recheck(t, f"{t}_material_type_check", "material_type", kinds)
+    for t in ("material_take_line", "material_summary_line"):
+        _recheck(t, f"{t}_material_type_check", "material_type", kinds + ("OTHER",))
+    _recheck("estimate_line_hardware", "estimate_line_hardware_material_type_check", "material_type",
+             ("HARDWARE", "APPLIANCE") + (("EDGING",) if add else ()))
+    _recheck("cv_material_mapping", "cv_material_mapping_target_material_table_check",
+             "target_material_table", tables)
+    _recheck("po_line_items", "po_line_items_material_table_check", "material_table", tables)
+    entities = _ENTITIES + tables
+    _recheck("search_outbox", "search_outbox_entity_type_check", "entity_type", entities)
+
+
+def upgrade():
+    op.execute("""
+        CREATE TABLE edging_materials (
+            material_id            bigserial PRIMARY KEY,
+            sku                    varchar(64) NOT NULL,
+            description            varchar(255),
+            supplier               varchar(128),
+            cost_per_unit          numeric(12,2),
+            lead_time_days         integer DEFAULT 0,
+            notes                  text,
+            is_active              boolean DEFAULT true,
+            created_at             timestamptz DEFAULT now(),
+            updated_at             timestamptz DEFAULT now(),
+            workspace_id           bigint REFERENCES workspace(id) ON DELETE CASCADE,
+            unit_cost              numeric(12,2),
+            synonyms               text[] NOT NULL DEFAULT '{}',
+            default_supplier       varchar(128),
+            default_lead_time_days integer,
+            archived_at            timestamptz,
+            archived_by            bigint REFERENCES app_user(id),
+            supplier_id            bigint REFERENCES vendors(vendor_id) ON DELETE SET NULL,
+            default_supplier_id    bigint REFERENCES vendors(vendor_id) ON DELETE SET NULL,
+            product_type           varchar(64),
+            colour                 varchar(128),
+            edge_type              varchar(64),
+            roll_length_m          numeric(10,2),
+            edge_width_mm          numeric(8,2),
+            edge_thickness_mm      numeric(8,2),
+            glued                  boolean NOT NULL DEFAULT false,
+            um                     varchar(32),
+            product_website        varchar(255),
+            image_blob             bigint REFERENCES file_blob(file_blob_id),
+            CONSTRAINT edging_materials_workspace_sku_key UNIQUE (workspace_id, sku)
+        );
+        CREATE INDEX idx_edging_materials_active ON edging_materials (workspace_id) WHERE archived_at IS NULL;
+        CREATE INDEX idx_edging_materials_supplier_id ON edging_materials (supplier_id);
+        CREATE INDEX idx_edging_materials_synonyms ON edging_materials USING gin (synonyms);
+        CREATE INDEX idx_edging_materials_workspace ON edging_materials (workspace_id);
+    """)
+    _widen(True)
+    op.execute("""
+        CREATE TRIGGER search_enqueue_edging_materials
+        AFTER INSERT OR DELETE OR UPDATE ON edging_materials
+        FOR EACH ROW EXECUTE FUNCTION search_enqueue('edging_materials', 'material_id');
+
+        INSERT INTO edging_materials (material_id, sku, description, supplier, cost_per_unit, lead_time_days,
+               notes, is_active, created_at, updated_at, workspace_id, unit_cost, synonyms, default_supplier,
+               default_lead_time_days, archived_at, archived_by, supplier_id, default_supplier_id, product_type)
+        SELECT material_id, sku, description, supplier, cost_per_unit, lead_time_days, notes, is_active,
+               created_at, updated_at, workspace_id, unit_cost, synonyms, default_supplier,
+               default_lead_time_days, archived_at, archived_by, supplier_id, default_supplier_id, product_type
+          FROM hardware_materials
+         WHERE lower(btrim(product_type)) = 'edging';
+        SELECT setval(pg_get_serial_sequence('edging_materials', 'material_id'),
+                      GREATEST((SELECT COALESCE(MAX(material_id), 0) FROM edging_materials), 1),
+                      (SELECT COUNT(*) > 0 FROM edging_materials));
+    """)
+    for table, col in _TYPE_COLS:
+        op.execute(f"""
+            UPDATE {table} SET {col} = 'EDGING'
+             WHERE {col} = 'HARDWARE' AND material_id IN (SELECT material_id FROM edging_materials);
+        """)
+    for table in ("cv_material_mapping",):
+        op.execute("""
+            UPDATE cv_material_mapping SET target_material_table = 'edging_materials'
+             WHERE target_material_table = 'hardware_materials'
+               AND target_material_id IN (SELECT material_id FROM edging_materials);
+        """)
+    op.execute("""
+        UPDATE po_line_items SET material_table = 'edging_materials'
+         WHERE material_table = 'hardware_materials'
+           AND material_id IN (SELECT material_id FROM edging_materials);
+        DELETE FROM hardware_materials WHERE lower(btrim(product_type)) = 'edging';
+    """)
+
+
+def downgrade():
+    op.execute("""
+        CREATE TEMP TABLE _edging_back (old_id bigint, new_id bigint) ON COMMIT DROP;
+        WITH moved AS (
+            INSERT INTO hardware_materials (sku, description, supplier, cost_per_unit, lead_time_days, notes,
+                   is_active, created_at, updated_at, workspace_id, unit_cost, synonyms, default_supplier,
+                   default_lead_time_days, archived_at, archived_by, supplier_id, default_supplier_id,
+                   product_type)
+            SELECT sku, description, supplier, cost_per_unit, lead_time_days, notes, is_active, created_at,
+                   updated_at, workspace_id, unit_cost, synonyms, default_supplier, default_lead_time_days,
+                   archived_at, archived_by, supplier_id, default_supplier_id, product_type
+              FROM edging_materials
+            RETURNING material_id, sku, workspace_id
+        )
+        INSERT INTO _edging_back
+        SELECT e.material_id, m.material_id
+          FROM moved m JOIN edging_materials e
+            ON e.sku = m.sku AND e.workspace_id IS NOT DISTINCT FROM m.workspace_id;
+    """)
+    for table, col in _TYPE_COLS:
+        op.execute(f"""
+            UPDATE {table} t SET {col} = 'HARDWARE', material_id = b.new_id
+              FROM _edging_back b WHERE t.{col} = 'EDGING' AND t.material_id = b.old_id;
+        """)
+    op.execute("""
+        UPDATE cv_material_mapping t SET target_material_table = 'hardware_materials', target_material_id = b.new_id
+          FROM _edging_back b WHERE t.target_material_table = 'edging_materials' AND t.target_material_id = b.old_id;
+        UPDATE po_line_items t SET material_table = 'hardware_materials', material_id = b.new_id
+          FROM _edging_back b WHERE t.material_table = 'edging_materials' AND t.material_id = b.old_id;
+    """)
+    op.execute("DELETE FROM search_outbox WHERE entity_type = 'edging_materials';")
+    _widen(False)
+    op.execute("DROP TABLE edging_materials;")
