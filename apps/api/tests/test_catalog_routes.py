@@ -26,6 +26,7 @@ _cleanup = truncate_fixture(
     "custom_made",
     "hardware_materials",
     "board_materials",
+    "edging_materials",
 )
 
 
@@ -399,3 +400,146 @@ def test_a_bug_inside_validation_is_a_server_error_not_a_bad_row(monkeypatch):
         c.post("/catalog/board-materials", json={"code": "B2", "description": "x"})
     with pytest.raises(RuntimeError):
         c.patch(f"/catalog/board-materials/{mid}", json={"description": "y"})
+
+
+# ── Unit cost (what an order line starts its price from) ──────────────────────
+
+def test_unit_cost_is_created_listed_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/hardware-materials", json={"sku": "hw-cost", "description": "Hinge", "unit_cost": "12.5"})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    assert r.json()["unit_cost"] == 12.5                                   # a JSON number, like the other catalog numbers
+    listed = [x for x in c.get("/catalog/hardware-materials").json()["rows"] if x["material_id"] == mid][0]
+    assert listed["unit_cost"] == 12.5
+
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": 13.25})
+    assert r.status_code == 200 and r.json()["unit_cost"] == 13.25
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"description": "Hinge 110"})   # another field leaves it alone
+    assert r.json()["unit_cost"] == 13.25
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": None})            # an explicit null clears it
+    assert r.status_code == 200 and r.json()["unit_cost"] is None
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": 0})               # zero is a price, not "none"
+    assert r.json()["unit_cost"] == 0
+
+
+def test_a_negative_or_oversized_unit_cost_is_refused_and_bulk_import_takes_one():
+    c, _, _ = login("drafter")
+    assert c.post("/catalog/hardware-materials",
+                  json={"sku": "neg", "description": "x", "unit_cost": -1}).status_code == 422
+    mid = c.post("/catalog/hardware-materials", json={"sku": "ok", "description": "x"}).json()["material_id"]
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"unit_cost": -0.01}).status_code == 422
+    r = c.post("/catalog/board-materials/bulk", json={"rows": [
+        {"code": "BK-1", "sku": "BK-1", "description": "Board", "unit_cost": "45.5"}]})
+    assert r.status_code == 200 and r.json()["created"] == 1, r.text
+    row = [x for x in c.get("/catalog/board-materials").json()["rows"] if x["sku"] == "BK-1"][0]
+    assert row["unit_cost"] == 45.5
+
+
+# ── Product type (the old system's type, kept beside the tab) ─────────────────
+
+def test_product_type_is_created_listed_searched_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/hardware-materials", json={"sku": "pt-1", "description": "Silicone", "product_type": "Supplies"})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    assert r.json()["product_type"] == "Supplies"
+    found = c.get("/catalog/hardware-materials", params={"q": "suppl"}).json()["rows"]       # search finds it by type
+    assert [x["material_id"] for x in found] == [mid]
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"product_type": "Paint"}).json()["product_type"] == "Paint"
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"description": "x"}).json()["product_type"] == "Paint"
+    assert c.patch(f"/catalog/hardware-materials/{mid}", json={"product_type": None}).json()["product_type"] is None
+    assert c.post("/catalog/hardware-materials",
+                  json={"sku": "pt-2", "description": "x", "product_type": "x" * 65}).status_code == 422
+
+
+# ── Tabs by product type (the six tables stay behind) ─────────────────────────
+
+def test_product_types_count_across_the_six_tables_and_by_type_groups_them():
+    c, wid, _ = login("drafter")
+    for sku, ptype in (("g-1", "Glass"), ("g-2", "glass "), ("s-1", "Supplies"), ("n-1", None)):
+        assert c.post("/catalog/hardware-materials",
+                      json={"sku": sku, "description": f"HW {sku}", "product_type": ptype}).status_code == 201
+    assert c.post("/catalog/custom-made", json={"internal_ref": "cm-g", "sku": "cm-g", "description": "Cut glass",
+                                                "product_type": "Glass"}).status_code == 201
+    gone = c.post("/catalog/hardware-materials", json={"sku": "g-arch", "description": "x", "product_type": "Glass"}).json()
+    c.post(f"/catalog/hardware-materials/{gone['material_id']}/archive")
+
+    r = c.get("/catalog/product-types")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"types": [{"product_type": "Glass", "count": 3}, {"product_type": "Supplies", "count": 1}],
+                        "untyped": 1}                                      # 'glass ' is the same type; archived is out
+    assert c.get("/catalog/product-types", params={"archived": True}).json()["types"][0]["count"] == 4
+
+    body = c.get("/catalog/by-type", params={"product_type": "GLASS"}).json()
+    assert body["product_type"] == "GLASS"
+    assert {g["type"]: len(g["rows"]) for g in body["groups"]} == {"hardware": 2, "custom_made": 1}
+    assert all(row["type"] == g["type"] for g in body["groups"] for row in g["rows"])   # a row names its own table
+    none = c.get("/catalog/by-type", params={"untyped": True}).json()
+    assert none["product_type"] is None and [(g["type"], len(g["rows"])) for g in none["groups"]] == [("hardware", 1)]
+    assert c.get("/catalog/by-type", params={"product_type": "Glass", "q": "Cut"}).json()["groups"][0]["type"] == "custom_made"
+    assert c.get("/catalog/by-type", params={"product_type": "Nope"}).json()["groups"] == []
+
+
+def test_product_types_and_by_type_never_show_another_workspaces_items():
+    a, _, _ = login("drafter")
+    b, _, _ = login("drafter")                         # a different workspace
+    assert b.post("/catalog/hardware-materials",
+                  json={"sku": "b-only", "description": "B's", "product_type": "Secret"}).status_code == 201
+    assert a.get("/catalog/product-types").json() == {"types": [], "untyped": 0}
+    assert a.get("/catalog/by-type", params={"product_type": "Secret"}).json()["groups"] == []
+    assert a.get("/catalog/by-type", params={"untyped": True}).json()["groups"] == []
+
+
+# ── Board fields (0068) and the board image ───────────────────────────────────
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+BOARD_FIELDS = {"colour": "Tas Oak QTR", "substrate": "Paperback", "finish": "Veneer", "sided": "Single",
+                "grain": "1/4 Cut", "rating": "E0", "hmr": "MR", "product_website": "https://example.test/oak"}
+
+
+def test_board_fields_are_created_listed_patched_and_cleared():
+    c, _, _ = login("drafter")
+    r = c.post("/catalog/board-materials", json={"code": "B-F", "sku": "b-f", "description": "Oak ply", **BOARD_FIELDS})
+    assert r.status_code == 201, r.text
+    mid = r.json()["material_id"]
+    row = c.get(f"/catalog/board-materials/{mid}").json()
+    assert {k: row[k] for k in BOARD_FIELDS} == BOARD_FIELDS and row["has_image"] is False
+    listed = [x for x in c.get("/catalog/board-materials").json()["rows"] if x["material_id"] == mid][0]
+    assert listed["colour"] == "Tas Oak QTR"
+
+    r = c.patch(f"/catalog/board-materials/{mid}", json={"colour": "Black", "hmr": None})
+    assert r.status_code == 200 and r.json()["colour"] == "Black" and r.json()["hmr"] is None
+    assert r.json()["finish"] == "Veneer"                                        # another field is left alone
+    assert c.patch(f"/catalog/board-materials/{mid}", json={"rating": "x" * 65}).status_code == 422
+
+
+def test_other_tables_ignore_board_fields():
+    c, _, _ = login("drafter")
+    mid = c.post("/catalog/hardware-materials", json={"sku": "hw-nb", "description": "Hinge"}).json()["material_id"]
+    r = c.patch(f"/catalog/hardware-materials/{mid}", json={"colour": "Red"})
+    assert r.status_code == 200 and "colour" not in r.json()
+
+
+def test_board_image_is_stored_served_replaced_and_removed():
+    c, _, _ = login("drafter")
+    mid = c.post("/catalog/board-materials", json={"code": "B-I", "sku": "b-i", "description": "Pic"}).json()["material_id"]
+    assert c.get(f"/catalog/board-materials/{mid}/image").status_code == 404           # none yet
+    assert c.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)}).status_code == 204
+    got = c.get(f"/catalog/board-materials/{mid}/image")
+    assert got.status_code == 200 and got.content == PNG and got.headers["content-type"] == "image/png"
+    assert c.get(f"/catalog/board-materials/{mid}").json()["has_image"] is True
+    assert c.put(f"/catalog/board-materials/{mid}/image", files={"file": ("x.pdf", b"%PDF-1.4 x")}).status_code in (400, 415, 422)
+    assert c.delete(f"/catalog/board-materials/{mid}/image").status_code == 204
+    assert c.get(f"/catalog/board-materials/{mid}").json()["has_image"] is False
+
+
+def test_board_image_of_another_workspace_is_a_404():
+    a, _, _ = login("drafter")
+    mid = a.post("/catalog/board-materials", json={"code": "B-W", "sku": "b-w", "description": "Mine"}).json()["material_id"]
+    a.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)})
+    b, _, _ = login("admin")
+    assert b.get(f"/catalog/board-materials/{mid}/image").status_code == 404
+    assert b.put(f"/catalog/board-materials/{mid}/image", files={"file": ("p.png", PNG)}).status_code == 404
+    assert b.delete(f"/catalog/board-materials/{mid}/image").status_code == 404
+    assert a.get(f"/catalog/board-materials/{mid}/image").content == PNG            # still there for its owner

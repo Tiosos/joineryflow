@@ -304,7 +304,8 @@ def _refresh_line_state(db: Session, line_id: int) -> None:
 # The catalog event name a material type's row writes on an update (`catalog/routes.py`).
 _CATALOG_EVENT_TYPE = {
     "BOARD": "board", "HARDWARE": "hardware", "CUSTOM": "custom_made",
-    "BENCHTOP": "benchtop", "APPLIANCE": "appliance",
+    "BENCHTOP": "benchtop", "APPLIANCE": "appliance", "EDGING": "edging", "GLASS": "glass",
+    "TIMBER": "timber",
 }
 
 

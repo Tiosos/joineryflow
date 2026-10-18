@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE"]
+MaterialType = Literal["BOARD", "HARDWARE", "CUSTOM", "BENCHTOP", "APPLIANCE", "HIRE", "EDGING", "GLASS", "TIMBER"]
 MaterialStatus = Literal["OK", "SHORT", "OVERDUE"]
 
 

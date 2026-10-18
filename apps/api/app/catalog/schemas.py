@@ -1,5 +1,6 @@
 """Pydantic v2 schemas for the catalog module."""
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +13,9 @@ CatalogTable = Literal[
     "benchtop_materials",
     "appliances",
     "equipment_hire",
+    "edging_materials",
+    "glass_materials",
+    "timber_materials",
 ]
 
 
@@ -23,35 +27,116 @@ class _EnrichmentFields(BaseModel):
     # the route. Bulk import ignores it and matches `default_supplier` by name.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
+    # What Generate Orders and "add from catalog" start an order line's price from.
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    # The old system's product type (Glass, Supplies, Paint...): finer than the six tabs, kept as text.
+    product_type: str | None = Field(default=None, max_length=64)
 
 
 class CreateBoardIn(_EnrichmentFields):
     code: str = Field(min_length=1, max_length=32)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    substrate: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    sided: str | None = Field(default=None, max_length=64)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    hmr: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+
+
+class CreateGlassIn(_EnrichmentFields):
+    """Glass (`0070`): the old Orders screen's glass fields. Sizes in mm; glass type and power point are free text."""
+    sku: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    edge_finish: str | None = Field(default=None, max_length=128)
+    glass_type: str | None = Field(default=None, max_length=128)
+    power_point: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    shaped: bool = False
+
+
+class CreateTimberIn(_EnrichmentFields):
+    """Solid Timber (`0074`): the old Orders screen's timber fields. Colour, finish, grain and rating are free text; sizes in mm."""
+    sku: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+
+
+class CreateEdgingIn(_EnrichmentFields):
+    """Edging (`0069`): the old Orders screen's edging fields. Roll length in metres, width and thickness in mm."""
+    sku: str = Field(min_length=1, max_length=64)
+    description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    edge_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    roll_length_m: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    edge_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    edge_thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    glued: bool = False
 
 
 class CreateHardwareIn(_EnrichmentFields):
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    brand: str | None = Field(default=None, max_length=128)
+    hardware_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateCustomMadeIn(_EnrichmentFields):
     internal_ref: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateBenchtopIn(_EnrichmentFields):
     slab_id: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    colour: str | None = Field(default=None, max_length=128)
+    underside: str | None = Field(default=None, max_length=128)
+    edge_details: str | None = Field(default=None, max_length=128)
+    laminate_supplier: str | None = Field(default=None, max_length=128)
+    laminate_code: str | None = Field(default=None, max_length=64)
+    finish: str | None = Field(default=None, max_length=128)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    bench_length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    bench_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
+    pieces: int | None = Field(default=None, ge=0, le=9999)
+    joins: int | None = Field(default=None, ge=0, le=9999)
+    cable_entry: int | None = Field(default=None, ge=0, le=9999)
+    shaped: bool = False
 
 
 class CreateApplianceIn(_EnrichmentFields):
     model_number: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateEquipmentHireIn(_EnrichmentFields):
@@ -59,6 +144,8 @@ class CreateEquipmentHireIn(_EnrichmentFields):
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
     project_id: int
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchBaseIn(BaseModel):
@@ -72,6 +159,8 @@ class PatchBaseIn(BaseModel):
     # reads `model_fields_set`.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    product_type: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)
 
@@ -79,28 +168,97 @@ class PatchBaseIn(BaseModel):
 class PatchBoardIn(PatchBaseIn):
     code: str | None = Field(default=None, max_length=32)
     grain_locked: bool | None = None
+    colour: str | None = Field(default=None, max_length=128)
+    substrate: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    sided: str | None = Field(default=None, max_length=64)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    hmr: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchHardwareIn(PatchBaseIn):
-    pass
+    brand: str | None = Field(default=None, max_length=128)
+    hardware_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+
+
+class PatchGlassIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    edge_finish: str | None = Field(default=None, max_length=128)
+    glass_type: str | None = Field(default=None, max_length=128)
+    power_point: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    shaped: bool | None = None         # NOT NULL column: an explicit null is dropped, never written
+
+
+class PatchTimberIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    finish: str | None = Field(default=None, max_length=128)
+    grain: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+
+
+class PatchEdgingIn(PatchBaseIn):
+    colour: str | None = Field(default=None, max_length=128)
+    edge_type: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    roll_length_m: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    edge_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    edge_thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    glued: bool | None = None          # NOT NULL column: an explicit null is dropped, never written
 
 
 class PatchCustomMadeIn(PatchBaseIn):
     internal_ref: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchBenchtopIn(PatchBaseIn):
     slab_id: str | None = Field(default=None, max_length=64)
     grain_locked: bool | None = None
+    colour: str | None = Field(default=None, max_length=128)
+    underside: str | None = Field(default=None, max_length=128)
+    edge_details: str | None = Field(default=None, max_length=128)
+    laminate_supplier: str | None = Field(default=None, max_length=128)
+    laminate_code: str | None = Field(default=None, max_length=64)
+    finish: str | None = Field(default=None, max_length=128)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
+    bench_length_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    bench_width_mm: Decimal | None = Field(default=None, ge=0, max_digits=8, decimal_places=2)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
+    pieces: int | None = Field(default=None, ge=0, le=9999)
+    joins: int | None = Field(default=None, ge=0, le=9999)
+    cable_entry: int | None = Field(default=None, ge=0, le=9999)
+    shaped: bool | None = None         # NOT NULL column: an explicit null is dropped, never written
 
 
 class PatchApplianceIn(PatchBaseIn):
     model_number: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchEquipmentHireIn(PatchBaseIn):
     contract_ref: str | None = Field(default=None, max_length=64)
     project_id: int | None = None
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CatalogRowOut(BaseModel):

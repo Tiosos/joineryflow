@@ -70,7 +70,7 @@ export function BatchDrawer({ projectId, initial, batchId, canWrite, onClose, on
             className="rounded border border-h-line bg-h-bg px-2 py-1"
           >
             <option value="">—</option>
-            {["BOARD","HARDWARE","CUSTOM","BENCHTOP","APPLIANCE","HIRE"].map(t => (
+            {["BOARD","HARDWARE","CUSTOM","BENCHTOP","APPLIANCE","HIRE","EDGING","GLASS","TIMBER"].map(t => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>

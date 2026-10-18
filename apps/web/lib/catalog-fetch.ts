@@ -1,5 +1,7 @@
 import type {
   BulkImportResp,
+  ByTypeResp,
+  ProductTypesResp,
   CatalogListResp,
   CatalogRow,
   CatalogSlug,
@@ -100,4 +102,27 @@ export async function deleteCvMapping(mid: number): Promise<void> {
     method: "DELETE", credentials: "include",
   });
   if (!res.ok) throw new Error(`deleteCvMapping: ${res.status}`);
+}
+
+export async function listProductTypes(archived = false): Promise<ProductTypesResp> {
+  const res = await fetch(`/api/catalog/product-types${archived ? "?archived=true" : ""}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`listProductTypes: ${res.status}`);
+  return res.json();
+}
+
+/** The items of one product type across the six tables; `productType` null means "no type". */
+export async function listByType(args: {
+  productType: string | null;
+  q?: string | null;
+  supplier?: string | null;
+  archived?: boolean;
+}): Promise<ByTypeResp> {
+  const sp = new URLSearchParams();
+  if (args.productType == null) sp.set("untyped", "true"); else sp.set("product_type", args.productType);
+  if (args.q) sp.set("q", args.q);
+  if (args.supplier) sp.set("supplier", args.supplier);
+  if (args.archived) sp.set("archived", "true");
+  const res = await fetch(`/api/catalog/by-type?${sp.toString()}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`listByType: ${res.status}`);
+  return res.json();
 }

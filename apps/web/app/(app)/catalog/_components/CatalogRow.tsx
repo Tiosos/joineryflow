@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
+import BoardImageCell from "./BoardImageCell";
+import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
+import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
+import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
+import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "./timberFields";
+import { CUSTOM_TEXT_FIELDS } from "./customFields";
+import { HIRE_TEXT_FIELDS } from "./hireFields";
+import { APPLIANCE_TEXT_FIELDS } from "./applianceFields";
+import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
 
 interface Props {
@@ -24,29 +34,44 @@ const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
   benchtop: "slab_id",
   appliance: "model_number",
   hire: "contract_ref",
+  edging: null,
+  glass: null,
+  timber: null,
 };
 
 function Cell({
-  value, onSave, canWrite, type = "text",
+  value, onSave, canWrite, type = "text", step, label,
 }: {
   value: string | number | null;
   onSave: (v: string) => void | Promise<void>;
   canWrite: boolean;
   type?: "text" | "number";
+  step?: string;
+  label?: string;
 }) {
   const [local, setLocal] = useState(value == null ? "" : String(value));
-  useEffect(() => { setLocal(value == null ? "" : String(value)); }, [value]);
+  // What the server holds as far as this cell knows: the prop, until we save something newer.
+  // Comparing with the prop alone skips a second edit made before the grid reloads.
+  const saved = useRef(value == null ? "" : String(value));
+  useEffect(() => {
+    const fresh = value == null ? "" : String(value);
+    const was = saved.current;
+    saved.current = fresh;
+    // A reload landing while the user is mid-edit must not overwrite what they typed.
+    setLocal((cur) => (cur === was || cur === fresh ? fresh : cur));
+  }, [value]);
 
   if (!canWrite) return <span>{local || "—"}</span>;
 
   return (
     <input
       type={type}
+      step={step}
+      aria-label={label}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
-        const orig = value == null ? "" : String(value);
-        if (local !== orig) void onSave(local);
+        if (local !== saved.current) { saved.current = local; void onSave(local); }
       }}
       className="w-full bg-transparent px-1 py-0.5 text-sm focus:bg-h-surface focus:outline focus:outline-1 focus:outline-h-line"
     />
@@ -135,6 +160,10 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         <Cell value={row.description} canWrite={canWrite}
               onSave={(v) => save({ description: v })} />
       </td>
+      <td className="px-3 py-1">
+        <Cell value={row.product_type} label="Type" canWrite={canWrite}
+              onSave={(v) => save({ product_type: v.trim() || null })} />
+      </td>
       <td className="px-3 py-1 font-mono">
         <Cell value={row.sku} canWrite={canWrite}
               onSave={(v) => save({ sku: v })} />
@@ -157,6 +186,113 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         <Cell value={row.default_lead_time_days} type="number" canWrite={canWrite}
               onSave={(v) => save({ default_lead_time_days: v === "" ? null : Number(v) })} />
       </td>
+      <td className="px-3 py-1 w-24">
+        <Cell value={row.unit_cost} type="number" step="0.01" label="Unit cost" canWrite={canWrite}
+              onSave={(v) => save({ unit_cost: v === "" ? null : Number(v) })} />
+      </td>
+      {tab === "board" && BOARD_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "edging" && EDGING_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "edging" && EDGING_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step="0.01" label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "edging" && (
+        <td className="px-3 py-1 text-center">
+          <input type="checkbox" checked={row.glued ?? false} disabled={!canWrite || busy}
+                 onChange={(e) => save({ glued: e.target.checked })} aria-label="Glued" />
+        </td>
+      )}
+      {tab === "glass" && GLASS_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "glass" && GLASS_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step="0.01" label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "glass" && (
+        <td className="px-3 py-1 text-center">
+          <input type="checkbox" checked={row.shaped ?? false} disabled={!canWrite || busy}
+                 onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
+        </td>
+      )}
+      {tab === "timber" && TIMBER_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "timber" && TIMBER_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step="0.01" label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "benchtop" && BENCHTOP_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "benchtop" && BENCHTOP_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step={f.step} label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
+        </td>
+      ))}
+      {tab === "benchtop" && (
+        <td className="px-3 py-1 text-center">
+          <input type="checkbox" checked={row.shaped ?? false} disabled={!canWrite || busy}
+                 onChange={(e) => save({ shaped: e.target.checked })} aria-label="Shaped" />
+        </td>
+      )}
+      {tab === "hardware" && HARDWARE_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "custom_made" && CUSTOM_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "hire" && HIRE_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "appliance" && APPLIANCE_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {(tab === "board" || tab === "edging" || tab === "glass" || tab === "timber" || tab === "benchtop" || tab === "hardware"
+        || tab === "custom_made" || tab === "hire" || tab === "appliance") && (
+        <td className="px-3 py-1">
+          <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
+                          onChanged={onChanged} />
+        </td>
+      )}
       <td className="px-3 py-1">
         <Cell value={row.synonyms.join(", ")} canWrite={canWrite}
               onSave={(v) => save({ synonyms: v.split(/\s*,\s*/).filter(Boolean) })} />

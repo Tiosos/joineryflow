@@ -3,51 +3,49 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { listCatalog, listSupplierOptions } from "@/lib/catalog-fetch";
-import type { CatalogListResp, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
+import { listByType, listCatalog, listProductTypes, listSupplierOptions } from "@/lib/catalog-fetch";
+import type { ByTypeResp, CatalogListResp, ProductTypesResp, SupplierOption } from "@/lib/catalog-types";
 
 import CatalogBulkImportDialog from "./CatalogBulkImportDialog";
 import CatalogFilters from "./CatalogFilters";
 import CatalogGrid from "./CatalogGrid";
-import CatalogTabs from "./CatalogTabs";
+import CatalogTabs, { NO_TYPE } from "./CatalogTabs";
 import MappingPanel from "./MappingPanel";
 import NewCatalogRowDialog from "./NewCatalogRowDialog";
 import StockPanel from "./StockPanel";
+import { TABLE_KEYS, TABLE_LABEL, TAB_TO_SLUG, type TableKey } from "./tables";
 
 interface Project { id: number; project_code: string; name: string; }
 interface Me { id: number; auth_role: string; full_name: string; workspace_id: number; }
 
 export type CatalogTab =
+  | "types"
   | "board"
   | "hardware"
   | "custom_made"
   | "benchtop"
   | "appliance"
   | "hire"
+  | "edging"
+  | "glass"
+  | "timber"
   | "stock"
   | "cv-mappings";
 
-/** The six tabs backed by a catalog table. "stock" and "cv-mappings" are
- *  their own panels and have no catalog slug or legacy column. */
-export type MaterialTab = Exclude<CatalogTab, "cv-mappings" | "stock">;
+/** The six tabs backed by a catalog table. "types", "stock" and "cv-mappings"
+ *  are their own views and have no catalog slug or legacy column. */
+export type MaterialTab = TableKey;
 
 function isMaterialTab(t: CatalogTab): t is MaterialTab {
-  return t !== "cv-mappings" && t !== "stock";
+  return t !== "cv-mappings" && t !== "stock" && t !== "types";
 }
-
-const TAB_TO_SLUG: Record<MaterialTab, CatalogSlug> = {
-  board: "board-materials",
-  hardware: "hardware-materials",
-  custom_made: "custom-made",
-  benchtop: "benchtop-materials",
-  appliance: "appliances",
-  hire: "equipment-hire",
-};
 
 interface Props {
   me: Me;
   projects: Project[];
   initialTab: CatalogTab;
+  /** `?ptype=`: the product type shown in the type view (NO_TYPE = items with no type). */
+  initialPType: string | null;
   initialQ: string | null;
   initialSupplier: string | null;
   initialArchived: boolean;
@@ -69,6 +67,11 @@ export default function CatalogClient(props: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [productType, setProductType] = useState("");
+  const [types, setTypes] = useState<ProductTypesResp | null>(null);
+  const [byType, setByType] = useState<ByTypeResp | null>(null);
+  // Which table "+ New" and "Bulk import" write to while a type tab is open.
+  const [newTable, setNewTable] = useState<TableKey>("hardware");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   // null = not loaded or unreadable. `GET /suppliers` needs `orderbook:read`, a
@@ -78,8 +81,14 @@ export default function CatalogClient(props: Props) {
 
   // Only the six material tabs map to a catalog slug; "stock" and
   // "cv-mappings" render their own panels.
+  const inTypes = tab === "types";
+  // Open the first type tab (else "No type") when none is named.
+  const activeType: string | null = !inTypes ? null
+    : props.initialPType ?? types?.types[0]?.product_type ?? (types && types.untyped > 0 ? NO_TYPE : null);
   const materialTab = isMaterialTab(tab) ? tab : null;
   const slug = materialTab ? TAB_TO_SLUG[materialTab] : null;
+  const addTab: MaterialTab | null = inTypes ? newTable : materialTab;
+  const addSlug = addTab ? TAB_TO_SLUG[addTab] : null;
 
   const isWriter = ["admin", "manager", "drafter", "editor"].includes(props.me.auth_role);
 
@@ -93,13 +102,27 @@ export default function CatalogClient(props: Props) {
   }, [slug, q, supplier, archived, reloadTick]);
 
   useEffect(() => {
-    if (!isWriter || slug == null) return;
+    if (!inTypes) { setTypes(null); return; }
+    listProductTypes(archived).then(setTypes).catch((e) => setError(String(e)));
+  }, [inTypes, archived, reloadTick]);
+
+  useEffect(() => {
+    if (!inTypes || activeType == null) { setByType(null); return; }
+    setLoading(true); setError(null);
+    listByType({ productType: activeType === NO_TYPE ? null : activeType, q, supplier, archived })
+      .then(setByType)
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [inTypes, activeType, q, supplier, archived, reloadTick]);
+
+  useEffect(() => {
+    if (!isWriter || (slug == null && !inTypes)) return;
     let live = true;
     listSupplierOptions()
       .then((l) => { if (live) { setSupplierOptions(l); setSupplierError(false); } })
       .catch(() => { if (live) { setSupplierOptions(null); setSupplierError(true); } });
     return () => { live = false; };
-  }, [isWriter, slug]);
+  }, [isWriter, slug, inTypes]);
 
   const updateUrl = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(sp.toString());
@@ -112,19 +135,29 @@ export default function CatalogClient(props: Props) {
   const suppliers = useMemo(() => {
     const seen = new Set<string>();
     for (const r of list?.rows ?? []) if (r.default_supplier) seen.add(r.default_supplier);
+    for (const g of byType?.groups ?? []) for (const r of g.rows) if (r.default_supplier) seen.add(r.default_supplier);
+    return Array.from(seen).sort();
+  }, [list, byType]);
+
+  const productTypes = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of list?.rows ?? []) if (r.product_type) seen.add(r.product_type);
     return Array.from(seen).sort();
   }, [list]);
 
   const rows = useMemo(() => {
-    const all = list?.rows ?? [];
+    let all = list?.rows ?? [];
+    if (productType) all = all.filter((r) => r.product_type === productType);
     if (link === "linked") return all.filter((r) => r.default_supplier_id != null);
     if (link === "unlinked") return all.filter((r) => r.default_supplier_id == null);
     return all;
-  }, [list, link]);
+  }, [list, link, productType]);
   const unlinkedCount = (list?.rows ?? []).filter((r) => r.default_supplier_id == null).length;
 
+  const typeRowCount = (byType?.groups ?? []).reduce((n, g) => n + g.rows.length, 0);
   const headerText =
-    tab === "cv-mappings" ? "CV Mappings"
+    inTypes ? `${typeRowCount} items`
+    : tab === "cv-mappings" ? "CV Mappings"
     : tab === "stock" ? "Sheet stock on hand"
     : `${rows.length} ${tab} rows`;
 
@@ -135,8 +168,15 @@ export default function CatalogClient(props: Props) {
           <h1 className="text-2xl font-semibold text-h-ink">Catalog</h1>
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
-        {materialTab && isWriter && (
+        {addTab && isWriter && (
           <div className="flex gap-2">
+            {inTypes && (
+              <select aria-label="Table for new items" value={newTable}
+                      onChange={(e) => setNewTable(e.target.value as TableKey)}
+                      className="rounded border border-h-line px-2 py-1 text-sm">
+                {TABLE_KEYS.map((k) => <option key={k} value={k}>{TABLE_LABEL[k]}</option>)}
+              </select>
+            )}
             <button onClick={() => setBulkOpen(true)}
                     className="rounded border border-h-line px-3 py-1.5 text-sm">
               Bulk import
@@ -149,15 +189,25 @@ export default function CatalogClient(props: Props) {
         )}
       </header>
 
-      <CatalogTabs current={tab} onChange={(t) => updateUrl({ tab: t })} />
+      <CatalogTabs
+        current={tab}
+        activeType={activeType}
+        types={types}
+        onSelectType={(t) => updateUrl({ tab: null, ptype: t })}
+        onSelectTab={(t) => updateUrl({ tab: t, ptype: null })}
+      />
 
-      {materialTab && (
+      {(materialTab || inTypes) && (
         <CatalogFilters
           searchValue={q ?? ""}
           selectedSupplier={supplier}
           archived={archived}
           link={link}
+          showTypeFilter={materialTab != null}
           suppliers={suppliers}
+          productTypes={productTypes}
+          selectedType={productType}
+          onTypeChange={setProductType}
           onSearchChange={(s) => updateUrl({ q: s || null })}
           onSupplierChange={(s) => updateUrl({ supplier: s })}
           onArchivedChange={(a) => updateUrl({ archived: a ? "true" : null })}
@@ -165,13 +215,13 @@ export default function CatalogClient(props: Props) {
         />
       )}
 
-      {materialTab && materialTab !== "hire" && list && unlinkedCount > 0 && (
+      {materialTab && materialTab !== "hire" && !inTypes && list && unlinkedCount > 0 && (
         <p className="text-sm text-h-muted" data-testid="unlinked-count">
           {unlinkedCount} of {list.rows.length} rows have no supplier link — Generate Orders
           cannot order them.
         </p>
       )}
-      {materialTab && isWriter && supplierError && (
+      {(materialTab || inTypes) && isWriter && supplierError && (
         <p className="text-sm text-rose-700" data-testid="suppliers-unreadable">
           Couldn&apos;t load suppliers, so links can&apos;t be changed here (it needs read access
           to the Orderbook).
@@ -198,10 +248,29 @@ export default function CatalogClient(props: Props) {
         />
       )}
 
-      {newOpen && materialTab && slug && (
+      {inTypes && byType && byType.groups.length === 0 && !loading && (
+        <p className="text-sm text-h-muted">No items of this type.</p>
+      )}
+      {inTypes && byType?.groups.map((g) => (
+        <div key={g.type} className="space-y-2" data-testid={`type-group-${g.type}`}>
+          <h2 className="text-sm font-medium text-h-ink">{TABLE_LABEL[g.type]} ({g.rows.length})</h2>
+          <CatalogGrid
+            tab={g.type}
+            slug={TAB_TO_SLUG[g.type]}
+            rows={link === "linked" ? g.rows.filter((r) => r.default_supplier_id != null)
+              : link === "unlinked" ? g.rows.filter((r) => r.default_supplier_id == null) : g.rows}
+            canWrite={isWriter}
+            suppliers={supplierOptions}
+            onChanged={() => setReloadTick((n) => n + 1)}
+          />
+        </div>
+      ))}
+
+      {newOpen && addTab && addSlug && (
         <NewCatalogRowDialog
-          tab={materialTab}
-          slug={slug}
+          tab={addTab}
+          slug={addSlug}
+          productType={inTypes && activeType !== NO_TYPE ? activeType : null}
           projects={props.projects}
           suppliers={supplierOptions}
           onClose={() => setNewOpen(false)}
@@ -209,9 +278,9 @@ export default function CatalogClient(props: Props) {
         />
       )}
 
-      {bulkOpen && materialTab && slug && (
+      {bulkOpen && addTab && addSlug && (
         <CatalogBulkImportDialog
-          slug={slug}
+          slug={addSlug}
           onClose={() => setBulkOpen(false)}
           onCommitted={(resp) => {
             setBulkOpen(false);

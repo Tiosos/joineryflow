@@ -9,9 +9,10 @@ Layout:
 All gated by ("catalog", action). Workspace isolation via
 `AuthUser.workspace_id`. Mutations write `audit_log`.
 """
+from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,6 +21,8 @@ from ..auth.audit import write_audit
 from ..auth.rbac import require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..files import uploads
+from ..files.store import FileStore, get_default_store
 from . import queries as q
 from .schemas import (
     BulkImportIn,
@@ -31,6 +34,9 @@ from .schemas import (
     CreateBoardIn,
     CreateCustomMadeIn,
     CreateCvMappingIn,
+    CreateEdgingIn,
+    CreateGlassIn,
+    CreateTimberIn,
     CreateEquipmentHireIn,
     CreateHardwareIn,
     PatchApplianceIn,
@@ -38,6 +44,9 @@ from .schemas import (
     PatchBoardIn,
     PatchCustomMadeIn,
     PatchCvMappingIn,
+    PatchEdgingIn,
+    PatchGlassIn,
+    PatchTimberIn,
     PatchEquipmentHireIn,
     PatchHardwareIn,
 )
@@ -51,6 +60,9 @@ URL_TO_TYPE: dict[str, str] = {
     "benchtop-materials":  "benchtop",
     "appliances":          "appliance",
     "equipment-hire":      "hire",
+    "edging-materials":    "edging",
+    "glass-materials":     "glass",
+    "timber-materials":    "timber",
 }
 
 
@@ -61,7 +73,8 @@ def _resolve_type(slug: str) -> str:
 
 
 # Nullable columns a PATCH may clear: everything else drops an explicit null.
-_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days")
+_CLEARABLE = ("default_supplier", "default_supplier_id", "default_lead_time_days", "unit_cost", "product_type",
+              *q.CLEARABLE_TYPE_FIELDS)
 
 
 def _require_supplier(db: Session, supplier_id: int | None, workspace_id: int) -> None:
@@ -171,6 +184,115 @@ def delete_cv_mapping_route(
 
 
 # ============================================================
+# Product image (`0068` Board, `0069` Edging, `0070` Glass, `0074` Solid Timber): one PNG/JPEG per row, in the shared file store
+# ============================================================
+
+def _store() -> FileStore:
+    return get_default_store()
+
+
+def _image_type(slug: str) -> str:
+    """The type of a slug whose rows keep a picture; any other slug answers 404 like an unknown one."""
+    type_ = _resolve_type(slug)
+    if type_ not in q.IMAGE_TABLES:
+        raise HTTPException(404, f"Unknown catalog slug: {slug}")
+    return type_
+
+
+@router.put("/catalog/{slug}/{mid}/image", status_code=204)
+async def put_catalog_image(
+    slug: str,
+    mid: int,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_permission("catalog", "write")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_store),
+):
+    type_ = _image_type(slug)
+    stored = None
+    try:
+        exists, _ = q.image_blob(db, type_=type_, mid=mid, workspace_id=user.workspace_id)
+        if not exists:
+            raise HTTPException(404, "Catalog row not found")
+        stored = await uploads.store_upload(db, store, user=user, file=file, allowed=uploads.IMAGE)
+        q.set_image(db, type_=type_, mid=mid, workspace_id=user.workspace_id, blob_id=stored.blob_id)
+        write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event=f"catalog.{type_}.image.set",
+                    target=f"catalog.{type_}:{mid}", payload={})
+        db.commit()
+    except Exception:
+        db.rollback()
+        uploads.discard(db, store, stored)
+        raise
+
+
+@router.get("/catalog/{slug}/{mid}/image")
+def get_catalog_image(
+    slug: str,
+    mid: int,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_store),
+):
+    type_ = _image_type(slug)
+    exists, blob = q.image_blob(db, type_=type_, mid=mid, workspace_id=user.workspace_id)
+    if not exists or blob is None:
+        raise HTTPException(404, "image not found")
+    return uploads.stream_blob(db, store, workspace_id=user.workspace_id, blob_id=blob)
+
+
+@router.delete("/catalog/{slug}/{mid}/image", status_code=204)
+def delete_catalog_image(
+    slug: str,
+    mid: int,
+    user: AuthUser = Depends(require_permission("catalog", "write")),
+    db: Session = Depends(get_db),
+):
+    type_ = _image_type(slug)
+    if not q.set_image(db, type_=type_, mid=mid, workspace_id=user.workspace_id, blob_id=None):
+        db.rollback()
+        raise HTTPException(404, "Catalog row not found")
+    write_audit(db, workspace_id=user.workspace_id, actor_id=user.id, event=f"catalog.{type_}.image.remove",
+                target=f"catalog.{type_}:{mid}", payload={})
+    db.commit()
+
+
+# ============================================================
+# Product types (literal paths: declared before `/catalog/{slug}`)
+# ============================================================
+
+@router.get("/catalog/product-types")
+def list_product_types_route(
+    archived: bool = False,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+):
+    """The tabs of the Catalog screen: every product type in use, with its item count."""
+    return q.product_type_counts(db, workspace_id=user.workspace_id, archived=archived)
+
+
+@router.get("/catalog/by-type")
+def list_by_type_route(
+    product_type: str | None = None,
+    untyped: bool = False,
+    q_search: str | None = Query(None, alias="q"),
+    supplier: str | None = None,
+    archived: bool = False,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+):
+    """The items of one product type (or of none: `untyped=true`) across the six tables, grouped by table."""
+    groups = []
+    for type_ in q.REGISTRY:
+        rows = q.list_catalog(
+            db, type_=type_, workspace_id=user.workspace_id, q=q_search, supplier=supplier,
+            archived=archived, product_type=product_type, untyped=untyped,
+        )
+        if rows:
+            groups.append({"type": type_, "rows": rows})
+    return {"product_type": None if untyped else product_type, "groups": groups}
+
+
+# ============================================================
 # Generic 6-table sub-routers
 # ============================================================
 
@@ -203,7 +325,8 @@ def bulk_import_route(
     schema_cls = {
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
-        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn,
+        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn, "glass": CreateGlassIn,
+        "timber": CreateTimberIn,
     }[type_]
 
     errors: list[BulkRowError] = []
@@ -287,7 +410,8 @@ def create_catalog_row_route(
     schema_cls = {
         "board": CreateBoardIn, "hardware": CreateHardwareIn,
         "custom_made": CreateCustomMadeIn, "benchtop": CreateBenchtopIn,
-        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn,
+        "appliance": CreateApplianceIn, "hire": CreateEquipmentHireIn, "edging": CreateEdgingIn, "glass": CreateGlassIn,
+        "timber": CreateTimberIn,
     }[type_]
     try:
         validated = schema_cls.model_validate(payload).model_dump()
@@ -322,7 +446,8 @@ def patch_catalog_row_route(
     schema_cls = {
         "board": PatchBoardIn, "hardware": PatchHardwareIn,
         "custom_made": PatchCustomMadeIn, "benchtop": PatchBenchtopIn,
-        "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn,
+        "appliance": PatchApplianceIn, "hire": PatchEquipmentHireIn, "edging": PatchEdgingIn, "glass": PatchGlassIn,
+        "timber": PatchTimberIn,
     }[type_]
     try:
         model = schema_cls.model_validate(payload)
@@ -340,7 +465,7 @@ def patch_catalog_row_route(
     write_audit(
         db, workspace_id=user.workspace_id, actor_id=user.id,
         event=f"catalog.{type_}.update", target=f"catalog.{type_}:{mid}",
-        payload=validated,
+        payload={k: str(v) if isinstance(v, Decimal) else v for k, v in validated.items()},   # json has no Decimal
     )
     db.commit()
     return q.get_catalog_row(db, type_=type_, mid=mid, workspace_id=user.workspace_id)

@@ -541,7 +541,10 @@ export type SourceTable =
   | "custom_made"
   | "benchtop_materials"
   | "appliances"
-  | "equipment_hire";
+  | "equipment_hire"
+  | "edging_materials"
+  | "glass_materials"
+  | "timber_materials";
 
 export interface HardwareCatalogRow {
   catalog_id: number;

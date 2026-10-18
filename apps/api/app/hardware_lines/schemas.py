@@ -9,12 +9,15 @@ _SOURCE_TABLE_LITERAL = Literal[
     "benchtop_materials",
     "appliances",
     "equipment_hire",
+    "edging_materials",
+    "glass_materials",
+    "timber_materials",
 ]
 
 
 class HardwareCatalogRow(BaseModel):
     catalog_id: int
-    source_table: str  # 'board_materials' | 'hardware_materials' | 'custom_made' | 'benchtop_materials' | 'appliances' | 'equipment_hire'
+    source_table: str  # 'board_materials' | 'hardware_materials' | 'custom_made' | 'benchtop_materials' | 'appliances' | 'equipment_hire' | 'edging_materials' | 'glass_materials' | 'timber_materials'
     source_id: int
     sku: str | None
     name: str

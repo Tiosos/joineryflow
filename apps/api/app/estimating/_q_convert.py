@@ -21,6 +21,7 @@ from ._q_loaders import revision_detail
 _PHC_TYPE_MAP = {
     "HARDWARE":  "HARDWARE",
     "APPLIANCE": "APPLIANCE",
+    "EDGING":    "EDGING",
 }
 
 
@@ -304,7 +305,7 @@ def convert_to_project(
                 else None
             )
             comment = p.get("comment")
-            if p["material_type"] in ("CUSTOM", "BENCHTOP") and p.get("material_id"):
+            if p["material_type"] in ("CUSTOM", "BENCHTOP", "GLASS", "TIMBER") and p.get("material_id"):
                 tag = f"[material: {p['material_type'].lower()}#{int(p['material_id'])}]"
                 comment = f"{tag} {comment or ''}".strip()
             db.execute(

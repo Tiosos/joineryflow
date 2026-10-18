@@ -11,6 +11,7 @@ import CatalogClient from "./_components/CatalogClient";
 interface PageProps {
   searchParams: Promise<{
     tab?: string;
+    ptype?: string;
     q?: string;
     supplier?: string;
     archived?: string;
@@ -26,6 +27,9 @@ const VALID_TABS = [
   "benchtop",
   "appliance",
   "hire",
+  "edging",
+  "glass",
+  "timber",
   "stock",
   "cv-mappings",
 ] as const;
@@ -51,15 +55,17 @@ export default async function Page({ searchParams }: PageProps) {
   const projects: { id: number; project_code: string; name: string }[] =
     projectsRes && projectsRes.ok ? (await projectsRes.json()).projects : [];
 
-  const tab: CatalogTab = (VALID_TABS as readonly string[]).includes(sp.tab ?? "")
+  // No (or an unknown) `tab` shows the product-type tabs; `?tab=board` etc. still open one table's grid.
+  const tab: CatalogTab | "types" = (VALID_TABS as readonly string[]).includes(sp.tab ?? "")
     ? (sp.tab as CatalogTab)
-    : "board";
+    : "types";
 
   return (
     <CatalogClient
       me={me}
       projects={projects}
       initialTab={tab}
+      initialPType={sp.ptype ?? null}
       initialQ={sp.q ?? null}
       initialSupplier={sp.supplier ?? null}
       initialArchived={sp.archived === "true"}

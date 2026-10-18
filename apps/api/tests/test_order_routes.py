@@ -287,6 +287,9 @@ def test_categories_include_joinery_values(ctx):
     keys = {c["category_key"] for c in r.json()}
     assert {"Board", "Hardware", "Benchtop", "Metal"} <= keys   # 0031's additions
     assert "Other" in keys                                       # legacy preserved
+    # 0066: the old system's order types the new list lacked
+    assert {"ContractorInstall", "CorianClad", "Delivery", "Edging", "Extra", "Equipment", "Glass",
+            "Laminate", "Maintenance", "StoneClad", "SolidSurface", "Supplies", "Wages"} <= keys
 
 
 # ---------------------------------------------------------------------------

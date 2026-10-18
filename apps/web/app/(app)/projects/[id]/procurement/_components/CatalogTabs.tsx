@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createRow, listCatalog } from "@/lib/catalog-fetch";
 import type { CatalogRow, CatalogSlug } from "@/lib/catalog-types";
 
-const TYPES = ["board","hardware","custom_made","benchtop","appliance","hire"] as const;
+const TYPES = ["board","hardware","custom_made","benchtop","appliance","hire","edging","glass","timber"] as const;
 type CatType = typeof TYPES[number];
 
 // The canonical catalog surface is `/catalog/{slug}` (sub-project #7a) — it is
@@ -17,6 +17,9 @@ const SLUG: Record<CatType, CatalogSlug> = {
   benchtop:    "benchtop-materials",
   appliance:   "appliances",
   hire:        "equipment-hire",
+  edging:      "edging-materials",
+  glass:       "glass-materials",
+  timber:      "timber-materials",
 };
 
 // `sku` + `description` are common to all six; the rest is the per-table legacy
@@ -28,6 +31,9 @@ const CREATE_FIELDS: Record<CatType, string[]> = {
   benchtop:    ["slab_id", "description", "sku"],
   appliance:   ["model_number", "description", "sku"],
   hire:        ["contract_ref", "project_id", "description", "sku"],
+  edging:      ["sku", "description"],
+  glass:       ["sku", "description"],
+  timber:      ["sku", "description"],
 };
 
 // Bookkeeping columns the rollup view has no use for.

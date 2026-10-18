@@ -206,6 +206,18 @@ def get_cutlist(db: Session, *, cutlist_id: int, workspace_id: int) -> dict | No
                     SELECT 'HIRE', hire_id, description,
                            COALESCE(supplier, default_supplier)
                     FROM equipment_hire
+                    UNION ALL
+                    SELECT 'EDGING', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM edging_materials
+                    UNION ALL
+                    SELECT 'GLASS', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM glass_materials
+                    UNION ALL
+                    SELECT 'TIMBER', material_id, description,
+                           COALESCE(supplier, default_supplier)
+                    FROM timber_materials
                 )
                 SELECT hl.line_id,
                        i.item_id,

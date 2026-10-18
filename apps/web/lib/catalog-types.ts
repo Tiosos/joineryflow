@@ -4,7 +4,10 @@ export type CatalogTable =
   | "custom_made"
   | "benchtop_materials"
   | "appliances"
-  | "equipment_hire";
+  | "equipment_hire"
+  | "edging_materials"
+  | "glass_materials"
+  | "timber_materials";
 
 export type CatalogSlug =
   | "board-materials"
@@ -12,7 +15,10 @@ export type CatalogSlug =
   | "custom-made"
   | "benchtop-materials"
   | "appliances"
-  | "equipment-hire";
+  | "equipment-hire"
+  | "edging-materials"
+  | "glass-materials"
+  | "timber-materials";
 
 export interface CatalogRow {
   type: string;
@@ -33,9 +39,53 @@ export interface CatalogRow {
   default_supplier_id: number | null;
   default_supplier_name: string | null;
   default_lead_time_days: number | null;
+  /** Starts an order line's price (Generate Orders, add from catalog). The API sends it as a JSON number. */
+  unit_cost: number | null;
+  /** The old system's product type (Glass, Supplies...), free text; the tab is separate. */
+  product_type: string | null;
   archived_at: string | null;
   archived_by: number | null;
   grain_locked?: boolean; // board + benchtop only (migration 0024)
+  // Board only (migration 0068): the old Orders screen's board fields, plain text.
+  colour?: string | null;
+  substrate?: string | null;
+  finish?: string | null;
+  sided?: string | null;
+  grain?: string | null;
+  rating?: string | null;
+  hmr?: string | null;
+  product_website?: string | null;
+  has_image?: boolean; // board + edging
+  // Edging only (migration 0069). Roll length in metres, width and thickness in mm: JSON numbers.
+  edge_type?: string | null;
+  um?: string | null;
+  roll_length_m?: number | null;
+  edge_width_mm?: number | null;
+  edge_thickness_mm?: number | null;
+  glued?: boolean;
+  // Glass (migration 0070; length/width/thickness are shared with Solid Timber, 0074). Sizes in mm: JSON numbers.
+  // Glass type and power point are free text.
+  edge_finish?: string | null;
+  glass_type?: string | null;
+  power_point?: string | null;
+  length_mm?: number | null;
+  width_mm?: number | null;
+  thickness_mm?: number | null;
+  shaped?: boolean; // glass + benchtop
+  // brand + hardware_type: Hardware only (0072); um and product_website are shared with other types above
+  // (Equipment Hire too, 0076; Appliance, 0077).
+  brand?: string | null;
+  hardware_type?: string | null;
+  // Benchtop only (migration 0071). Sizes in mm (thickness_mm is the bench thickness): JSON numbers.
+  underside?: string | null;
+  edge_details?: string | null;
+  laminate_supplier?: string | null;
+  laminate_code?: string | null;
+  bench_length_mm?: number | null;
+  bench_width_mm?: number | null;
+  pieces?: number | null;
+  joins?: number | null;
+  cable_entry?: number | null;
 }
 
 /** A supplier as the picker needs it (`GET /suppliers`). */
@@ -75,4 +125,17 @@ export interface CvMapping {
 export interface CvMappingListResp {
   rows: CvMapping[];
   total: number;
+}
+
+/** `GET /catalog/product-types`: the tabs of the Catalog screen. */
+export interface ProductTypesResp {
+  types: { product_type: string; count: number }[];
+  /** Items with no product type. */
+  untyped: number;
+}
+
+/** `GET /catalog/by-type`: one type's items, grouped by the table each lives in. */
+export interface ByTypeResp {
+  product_type: string | null;
+  groups: { type: "board" | "hardware" | "custom_made" | "benchtop" | "appliance" | "hire"; rows: CatalogRow[] }[];
 }

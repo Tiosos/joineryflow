@@ -48,13 +48,16 @@ export default async function Page({ params }: PageProps) {
   const c = await cookies();
   const tok = c.get(COOKIE_NAME)?.value ?? "";
 
-  const [estimate, boards, customs, benchtops, hardware, appliances] = await Promise.all([
+  const [estimate, boards, customs, benchtops, hardware, appliances, edgings, glasses, timbers] = await Promise.all([
     fetchEstimate(tok, eid),
     fetchCatalog(tok, "board-materials"),
     fetchCatalog(tok, "custom-made"),
     fetchCatalog(tok, "benchtop-materials"),
     fetchCatalog(tok, "hardware-materials"),
     fetchCatalog(tok, "appliances"),
+    fetchCatalog(tok, "edging-materials"),
+    fetchCatalog(tok, "glass-materials"),
+    fetchCatalog(tok, "timber-materials"),
   ]);
   if (!estimate) notFound();
 
@@ -68,6 +71,9 @@ export default async function Page({ params }: PageProps) {
         BENCHTOP: benchtops,
         HARDWARE: hardware,
         APPLIANCE: appliances,
+        EDGING: edgings,
+        GLASS: glasses,
+        TIMBER: timbers,
       }}
     />
   );
