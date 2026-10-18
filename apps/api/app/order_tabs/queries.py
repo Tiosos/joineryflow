@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..catalog import queries as cq
 from ..orders import queries as oq
 from ..row_types import live_joinery_items, not_deleted
 from ..sql_columns import require_columns
@@ -32,7 +33,7 @@ def order_row(db: Session, *, po_id: int, workspace_id: int) -> dict | None:
     row = db.execute(
         text(
             "SELECT po.po_id, po.po_number, po.status, po.description, po.product_code, po.quantity,"
-            " po.item_id, po.image_blob FROM purchase_orders po"
+            " po.item_id, po.image_blob, po.project_id FROM purchase_orders po"
             f" WHERE po.po_id = :o AND {oq._ORDER_WORKSPACE}"
         ),
         {"o": po_id, "w": workspace_id},
@@ -230,6 +231,79 @@ def cutlists(db: Session, *, po_id: int, workspace_id: int) -> dict | None:
                 rows[(r["cutlist_no"], r["item_id"])] = dict(r)
     ordered = sorted(rows.values(), key=lambda r: (r["created_at"], r["cutlist_no"]))
     return {"product_found": True, "cutlists": ordered}
+
+
+# ── Catalog item (the catalog row whose SKU is the order's product code) ───────────────────────
+
+# Fixed order the matches are listed in (a code can exist in several tables); a test pins it to the REGISTRY keys.
+CATALOG_MATCH_ORDER = ("board", "benchtop", "hardware", "edging", "glass", "timber", "custom_made", "appliance", "hire")
+# Each type's own fields: the catalog's field tuples, so a field added there shows up here. `um` and
+# `product_website` are lifted out of the list (shown on their own); no money, notes or supplier columns.
+_CATALOG_TYPE_FIELDS: dict[str, tuple[str, ...]] = {
+    "board": cq.BOARD_FIELDS_TUPLE, "benchtop": cq.BENCHTOP_FIELDS_TUPLE, "hardware": cq.HARDWARE_FIELDS_TUPLE,
+    "edging": cq.EDGING_FIELDS_TUPLE, "glass": cq.GLASS_FIELDS_TUPLE, "timber": cq.TIMBER_FIELDS_TUPLE,
+    "custom_made": cq.CUSTOM_FIELDS_TUPLE, "appliance": cq.APPLIANCE_FIELDS_TUPLE, "hire": cq.HIRE_FIELDS_TUPLE,
+}
+_LIFTED = ("um", "product_website")
+_PER_TABLE = 5
+
+
+def _plain(v):
+    return float(v) if isinstance(v, Decimal) else v
+
+
+def catalog_matches(db: Session, *, po_id: int, workspace_id: int) -> list[dict] | None:
+    """The catalog rows (all nine tables) whose SKU is the order's product code, trimmed and case-insensitive,
+    live ones first, then by `CATALOG_MATCH_ORDER`, then oldest row first. An Equipment Hire row belongs to a
+    project, so it matches only the order's own project (an order with no project matches none).
+    None = no such order in this workspace."""
+    order = order_row(db, po_id=po_id, workspace_id=workspace_id)
+    if order is None:
+        return None
+    code = (order["product_code"] or "").strip()
+    if not code:
+        return []
+    out: list[dict] = []
+    for type_ in CATALOG_MATCH_ORDER:
+        table, pk = cq.REGISTRY[type_][0], cq.REGISTRY[type_][1]
+        fields = [f for f in _CATALOG_TYPE_FIELDS[type_] if f not in _LIFTED]
+        extra, params = "", {"w": workspace_id, "c": code}
+        if type_ == "hire":
+            if order["project_id"] is None:
+                continue
+            extra, params["p"] = " AND project_id = :p", order["project_id"]
+        rows = db.execute(
+            text(
+                f"SELECT {pk} AS id, sku, description, product_type, um, product_website,"
+                f" (archived_at IS NOT NULL) AS archived, (image_blob IS NOT NULL) AS has_image"
+                f"{''.join(', ' + f for f in fields)} FROM {table}"
+                f" WHERE workspace_id = :w AND lower(btrim(sku)) = lower(:c){extra}"
+                f" ORDER BY (archived_at IS NOT NULL), {pk} LIMIT {_PER_TABLE}"
+            ),
+            params,
+        ).mappings().all()
+        for r in rows:
+            out.append({
+                "type": type_, "id": r["id"], "sku": r["sku"], "description": r["description"],
+                "product_type": r["product_type"], "um": r["um"], "product_website": r["product_website"],
+                "archived": r["archived"], "has_image": r["has_image"],
+                "fields": {f: _plain(r[f]) for f in fields},
+            })
+    out.sort(key=lambda m: m["archived"])  # stable: live first, the fixed table order kept within each group
+    return out
+
+
+def catalog_match_image(db: Session, *, po_id: int, workspace_id: int, n: int) -> tuple[bool, int | None]:
+    """(the order exists here, the picture blob of its n-th catalog match). Only rows that match the order's
+    product code can be reached, so the Orderbook never opens a picture of an arbitrary catalog row."""
+    matches = catalog_matches(db, po_id=po_id, workspace_id=workspace_id)
+    if matches is None:
+        return False, None
+    if n >= len(matches) or not matches[n]["has_image"]:
+        return True, None
+    m = matches[n]
+    _, blob = cq.image_blob(db, type_=m["type"], mid=m["id"], workspace_id=workspace_id)
+    return True, blob
 
 
 # ── Product image ───────────────────────────────────────────────────────────────────────────────

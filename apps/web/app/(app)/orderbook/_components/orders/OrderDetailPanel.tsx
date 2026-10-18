@@ -11,6 +11,7 @@ import { OrderTypeFields } from "./OrderTypeFields";
 import { LinesSection } from "./LinesSection";
 import { OrderAttachments } from "./OrderAttachments";
 import { ProductImage } from "./ProductImage";
+import { CatalogItemBlock } from "./CatalogItemBlock";
 import { AdminTab } from "./tabs/AdminTab";
 import { CutlistsTab } from "./tabs/CutlistsTab";
 import { DeliveryTab } from "./tabs/DeliveryTab";
@@ -412,7 +413,7 @@ export function OrderDetailPanel({
             <Row label="Item"><span className="h-mono">{order.item_number ?? "—"}</span></Row>
             <Row label="Requested by">{order.requester_name ?? "—"}</Row>
             <Row label="Requested date"><span className="h-mono">{order.requested_date ?? "—"}</span></Row>
-            <TextRow label="Product code" value={order.product_code} canEdit={canEditFields} mono
+            <TextRow label="Product code" value={order.product_code} canEdit={canEditFields} mono testId="order-product-code"
               onSave={v => patchField("product_code", v || null)} error={errors.product_code} />
             <CheckRow label="Stock tracked" value={order.stock_tracked} canEdit={canEditFields}
               onSave={v => patchField("stock_tracked", v)} error={errors.stock_tracked} />
@@ -494,6 +495,7 @@ export function OrderDetailPanel({
                   onSave={v => patchField("product_description", v || null)} error={errors.product_description} />
               </dl>
             </div>
+            <CatalogItemBlock poId={order.po_id} productCode={order.product_code} />
             <div>
               <p className="mb-1 text-[10px] uppercase tracking-wide text-h-muted">Change log</p>
               <p className="min-h-10 whitespace-pre-wrap rounded border border-h-line bg-h-bg px-2 py-1 text-h-muted">

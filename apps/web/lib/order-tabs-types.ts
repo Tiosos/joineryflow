@@ -112,3 +112,22 @@ export interface TgRun {
   location: string | null;
   notes: string | null;
 }
+
+/** `GET /orders/{id}/catalog-item`: the catalog rows whose SKU is the order's product code (read-only; nothing is stored on the order).
+ *  `type` is the catalog table key (`board`, `glass`...); `fields` are the type's own fields, numbers as JSON numbers. */
+export interface OrderCatalogItem {
+  type: string;
+  id: number;
+  sku: string | null;
+  description: string | null;
+  product_type: string | null;
+  um: string | null;
+  product_website: string | null;
+  archived: boolean;
+  has_image: boolean;
+  fields: Record<string, string | number | boolean | null>;
+}
+
+export interface OrderCatalogItems {
+  items: OrderCatalogItem[];
+}
