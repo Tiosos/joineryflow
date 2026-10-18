@@ -52,7 +52,7 @@ def test_other_tables_do_not_take_glass_fields():
     assert r.status_code == 200 and "glass_type" not in r.json()
 
 
-def test_glass_image_is_stored_served_and_removed_and_appliances_have_none():
+def test_glass_image_is_stored_served_and_removed():
     c, _, _ = login("drafter")
     mid = _mk(c)["material_id"]
     assert c.get(f"/catalog/glass-materials/{mid}/image").status_code == 404
@@ -61,8 +61,6 @@ def test_glass_image_is_stored_served_and_removed_and_appliances_have_none():
     assert got.content == PNG and c.get(f"/catalog/glass-materials/{mid}").json()["has_image"] is True
     assert c.delete(f"/catalog/glass-materials/{mid}/image").status_code == 204
     assert c.get(f"/catalog/glass-materials/{mid}").json()["has_image"] is False
-    ap = c.post("/catalog/appliances", json={"model_number": "ap-i", "sku": "ap-i", "description": "H"}).json()["material_id"]
-    assert c.put(f"/catalog/appliances/{ap}/image", files={"file": ("p.png", PNG)}).status_code == 404
 
 
 def test_glass_of_another_workspace_is_a_404():

@@ -31,8 +31,8 @@ def test_custom_fields_are_created_listed_patched_and_cleared():
 def test_other_tables_do_not_take_custom_fields():
     c, _, _ = login("drafter")
     mid = c.post("/catalog/appliances", json={"model_number": "a-1", "sku": "a-1", "description": "Oven"}).json()["material_id"]
-    r = c.patch(f"/catalog/appliances/{mid}", json={"um": "Tot"})
-    assert r.status_code == 200 and "um" not in r.json()
+    r = c.patch(f"/catalog/appliances/{mid}", json={"brand": "Blum"})   # every table has a UM since 0077
+    assert r.status_code == 200 and "brand" not in r.json()
 
 
 def test_custom_image_is_stored_served_and_removed():

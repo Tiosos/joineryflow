@@ -135,6 +135,8 @@ class CreateApplianceIn(_EnrichmentFields):
     model_number: str = Field(min_length=1, max_length=64)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=255)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class CreateEquipmentHireIn(_EnrichmentFields):
@@ -248,6 +250,8 @@ class PatchBenchtopIn(PatchBaseIn):
 
 class PatchApplianceIn(PatchBaseIn):
     model_number: str | None = Field(default=None, max_length=64)
+    um: str | None = Field(default=None, max_length=32)
+    product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchEquipmentHireIn(PatchBaseIn):

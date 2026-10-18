@@ -42,5 +42,5 @@ def test_other_tables_ignore_board_um():
     r = c.patch(f"/catalog/hardware-materials/{mid}", json={"um": "ea"})        # Hardware has its own um (0072)
     assert r.status_code == 200 and r.json()["um"] == "ea"
     a = c.post("/catalog/appliances", json={"model_number": "a-1", "sku": "a-1", "description": "Oven"}).json()["material_id"]
-    r = c.patch(f"/catalog/appliances/{a}", json={"um": "ea"})
-    assert r.status_code == 200 and "um" not in r.json()
+    r = c.patch(f"/catalog/appliances/{a}", json={"um": "ea"})                  # Appliance has its own um (0077)
+    assert r.status_code == 200 and r.json()["um"] == "ea"

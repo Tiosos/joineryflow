@@ -13,6 +13,7 @@ import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
 import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "./timberFields";
 import { CUSTOM_TEXT_FIELDS } from "./customFields";
 import { HIRE_TEXT_FIELDS } from "./hireFields";
+import { APPLIANCE_TEXT_FIELDS } from "./applianceFields";
 import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
 
@@ -279,8 +280,14 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
                 onSave={(v) => save({ [f.key]: v.trim() || null })} />
         </td>
       ))}
+      {tab === "appliance" && APPLIANCE_TEXT_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1">
+          <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
+                onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
       {(tab === "board" || tab === "edging" || tab === "glass" || tab === "timber" || tab === "benchtop" || tab === "hardware"
-        || tab === "custom_made" || tab === "hire") && (
+        || tab === "custom_made" || tab === "hire" || tab === "appliance") && (
         <td className="px-3 py-1">
           <BoardImageCell slug={slug} mid={mid} hasImage={row.has_image ?? false} canWrite={canWrite && !row.archived_at}
                           onChanged={onChanged} />
