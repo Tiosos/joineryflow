@@ -20,6 +20,8 @@
 - 12. Not built / open items
 - 13. Questions for you
 - 14. Suggestions
+- Appendix A. Source index of every button
+- Appendix B. Role × control matrix
 
 ## 1. Product overview
 
@@ -58,6 +60,28 @@ Information architecture is fixed: **6 primary tabs** — Dashboard · Tracking 
 - Drafter is PM-parity on `orderbook` (except `approve`), `shop_dwgs`, `isample`, `catalog`, `cut_floor`.
 - `jtbd_role` is display-only; nothing branches on it.
 - `/auth/me`, Global Search and comment routes use workspace-wide grants only.
+
+
+### 3.1 Default module permissions per role
+
+From `apps/api/app/auth/permissions.py` (`MATRIX`), which is also what `seed_system_groups` writes for a new workspace; migrations 0037/0039/0054 mirror it. **An admin can edit the groups on /it, so a live workspace may differ.** R = read, W = write, A = approve, C = comment.
+
+| Module | admin | manager | editor | drafter | estimator | purchase_officer | viewer |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| `dashboard` | RWAC | RWAC | RWC | R | R | R | R |
+| `tracking` | RWAC | RWAC | RWC | RWAC | RC | RC | R |
+| `list` | RWAC | RWAC | RWC | RWAC | RC | R | R |
+| `shop_dwgs` | RWAC | RWAC | RWC | RWAC | RC | R | R |
+| `isample` | RWAC | RWAC | RWC | RWAC | RC | R | R |
+| `orderbook` | RWAC | RWAC | RC | RWC | R | RWAC | R |
+| `catalog` | RWAC | RWAC | RWC | RWAC | RC | RC | R |
+| `cut_floor` | RWAC | RWAC | RWC | RWAC | R | R | R |
+| `shop_floor` | RWAC | RWAC | RWC | RC | R | R | R |
+| `estimating` | RWAC | RWAC | R | RC | RWAC | R | R |
+| `qc` | RWAC | RWAC | RWC | RC | R | R | R |
+| `it_management` | RWAC | R | — | — | — | — | — |
+
+Notes: `viewer` is read-only everywhere except `it_management`; `manager` has only read on `it_management`; `drafter` has no `orderbook:approve` (deciding orders is purchase_officer, manager, admin). Item writes additionally need drafter/manager/admin (`require_drafter`).
 
 ## 4. Core data concepts and invariants
 
@@ -170,7 +194,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-15` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | catalog / shop_floor / cut_floor / qc / estimating read | — |
+| `CHRO-15` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | any signed-in user (a tab shows only when its module’s read is granted) | — |
 | `CHRO-16` | **/it (admin only)** | tab | Admin surface link: permission groups, labour rates, staff photos, search health, shop-worker roster. | — | it_management:read (admin only) | — |
 
 **Project sidebar (Dashboard only)**
@@ -420,7 +444,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ITEM-36` | **Set status** | button | Opens the Status dialog for this item. | PATCH /items/{id}/status | — | — |
-| `ITEM-37` | **Mark REQ done today** | button | Sets the REQ lifecycle stage’s done_date to today. Disabled when already done. | PATCH /items/{id}/lifecycle/REQ | — | — |
+| `ITEM-37` | **Mark REQ done today** | button | Sets the REQ lifecycle stage’s done_date to today. Disabled when already done. | PATCH /items/{id}/lifecycle/{stage_key} | — | — |
 | `ITEM-38` | **Duplicate item** | button | Opens the Duplicate dialog. | — | tracking:write | — |
 | `ITEM-39` | **Duplicate (confirm)** | button | Same-project copy with its own new cutlist, status reset to CLEAR, QC checklist unticked; links to source via duplicated_from_item_id. | POST /items/{id}/duplicate | tracking:write | — |
 | `ITEM-40` | **Duplicated from #n** | link | Link to the source item. | — | — | — |
@@ -648,7 +672,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `ORDE-47` | **✓ / ○ (GST auto)** | toggle | While on, GST is 10% of Ex (server-computed). Off = typed figure. Inc = Ex + GST. | — | — | — |
 | `ORDE-48` | **remove (file) / Delete / Close** | button | Remove Delivery/Invoice/Non-Delivery file, delete the invoice, or close. | DELETE …/invoices/{id}(/files/{slot}) | orderbook:write | — |
 | `ORDE-49` | **Create Form (Authorisation)** | button | Renders and keeps the authorisation PDF from the saved details. Deposit % or amount, not both (DEPOSIT_BOTH). | POST …/authorisation/form | orderbook:write | — |
-| `ORDE-50` | **remove (Signed Form) / Close** | button | Removes the hand-signed scan / closes. | DELETE …/authorisation/signed | — | — |
+| `ORDE-50` | **remove (Signed Form) / Close** | button | Removes the hand-signed scan / closes. | DELETE /purchase-orders/{id}/authorisation/signed | orderbook:write | — |
 | `ORDE-51` | **Edit list / Switch on\|off / Add (payment method)** | button | Maintains the per-workspace Payment Method list. | POST\|PATCH /payment-methods | purchase_officer / admin | — |
 | `ORDE-52` | **Open (Invoice Details table)** | link | Opens the invoice in the window. | — | — | — |
 
@@ -785,7 +809,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `IT-02` | **Create (group)** | button | Creates a custom group. | POST /permission-groups | it_management:write | — |
 | `IT-03` | **Save grants** | button | Writes the module × action grid (7 roles, 12 modules, 4 actions read/write/approve/comment). | PUT /permission-groups/{gid}/grants | — | — |
 | `IT-04` | **Delete group** | button | Confirms and deletes (system groups cannot be). | DELETE /permission-groups/{gid} | — | — |
-| `IT-05` | **Add / Remove (member)** | button | Adds a member (optionally project-scoped) or removes one. | POST\|DELETE …/memberships | — | — |
+| `IT-05` | **Add / Remove (member)** | button | Adds a member (optionally project-scoped) or removes one. | POST /permission-groups/{gid}/memberships · DELETE /permission-groups/memberships/{mid} | — | — |
 | `IT-06` | **Save (labour rates)** | button | Saves hourly rate per lifecycle stage. | PATCH /it/labour-rates | — | — |
 | `IT-07` | **Refresh (search health)** | button | Reloads Meilisearch health/outbox. | GET /search/health | — | — |
 | `IT-08` | **Remove (staff photo)** | button | Removes a staff photo (PNG/JPEG shown in the PO staff list). | DELETE /users/{id}/photo | — | — |
@@ -1411,6 +1435,313 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | S-10 | **Per-role ‘what I can click’ view** | Because RBAC is data-driven, nobody can answer ‘what does a drafter see?’ without logging in as one. A generated role × module × action matrix on /it would answer it and double as a review aid. | Medium |
 | S-11 | **Undo for destructive grid actions** | Bulk Delete and Archive actions confirm with a native dialog but have no in-app undo (apart from manager/admin Restore). A 10-second ‘Undo’ toast (like Shop Floor’s 5-minute undo) fits the existing pattern. | Low |
 | S-12 | **Print/PDF actions deserve one pattern** | PO PDF/Excel, cutlist/hardware/combined PDFs, quote PDF, item label and the Timber/Authorisation forms each have their own button style and loading behaviour. A shared ‘Download / Print’ menu would reduce the count of one-off buttons. | Low |
+
+## Appendix B. Role × control matrix
+
+✔ = the role holds the grant the control needs, — = it does not, **?** = the requirement is a per-object or free-text rule I could not reduce to a grant (read the Who column in section 10). Computed from the default `MATRIX`; per-object rules (uploader ≠ approver, creator-or-manager, locks, 5-minute undo) are not reflected.
+
+| Id | Control | admin | manager | editor | drafter | estimator | purchase_officer | viewer |
+| --- | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| `CHRO-01` | JoineryFlow logo / name | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-02` | Search box (type-ahead) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-03` | Search hit row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-04` | All results for “q” → | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-05` | 🔔 Notification bell | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-06` | Mark all read (bell) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-07` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-08` | Sign out | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-09` | Dashboard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-10` | Tracking ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-11` | List ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-12` | Shop Dwgs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-13` | iSample | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-14` | Orderbook ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-15` | Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-16` | /it (admin only) | ✔ | ✔ | — | — | — | — | — |
+| `CHRO-17` | FAV / ALL toggle | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-18` | ☆ / ★ favourite star | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LOGI-01` | Sign in | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LOGI-02` | × (dismiss notice) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LOGI-03` | Continue with SSO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-01` | Metric tile (each) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-02` | My Day row, Delivery row, Activity row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-03` | ✎ Update status | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-04` | Status choices (In / On site / Shop / WFH / Off) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-05` | Clear | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-06` | Save | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `DASH-07` | Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-01` | + New project | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-02` | ✕ (drawer) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-03` | Create | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-04` | Cancel (drawer) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-01` | Project name ▾ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-02` | ★ FAV / ALL (menu) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-03` | Project row (menu) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-04` | ★ (favourite) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-05` | Info | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-06` | 🛒 Open Procurement | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-07` | Edit item | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-08` | + New item | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-09` | My Entries | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-10` | Deleted | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-11` | Void | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-12` | Tg Solid | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-13` | Orders | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-14` | Overdue | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-15` | Installed | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-16` | ↻ (refresh) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-17` | Show / Hide (row count) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-18` | Apply status… | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-19` | Delete (selection) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-20` | Restore (selection) | ✔ | ✔ | — | — | — | — | — |
+| `TRAC-21` | Clear selection | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-22` | DATE · TO BE ORDERED · iTIME · HARDWARE · SITE MEASURE · INVOICE · QC  | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-23` | + Create Order | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `TRAC-24` | Clear (filters) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-25` | Column headers (Th) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-26` | ▶ (open) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-27` | ▶ / ▼ (related parts) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-28` | Status pill | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-29` | Open item availability | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-30` | Status choices | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-31` | ⚠ Update Status To All | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-32` | ↻ Update Current Item | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-33` | Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-34` | Apply <STATUS> | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `TRAC-35` | Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-36` | Create and open | ✔ | ✔ | — | ✔ | — | — | — |
+| `TRAC-37` | Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-38` | ✕ / CLOSE | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-39` | Modal tabs (register / slots / reference fields) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-40` | ‹ Previous / Next › | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-41` | + Add field | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-42` | Create order | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `TRAC-43` | Close / Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-44` | Project stats / Budget tabs | ✔ | ✔ | — | — | — | — | — |
+| `TRAC-45` | Cars / OH&S / Scope tabs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-46` | Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-01` | Delete | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-02` | ✕ (close editor) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-03` | Hard-lock / Unlock (banner) | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-04` | Lock / Unlock (footer) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-05` | (no button) Lock requests | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-06` | Cutlist · Hardware · Board · Material Take · Attachments · Actions · Q | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-07` | Import from CV | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-08` | + Add module | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-09` | Module (tree item) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-10` | Delete module | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-11` | Delete module (confirm) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-12` | + Add row | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-13` | – (delete part) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-14` | Preview | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-15` | Use existing / Create new / Skip (per unknown code) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-16` | Continue / Back | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-17` | Import | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-18` | Cancel / Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-19` | + (Pantry row) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-20` | + Add from global | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-21` | Table tabs (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-22` | Add (modal row) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-23` | − / + (cart qty) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-24` | – (cart delete) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-25` | ✕ (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-26` | Generate material take / Start v(n+1) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-27` | Regenerate | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-28` | Add line / Remove | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-29` | Approve | ? | ? | ? | ? | ? | ? | ? |
+| `ITEM-30` | No impact / Partial impact / Full impact | ? | ? | ? | ? | ? | ? | ? |
+| `ITEM-31` | Upload / Replace (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-32` | Delete (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-33` | Add document (Register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-34` | ↑ / ↓ (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-35` | Remove (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-36` | Set status | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-37` | Mark REQ done today | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-38` | Duplicate item | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-39` | Duplicate (confirm) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-40` | Duplicated from #n | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-41` | Jump to Orderbook | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-42` | Ask | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-43` | Answer / Save / Edit answer | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-44` | Raise (defect) | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-45` | Mark resolved | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-46` | Add / × (checklist) | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-47` | + Log rework / Log / Cancel | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-48` | Close (rework) | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-49` | Comment | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-50` | Reply / Edit / Delete / Save / Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-51` | Print label | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-01` | Close out | ✔ | ✔ | — | — | — | — | — |
+| `PROJ-02` | + Add contact / Add / Cancel / Remove | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-03` | Upload sketch / Replace / Remove | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-04` | + Add variation / Add / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-05` | Area row / Room row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-06` | Material-type headers (n item(s) ▾) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-07` | + New batch / Save / Cancel batch | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `PROJ-08` | + Allocate / remove | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `PROJ-09` | Catalog tabs / + Add | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-10` | Build summary / Rebuild from approved takes | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `PROJ-11` | Confirm (summary) | ✔ | ✔ | — | ✔ | — | — | — |
+| `PROJ-12` | ▸ / ▾ line | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `PROJ-13` | ✕ (batch drawer) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LIST-01` | + New cutlist | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `LIST-02` | Rename | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `LIST-03` | Delete | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `LIST-04` | Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LIST-05` | Items / Parts / Hardware | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `LIST-06` | Link | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `LIST-07` | Unlink | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-01` | Upload drawing | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-02` | Create drawing (dialog) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-03` | Queue buttons (Being drawn, Internal review… with counts) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-04` | My drawings on/off | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-05` | All (n) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-06` | Column headers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-07` | ‹ › | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-08` | View (row) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-09` | ✕ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-10` | Revisions / Notes / Attachments / Status History / Audit Log | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-11` | Comments on v# ▾ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-12` | Revision row / View | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-13` | Submit for review | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-14` | Withdraw | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-15` | Approve | ✔ | ✔ | — | ✔ | — | — | — |
+| `SHOP-16` | Reject / Confirm reject / Cancel | ✔ | ✔ | — | ✔ | — | — | — |
+| `SHOP-17` | Upload new revision / Add revision | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-18` | Archive drawing | ✔ | ✔ | — | ✔ | — | — | — |
+| `SHOP-19` | ← Back | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-20` | − / + / Fit | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-21` | Revision rows | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SHOP-22` | Thumbnail | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ISAM-01` | Board / Approval ledger / Archive | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ISAM-02` | + New sample / Create sample / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ISAM-03` | Status filter chips | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ISAM-04` | Sample card | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ISAM-05` | ✕ (drawer) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ISAM-06` | Approve | ✔ | ✔ | — | ✔ | — | — | — |
+| `ISAM-07` | Reject / Confirm reject / Cancel | ✔ | ✔ | — | ✔ | — | — | — |
+| `ISAM-08` | Edit / Save / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ISAM-09` | Upload photo / Replace photo / Upload | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ISAM-10` | Clear photo | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ISAM-11` | Archive | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ISAM-12` | Ledger entry / Previous / Next | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-01` | Orders / Delivery queue | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-02` | Cost centre | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-03` | Edit / Done (cost centres) | ✔ | — | — | — | — | ✔ | — |
+| `ORDE-04` | Add / Save / Cancel (cost centre) | ✔ | — | — | — | — | ✔ | — |
+| `ORDE-05` | Save / Deactivate / Reactivate (row) | ✔ | — | — | — | — | ✔ | — |
+| `ORDE-06` | RTO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-07` | TBO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-08` | Due / Over Due / Arrived / My Orders | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-09` | Clear | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-10` | New | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-11` | Create order | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-12` | Supplier | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-13` | Po (n) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-14` | Clear selection (n) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-15` | PO link in a row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-16` | Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-17` | Reject order / Cancel | ✔ | ✔ | — | — | — | ✔ | — |
+| `ORDE-18` | Cancel order / Keep order | ✔ | ✔ | — | — | — | ✔ | — |
+| `ORDE-19` | Open PO n / Create PO! | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-20` | HOME · Delivery · Glass C · Timber · Stock · Tracking · Supplier · TGS | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-21` | + Add line / × (line) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-22` | − (attachment) / FILE / PDF upload | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-23` | remove (product image) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-24` | Catalog item block (HOME, read-only) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-25` | + Add / − / × (Delivery) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-26` | Clear All / ▸ Copy Size (Glass C) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-27` | Edit price list / Done / Switch on/off / Add (Glass C) | ✔ | — | — | — | — | ✔ | — |
+| `ORDE-28` | CLEAR / CREATE (Timber) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-29` | + Add / − (TGSolid) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-30` | Add supplier / Edit / Save / Cancel / Close | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-31` | Remove (logo) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-32` | + Contact / Edit / − / Save contact / Cancel | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-33` | Close / Done | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-34` | Add Delivery / Update Delivery / Remove | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-35` | ○ / ✓ (Invoiced) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-36` | − (line) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-37` | Add from TBO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-38` | Add (TBO row) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-39` | + Contact / Add contact / Cancel | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-40` | Print | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-41` | Authorisation Form | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-42` | Cancel PO | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-43` | Email Details | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-44` | ‹ / › | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-45` | + Add (invoice) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-46` | ↻ (Total Ex) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-47` | ✓ / ○ (GST auto) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ORDE-48` | remove (file) / Delete / Close | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-49` | Create Form (Authorisation) | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-50` | remove (Signed Form) / Close | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| `ORDE-51` | Edit list / Switch on/off / Add (payment method) | ✔ | — | — | — | — | ✔ | — |
+| `ORDE-52` | Open (Invoice Details table) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CATA-01` | Product-type tabs (name (count)) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CATA-02` | No type (n) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CATA-03` | Sheet Stock / CV Mappings | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CATA-04` | + New / Create / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-05` | Bulk import / Import n rows / Done | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-06` | Archive (row) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-07` | Cells (inline edit) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-08` | Product image: upload / remove | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-09` | + New mapping / Create / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-10` | Delete (mapping) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CATA-11` | Set stock / Remove (Stock) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-01` | ← / → | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CUTF-02` | Optimise… | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-03` | Select all / Clear all | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CUTF-04` | Optimise (run) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-05` | ← Back / Discard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CUTF-06` | Save as plan | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-07` | + Add to <date> / Add / Cancel | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-08` | Start | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-09` | Mark done | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-10` | Cancel (row) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `CUTF-11` | Drag handle (not a button) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `SHOP-01` | + Assign worker | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-02` | Assign / Cancel (dialog) | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-03` | × (assignment) | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-04` | Start <STAGE> | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-05` | Mark <STAGE> done / Confirm done / Cancel | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-06` | Undo (recent completion) | ✔ | ✔ | ✔ | — | — | — | — |
+| `SHOP-07` | Confirm (Packing scanner) | ✔ | ✔ | ✔ | — | — | — | — |
+| `QC-01` | Clear | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ESTI-01` | + New estimate / + Create your first quote / Create / Cancel | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-02` | Active / Archive | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ESTI-03` | Revision rail (v1, v2…) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ESTI-04` | Back to current | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ESTI-05` | Advance (label changes: Lock & send at Submitted) | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-06` | Accept / Reject / Withdraw / Expire | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-07` | Revise (new draft) | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-08` | Convert to project / Convert | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-09` | Generate orders / Review lines | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-10` | Ordered by hand… / Mark ordered by hand / Undo | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-11` | + Add line | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-12` | ✎ Edit / Save / Cancel | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-13` | ⎘ Clone | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ESTI-14` | Delete line | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-15` | + Material (catalog picker) / kind tabs / pick row | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-16` | + Labour / × | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-17` | × (part) / × (hardware) | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-18` | + New customer / Create / Cancel | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-19` | ✎ Edit / Save / Cancel | ✔ | ✔ | — | — | ✔ | — | — |
+| `ESTI-20` | Archive | ✔ | ✔ | — | — | ✔ | — | — |
+| `IT-01` | Group row | ✔ | ✔ | — | — | — | — | — |
+| `IT-02` | Create (group) | ✔ | — | — | — | — | — | — |
+| `IT-03` | Save grants | ✔ | — | — | — | — | — | — |
+| `IT-04` | Delete group | ✔ | — | — | — | — | — | — |
+| `IT-05` | Add / Remove (member) | ✔ | — | — | — | — | — | — |
+| `IT-06` | Save (labour rates) | ✔ | — | — | — | — | — | — |
+| `IT-07` | Refresh (search health) | ✔ | ✔ | — | — | — | — | — |
+| `IT-08` | Remove (staff photo) | ✔ | — | — | — | — | — | — |
+| `SEAR-01` | Type chips (with counts) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SEAR-02` | ← Previous / Next → | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SEAR-03` | Mark all read (page) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `SEAR-04` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+
+Controls each role can use (of 295 with a computable rule; 2 are `?`): admin 295, manager 284, editor 208, drafter 245, estimator 157, purchase_officer 176, viewer 141.
+
 
 ## Appendix A. Source index of every `<button>` in the web app
 
