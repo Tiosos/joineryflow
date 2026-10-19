@@ -2,7 +2,7 @@
 
 > Companion to `button-reference.html`. Every control id here (e.g. `TRAC-07`) is the same id shown on the matching card in the HTML. Both files are generated from one data file, so they cannot disagree.
 
-> Generated from the code on **2026-10-15** (Alembic head `0065_order_popup_tabs_b`). Where this document and CLAUDE.md or Plan V1 disagree, **ask** — see the Questions at the end (CLAUDE.md Rule Zero).
+> Generated from the code on **2026-10-19** (Alembic head `0077_appliance_fields`, main at `26527b8`). Where this document and CLAUDE.md or Plan V1 disagree, **ask** — see the Questions at the end (CLAUDE.md Rule Zero).
 
 ## Contents
 
@@ -63,7 +63,7 @@ Information architecture is fixed: **6 primary tabs** — Dashboard · Tracking 
 
 | Concept | Rule |
 | --- | --- |
-| Six catalog tables | `board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire` — never unified. Soft-archive only; hard delete only for `cv_material_mapping`. |
+| Catalog tables | Nine physical tables: `board_materials`, `hardware_materials`, `custom_made`, `benchtop_materials`, `appliances`, `equipment_hire` (the original six) plus `edging_materials` (`0069`), `glass_materials` (`0070`), `timber_materials` (`0074`). Catalog tabs are product types; Delivery, Supplies, Paint, TG Solid, Laminate and Contractor Manufacturing stay tabs over an existing table. Soft-archive only; hard delete only for `cv_material_mapping`. See Question Q-11: CLAUDE.md still carries a “six tables — never unify” invariant. |
 | Number sequences | `joinery_number_seq` (Item IDs, cutlist numbers, related parts) and `po_number_seq` (`PO-{year}-{0000}`); never `MAX+1`; drawing numbers from `workspace_counter`; PO documents from `po_document_no_seq` (next PO is 193971). |
 | Stage vs lifecycle | **Stage** = site location (`items.stage`); **Zone** = sub-division of Stage; `lifecycle_stage` / `stage_key` = production milestones `REQ SM LISTED DOWN CNC EDGED PAINTED MADE DEL INST` (+ `PACKING` on Shop Floor). Never use bare “stage” for the milestones. |
 | Status | Record state: `CLEAR VOID NOTE! LIVE APPROVED HOLD`. *Status Symbol* is a drafter-only UI flag. |
@@ -191,7 +191,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | --- | --- | --- | --- | --- | --- | --- |
 | `LOGI-01` | **Sign in** | button | Submits workspace slug + email + password. On success sets the httpOnly jf_session cookie (sliding 14 days, hard cap 30) and redirects to the requested page or dashboard. Shows ‘Signing in…’ while busy. | POST /auth/login | public | Argon2id password check; wrong credentials give a generic failure. |
 | `LOGI-02` | **× (dismiss notice)** | button | Closes the banner shown after ‘signed out’ or ‘session expired’ redirects. | — | — | — |
-| `LOGI-03` | **Continue with SSO** | button | Placeholder: the click handler only calls preventDefault. No SSO is wired. | — | — | SEE QUESTION Q-03 in the questions list. |
+| `LOGI-03` | **Continue with SSO** | button | Placeholder: the click handler only calls preventDefault. No SSO is wired. | — | — | Kept deliberately: SSO is planned (your decision, 2026-10-19). Remains a no-op until built. |
 
 ### Dashboard
 
@@ -298,7 +298,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `TRAC-30` | **Status choices** | toggle | Select the new Status (CLEAR VOID NOTE! LIVE APPROVED HOLD). A note is required. | — | — | A Hard or Controlled lock disables this and shows the reason; APPROVED does not block status changes. |
-| `TRAC-31` | **⚠ Update Status To All** | button | Disabled placeholder (tooltip: ‘Bulk update not yet wired’). Use ‘Apply status…’ on the grid instead. | — | — | SEE QUESTION Q-04. |
+| `TRAC-31` | **⚠ Update Status To All** | button | Disabled placeholder (tooltip: ‘Bulk update not yet wired’). Use ‘Apply status…’ on the grid instead. | — | — | Kept deliberately as a planned control (your decision, 2026-10-19). Disabled with the tooltip ‘Bulk update not yet wired’. |
 | `TRAC-32` | **↻ Update Current Item** | button | Saves the status + note on this one item and writes audit_log + item_edit_log. | PATCH /items/{id}/status | tracking:write | — |
 | `TRAC-33` | **Close** | button | Closes the pop-up. | — | — | — |
 
@@ -353,7 +353,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `ITEM-02` | **✕ (close editor)** | button | window.close(); if the browser blocks that, falls back to /dashboard. | — | — | — |
 | `ITEM-03` | **Hard-lock / Unlock (banner)** | button | Hard Lock blocks every edit for everyone including the owner. Shown only to those who can manage it, or whenever locked. | POST\|DELETE /items/{id}/hard-lock | manager / admin | — |
 | `ITEM-04` | **Lock / Unlock (footer)** | button | Takes or releases the Controlled Lock (owner + manager/admin may pass; others’ edits become held lock requests). cutlist_owner_id is sticky. | POST\|DELETE /items/{id}/lock | tracking:write | — |
-| `ITEM-05` | **(no button) Lock requests** | link | The API can hold an edit made under someone else’s Controlled Lock as a lock request and has approve/reject routes, but NO web button calls them today. | GET /items/{id}/lock-requests · POST /lock-requests/{id}/approve\|reject | owner / manager / admin | SEE QUESTION Q-05. |
+| `ITEM-05` | **(no button) Lock requests** | link | The API can hold an edit made under someone else’s Controlled Lock as a lock request and has approve/reject routes, but NO web button calls them today. | GET /items/{id}/lock-requests · POST /lock-requests/{id}/approve\|reject | owner / manager / admin | DECIDED: build a banner with Approve/Reject on the item editor plus a bell notification (not built yet). |
 
 **Editor tabs**
 
@@ -602,72 +602,76 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `ORDE-21` | **+ Add line / × (line)** | button | Adds or removes an order line. | POST /orders/{id}/lines · DELETE …/lines/{lid} | orderbook:write | Cancelled/Delivered orders are read-only except status. |
 | `ORDE-22` | **− (attachment) / FILE / PDF upload** | button | Add or remove files; PDF box accepts PDF only. | POST\|DELETE /orders/{id}/attachments | orderbook:write | — |
 | `ORDE-23` | **remove (product image)** | button | Removes the single PNG/JPEG product image. | DELETE /orders/{id}/image | orderbook:write | — |
+| `ORDE-24` | **Catalog item block (HOME, read-only)** | link | Shows the catalog row(s) whose SKU equals the order’s product code, across all nine catalog tables: type, UM, website (http/https only), the type’s own fields, and the picture. Nothing is stored on the order; it re-reads when the product code is edited. Equipment Hire matches only the order’s own project. | GET /orders/{id}/catalog-item · GET …/catalog-item/image?n= | orderbook:read | No money, notes or supplier columns are shown. |
 
 **Order-pop-up tabs**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ORDE-24` | **+ Add / − / × (Delivery)** | button | Adds a delivery received (qty, date, signed by, notes, docket) or removes it/the docket. The log never changes the order status. | POST\|DELETE /orders/{id}/deliveries | orderbook:write | — |
-| `ORDE-25` | **Clear All / ▸ Copy Size (Glass C)** | button | Clears the calculator; Copy Size reads ‘1471 x 1000 x 6’ from the start of the description. | PUT /orders/{id}/glass-calc | orderbook:write | — |
-| `ORDE-26` | **Edit price list / Done / Switch on\|off / Add (Glass C)** | button | Maintains the per-workspace glass rate list. | POST\|PATCH /glass-rates | purchase_officer / admin | — |
-| `ORDE-27` | **CLEAR / CREATE (Timber)** | button | CLEAR saves empty fields; CREATE saves then renders and keeps the Timberwood Panels pressing-form PDF. | PUT /orders/{id}/timber · POST …/timber/form | orderbook:write | — |
-| `ORDE-28` | **+ Add / − (TGSolid)** | button | Adds/removes production rows (a record only). | POST\|DELETE /orders/{id}/tg-runs | orderbook:write | — |
+| `ORDE-25` | **+ Add / − / × (Delivery)** | button | Adds a delivery received (qty, date, signed by, notes, docket) or removes it/the docket. The log never changes the order status. | POST\|DELETE /orders/{id}/deliveries | orderbook:write | — |
+| `ORDE-26` | **Clear All / ▸ Copy Size (Glass C)** | button | Clears the calculator; Copy Size reads ‘1471 x 1000 x 6’ from the start of the description. | PUT /orders/{id}/glass-calc | orderbook:write | — |
+| `ORDE-27` | **Edit price list / Done / Switch on\|off / Add (Glass C)** | button | Maintains the per-workspace glass rate list. | POST\|PATCH /glass-rates | purchase_officer / admin | — |
+| `ORDE-28` | **CLEAR / CREATE (Timber)** | button | CLEAR saves empty fields; CREATE saves then renders and keeps the Timberwood Panels pressing-form PDF. | PUT /orders/{id}/timber · POST …/timber/form | orderbook:write | — |
+| `ORDE-29` | **+ Add / − (TGSolid)** | button | Adds/removes production rows (a record only). | POST\|DELETE /orders/{id}/tg-runs | orderbook:write | — |
 
 **Supplier list**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ORDE-29` | **Add supplier / Edit / Save / Cancel / Close** | button | Supplier company cards. | POST\|PATCH /suppliers | orderbook:write | — |
-| `ORDE-30` | **Remove (logo)** | button | Removes the logo. | DELETE /suppliers/{id}/logo | orderbook:write | — |
-| `ORDE-31` | **+ Contact / Edit / − / Save contact / Cancel** | button | Manage supplier contacts. | POST\|PATCH\|DELETE /suppliers/{id}/contacts | orderbook:write | — |
+| `ORDE-30` | **Add supplier / Edit / Save / Cancel / Close** | button | Supplier company cards. | POST\|PATCH /suppliers | orderbook:write | — |
+| `ORDE-31` | **Remove (logo)** | button | Removes the logo. | DELETE /suppliers/{id}/logo | orderbook:write | — |
+| `ORDE-32` | **+ Contact / Edit / − / Save contact / Cancel** | button | Manage supplier contacts. | POST\|PATCH\|DELETE /suppliers/{id}/contacts | orderbook:write | — |
 
 **PO document window**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ORDE-32` | **Close / Done** | button | Closes the PO window (saves pending edits first). | — | — | — |
-| `ORDE-33` | **Add Delivery / Update Delivery / Remove** | button | The delivery charge is a real ‘Delivery Fee’ order on the PO. | PUT\|DELETE /purchase-orders/{id}/delivery | orderbook:write | — |
-| `ORDE-34` | **○ / ✓ (Invoiced)** | toggle | Opens the Invoice Details window for that line. | — | — | — |
-| `ORDE-35` | **− (line)** | button | Takes an order off the PO (restores date only if the PO set it). | DELETE /purchase-orders/{id}/orders/{oid} | orderbook:write | — |
-| `ORDE-36` | **Add from TBO** | button | Lists the supplier’s open orders to add. | GET /orders?supplier=…&status=open | — | — |
-| `ORDE-37` | **Add (TBO row)** | button | Adds that order to the PO. | POST /purchase-orders/{id}/orders | orderbook:write | — |
-| `ORDE-38` | **+ Contact / Add contact / Cancel** | button | Adds a supplier contact from the PO. | POST /suppliers/{vid}/contacts | — | — |
-| `ORDE-39` | **Print** | button | PDF / Excel export. | GET /purchase-orders/{id}/pdf\|excel | orderbook:read | — |
-| `ORDE-40` | **Authorisation Form** | button | Opens the Authorisation window. | — | orderbook:write | — |
-| `ORDE-41` | **Cancel PO** | button | Frees the orders and cancels the Delivery Fee order. Refused while invoices exist (PO_HAS_INVOICES). | POST /purchase-orders/{id}/cancel | orderbook:write | — |
-| `ORDE-42` | **Email Details** | link | A mailto: link; the PDF must be attached by the user. Ticked staff become cc. | GET /purchase-orders/staff | orderbook:read | — |
+| `ORDE-33` | **Close / Done** | button | Closes the PO window (saves pending edits first). | — | — | — |
+| `ORDE-34` | **Add Delivery / Update Delivery / Remove** | button | The delivery charge is a real ‘Delivery Fee’ order on the PO. | PUT\|DELETE /purchase-orders/{id}/delivery | orderbook:write | — |
+| `ORDE-35` | **○ / ✓ (Invoiced)** | toggle | Opens the Invoice Details window for that line. | — | — | — |
+| `ORDE-36` | **− (line)** | button | Takes an order off the PO (restores date only if the PO set it). | DELETE /purchase-orders/{id}/orders/{oid} | orderbook:write | — |
+| `ORDE-37` | **Add from TBO** | button | Lists the supplier’s open orders to add. | GET /orders?supplier=…&status=open | — | — |
+| `ORDE-38` | **Add (TBO row)** | button | Adds that order to the PO. | POST /purchase-orders/{id}/orders | orderbook:write | — |
+| `ORDE-39` | **+ Contact / Add contact / Cancel** | button | Adds a supplier contact from the PO. | POST /suppliers/{vid}/contacts | — | — |
+| `ORDE-40` | **Print** | button | PDF / Excel export. | GET /purchase-orders/{id}/pdf\|excel | orderbook:read | — |
+| `ORDE-41` | **Authorisation Form** | button | Opens the Authorisation window. | — | orderbook:write | — |
+| `ORDE-42` | **Cancel PO** | button | Frees the orders and cancels the Delivery Fee order. Refused while invoices exist (PO_HAS_INVOICES). | POST /purchase-orders/{id}/cancel | orderbook:write | — |
+| `ORDE-43` | **Email Details** | link | A mailto: link; the PDF must be attached by the user. Ticked staff become cc. | GET /purchase-orders/staff | orderbook:read | — |
 
 **Invoice window and Authorisation window**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ORDE-43` | **‹ / ›** | button | Previous/next invoice on the line (commits first). | — | — | — |
-| `ORDE-44` | **+ Add (invoice)** | button | Starts a new invoice on the line. | POST /purchase-orders/{id}/invoices | orderbook:write | — |
-| `ORDE-45` | **↻ (Total Ex)** | button | Total Ex = qty × the line’s unit cost. | — | — | — |
-| `ORDE-46` | **✓ / ○ (GST auto)** | toggle | While on, GST is 10% of Ex (server-computed). Off = typed figure. Inc = Ex + GST. | — | — | — |
-| `ORDE-47` | **remove (file) / Delete / Close** | button | Remove Delivery/Invoice/Non-Delivery file, delete the invoice, or close. | DELETE …/invoices/{id}(/files/{slot}) | orderbook:write | — |
-| `ORDE-48` | **Create Form (Authorisation)** | button | Renders and keeps the authorisation PDF from the saved details. Deposit % or amount, not both (DEPOSIT_BOTH). | POST …/authorisation/form | orderbook:write | — |
-| `ORDE-49` | **remove (Signed Form) / Close** | button | Removes the hand-signed scan / closes. | DELETE …/authorisation/signed | — | — |
-| `ORDE-50` | **Edit list / Switch on\|off / Add (payment method)** | button | Maintains the per-workspace Payment Method list. | POST\|PATCH /payment-methods | purchase_officer / admin | — |
-| `ORDE-51` | **Open (Invoice Details table)** | link | Opens the invoice in the window. | — | — | — |
+| `ORDE-44` | **‹ / ›** | button | Previous/next invoice on the line (commits first). | — | — | — |
+| `ORDE-45` | **+ Add (invoice)** | button | Starts a new invoice on the line. | POST /purchase-orders/{id}/invoices | orderbook:write | — |
+| `ORDE-46` | **↻ (Total Ex)** | button | Total Ex = qty × the line’s unit cost. | — | — | — |
+| `ORDE-47` | **✓ / ○ (GST auto)** | toggle | While on, GST is 10% of Ex (server-computed). Off = typed figure. Inc = Ex + GST. | — | — | — |
+| `ORDE-48` | **remove (file) / Delete / Close** | button | Remove Delivery/Invoice/Non-Delivery file, delete the invoice, or close. | DELETE …/invoices/{id}(/files/{slot}) | orderbook:write | — |
+| `ORDE-49` | **Create Form (Authorisation)** | button | Renders and keeps the authorisation PDF from the saved details. Deposit % or amount, not both (DEPOSIT_BOTH). | POST …/authorisation/form | orderbook:write | — |
+| `ORDE-50` | **remove (Signed Form) / Close** | button | Removes the hand-signed scan / closes. | DELETE …/authorisation/signed | — | — |
+| `ORDE-51` | **Edit list / Switch on\|off / Add (payment method)** | button | Maintains the per-workspace Payment Method list. | POST\|PATCH /payment-methods | purchase_officer / admin | — |
+| `ORDE-52` | **Open (Invoice Details table)** | link | Opens the invoice in the window. | — | — | — |
 
 ### Catalog
 
 *Route:* `/catalog`  
-*Purpose:* Six separate catalog tables (never unified): board, hardware, custom_made, benchtop, appliances, equipment_hire; plus CV mappings and board stock.
+*Purpose:* Catalog tabs are product types (Edging, Glass, Solid Timber, Hardware, Board, Laminate, Paint, TG Solid, Supplies, Delivery, Contractor Manufacturing…). Rows live in nine physical tables: board_materials, hardware_materials, custom_made, benchtop_materials, appliances, equipment_hire, edging_materials, glass_materials, timber_materials. Types without their own fields (Delivery, Supplies, Paint, TG Solid, Laminate, Contractor Manufacturing) stay tabs over an existing table. Plus CV mappings and board stock.
 
 **Catalog page**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CATA-01` | **Catalog tabs** | tab | Switch between the six tables, CV mappings and Stock. | — | — | — |
-| `CATA-02` | **+ New / Create / Cancel** | button | Creates a catalog row (hire needs a project). | POST /catalog/{slug} | catalog:write | — |
-| `CATA-03` | **Bulk import / Import n rows / Done** | button | All-or-nothing: every row validated first; supplier matched by exact name. | POST /catalog/{slug}/bulk | catalog:write | — |
-| `CATA-04` | **Archive (row)** | button | Soft-archives the row (no hard delete). | POST /catalog/{slug}/{mid}/archive | catalog:write | — |
-| `CATA-05` | **Cells (inline edit)** | input | Click-to-edit description, sku, supplier, lead time etc. | PATCH /catalog/{slug}/{mid} | catalog:write | — |
-| `CATA-06` | **+ New mapping / Create / Cancel** | button | Maps a CV code to a catalog row. | POST /catalog/cv-mappings | catalog:write | — |
-| `CATA-07` | **Delete (mapping)** | button | The only hard delete in the catalog. | DELETE /catalog/cv-mappings/{id} | catalog:write | — |
-| `CATA-08` | **Set stock / Remove (Stock)** | button | Upserts sheet stock for (material, size); removes a stock row. | POST\|DELETE /board-inventory | cut_floor:write | — |
+| `CATA-01` | **Product-type tabs (name (count))** | tab | One tab per product type in use, with its row count; picks which rows the grid shows (type tabs come from product_type). | GET /catalog/product-types · GET /catalog/by-type | catalog:read | — |
+| `CATA-02` | **No type (n)** | tab | Shows rows with no product type; only present when there are some. | GET /catalog/by-type | catalog:read | — |
+| `CATA-03` | **Sheet Stock / CV Mappings** | tab | Switch to the board stock panel or the CV code mappings. | — | catalog:read | — |
+| `CATA-04` | **+ New / Create / Cancel** | button | Creates a catalog row of the active type (hire needs a project; each type has its own fields). | POST /catalog/{slug} | catalog:write | — |
+| `CATA-05` | **Bulk import / Import n rows / Done** | button | All-or-nothing: every row validated first; supplier matched by exact name. | POST /catalog/{slug}/bulk | catalog:write | — |
+| `CATA-06` | **Archive (row)** | button | Soft-archives the row (no hard delete). | POST /catalog/{slug}/{mid}/archive | catalog:write | — |
+| `CATA-07` | **Cells (inline edit)** | input | Click-to-edit description, sku, supplier, lead time, unit cost and the type’s own fields (board sizes, UM, website…). | PATCH /catalog/{slug}/{mid} | catalog:write | — |
+| `CATA-08` | **Product image: upload / remove** | button | One PNG/JPEG picture per row on types that have one (Board, Edging, Glass, Timber, Hardware, Custom, Benchtop, Hire, Appliance). ‘remove’ deletes it. | PUT\|DELETE /catalog/{slug}/{mid}/image · GET …/image | catalog:write | — |
+| `CATA-09` | **+ New mapping / Create / Cancel** | button | Maps a CV code to a catalog row. | POST /catalog/cv-mappings | catalog:write | — |
+| `CATA-10` | **Delete (mapping)** | button | The only hard delete in the catalog. | DELETE /catalog/cv-mappings/{id} | catalog:write | — |
+| `CATA-11` | **Set stock / Remove (Stock)** | button | Upserts sheet stock for (material, size); removes a stock row. | POST\|DELETE /board-inventory | cut_floor:write | — |
 
 ### Cut Floor
 
@@ -802,7 +806,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 ## 11. REST API catalogue
 
-341 routes extracted from `apps/api/app`. The permission shown is the `require_permission(module, action)` guard; `current_user` means any signed-in user; `require_drafter` means drafter/manager/admin.
+348 routes extracted from `apps/api/app`. The permission shown is the `require_permission(module, action)` guard; `current_user` means any signed-in user; `require_drafter` means drafter/manager/admin.
 
 ### `areas`
 
@@ -828,6 +832,11 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | POST | `/catalog/cv-mappings` | catalog:write |  |
 | PATCH | `/catalog/cv-mappings/{mid}` | catalog:write |  |
 | DELETE | `/catalog/cv-mappings/{mid}` | catalog:write |  |
+| PUT | `/catalog/{slug}/{mid}/image` | catalog:write |  |
+| GET | `/catalog/{slug}/{mid}/image` | catalog:read |  |
+| DELETE | `/catalog/{slug}/{mid}/image` | catalog:write |  |
+| GET | `/catalog/product-types` | catalog:read | The tabs of the Catalog screen: every product type in use, with its item count. |
+| GET | `/catalog/by-type` | catalog:read | The items of one product type (or of none: `untyped=true`) across the six tables, grouped by table. |
 | GET | `/catalog/{slug}` | catalog:read |  |
 | POST | `/catalog/{slug}/bulk` | catalog:write | All-or-nothing: validate every row first; insert only if all clean. |
 | GET | `/catalog/{slug}/{mid}` | catalog:read |  |
@@ -1069,6 +1078,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | GET | `/orders/{po_id}/stock` | orderbook:read |  |
 | GET | `/orders/{po_id}/tracking` | orderbook:read |  |
 | GET | `/orders/{po_id}/cutlists` | orderbook:read |  |
+| GET | `/orders/{po_id}/catalog-item` | orderbook:read |  |
+| GET | `/orders/{po_id}/catalog-item/image` | orderbook:read | The picture of the order's n-th catalog match (as listed by `/catalog-item`), gated by `orderbook`, not `catal |
 | PUT | `/orders/{po_id}/image` | orderbook:write |  |
 | GET | `/orders/{po_id}/image` | orderbook:read |  |
 | DELETE | `/orders/{po_id}/image` | orderbook:write |  |
@@ -1361,8 +1372,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 - Q480 SharePoint URL; Q547 drawing filename; Task and Change comment threads (no entities); Q472 rule engine (per-object rules stay in handlers); §21’s wider Procurement flow.
 - PO approval reporting: cost centres have no delete, no cross-centre report and no hard budget limit.
 - E3 data import: only the item grid and the orders grid are imported; modules, parts, hardware, drawings and QC still need their own exports.
-- Dead controls found while writing this spec: login ‘Continue with SSO’; status pop-up ‘Update Status To All’ (see Questions).
-- Lock-request routes have no web UI.
+- Planned, kept on purpose (decision 2026-10-19): login ‘Continue with SSO’ and status pop-up ‘Update Status To All’ do nothing yet.
+- Lock-request routes have no web UI yet; decision 2026-10-19: add an item-editor banner with Approve/Reject plus a bell notification.
 - Legacy `/procurement/*` retired October 2026 (code in `legacy/procurement_v0/`, unmounted).
 
 Three decisions deliberately depart from Plan V1’s prose and must not be “fixed”: **Q499** (PM confirmation of the Material Summary is advisory), **Q513** (no rollback of change states), **Q527** (fixed KPI catalogue).
@@ -1373,13 +1384,15 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | --- | --- | --- | --- |
 | Q-01 | Audience | Who reads these two files — developers, the joinery staff/customer, or both? It decides the language (technical vs. plain), whether API routes stay in the spec, and whether I add a short ‘day in the life’ walkthrough per role. | Both: keep the spec technical, add a plain-language ‘What this does for me’ line per screen. |
 | Q-02 | Source of truth | CLAUDE.md says per-sub-project history lives in docs/sub-projects/ and Plan V1 is the roadmap. Should this spec replace, sit beside, or link into those files? Two documents describing the same behaviour will drift. | Keep it as docs/software-spec/ and make the sub-project files link to it; regenerate the button tables from code (see S-01). |
-| Q-03 | Login · Continue with SSO | The button only calls preventDefault — it does nothing. Remove it, hide it, or is SSO (which provider?) planned? | Hide it until SSO is real; a dead button on the front door looks like a bug. |
-| Q-04 | Status pop-up · ‘Update Status To All’ | Permanently disabled with the tooltip ‘Bulk update not yet wired’, yet ‘Apply status…’ on the grid already does bulk updates (up to 500). Is the pop-up button meant to be removed, or to apply to a different set (e.g. all rows of this cutlist)? | Remove it, or re-label as ‘Apply to all items on this cutlist’ if that is the intent. |
-| Q-05 | Controlled Lock requests | The API holds an edit made under someone else’s Controlled Lock as a lock request (and has approve/reject/list routes), but no web button calls them. Where should the owner approve/reject — item editor banner, a Notifications entry, or both? | A banner on the item editor for the lock owner plus a bell notification. |
+| Q-03 | Login · Continue with SSO | The button only calls preventDefault — it does nothing. Remove it, hide it, or is SSO (which provider?) planned? | DECIDED 2026-10-19: keep it (SSO is planned). Provider still to be named. |
+| Q-04 | Status pop-up · ‘Update Status To All’ | Permanently disabled with the tooltip ‘Bulk update not yet wired’, yet ‘Apply status…’ on the grid already does bulk updates (up to 500). Is the pop-up button meant to be removed, or to apply to a different set (e.g. all rows of this cutlist)? | DECIDED 2026-10-19: keep it as a planned control. Its intended scope (this item vs. a whole cutlist) is still open. |
+| Q-05 | Controlled Lock requests | The API holds an edit made under someone else’s Controlled Lock as a lock request (and has approve/reject/list routes), but no web button calls them. Where should the owner approve/reject — item editor banner, a Notifications entry, or both? | DECIDED 2026-10-19: banner on the item editor for the lock owner plus a bell notification. Not built; needs its own PR (see Q-12). |
 | Q-06 | Disabled tabs: Cars, OH&S, Scope | Project Information shows three permanently disabled tabs (blocked on Q550 / Q572). Keep showing them, or hide until specified? | Hide; list them under ‘Not built’ in the spec. |
 | Q-07 | Per-role button matrix | Roles are DB-governed (groups + memberships), not fixed. The spec records the permission each route needs, not what each of the 13 seeded users sees. Do you want a role × button matrix, and for which workspace/DB (the dev seed, or your real groups)? | Generate it from the seeded groups; I can add it as a table. |
 | Q-08 | Screenshots | The HTML is text-only. Want a Playwright screenshot of each screen/pop-up embedded next to its buttons? It needs a running stack (make up/migrate/seed) and makes the file much larger. | Yes, as separate PNGs linked from the HTML (keeps the file small). |
 | Q-09 | What counts as a ‘button’ | I included every <button> (409 in 129 files), plus tabs, chips, toggles and the nav links that behave like buttons. I left out plain table links, text inputs, selects and drag-and-drop except where they replace a button. Is that the right line? | Keep, but add a short ‘non-button controls’ list per screen (filters, selects). |
+| Q-11 | CLAUDE.md: six tables or nine? | CLAUDE.md §7 still lists a binding invariant ‘Six separate catalog tables … never unify’, while the entries directly above it say the Catalog now has nine tables (Edging, Glass, Solid Timber added; 14 product types) and that this ‘will end the rule below’. Which statement is current? | Treat nine as current and edit the invariant to say so; this spec already does. |
+| Q-12 | Order of the remaining work | You asked for: the lock-request banner + bell (a code feature), a role × button matrix, screenshots, and a plain-language staff guide. The matrix and guide need no running app; the screenshots need the stack up; the lock-request UI touches locks (CLAUDE.md §9) and should have its own tests. Which first? | Matrix, then staff guide (docs only), then lock-request UI as its own PR with tests, then screenshots. |
 | Q-10 | Scope: web only, or API-only functions too? | The spec describes everything the UI exposes. Some API routes have no UI (e.g. lock-request routes, related-parts reparent, legacy /procurement). Should the spec document those as ‘API-only’? | Yes — a short API-only appendix (generated from the routes table below). |
 
 ## 14. Suggestions
@@ -1387,8 +1400,8 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | Id | Suggestion | Why | Priority |
 | --- | --- | --- | --- |
 | S-01 | **Generate the button table from code in CI** | The extractor I used (a ~40-line script) finds every <button>, its label, handler, data-testid and line. Run in CI it would fail the build when a button is added/removed without the spec being regenerated, so the spec can never drift. | High |
-| S-02 | **Remove or hide dead controls** | ‘Continue with SSO’ (login) and ‘Update Status To All’ (status pop-up) do nothing; three Project Information tabs are permanently disabled. Dead buttons cost trust and generate support questions. | High |
-| S-03 | **Give lock requests a UI** | The server already holds edits under a Controlled Lock as requests, with list/approve/reject routes, but no screen shows them. Without it, held edits are invisible and the owner never learns about them. | High |
+| S-02 | **Label planned controls as planned** | You chose to keep ‘Continue with SSO’ and ‘Update Status To All’. A visible ‘Coming soon’ tooltip on the SSO button (the status one already has one) keeps users from reporting them as bugs. | Low |
+| S-03 | **Build the lock-request UI (decided)** | Banner with Approve/Reject on the item editor plus a bell notification, as you chose. Needs tests under CLAUDE.md §9 and a workspace-isolation check; do it as its own PR. | High |
 | S-04 | **Replace window.confirm / prompt / alert** | About 40 native dialogs are used (delete, archive, rename, cancel, expiry reason…). They cannot be styled, translated or tested reliably and block the thread. A single shared ConfirmDialog (with required-reason and typed-confirm variants) would also fix inconsistent wording. | Medium |
 | S-05 | **Only 114 of 409 buttons have a data-testid** | Most e2e flake shapes in CLAUDE.md §3 (‘locator matches a different element with the same role’) come from this. Add stable test ids to destructive and state-changing buttons first. | Medium |
 | S-06 | **Standardise the dialog pattern** | Cancel / primary-submit with a ‘…ing…’ busy label is hand-copied in ~60 places (fixed inset-0 overlays; only 19 have role=dialog and 8 aria-modal). One Dialog primitive gives focus trap, Esc-to-close and consistent busy/disabled behaviour for free. | Medium |
@@ -1401,7 +1414,11 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 ## Appendix A. Source index of every `<button>` in the web app
 
-409 `<button>` elements in 129 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
+410 `<button>` elements in 130 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
+
+**`app/(app)/catalog/_components/BoardImageCell.tsx`**
+
+- L39 — remove
 
 **`app/(app)/catalog/_components/CatalogBulkImportDialog.tsx`**
 
@@ -1411,16 +1428,16 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 **`app/(app)/catalog/_components/CatalogClient.tsx`**
 
-- L140 — Bulk import
-- L144 — + New
+- L180 — Bulk import
+- L184 — + New
 
 **`app/(app)/catalog/_components/CatalogRow.tsx`**
 
-- L180 — Archive
+- L322 — Archive
 
 **`app/(app)/catalog/_components/CatalogTabs.tsx`**
 
-- L27 — {t.label} {active && }
+- L21 — {label} {active && }
 
 **`app/(app)/catalog/_components/MappingPanel.tsx`**
 
@@ -1429,14 +1446,14 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 **`app/(app)/catalog/_components/NewCatalogRowDialog.tsx`**
 
-- L139 — Cancel
-- L140 — {busy ? "Saving…" : "Create"}
+- L306 — Cancel
+- L307 — {busy ? "Saving…" : "Create"}
 
 **`app/(app)/catalog/_components/NewMappingDialog.tsx`**
 
-- L105 — {r.description}{" "} {r.sku}
-- L126 — Cancel
-- L127 — {busy ? "Saving…" : "Create"}
+- L108 — {r.description}{" "} {r.sku}
+- L129 — Cancel
+- L130 — {busy ? "Saving…" : "Create"}
 
 **`app/(app)/catalog/_components/StockPanel.tsx`**
 
@@ -1726,15 +1743,15 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 **`app/(app)/items/[id]/_components/cutlist/UnknownCodeRow.tsx`**
 
-- L86 — Use existing
-- L95 — Create new
-- L102 — Skip
+- L92 — Use existing
+- L101 — Create new
+- L108 — Skip
 
 **`app/(app)/items/[id]/_components/hardware/AddFromGlobalModal.tsx`**
 
-- L96 — ✕
-- L109 — {t.replace(/_/g, " ")}
-- L162 — Add
+- L99 — ✕
+- L112 — {t.replace(/_/g, " ")}
+- L165 — Add
 
 **`app/(app)/items/[id]/_components/hardware/Cart.tsx`**
 
@@ -1826,14 +1843,14 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 **`app/(app)/orderbook/_components/orders/OrderDetailPanel.tsx`**
 
-- L308 — Close · `order-detail-close`
-- L334 — Reject order · `order-reject-confirm`
-- L348 — Cancel
-- L366 — Cancel order · `order-cancel-confirm`
-- L371 — Keep order
-- L458 — {t} · ``order-tab-${t}``
-- L474 — Open PO {order.po_no} · `order-create-po`
-- L479 — Create PO! · `order-create-po`
+- L309 — Close · `order-detail-close`
+- L335 — Reject order · `order-reject-confirm`
+- L349 — Cancel
+- L367 — Cancel order · `order-cancel-confirm`
+- L372 — Keep order
+- L459 — {t} · ``order-tab-${t}``
+- L475 — Open PO {order.po_no} · `order-create-po`
+- L480 — Create PO! · `order-create-po`
 
 **`app/(app)/orderbook/_components/orders/OrderRowView.tsx`**
 
@@ -1958,8 +1975,8 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 
 **`app/(app)/projects/[id]/procurement/_components/CatalogTabs.tsx`**
 
-- L78 — {t.replace("_"," ")}
-- L126 — + Add
+- L84 — {t.replace("_"," ")}
+- L132 — + Add
 
 **`app/(app)/projects/[id]/procurement/_components/MaterialSummaryPanel.tsx`**
 
