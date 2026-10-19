@@ -64,7 +64,7 @@ Information architecture is fixed: **6 primary tabs** — Dashboard · Tracking 
 
 ### 3.1 Default module permissions per role
 
-From `apps/api/app/auth/permissions.py` (`MATRIX`), which is also what `seed_system_groups` writes for a new workspace; migrations 0037/0039/0054 mirror it. **An admin can edit the groups on /it, so a live workspace may differ.** R = read, W = write, A = approve, C = comment.
+From `apps/api/app/auth/permissions.py` (`MATRIX`), which is also what `seed_system_groups` writes for a new workspace; migrations 0037/0039/0054 mirror it. **Checked on 2026-10-19 against a freshly migrated and seeded dev database: all 84 role × module cells (7 roles × 12 modules) match the seeded system groups exactly.** An admin can edit the groups on /it, so a live workspace may differ. R = read, W = write, A = approve, C = comment.
 
 | Module | admin | manager | editor | drafter | estimator | purchase_officer | viewer |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -209,6 +209,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/login  (public)`  
 *Purpose:* Sign-in page with brand panel (live workspace counts from /public/stats).
 
+*Screenshots (dev seed, manager login):* [Login page](screenshots/login.jpg)
+
 **Sign-in form**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -221,6 +223,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/dashboard`  
 *Purpose:* Role-personalised landing page: metric tiles, My Day, today’s deliveries, team status card, team activity feed.
+
+*Screenshots (dev seed, manager login):* [Dashboard (manager)](screenshots/dashboard.jpg)
 
 **Metric tiles**
 
@@ -249,6 +253,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/projects`  
 *Purpose:* All projects in the workspace.
 
+*Screenshots (dev seed, manager login):* [Projects list](screenshots/projects.jpg)
+
 **List page**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -262,6 +268,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/tracking?project_id=…`  
 *Purpose:* The main production grid for one project: one row per joinery item, with sub-tabs of columns, quick filters, bulk actions and pop-ups. Related parts nest under their parent. Soft-deleted items appear only under the Deleted chip.
+
+*Screenshots (dev seed, manager login):* [Tracking grid](screenshots/tracking.jpg) · [Project switcher](screenshots/tracking-project-switcher.jpg) · [Item detail modal](screenshots/tracking-item-detail.jpg) · [Status pop-up (note the disabled ‘Update Status To All’)](screenshots/tracking-status-popup.jpg) · [New item dialog](screenshots/tracking-new-item.jpg) · [Project information pop-up](screenshots/tracking-info.jpg)
 
 **Project info bar**
 
@@ -368,6 +376,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/items/[id]?tab=…`  
 *Purpose:* Full editor for one item. Opens in its own window; hides the TabStrip and SideBar. Every write passes the lock checks (Hard, Approval, Controlled) before anything is written.
+
+*Screenshots (dev seed, manager login):* [Cutlist tab](screenshots/item-cutlist.jpg) · [CV import wizard](screenshots/item-cv-import.jpg) · [Hardware tab](screenshots/item-hardware.jpg) · [Board tab](screenshots/item-board.jpg) · [Material Take tab](screenshots/item-take.jpg) · [Attachments tab](screenshots/item-attachments.jpg) · [Actions tab](screenshots/item-actions.jpg) · [Query tab](screenshots/item-query.jpg) · [Comments tab](screenshots/item-comments.jpg) · [QC tab](screenshots/item-qc.jpg) · [Log tab](screenshots/item-log.jpg)
 
 **Header and locks**
 
@@ -485,6 +495,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/projects/[id] · /projects/[id]/procurement`  
 *Purpose:* Project detail 2.0 (contacts, lift access, contract/variations, areas & rooms with comment counts) and the Procurement workbench (materials, batches, allocations, Material Summary).
 
+*Screenshots (dev seed, manager login):* [Project page](screenshots/project-page.jpg) · [Procurement workbench](screenshots/project-procurement.jpg)
+
 **Project header and cards**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -513,6 +525,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/list`  
 *Purpose:* First-class Cutlist entity. The cutlist owns the production workflow (Shop Floor keys on (cutlist_id, stage_key)). Three panes: Items · Parts · Hardware.
 
+*Screenshots (dev seed, manager login):* [List (Cutlist module)](screenshots/list-cutlists.jpg)
+
 **Cutlist list and detail**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -529,6 +543,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/shop-dwgs`  
 *Purpose:* Shop drawing register, details panel and full-screen viewer. Revision flow draft → pending → approved|rejected; approver ≠ uploader; queues are derived from the latest revision.
+
+*Screenshots (dev seed, manager login):* [Shop drawings register](screenshots/shop-dwgs.jpg) · [Upload dialog](screenshots/shop-dwgs-upload.jpg)
 
 **Register**
 
@@ -572,6 +588,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/isample`  
 *Purpose:* Sample wall: pending → approved|rejected; reject needs a note; reviewer ≠ creator; approval ledger = filtered audit_log.
 
+*Screenshots (dev seed, manager login):* [Sample board](screenshots/isample.jpg) · [Approval ledger](screenshots/isample-ledger.jpg)
+
 **Board, Ledger, Archive**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -593,6 +611,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/orderbook`  
 *Purpose:* Orders list grouped by order type, Delivery queue, Cost-centre breakdown, Supplier list, PO documents. The software runs NO approval process: a purchase officer, manager or admin sets Approved/Rejected by hand.
+
+*Screenshots (dev seed, manager login):* [Orders list](screenshots/orderbook-orders.jpg) · [Delivery queue](screenshots/orderbook-delivery-queue.jpg) · [Cost centre breakdown](screenshots/orderbook-cost-centre.jpg) · [Supplier list](screenshots/orderbook-suppliers.jpg) · [New order form](screenshots/orderbook-new-order.jpg) · [Order pop-up (Pending order)](screenshots/orderbook-order-popup.jpg) · [Order pop-up (Approved order)](screenshots/orderbook-order-approved.jpg) · [Delivery tab](screenshots/orderbook-order-tab-delivery.jpg) · [Glass C tab](screenshots/orderbook-order-tab-glass-c.jpg) · [Supplier tab](screenshots/orderbook-order-tab-supplier.jpg) · [ADMIN tab](screenshots/orderbook-order-tab-admin.jpg)
 
 **Tabs and toolbar**
 
@@ -681,6 +701,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/catalog`  
 *Purpose:* Catalog tabs are product types (Edging, Glass, Solid Timber, Hardware, Board, Laminate, Paint, TG Solid, Supplies, Delivery, Contractor Manufacturing…). Rows live in nine physical tables: board_materials, hardware_materials, custom_made, benchtop_materials, appliances, equipment_hire, edging_materials, glass_materials, timber_materials. Types without their own fields (Delivery, Supplies, Paint, TG Solid, Laminate, Contractor Manufacturing) stay tabs over an existing table. Plus CV mappings and board stock.
 
+*Screenshots (dev seed, manager login):* [Catalog (product-type tabs)](screenshots/catalog.jpg) · [Sheet stock](screenshots/catalog-stock.jpg)
+
 **Catalog page**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -702,6 +724,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/cut-floor`  
 *Purpose:* CutPlan (what to cut) vs CutSchedule (when). Status planned → running → done; cancel from planned/running.
 
+*Screenshots (dev seed, manager login):* [Cut Floor schedule](screenshots/cut-floor.jpg)
+
 **Schedule board**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -722,6 +746,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/shop-floor · /shop-floor/station/[worker_id]`  
 *Purpose:* Kanban keyed on (cutlist_id, stage_key) plus a worker kiosk. Mark-done enforces stage order; undo within 5 minutes for workers; Packing is the 6th stage with in-browser QR scanning.
+
+*Screenshots (dev seed, manager login):* [Shop Floor kanban](screenshots/shop-floor.jpg)
 
 **Kanban**
 
@@ -745,6 +771,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/qc`  
 *Purpose:* Read-only open defects and rework for cutlists that have started but not been packed.
 
+*Screenshots (dev seed, manager login):* [QC dashboard](screenshots/qc.jpg)
+
 **Filters**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -755,6 +783,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/estimating · /estimating/[eid] · /customers · /customers/[cid]`  
 *Purpose:* Revisioned quotes with snapshotted costs, 12-stage tender lifecycle, order preview/generation and Convert-to-Project. `advance()` is the only forward action; locked_at is the frozen gate.
+
+*Screenshots (dev seed, manager login):* [Estimate list](screenshots/estimating.jpg) · [Estimate detail](screenshots/estimating-detail.jpg) · [Customers](screenshots/customers.jpg)
 
 **Estimate list**
 
@@ -801,6 +831,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/it`  
 *Purpose:* RBAC groups, labour rates, search health, staff photos, shop-worker roster.
 
+*Screenshots (dev seed, manager login):* [IT management](screenshots/it-management.jpg)
+
 **Panels**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -818,6 +850,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 *Route:* `/search · /notifications`  
 *Purpose:* Full pages behind the top-bar search and the bell.
+
+*Screenshots (dev seed, manager login):* [Search results](screenshots/search-results.jpg) · [Notifications](screenshots/notifications.jpg)
 
 **Pages**
 
