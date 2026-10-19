@@ -1,6 +1,6 @@
 # JoineryFlow — Software Function Specification
 
-> Companion to `button-reference.html`. Every control id here (e.g. `TRAC-07`) is the same id shown on the matching card in the HTML. Both files are generated from one data file, so they cannot disagree.
+> Companion to `button-reference.html` and `STAFF-GUIDE.md`. Every control id here (e.g. `TRAC-07`) is the same id shown on the matching card in the HTML. Both files are generated from one data file, so they cannot disagree.
 
 > Generated from the code on **2026-10-19** (Alembic head `0077_appliance_fields`, main at `26527b8`). Where this document and CLAUDE.md or Plan V1 disagree, **ask** — see the Questions at the end (CLAUDE.md Rule Zero).
 
@@ -322,7 +322,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `TRAC-30` | **Status choices** | toggle | Select the new Status (CLEAR VOID NOTE! LIVE APPROVED HOLD). A note is required. | — | — | A Hard or Controlled lock disables this and shows the reason; APPROVED does not block status changes. |
-| `TRAC-31` | **⚠ Update Status To All** | button | Disabled placeholder (tooltip: ‘Bulk update not yet wired’). Use ‘Apply status…’ on the grid instead. | — | — | Kept deliberately as a planned control (your decision, 2026-10-19). Disabled with the tooltip ‘Bulk update not yet wired’. |
+| `TRAC-31` | **⚠ Update Status To All** | button | Disabled placeholder (tooltip: ‘Bulk update not yet wired’). Use ‘Apply status…’ on the grid instead. | — | — | Kept deliberately as a planned control (decision 2026-10-19). Disabled with the tooltip ‘Bulk update not yet wired’. When built it applies to every item in the project, shows ‘This will change N items’, requires the note, and skips and lists locked items like bulk status. |
 | `TRAC-32` | **↻ Update Current Item** | button | Saves the status + note on this one item and writes audit_log + item_edit_log. | PATCH /items/{id}/status | tracking:write | — |
 | `TRAC-33` | **Close** | button | Closes the pop-up. | — | — | — |
 
