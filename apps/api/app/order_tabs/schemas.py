@@ -82,3 +82,23 @@ class CutlistsOut(BaseModel):
     """Cutlists whose items use this order's product (the catalog row with the order's product code as SKU)."""
     product_found: bool
     cutlists: list[CutlistRowOut]
+
+
+class CatalogItemOut(BaseModel):
+    """One catalog row whose SKU is the order's product code. `type` is the catalog table key (`board`, `glass`...);
+    `fields` are the type's own fields in the catalog's order (numbers are JSON numbers). Nothing here is stored on the order."""
+    type: str
+    id: int
+    sku: str | None
+    description: str | None
+    product_type: str | None
+    um: str | None
+    product_website: str | None
+    archived: bool
+    has_image: bool
+    fields: dict[str, str | int | float | bool | None]
+
+
+class OrderCatalogItemsOut(BaseModel):
+    """Live matches first, then the fixed table order; empty when the order has no product code or nothing matches."""
+    items: list[CatalogItemOut]

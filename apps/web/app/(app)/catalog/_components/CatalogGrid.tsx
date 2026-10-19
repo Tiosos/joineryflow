@@ -3,7 +3,7 @@
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import type { MaterialTab } from "./CatalogClient";
-import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { BOARD_NUMBER_FIELDS, BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
@@ -47,7 +47,7 @@ export default function CatalogGrid(p: Props) {
   const isCustom = p.tab === "custom_made";
   const isHire = p.tab === "hire";
   const isAppliance = p.tab === "appliance";
-  const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + 1 : 0)
+  const colCount = (hasGrain ? 12 : 11) + (isBoard ? BOARD_TEXT_FIELDS.length + BOARD_NUMBER_FIELDS.length + 1 : 0)
     + (isEdging ? EDGING_TEXT_FIELDS.length + EDGING_NUMBER_FIELDS.length + 2 : 0)
     + (isGlass ? GLASS_TEXT_FIELDS.length + GLASS_NUMBER_FIELDS.length + 2 : 0)
     + (isTimber ? TIMBER_TEXT_FIELDS.length + TIMBER_NUMBER_FIELDS.length + 1 : 0)
@@ -71,6 +71,7 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2">Lead (d)</th>
             <th className="px-3 py-2" title="Per unit, ex GST. An order made from this material starts at this price">Unit cost</th>
             {isBoard && BOARD_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
+            {isBoard && BOARD_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBoard && <th className="px-3 py-2">Image</th>}
             {isEdging && EDGING_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isEdging && EDGING_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}

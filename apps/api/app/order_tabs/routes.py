@@ -3,7 +3,7 @@
 Another workspace's order answers like a missing one (404). The Delivery log and the product image
 refuse a frozen (Cancelled / Delivered) order, `409 ORDER_LOCKED`, like the order's other fields.
 """
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from ..auth.rbac import require_permission
@@ -14,7 +14,7 @@ from ..files.store import FileStore, get_default_store
 from ..orders.queries import OrderLocked
 from . import queries as q
 from .schemas import (
-    CutlistsOut, DeliveryIn, DeliveryLogOut, PatchDeliveryIn, StockOut, TrackingOut,
+    CutlistsOut, DeliveryIn, DeliveryLogOut, OrderCatalogItemsOut, PatchDeliveryIn, StockOut, TrackingOut,
 )
 
 router = APIRouter(tags=["order-tabs"])
@@ -162,6 +162,33 @@ def cutlists_tab(
     db: Session = Depends(get_db),
 ):
     return _found(q.cutlists(db, po_id=po_id, workspace_id=user.workspace_id))
+
+
+# ── catalog item: what the catalog says about the order's product code (read-only, nothing stored on the order) ──
+
+@router.get("/orders/{po_id}/catalog-item", response_model=OrderCatalogItemsOut)
+def catalog_item(
+    po_id: int,
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    return {"items": _found(q.catalog_matches(db, po_id=po_id, workspace_id=user.workspace_id))}
+
+
+@router.get("/orders/{po_id}/catalog-item/image")
+def catalog_item_image(
+    po_id: int,
+    n: int = Query(0, ge=0, le=99),
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+    store: FileStore = Depends(_store),
+):
+    """The picture of the order's n-th catalog match (as listed by `/catalog-item`), gated by `orderbook`, not `catalog`."""
+    found, blob = q.catalog_match_image(db, po_id=po_id, workspace_id=user.workspace_id, n=n)
+    _found(found or None)
+    if blob is None:
+        raise HTTPException(404, "image not found")
+    return uploads.stream_blob(db, store, workspace_id=user.workspace_id, blob_id=blob)
 
 
 # ── product image ───────────────────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { createRow } from "@/lib/catalog-fetch";
 import type { CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
-import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { BOARD_NUMBER_FIELDS, BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
@@ -76,7 +76,10 @@ export default function NewCatalogRowDialog(p: Props) {
     };
     if (legacy) body[legacy.key] = legacyVal;
     if (p.productType) body.product_type = p.productType;
-    if (p.tab === "board") for (const f of BOARD_TEXT_FIELDS) if (boardVals[f.key]?.trim()) body[f.key] = boardVals[f.key].trim();
+    if (p.tab === "board") {
+      for (const f of BOARD_TEXT_FIELDS) if (boardVals[f.key]?.trim()) body[f.key] = boardVals[f.key].trim();
+      for (const f of BOARD_NUMBER_FIELDS) if (boardVals[f.key]?.trim()) body[f.key] = Number(boardVals[f.key]);
+    }
     if (p.tab === "edging") {
       for (const f of EDGING_TEXT_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = edgingVals[f.key].trim();
       for (const f of EDGING_NUMBER_FIELDS) if (edgingVals[f.key]?.trim()) body[f.key] = Number(edgingVals[f.key]);
@@ -240,6 +243,13 @@ export default function NewCatalogRowDialog(p: Props) {
           {p.tab === "board" && BOARD_TEXT_FIELDS.map((f) => (
             <Field key={f.key} label={f.label}>
               <input value={boardVals[f.key] ?? ""} onChange={(e) => setBoardVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                     className="w-full rounded border border-h-line px-2 py-1 text-sm" />
+            </Field>
+          ))}
+          {p.tab === "board" && BOARD_NUMBER_FIELDS.map((f) => (
+            <Field key={f.key} label={f.label}>
+              <input type="number" step={f.step} value={boardVals[f.key] ?? ""}
+                     onChange={(e) => setBoardVals((v) => ({ ...v, [f.key]: e.target.value }))}
                      className="w-full rounded border border-h-line px-2 py-1 text-sm" />
             </Field>
           ))}
