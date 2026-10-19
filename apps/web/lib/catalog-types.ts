@@ -55,6 +55,9 @@ export interface CatalogRow {
   rating?: string | null;
   hmr?: string | null;
   product_website?: string | null;
+  // Board only (columns since 0001, shown from the catalog now): sheet size in whole mm, thickness in mm; JSON numbers.
+  sheet_len_mm?: number | null;
+  sheet_wid_mm?: number | null;
   has_image?: boolean; // board + edging
   // Edging only (migration 0069). Roll length in metres, width and thickness in mm: JSON numbers.
   edge_type?: string | null;
@@ -63,7 +66,7 @@ export interface CatalogRow {
   edge_width_mm?: number | null;
   edge_thickness_mm?: number | null;
   glued?: boolean;
-  // Glass (migration 0070; length/width/thickness are shared with Solid Timber, 0074). Sizes in mm: JSON numbers.
+  // Glass (migration 0070; length/width/thickness are shared with Solid Timber, 0074; thickness_mm with Board and Benchtop). Sizes in mm: JSON numbers.
   // Glass type and power point are free text.
   edge_finish?: string | null;
   glass_type?: string | null;

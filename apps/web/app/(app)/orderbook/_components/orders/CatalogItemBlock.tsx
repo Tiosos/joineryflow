@@ -6,7 +6,7 @@ import type { OrderCatalogItem, OrderCatalogItems } from "@/lib/order-tabs-types
 import { TABLE_LABEL, type TableKey } from "../../../catalog/_components/tables";
 import { APPLIANCE_TEXT_FIELDS } from "../../../catalog/_components/applianceFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "../../../catalog/_components/benchtopFields";
-import { BOARD_TEXT_FIELDS } from "../../../catalog/_components/boardFields";
+import { BOARD_NUMBER_FIELDS, BOARD_TEXT_FIELDS } from "../../../catalog/_components/boardFields";
 import { CUSTOM_TEXT_FIELDS } from "../../../catalog/_components/customFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "../../../catalog/_components/edgingFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "../../../catalog/_components/glassFields";
@@ -17,13 +17,16 @@ import { TIMBER_NUMBER_FIELDS, TIMBER_TEXT_FIELDS } from "../../../catalog/_comp
 /** The labels the catalog grids use for a field key (the keys that mean the same thing share a label in every grid). */
 const LABELS: Record<string, string> = Object.fromEntries(
   [
-    ...BOARD_TEXT_FIELDS, ...BENCHTOP_TEXT_FIELDS, ...BENCHTOP_NUMBER_FIELDS, ...HARDWARE_TEXT_FIELDS,
+    ...BOARD_TEXT_FIELDS, ...BOARD_NUMBER_FIELDS, ...BENCHTOP_TEXT_FIELDS, ...BENCHTOP_NUMBER_FIELDS, ...HARDWARE_TEXT_FIELDS,
     ...EDGING_TEXT_FIELDS, ...EDGING_NUMBER_FIELDS, ...GLASS_TEXT_FIELDS, ...GLASS_NUMBER_FIELDS,
     ...TIMBER_TEXT_FIELDS, ...TIMBER_NUMBER_FIELDS, ...CUSTOM_TEXT_FIELDS, ...APPLIANCE_TEXT_FIELDS, ...HIRE_TEXT_FIELDS,
   ].map(f => [f.key, f.label]),
 );
+LABELS.sheet_size = "Sheet size (mm)";
 LABELS.glued = "Glued";
 LABELS.shaped = "Shaped";
+
+const SHEET_SIZE_KEYS = ["sheet_len_mm", "sheet_wid_mm", "thickness_mm"] as const;
 
 /** A product website is a link only when it is an http(s) URL; anything else (`javascript:`...) is shown as plain text. */
 export function safeHttpUrl(s: string | null | undefined): string | null {
@@ -62,7 +65,15 @@ export function CatalogItemBlock({ poId, productCode }: { poId: number; productC
   if (!got || got.key !== key || got.items.length === 0) return null;
   const [it, ...others] = got.items;
   const href = safeHttpUrl(it.product_website);
-  const rows = Object.entries(it.fields).map(([k, v]) => [k, shown(v)] as const).filter(([, v]) => v !== null);
+  let rows = Object.entries(it.fields).map(([k, v]) => [k, shown(v)] as const).filter(([, v]) => v !== null);
+  // A board's three sizes read as one line, "3600 x 1200 x 0.7" (length x width x thickness, as Glass C writes a size),
+  // only when all three are set; otherwise each one shows alone under its own label.
+  if (it.type === "board") {
+    const size = SHEET_SIZE_KEYS.map(k => shown(it.fields[k] ?? null));
+    if (size.every(v => v !== null)) {
+      rows = [...rows.filter(([k]) => !(SHEET_SIZE_KEYS as readonly string[]).includes(k)), ["sheet_size", size.join(" x ")] as const];
+    }
+  }
   return (
     <section data-testid="order-catalog-item" className="grid gap-2 rounded border border-h-line p-2">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-h-muted">

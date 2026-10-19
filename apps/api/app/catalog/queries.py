@@ -70,7 +70,11 @@ def supplier_ids_by_name(db: Session, *, workspace_id: int) -> dict[str, int | N
     return out
 
 # Board's own fields (`0068`): the old Orders screen's board attributes. All plain text.
-BOARD_FIELDS_TUPLE = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "um", "product_website")
+# The sheet size and thickness (`sheet_len_mm`, `sheet_wid_mm` integers, `thickness_mm` numeric(6,2)) are columns since
+# `0001`; they are shown and edited from the catalog now, no migration. All nullable.
+BOARD_TEXT_FIELDS = ("colour", "substrate", "finish", "sided", "grain", "rating", "hmr", "um", "product_website")
+BOARD_NUMBER_FIELDS = ("sheet_len_mm", "sheet_wid_mm", "thickness_mm")
+BOARD_FIELDS_TUPLE = (*BOARD_TEXT_FIELDS, *BOARD_NUMBER_FIELDS)
 BOARD_FIELDS = ", ".join(BOARD_FIELDS_TUPLE)
 # Edging's own fields (`0069`). `edge_type` is the old screen's "Type" (not `product_type`, the tab).
 EDGING_TEXT_FIELDS = ("colour", "edge_type", "um", "product_website")
@@ -108,7 +112,7 @@ HIRE_FIELDS = ", ".join(HIRE_FIELDS_TUPLE)
 APPLIANCE_FIELDS_TUPLE = ("um", "product_website")
 APPLIANCE_FIELDS = ", ".join(APPLIANCE_FIELDS_TUPLE)
 # Nullable fields a PATCH `null` clears (`glued` is NOT NULL: a null is dropped like any other).
-CLEARABLE_TYPE_FIELDS = (*BOARD_FIELDS_TUPLE, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
+CLEARABLE_TYPE_FIELDS = (*BOARD_TEXT_FIELDS, *BOARD_NUMBER_FIELDS, *EDGING_TEXT_FIELDS, *EDGING_NUMBER_FIELDS,
                          *GLASS_TEXT_FIELDS, *GLASS_NUMBER_FIELDS, *TIMBER_TEXT_FIELDS, *TIMBER_NUMBER_FIELDS,
                          *BENCHTOP_TEXT_FIELDS, *BENCHTOP_NUMBER_FIELDS,
                          *BENCHTOP_INT_FIELDS, *HARDWARE_FIELDS_TUPLE, *CUSTOM_FIELDS_TUPLE,

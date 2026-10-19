@@ -46,6 +46,9 @@ class CreateBoardIn(_EnrichmentFields):
     hmr: str | None = Field(default=None, max_length=64)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
+    sheet_len_mm: int | None = Field(default=None, ge=0, le=100000)
+    sheet_wid_mm: int | None = Field(default=None, ge=0, le=100000)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
 
 
 class CreateGlassIn(_EnrichmentFields):
@@ -177,6 +180,9 @@ class PatchBoardIn(PatchBaseIn):
     hmr: str | None = Field(default=None, max_length=64)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
+    sheet_len_mm: int | None = Field(default=None, ge=0, le=100000)
+    sheet_wid_mm: int | None = Field(default=None, ge=0, le=100000)
+    thickness_mm: Decimal | None = Field(default=None, ge=0, max_digits=6, decimal_places=2)
 
 
 class PatchHardwareIn(PatchBaseIn):

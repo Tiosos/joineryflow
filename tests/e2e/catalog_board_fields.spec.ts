@@ -34,6 +34,21 @@ test("a Board item shows and edits the board fields (UM included) and keeps one 
     await row.getByLabel("UM").blur();
     await expect.poll(() => field("um")).toBeNull();
 
+    // sheet size and thickness (columns since 0001): whole mm for the sheet, hundredths for the thickness
+    await row.getByLabel("Sheet length (mm)").fill("3600");
+    await row.getByLabel("Sheet length (mm)").blur();
+    await expect.poll(() => field("sheet_len_mm")).toBe(3600);
+    await row.getByLabel("Sheet width (mm)").fill("1200");
+    await row.getByLabel("Sheet width (mm)").blur();
+    await row.getByLabel("Thickness (mm)").fill("0.7");
+    await row.getByLabel("Thickness (mm)").blur();
+    await expect.poll(() => field("thickness_mm")).toBe(0.7);
+    await expect.poll(() => field("sheet_wid_mm")).toBe(1200);
+    await row.getByLabel("Sheet length (mm)").fill("");            // empty clears it
+    await row.getByLabel("Sheet length (mm)").blur();
+    await expect.poll(() => field("sheet_len_mm")).toBeNull();
+    expect(await field("thickness_mm")).toBe(0.7);                 // only the cleared one went
+
     await row.getByLabel("Product image").setInputFiles({ name: "b.png", mimeType: "image/png", buffer: PNG });
     await expect(row.getByTestId("board-image")).toBeVisible();
     await expect.poll(() => field("has_image")).toBe(true);

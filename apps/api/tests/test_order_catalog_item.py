@@ -167,3 +167,15 @@ def test_cancelled_order_still_shows_the_item(ws):
     oid = _order(ws, product_code="hw-cancel")
     assert ws["buyer"].delete(f"/orders/{oid}").status_code == 204
     assert len(_items(ws["buyer"], oid)) == 1
+
+
+def test_board_reply_carries_sheet_size_and_thickness_as_json_numbers(ws):
+    _mk(ws["cat"], "board-materials", "bd-size", code="BD-SIZE", colour="White",
+        sheet_len_mm=3600, sheet_wid_mm=1200, thickness_mm=0.7)
+    _mk(ws["cat"], "board-materials", "bd-none", code="BD-NONE")
+    [it] = _items(ws["buyer"], _order(ws, product_code="bd-size"))
+    assert set(it["fields"]) == {"colour", "substrate", "finish", "sided", "grain", "rating", "hmr",
+                                 "sheet_len_mm", "sheet_wid_mm", "thickness_mm"}
+    assert (it["fields"]["sheet_len_mm"], it["fields"]["sheet_wid_mm"], it["fields"]["thickness_mm"]) == (3600, 1200, 0.7)
+    [none] = _items(ws["buyer"], _order(ws, product_code="bd-none"))
+    assert (none["fields"]["sheet_len_mm"], none["fields"]["thickness_mm"]) == (None, None)

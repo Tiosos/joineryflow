@@ -6,7 +6,7 @@ import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import BoardImageCell from "./BoardImageCell";
-import { BOARD_TEXT_FIELDS } from "./boardFields";
+import { BOARD_NUMBER_FIELDS, BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
 import { GLASS_NUMBER_FIELDS, GLASS_TEXT_FIELDS } from "./glassFields";
@@ -194,6 +194,12 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         <td key={f.key} className="px-3 py-1">
           <Cell value={(row[f.key] as string | null | undefined) ?? null} label={f.label} canWrite={canWrite}
                 onSave={(v) => save({ [f.key]: v.trim() || null })} />
+        </td>
+      ))}
+      {tab === "board" && BOARD_NUMBER_FIELDS.map((f) => (
+        <td key={f.key} className="px-3 py-1 w-24">
+          <Cell value={(row[f.key] as number | null | undefined) ?? null} type="number" step={f.step} label={f.label}
+                canWrite={canWrite} onSave={(v) => save({ [f.key]: v === "" ? null : Number(v) })} />
         </td>
       ))}
       {tab === "edging" && EDGING_TEXT_FIELDS.map((f) => (

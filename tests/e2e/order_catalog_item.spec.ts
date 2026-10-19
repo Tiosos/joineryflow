@@ -20,6 +20,11 @@ test("the order pop-up shows the catalog item behind the product code, read-only
   await page.request.put(`/api/catalog/glass-materials/${g.material_id}/image`, {
     multipart: { file: { name: "g.png", mimeType: "image/png", buffer: PNG } },
   });
+  const board = `OCI-B-${stamp}`;
+  const b = (await (await page.request.post("/api/catalog/board-materials", {
+    data: { code: board, sku: board, description: `Sheet ${stamp}`, colour: "White", sheet_len_mm: 3600, sheet_wid_mm: 1200,
+            thickness_mm: 0.7 },
+  })).json()) as { material_id: number };
   const vendors = (await (await page.request.get("/api/suppliers")).json()) as { suppliers: { vendor_id: number }[] };
   const order = (await (await page.request.post("/api/orders", {
     data: { vendor_id: vendors.suppliers[0].vendor_id, description: `Catalog item ${stamp}`, category: "Edging", quantity: 1,
@@ -53,6 +58,18 @@ test("the order pop-up shows the catalog item behind the product code, read-only
     await expect(img).toHaveAttribute("alt", new RegExp(glass));
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
 
+    // a Board shows its sheet size as one line, "length x width x thickness"; with one value missing each shows alone
+    await detail.getByTestId("order-product-code").fill(board);
+    await detail.getByTestId("order-product-code").blur();
+    await expect(block.getByTestId("order-catalog-sku")).toHaveText(board);
+    await expect(block.getByTestId("order-catalog-field-sheet_size")).toContainText("3600 x 1200 x 0.7");
+    await expect(block.getByTestId("order-catalog-field-sheet_len_mm")).toHaveCount(0);
+    await page.request.patch(`/api/catalog/board-materials/${b.material_id}`, { data: { sheet_wid_mm: null } });
+    await page.reload();                                                          // the block asks again on a new look
+    await expect(block.getByTestId("order-catalog-field-sheet_size")).toHaveCount(0);
+    await expect(block.getByTestId("order-catalog-field-sheet_len_mm")).toContainText("3600");
+    await expect(block.getByTestId("order-catalog-field-thickness_mm")).toContainText("0.7");
+
     // a code no catalog row has: nothing shown
     await detail.getByTestId("order-product-code").fill(`nothing-${stamp}`);
     await detail.getByTestId("order-product-code").blur();
@@ -66,5 +83,6 @@ test("the order pop-up shows the catalog item behind the product code, read-only
     await page.request.delete(`/api/orders/${order.po_id}`);
     await page.request.post(`/api/catalog/edging-materials/${e.material_id}/archive`);
     await page.request.post(`/api/catalog/glass-materials/${g.material_id}/archive`);
+    await page.request.post(`/api/catalog/board-materials/${b.material_id}/archive`);
   }
 });
