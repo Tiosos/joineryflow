@@ -81,7 +81,7 @@ export function CatalogTabs({ canWrite, catalogType }: Props) {
     <div className="grid gap-3">
       <nav className="flex gap-1 border-b border-h-line">
         {TYPES.map(t => (
-          <button
+          <button type="button"
             key={t}
             onClick={() => setType(t)}
             className={[
@@ -129,7 +129,7 @@ export function CatalogTabs({ canWrite, catalogType }: Props) {
               className="rounded border border-h-line bg-h-bg px-2 py-1 text-sm"
             />
           ))}
-          <button onClick={create} className="rounded bg-h-accent px-3 py-1 text-sm text-white">+ Add</button>
+          <button type="button" onClick={create} className="rounded bg-h-accent px-3 py-1 text-sm text-white">+ Add</button>
         </div>
       )}
     </div>

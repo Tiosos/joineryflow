@@ -199,7 +199,7 @@ export default function DocumentRegister({ itemId, canWrite, lockReason }: Props
                   >
                     ↓
                   </button>
-                  <button
+                  <button data-testid={`document-remove-${doc.document_id}`}
                     type="button"
                     disabled={busy || locked}
                     title={lockReason ?? undefined}

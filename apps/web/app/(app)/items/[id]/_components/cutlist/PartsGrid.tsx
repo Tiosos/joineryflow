@@ -236,7 +236,7 @@ function PartRowComponent({ part, onPatch, onDelete, locked }: PartRowComponentP
       </td>
 
       <td className="py-1">
-        <button
+        <button data-testid={`part-delete-${part.id}`}
           type="button"
           onClick={() => onDelete(part.id)}
           disabled={locked}

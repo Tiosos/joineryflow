@@ -126,8 +126,8 @@ export default function NewMappingDialog(p: Props) {
         </div>
         {err && <p className="mt-3 text-xs text-rose-700">{err}</p>}
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={p.onClose} className="rounded border border-h-line px-3 py-1 text-sm">Cancel</button>
-          <button onClick={onSubmit} disabled={busy || !cvCode || pickedId == null}
+          <button type="button" onClick={p.onClose} className="rounded border border-h-line px-3 py-1 text-sm">Cancel</button>
+          <button type="button" onClick={onSubmit} disabled={busy || !cvCode || pickedId == null}
                   className="rounded bg-h-accent px-3 py-1 text-sm text-white disabled:opacity-50">
             {busy ? "Saving…" : "Create"}
           </button>

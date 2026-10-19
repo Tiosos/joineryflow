@@ -179,7 +179,7 @@ export function AuthorisationWindow({
                     </label>
                   ) : null}
                 </div>
-                {data.signed_mime && editable && <button type="button" onClick={() => void removeSigned()} className="text-[10px] text-h-muted underline hover:text-h-ink">remove</button>}
+                {data.signed_mime && editable && <button data-testid="auth-signed-remove" type="button" onClick={() => void removeSigned()} className="text-[10px] text-h-muted underline hover:text-h-ink">remove</button>}
               </div>
             </div>
             <div className="flex items-center gap-2">

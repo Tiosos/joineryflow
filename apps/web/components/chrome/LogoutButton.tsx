@@ -9,7 +9,7 @@ export function LogoutButton() {
     r.refresh();
   }
   return (
-    <button onClick={logout} className="text-sm text-h-muted hover:text-h-ink">
+    <button type="button" onClick={logout} className="text-sm text-h-muted hover:text-h-ink">
       Sign out
     </button>
   );

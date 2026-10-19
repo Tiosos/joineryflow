@@ -56,7 +56,7 @@ export function AllocationEditor({ batchId, canWrite }: Props) {
               <td className="text-right h-mono">{Number(a.qty_allocated)}</td>
               <td className="text-right">
                 {canWrite && (
-                  <button onClick={() => del(a)} className="text-h-bad hover:underline" aria-label="Delete allocation">
+                  <button type="button" data-testid={`alloc-remove-${a.allocation_id}`} onClick={() => del(a)} className="text-h-bad hover:underline" aria-label="Delete allocation">
                     remove
                   </button>
                 )}
@@ -83,7 +83,7 @@ export function AllocationEditor({ batchId, canWrite }: Props) {
             className="w-24 rounded border border-h-line bg-h-bg px-2 py-1 text-sm"
             data-testid="alloc-qty"
           />
-          <button
+          <button type="button"
             onClick={add}
             data-testid="alloc-add"
             className="rounded bg-h-accent px-2 py-1 text-sm text-white"

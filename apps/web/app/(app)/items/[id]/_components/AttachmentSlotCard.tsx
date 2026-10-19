@@ -148,7 +148,7 @@ export default function AttachmentSlotCard({
               {populated ? (busy ? "Replacing…" : "Replace") : (busy ? "Uploading…" : "Upload")}
             </button>
             {populated && (
-              <button
+              <button data-testid={`attachment-delete-${slot.kind}`}
                 type="button"
                 disabled={busy || !!lockReason}
                 title={lockReason ?? undefined}

@@ -64,7 +64,7 @@ export default function SampleDrawer(props: Props) {
             </p>
           )}
         </div>
-        <button onClick={props.onClose} aria-label="Close drawer"
+        <button type="button" onClick={props.onClose} aria-label="Close drawer"
                 className="rounded p-1 text-h-muted hover:bg-h-line/40 hover:text-h-ink">
           ✕
         </button>

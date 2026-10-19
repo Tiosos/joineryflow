@@ -72,7 +72,7 @@ export function EditorTabs({
     <div className="flex flex-col gap-0">
       <div role="tablist" className="flex border-b border-h-line">
         {TABS.map((tab) => (
-          <button
+          <button type="button"
             key={tab}
             role="tab"
             aria-selected={current === tab}

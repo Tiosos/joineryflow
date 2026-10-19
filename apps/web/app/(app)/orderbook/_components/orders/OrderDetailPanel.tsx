@@ -369,7 +369,7 @@ export function OrderDetailPanel({
                     if (await patchField("status", "Cancelled", { cancel_reason: cancelReason.trim() })) { setCancelling(false); setCancelReason(""); }
                   }}
                   className="rounded border border-h-line bg-h-surface px-2 py-0.5 hover:text-h-ink disabled:opacity-50">Cancel order</button>
-                <button type="button" onClick={() => { setCancelling(false); setCancelReason(""); }}
+                <button data-testid="order-cancel-keep" type="button" onClick={() => { setCancelling(false); setCancelReason(""); }}
                   className="rounded border border-h-line bg-h-surface px-2 py-0.5 text-h-muted hover:text-h-ink">Keep order</button>
               </div>
             </div>

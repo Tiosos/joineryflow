@@ -392,7 +392,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           >
             Accept
           </button>
-          <button
+          <button data-testid="estimate-reject"
             type="button"
             onClick={reject}
             disabled={busy}
@@ -400,7 +400,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
           >
             Reject
           </button>
-          <button
+          <button data-testid="estimate-withdraw-sent"
             type="button"
             onClick={withdraw}
             disabled={busy}

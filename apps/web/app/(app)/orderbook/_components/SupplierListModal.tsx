@@ -156,7 +156,7 @@ export function SupplierListModal({
             <input type="file" accept="image/png,image/jpeg" className="sr-only" data-testid="supplier-logo-file" aria-label="Logo"
               onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadLogo(open, f); }} /></label>
           {rows.find(r => r.vendor_id === open)?.has_logo && (
-            <button type="button" className="text-h-muted underline hover:text-h-ink" onClick={() => void removeLogo(open)}>Remove</button>
+            <button data-testid="supplier-logo-remove" type="button" className="text-h-muted underline hover:text-h-ink" onClick={() => void removeLogo(open)}>Remove</button>
           )}
         </div>
       )}

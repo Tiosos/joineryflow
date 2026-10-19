@@ -110,6 +110,10 @@ jobs:
         working-directory: apps/web
         run: pnpm exec tsc --noEmit
 
+      # A <button> with no type submits the form around it (a Cancel that saves).
+      - name: Buttons declare a type
+        run: node scripts/check-button-types.mjs
+
       # tsc alone is not enough. Server/client boundary violations — a client
       # component importing a module that pulls in `next/headers`, for example
       # — are bundler errors, not type errors: tsc passes and the build fails.

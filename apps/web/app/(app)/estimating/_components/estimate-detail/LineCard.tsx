@@ -204,7 +204,7 @@ export function LineCard({ line, isDraft, catalogs, onChanged, onClone, callApi 
           >
             ⎘ Clone
           </button>
-          <button
+          <button data-testid={`delete-line-${line.line_id}`}
             type="button"
             onClick={deleteLine}
             className="ml-auto rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800 hover:bg-red-100"

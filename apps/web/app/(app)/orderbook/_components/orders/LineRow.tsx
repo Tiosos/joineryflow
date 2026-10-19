@@ -108,7 +108,7 @@ export function LineRow({
       </td>
       <td className="px-2 py-1 text-right h-mono">{money(line.line_total, currency)}</td>
       <td className="px-2 py-1">
-        <button
+        <button data-testid={`order-line-remove-${line.line_id}`}
           type="button"
           onClick={() => void onRemove()}
           className="text-[#b4443d] hover:underline"

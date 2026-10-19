@@ -243,7 +243,7 @@ export function PurchaseOrderModal({
               <>
                 <button type="button" data-testid="po-add-delivery" disabled={delivery.trim() === "" || Number.isNaN(Number(delivery))}
                   onClick={() => void send("PUT", "/delivery", { amount: delivery })} className={BTN}>{doc.delivery_order_id ? "Update Delivery" : "Add Delivery"}</button>
-                {doc.delivery_order_id && <button type="button" onClick={() => void send("DELETE", "/delivery")} className={BTN}>Remove</button>}
+                {doc.delivery_order_id && <button data-testid="po-remove-delivery" type="button" onClick={() => void send("DELETE", "/delivery")} className={BTN}>Remove</button>}
               </>
             )}
           </div>

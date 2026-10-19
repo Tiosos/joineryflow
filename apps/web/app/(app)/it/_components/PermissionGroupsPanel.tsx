@@ -295,7 +295,7 @@ function GroupDetail({
           )}
         </h3>
         {!group.is_system && (
-          <button
+          <button data-testid="group-delete"
             type="button"
             onClick={removeGroup}
             disabled={deleting}
@@ -462,7 +462,7 @@ function MembershipsPanel({
                   {m.project_code ?? "workspace-wide"}
                 </td>
                 <td className="py-1.5 text-right">
-                  <button
+                  <button data-testid={`membership-remove-${m.membership_id}`}
                     type="button"
                     onClick={() => removeMembership(m.membership_id)}
                     disabled={removingId === m.membership_id}

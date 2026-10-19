@@ -47,25 +47,25 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
   return (
     <div className="flex w-full flex-wrap items-center gap-2">
       {selectedRev.status === "draft" && isUploader && (
-        <button disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "submit"))}
+        <button type="button" disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "submit"))}
                 className="rounded bg-h-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
           Submit for review
         </button>
       )}
       {selectedRev.status === "pending" && isUploader && (
-        <button disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "withdraw"))}
+        <button type="button" data-testid="drawing-withdraw" disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "withdraw"))}
                 className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-ink disabled:opacity-50">
           Withdraw
         </button>
       )}
       {selectedRev.status === "pending" && canApprove && (
         <>
-          <button disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "approve"))}
+          <button type="button" data-testid="drawing-approve" disabled={busy} onClick={() => run(() => transitionRevision(detail.drawing_id, selectedRev.revision_id, "approve"))}
                   className="rounded bg-h-good px-3 py-1.5 text-sm text-white disabled:opacity-50">
             Approve
           </button>
           {!showRejectInput ? (
-            <button disabled={busy} onClick={() => setShowRejectInput(true)}
+            <button type="button" data-testid="drawing-reject" disabled={busy} onClick={() => setShowRejectInput(true)}
                     className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-bad disabled:opacity-50">
               Reject
             </button>
@@ -77,7 +77,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
                 placeholder="Reason for rejection (required)"
                 className="flex-1 rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink"
               />
-              <button
+              <button type="button" data-testid="drawing-reject-confirm"
                 disabled={busy || !rejectNote.trim()}
                 onClick={() => run(async () => {
                   await transitionRevision(detail.drawing_id, selectedRev.revision_id, "reject", rejectNote.trim());
@@ -87,7 +87,7 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
                 className="rounded bg-h-bad px-3 py-1.5 text-sm text-white disabled:opacity-50">
                 Confirm reject
               </button>
-              <button onClick={() => { setShowRejectInput(false); setRejectNote(""); }}
+              <button type="button" onClick={() => { setShowRejectInput(false); setRejectNote(""); }}
                       className="text-xs text-h-muted hover:text-h-ink">Cancel</button>
             </div>
           )}
@@ -104,13 +104,13 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
         <span className="ml-auto" />
       )}
       {canWrite && !detail.archived_at && (
-        <button disabled={busy} onClick={() => setNewRevOpen(true)}
+        <button type="button" disabled={busy} onClick={() => setNewRevOpen(true)}
                 className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-ink disabled:opacity-50">
           Upload new revision
         </button>
       )}
       {canArchive && (
-        <button disabled={busy}
+        <button type="button" data-testid="drawing-archive" disabled={busy}
                 onClick={() => {
                   if (!confirm("Archive this drawing? It will move to the Archive queue.")) return;
                   run(() => archiveDrawing(detail.drawing_id));

@@ -167,7 +167,7 @@ function TakeTable({ take, editable, lockReason, busy, act, onApprove }: {
               className="rounded border border-h-line px-2 py-1 text-xs text-h-ink disabled:opacity-50">
               Regenerate
             </button>
-            <button type="button" disabled={busy || !!lockReason} title={lockReason ?? undefined}
+            <button data-testid="take-approve" type="button" disabled={busy || !!lockReason} title={lockReason ?? undefined}
               onClick={onApprove}
               className="rounded bg-h-accent px-2 py-1 text-xs font-medium text-white disabled:opacity-50">
               Approve
@@ -281,7 +281,7 @@ function LineRow({ line, takeId, editable, lockReason, act }: {
       </td>
       <td className="px-3 py-1.5 text-right">
         {editable && line.source === "manual" && (
-          <button type="button" disabled={!!lockReason} title={lockReason ?? undefined}
+          <button data-testid={`take-line-remove-${line.line_id}`} type="button" disabled={!!lockReason} title={lockReason ?? undefined}
             onClick={() => act(() => takeApi.deleteLine(takeId, line.line_id))}
             className="text-xs text-h-muted hover:text-h-ink disabled:opacity-50">Remove</button>
         )}

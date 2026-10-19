@@ -53,7 +53,7 @@ export function StaffPhotosPanel() {
                   <input type="file" accept="image/png,image/jpeg" className="sr-only" aria-label={`Photo for ${u.full_name}`}
                     onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(u, f); }} />
                 </label>
-                {u.has_photo && <button type="button" onClick={() => void remove(u)} className="ml-2 text-xs text-h-muted underline hover:text-h-ink">Remove</button>}
+                {u.has_photo && <button data-testid={`staff-photo-remove-${u.id}`} type="button" onClick={() => void remove(u)} className="ml-2 text-xs text-h-muted underline hover:text-h-ink">Remove</button>}
               </td>
             </tr>
           ))}

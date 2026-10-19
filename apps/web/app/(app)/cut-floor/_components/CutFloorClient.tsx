@@ -306,7 +306,7 @@ export function CutFloorClient({
                 )}
                 {mutator &&
                   (row.status === "planned" || row.status === "running") && (
-                    <button
+                    <button data-testid={`cut-schedule-cancel-${row.id}`}
                       type="button"
                       onClick={() => cancel(row)}
                       className="rounded border border-h-line px-2 py-1 text-xs text-h-muted hover:text-h-ink"

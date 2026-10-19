@@ -319,7 +319,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
       </td>
       <td className="px-3 py-1">
         {canWrite && !row.archived_at && (
-          <button onClick={onArchive} disabled={busy}
+          <button type="button" data-testid="catalog-row-archive" onClick={onArchive} disabled={busy}
                   className="text-xs text-rose-700 hover:underline disabled:opacity-50">
             Archive
           </button>

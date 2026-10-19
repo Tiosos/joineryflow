@@ -241,7 +241,7 @@ function UndoBannerStack({
             <span className="text-xs">
               · {mins} min{mins === 1 ? "" : "s"} left to undo
             </span>
-            <button
+            <button data-testid={`station-undo-${r.log_id}`}
               type="button"
               onClick={() => onUndo(r)}
               className="ml-auto rounded border border-amber-700 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"

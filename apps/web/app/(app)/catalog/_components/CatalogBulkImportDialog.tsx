@@ -95,7 +95,7 @@ export default function CatalogBulkImportDialog(p: Props) {
             </div>
           )}
           <div className="mt-4 flex justify-end">
-            <button
+            <button type="button"
               onClick={() => p.onCommitted(result)}
               className="rounded bg-h-accent px-3 py-1 text-sm text-white"
             >
@@ -130,10 +130,10 @@ export default function CatalogBulkImportDialog(p: Props) {
         )}
         {err && <div className="mt-2 text-xs text-rose-700">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={p.onClose} className="rounded border border-h-line px-3 py-1 text-sm">
+          <button type="button" onClick={p.onClose} className="rounded border border-h-line px-3 py-1 text-sm">
             Cancel
           </button>
-          <button
+          <button type="button"
             onClick={onSubmit}
             disabled={busy || parsed.rows.length === 0}
             className="rounded bg-h-accent px-3 py-1 text-sm text-white disabled:opacity-50"
