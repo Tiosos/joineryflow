@@ -267,7 +267,7 @@ export function TrackingClient({
               <>
                 <span data-testid="bulk-selected">{selectedIds.size} selected</span>
                 {deletedView ? (
-                  <button
+                  <button data-testid="tracking-restore"
                     type="button"
                     onClick={() => changeDeleted("restore")}
                     className="rounded bg-h-accent px-2 py-0.5 text-[11px] font-semibold text-white"
@@ -283,7 +283,7 @@ export function TrackingClient({
                     >
                       Apply status…
                     </button>
-                    <button
+                    <button data-testid="tracking-delete"
                       type="button"
                       onClick={() => changeDeleted("delete")}
                       className="rounded border border-[#b4443d] bg-h-bg px-2 py-0.5 text-[11px] text-[#b4443d] hover:bg-[#f2dcd9]/40"

@@ -38,8 +38,8 @@ export default function NewRevisionDialog({ drawingId, onClose, onAdded }: Props
                className="mt-4 block w-full text-sm" />
         {err && <p className="mt-3 text-xs text-rose-700">{err}</p>}
         <div className="mt-5 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-ink">Cancel</button>
-          <button onClick={submit} disabled={busy}
+          <button type="button" onClick={onClose} className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-ink">Cancel</button>
+          <button type="button" onClick={submit} disabled={busy}
                   className="rounded bg-h-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
             {busy ? "Uploading…" : "Add revision"}
           </button>

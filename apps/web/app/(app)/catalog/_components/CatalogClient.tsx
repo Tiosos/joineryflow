@@ -177,11 +177,11 @@ export default function CatalogClient(props: Props) {
                 {TABLE_KEYS.map((k) => <option key={k} value={k}>{TABLE_LABEL[k]}</option>)}
               </select>
             )}
-            <button onClick={() => setBulkOpen(true)}
+            <button type="button" onClick={() => setBulkOpen(true)}
                     className="rounded border border-h-line px-3 py-1.5 text-sm">
               Bulk import
             </button>
-            <button onClick={() => setNewOpen(true)}
+            <button type="button" onClick={() => setNewOpen(true)}
                     className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
               + New
             </button>

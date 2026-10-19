@@ -275,7 +275,7 @@ export function InvoiceWindow({
                       </label>
                     ) : null}
                   </div>
-                  {mime && canWrite && <button type="button" aria-label={`Remove ${s.label}`} onClick={() => void removeFile(s.key)} className="text-[10px] text-h-muted underline hover:text-h-ink">remove</button>}
+                  {mime && canWrite && <button data-testid={`inv-file-remove-${s.key}`} type="button" aria-label={`Remove ${s.label}`} onClick={() => void removeFile(s.key)} className="text-[10px] text-h-muted underline hover:text-h-ink">remove</button>}
                 </div>
               );
             })}

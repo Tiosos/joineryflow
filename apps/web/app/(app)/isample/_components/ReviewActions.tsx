@@ -51,13 +51,13 @@ export default function ReviewActions(p: Props) {
     <div className="flex flex-wrap items-center gap-2">
       {p.sample.status === "pending" && canApprove && (
         <>
-          <button type="button" disabled={busy}
+          <button data-testid="sample-approve" type="button" disabled={busy}
                   onClick={() => run(() => approveSample(p.sample.sample_id))}
                   className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
             Approve
           </button>
           {!showRejectInput ? (
-            <button type="button" disabled={busy} onClick={() => setShowRejectInput(true)}
+            <button data-testid="sample-reject" type="button" disabled={busy} onClick={() => setShowRejectInput(true)}
                     className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-rose-700 disabled:opacity-50">
               Reject
             </button>
@@ -69,7 +69,7 @@ export default function ReviewActions(p: Props) {
                 placeholder="Reason for rejection (required)"
                 className="flex-1 rounded border border-h-line bg-h-surface px-2 py-1 text-sm text-h-ink"
               />
-              <button type="button"
+              <button data-testid="sample-reject-confirm" type="button"
                       disabled={busy || !rejectNote.trim()}
                       onClick={() => run(async () => {
                         await rejectSample(p.sample.sample_id, rejectNote.trim());
@@ -108,7 +108,7 @@ export default function ReviewActions(p: Props) {
         </button>
       )}
       {canArchive && (
-        <button type="button" disabled={busy}
+        <button data-testid="sample-archive" type="button" disabled={busy}
                 onClick={() => {
                   if (!confirm("Archive this sample?")) return;
                   run(() => archiveSample(p.sample.sample_id));

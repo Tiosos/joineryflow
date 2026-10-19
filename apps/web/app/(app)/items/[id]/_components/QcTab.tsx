@@ -153,7 +153,7 @@ function DefectsSection({
                 </p>
               )}
               {d.status === "open" && canApprove && (
-                <button
+                <button data-testid={`qc-defect-resolve-${d.defect_id}`}
                   type="button"
                   onClick={() => resolve(d)}
                   className="mt-2 rounded border border-h-line px-2 py-1 text-xs text-h-ink hover:bg-h-bg"
@@ -279,7 +279,7 @@ function ChecklistSection({ itemId, canWrite }: { itemId: number; canWrite: bool
                 </span>
               )}
               {canWrite && (
-                <button
+                <button data-testid={`qc-checklist-remove-${row.checklist_item_id}`}
                   type="button"
                   onClick={() => remove(row)}
                   className="text-xs text-h-muted hover:text-h-ink"
@@ -405,7 +405,7 @@ function ReworkSection({
                 </p>
               )}
               {r.status === "open" && canApprove && (
-                <button
+                <button data-testid={`qc-rework-close-${r.rework_id}`}
                   type="button"
                   onClick={() => close(r)}
                   className="mt-2 rounded border border-h-line px-2 py-1 text-xs text-h-ink hover:bg-h-bg"

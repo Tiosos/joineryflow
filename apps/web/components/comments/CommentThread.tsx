@@ -333,7 +333,7 @@ function CommentItem({
             </button>
           )}
           {canDelete && (
-            <button
+            <button data-testid={`comment-delete-${comment.comment_id}`}
               type="button"
               className="hover:text-rose-700"
               onClick={() => {

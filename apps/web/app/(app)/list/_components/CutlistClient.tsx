@@ -268,7 +268,7 @@ function CutlistDetail({
               >
                 Rename
               </button>
-              <button
+              <button data-testid="cutlist-delete"
                 type="button"
                 onClick={remove}
                 disabled={busy}

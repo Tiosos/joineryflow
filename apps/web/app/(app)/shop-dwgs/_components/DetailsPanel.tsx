@@ -146,7 +146,7 @@ export default function DetailsPanel(props: Props) {
         </div>
         <div className="flex items-center gap-2">
           {detail && <QueueChip queue={queueOfDetail(detail)} />}
-          <button onClick={props.onClose} aria-label="Close details"
+          <button type="button" onClick={props.onClose} aria-label="Close details"
                   className="rounded p-1 text-h-muted hover:bg-h-line/40 hover:text-h-ink">✕</button>
         </div>
       </header>
@@ -222,7 +222,7 @@ export default function DetailsPanel(props: Props) {
             <h3 className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-h-ink2">Revision details</h3>
             <div role="tablist" className="flex gap-1 overflow-x-auto px-3 pt-2">
               {TABS.map((t) => (
-                <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
+                <button type="button" key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
                         className={`whitespace-nowrap rounded-t px-2.5 py-1.5 text-xs ${
                           tab === t.key ? "border-b-2 border-h-accent font-medium text-h-ink" : "text-h-muted hover:text-h-ink"
                         }`}>

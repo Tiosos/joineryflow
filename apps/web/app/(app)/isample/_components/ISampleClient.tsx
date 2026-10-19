@@ -85,7 +85,7 @@ export default function ISampleClient(props: Props) {
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
         {projectId != null && (
-          <button onClick={() => setNewOpen(true)}
+          <button type="button" onClick={() => setNewOpen(true)}
                   className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
             + New sample
           </button>

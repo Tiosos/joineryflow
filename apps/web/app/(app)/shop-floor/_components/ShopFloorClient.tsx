@@ -222,7 +222,7 @@ export function ShopFloorClient({ me, projects, initialProjectId }: Props) {
                                   </option>
                                 ))}
                               </select>
-                              <button
+                              <button data-testid={`assignment-cancel-${card.assignment!.assignment_id}`}
                                 type="button"
                                 onClick={() => cancel(card.assignment!)}
                                 className="rounded border border-h-line px-1 text-[11px] text-h-muted hover:text-h-ink"

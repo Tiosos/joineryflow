@@ -36,7 +36,7 @@ export default function BoardImageCell({
         </label>
       )}
       {hasImage && canWrite && (
-        <button type="button" onClick={() => void remove()} className="text-xs text-h-muted underline hover:text-h-ink">remove</button>
+        <button data-testid="catalog-image-remove" type="button" onClick={() => void remove()} className="text-xs text-h-muted underline hover:text-h-ink">remove</button>
       )}
       {err && <span role="alert" className="text-xs text-rose-700">{err}</span>}
     </div>

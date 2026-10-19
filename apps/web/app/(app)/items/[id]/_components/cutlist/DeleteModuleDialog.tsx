@@ -128,7 +128,7 @@ export function DeleteModuleDialog({ moduleId, moduleName, onClose, onDeleted }:
           >
             Cancel
           </button>
-          <button
+          <button data-testid="delete-module-confirm"
             type="button"
             onClick={confirmDelete}
             disabled={busy || impact === null}

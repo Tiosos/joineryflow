@@ -214,7 +214,7 @@ function CartLine({
       </div>
 
       {/* Delete */}
-      <button
+      <button data-testid={`hardware-line-delete-${line.id}`}
         type="button"
         onClick={() => onDelete(line.id)}
         aria-label="Remove hardware line"

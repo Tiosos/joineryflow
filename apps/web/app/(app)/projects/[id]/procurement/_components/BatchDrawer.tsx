@@ -54,7 +54,7 @@ export function BatchDrawer({ projectId, initial, batchId, canWrite, onClose, on
           {batchId == null ? "New batch" : `Batch #${batchId}`}
           {batch.status && <span className="ml-2"><BatchStatusPill status={batch.status} /></span>}
         </h2>
-        <button onClick={onClose} aria-label="Close drawer" className="text-h-muted hover:text-h-ink">✕</button>
+        <button type="button" onClick={onClose} aria-label="Close drawer" className="text-h-muted hover:text-h-ink">✕</button>
       </header>
 
       {err && <p className="text-sm text-h-bad">{err}</p>}
@@ -141,11 +141,11 @@ export function BatchDrawer({ projectId, initial, batchId, canWrite, onClose, on
 
         {canWrite && (
           <div className="flex gap-2">
-            <button onClick={save} data-testid="save-batch" className="rounded bg-h-accent px-3 py-1 text-sm text-white">
+            <button type="button" onClick={save} data-testid="save-batch" className="rounded bg-h-accent px-3 py-1 text-sm text-white">
               Save
             </button>
             {batchId != null && batch.status !== "CANCELLED" && (
-              <button
+              <button type="button" data-testid="cancel-batch"
                 onClick={async () => {
                   if (!confirm("Cancel this batch?")) return;
                   const r = await ProcFetch.cancelBatch(batchId);

@@ -123,7 +123,7 @@ export default function ShopDwgsClient(props: Props) {
           <p className="mt-1 text-sm text-h-muted">{headerText}</p>
         </div>
         {projectId != null && canUpload && (
-          <button onClick={() => setUploadOpen(true)}
+          <button type="button" onClick={() => setUploadOpen(true)}
                   className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
             Upload drawing
           </button>

@@ -37,7 +37,7 @@ export function BatchesTable({ projectId, canWrite, sp }: Props) {
     <>
       <div className="mb-3 flex justify-end">
         {canWrite && (
-          <button
+          <button type="button"
             data-testid="new-batch"
             onClick={() => setCreating(true)}
             className="rounded bg-h-accent px-3 py-1 text-sm text-white"

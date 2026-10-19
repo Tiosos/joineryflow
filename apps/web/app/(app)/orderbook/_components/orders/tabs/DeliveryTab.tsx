@@ -65,7 +65,7 @@ export function DeliveryTab({
                   {d.has_docket ? (
                     <>
                       <a href={`${base}/${d.delivery_id}/docket`} target="_blank" rel="noreferrer" data-testid="delivery-docket-link" className={MINI}>Docket</a>
-                      {canEdit && <button type="button" aria-label="Remove docket" className={`${MINI} ml-1`}
+                      {canEdit && <button data-testid={`delivery-docket-remove-${d.delivery_id}`} type="button" aria-label="Remove docket" className={`${MINI} ml-1`}
                         onClick={() => void run(() => apiCall<DeliveryLog>(`${base}/${d.delivery_id}/docket`, { method: "DELETE" }))}>×</button>}
                     </>
                   ) : canEdit ? (

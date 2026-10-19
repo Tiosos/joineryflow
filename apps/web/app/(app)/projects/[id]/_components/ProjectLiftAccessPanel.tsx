@@ -94,7 +94,7 @@ export function ProjectLiftAccessPanel({ projectId, liftAccess, canEdit }: Props
                 >
                   Replace
                 </button>
-                <button
+                <button data-testid="lift-sketch-remove"
                   type="button"
                   disabled={busy}
                   onClick={removeSketch}

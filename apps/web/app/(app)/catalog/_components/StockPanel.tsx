@@ -220,7 +220,7 @@ function StockRow({
       </td>
       <td className="px-3 py-1">
         {canWrite && (
-          <button
+          <button type="button" data-testid={`stock-remove-${row.inventory_id}`}
             onClick={remove}
             disabled={busy}
             className="text-xs text-rose-700 hover:underline disabled:opacity-50"

@@ -125,7 +125,7 @@ function ContactRow({
           {contact.position && <span className="text-h-muted"> · {contact.position}</span>}
         </span>
         {canEdit && (
-          <button
+          <button data-testid={`project-contact-remove-${contact.contact_id}`}
             type="button"
             disabled={busy}
             onClick={remove}

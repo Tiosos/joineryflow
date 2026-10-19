@@ -34,7 +34,7 @@ export default function MappingPanel({ canWrite }: Props) {
     <div className="space-y-3">
       <div className="flex justify-end">
         {canWrite && (
-          <button onClick={() => setNewOpen(true)}
+          <button type="button" onClick={() => setNewOpen(true)}
                   className="rounded bg-h-accent px-3 py-1.5 text-sm text-white">
             + New mapping
           </button>
@@ -65,7 +65,7 @@ export default function MappingPanel({ canWrite }: Props) {
                 <td className="px-3 py-1 text-h-muted">{r.notes ?? ""}</td>
                 <td className="px-3 py-1">
                   {canWrite && (
-                    <button onClick={() => onDelete(r.cv_material_mapping_id)}
+                    <button type="button" data-testid={`cv-mapping-delete-${r.cv_material_mapping_id}`} onClick={() => onDelete(r.cv_material_mapping_id)}
                             className="text-xs text-rose-700 hover:underline">
                       Delete
                     </button>
