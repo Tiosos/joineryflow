@@ -65,12 +65,29 @@ export interface OrderWaiting {
   url: string;
 }
 
+/** A held save on a Controlled-Lock item, still pending, that this user may decide (the lock owner,
+ *  a manager, an admin). Derived on read: no read state, it leaves the list when decided. */
+export interface LockRequestWaiting {
+  request_id: number;
+  item_id: number;
+  item_number: number | null;
+  project_code: string | null;
+  requested_by_name: string | null;
+  /** The item fields the held save would change. */
+  fields: string[];
+  created_at: string;
+  url: string;
+}
+
 export interface NotificationList {
   notifications: NotificationOut[];
   unread_count: number;
   /** Purchase officers only; left out of the reply for everyone else. */
   orders_waiting?: OrderWaiting[];
   orders_waiting_count?: number;
+  /** Drafters, managers and admins only; left out of the reply for everyone else. */
+  lock_requests_waiting?: LockRequestWaiting[];
+  lock_requests_waiting_count?: number;
 }
 
 /** Live comment counts per area / room of one project (absent = none). */

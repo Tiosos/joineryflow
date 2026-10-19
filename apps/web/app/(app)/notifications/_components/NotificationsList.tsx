@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { notificationText } from "@/components/chrome/NotificationBell";
 import { formatLocalTs } from "@/components/comments/format";
 import { notificationsApi } from "@/lib/comments-fetch";
-import type { NotificationOut, OrderWaiting } from "@/lib/comments-types";
+import type { LockRequestWaiting, NotificationOut, OrderWaiting } from "@/lib/comments-types";
 
 const PAGE = 100;
 
@@ -17,6 +17,8 @@ export function NotificationsList() {
   const [unread, setUnread] = useState(0);
   const [waiting, setWaiting] = useState<OrderWaiting[]>([]);
   const [waitingCount, setWaitingCount] = useState(0);
+  const [lockWaiting, setLockWaiting] = useState<LockRequestWaiting[]>([]);
+  const [lockCount, setLockCount] = useState(0);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +29,8 @@ export function NotificationsList() {
       setUnread(r.unread_count);
       setWaiting(r.orders_waiting ?? []);
       setWaitingCount(r.orders_waiting_count ?? 0);
+      setLockWaiting(r.lock_requests_waiting ?? []);
+      setLockCount(r.lock_requests_waiting_count ?? 0);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notifications");
@@ -102,9 +106,36 @@ export function NotificationsList() {
         </section>
       )}
 
+      {!unreadOnly && lockCount > 0 && (
+        <section data-testid="lock-requests-waiting-list" className="grid gap-2">
+          <h2 className="text-sm font-semibold text-h-ink">
+            {`Held saves waiting for your decision (${lockCount})`}
+          </h2>
+          <ul className="grid gap-2">
+            {lockWaiting.map((l) => (
+              <li key={l.request_id}>
+                <Link
+                  href={l.url}
+                  className="block rounded border border-h-line bg-h-surface px-3 py-2 text-sm text-h-ink hover:bg-h-bg"
+                >
+                  <span className="h-mono">{l.item_number != null ? `#${l.item_number}` : `Item ${l.item_id}`}</span>
+                  <span className="text-xs text-h-muted">
+                    {` · ${l.project_code ?? "no project"}${l.requested_by_name ? ` · ${l.requested_by_name}` : ""} · ${formatLocalTs(l.created_at)}`}
+                  </span>
+                  <span className="mt-0.5 block text-sm">{`Changes ${l.fields.join(", ")}`}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {lockCount > lockWaiting.length && (
+            <p className="text-xs text-h-muted">{`${lockCount - lockWaiting.length} more not shown`}</p>
+          )}
+        </section>
+      )}
+
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       {!rows && !error && <p className="text-sm text-h-muted">Loading…</p>}
-      {rows && rows.length === 0 && (unreadOnly || waitingCount === 0) && (
+      {rows && rows.length === 0 && (unreadOnly || (waitingCount === 0 && lockCount === 0)) && (
         <p className="text-sm text-h-muted">
           {unreadOnly ? "Nothing unread." : "No notifications yet."}
         </p>

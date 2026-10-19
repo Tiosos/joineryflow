@@ -244,6 +244,8 @@ Three lock types on an item: **Hard** (`hard_locked_at`, manager/admin set it, b
 | **Ask** a query | ✔ | — | — |
 | `DELETE /items/{id}` (soft delete; restore is never refused) | ✔ | — | — |
 
+**Held saves (Controlled-Lock requests)** are decided by the lock owner, a manager or an admin (drafter, manager, admin only: `require_drafter`): the item editor shows a banner with Approve / Reject, and `GET /notifications` lists them (`lock_requests_waiting`, derived, no read state) in the bell for those people. History: `docs/sub-projects/04-rbac-and-locks.md`.
+
 **Deliberately not locked:** QC records, comments, Material Summary, project hardware catalog, `POST /files`, Shop Floor's `item_stages` fan-out, reads and print routes. `cutlist_owner_id` is sticky — only `item_locked` matters. Web mirror: `cutlist/moduleLock.ts` (`moduleLockReason`, `lockFromError`, scopes `content | status | records`); one notice per tab, controls disabled with the reason, 409 fallback reverts the edit.
 
 ## 10. What is built

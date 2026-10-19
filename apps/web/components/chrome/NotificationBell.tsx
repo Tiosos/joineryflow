@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notificationsApi } from "@/lib/comments-fetch";
-import type { NotificationOut, OrderWaiting } from "@/lib/comments-types";
+import type { LockRequestWaiting, NotificationOut, OrderWaiting } from "@/lib/comments-types";
 
 const POLL_MS = 60_000;
 const PREVIEW = 6;
@@ -25,11 +25,14 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationOut[]>([]);
   const [waiting, setWaiting] = useState<OrderWaiting[]>([]);
   const [waitingCount, setWaitingCount] = useState(0);
-  // Orders waiting for a decision count on the badge too; they have no read state, they leave
-  // when the order is decided. So the badge is "need attention", not "unread".
-  const badge = unread + waitingCount;
+  const [lockWaiting, setLockWaiting] = useState<LockRequestWaiting[]>([]);
+  const [lockCount, setLockCount] = useState(0);
+  // Orders and lock requests waiting for a decision count on the badge too; they have no read
+  // state, they leave when decided. So the badge is "need attention", not "unread".
+  const badge = unread + waitingCount + lockCount;
   const shownWaiting = waiting.slice(0, PREVIEW);
-  const showEmpty = items.length === 0 && waitingCount === 0;
+  const shownLock = lockWaiting.slice(0, PREVIEW);
+  const showEmpty = items.length === 0 && waitingCount === 0 && lockCount === 0;
 
   const refresh = useCallback(async () => {
     try {
@@ -38,6 +41,8 @@ export function NotificationBell() {
       setItems(r.notifications);
       setWaiting(r.orders_waiting ?? []);
       setWaitingCount(r.orders_waiting_count ?? 0);
+      setLockWaiting(r.lock_requests_waiting ?? []);
+      setLockCount(r.lock_requests_waiting_count ?? 0);
     } catch {
       // A failed poll keeps the last known state; the next tick retries.
     }
@@ -48,9 +53,12 @@ export function NotificationBell() {
     const t = setInterval(() => void refresh(), POLL_MS);
     const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
+    // A page that changed what is waiting (the lock-request banner) asks for an immediate re-read.
+    window.addEventListener("jf:notifications-changed", onFocus);
     return () => {
       clearInterval(t);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("jf:notifications-changed", onFocus);
     };
   }, [refresh]);
 
@@ -111,6 +119,40 @@ export function NotificationBell() {
               </button>
             )}
           </div>
+          {lockCount > 0 && (
+            <div data-testid="lock-requests-waiting" className="border-b border-h-line">
+              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
+                {`Held saves waiting for your decision (${lockCount})`}
+              </div>
+              <ul>
+                {shownLock.map((l) => (
+                  <li key={l.request_id}>
+                    <Link
+                      href={l.url}
+                      onClick={() => setOpen(false)}
+                      data-testid="lock-request-waiting"
+                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
+                    >
+                      <span className="h-mono">{l.item_number != null ? `#${l.item_number}` : `Item ${l.item_id}`}</span>
+                      <span className="text-xs text-h-muted">
+                        {` · ${l.project_code ?? "no project"}${l.requested_by_name ? ` · ${l.requested_by_name}` : ""}`}
+                      </span>
+                      <span className="block truncate text-xs text-h-muted">{`Changes ${l.fields.join(", ")}`}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {lockCount > shownLock.length && (
+                <Link
+                  href="/notifications"
+                  onClick={() => setOpen(false)}
+                  className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
+                >
+                  {`+${lockCount - shownLock.length} more`}
+                </Link>
+              )}
+            </div>
+          )}
           {waitingCount > 0 && (
             <div data-testid="orders-waiting" className="border-b border-h-line">
               <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">

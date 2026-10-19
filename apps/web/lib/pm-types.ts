@@ -663,3 +663,19 @@ export interface MyStatusPatch {
   work_status?: WorkStatus | null;
   location_label?: string | null;
 }
+
+/** A non-owner's held save on a Controlled-Lock item (`GET /items/{id}/lock-requests`). */
+export interface LockRequestOut {
+  request_id: number;
+  item_id: number;
+  requested_by: number;
+  requested_by_name: string | null;
+  requested_changes: Record<string, unknown>;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  updated_at: string;
+  decided_by: number | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}

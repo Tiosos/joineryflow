@@ -56,6 +56,7 @@ from ._q_locks import (  # noqa: F401
     clear_hard_lock,
     decide_lock_request,
     list_lock_requests,
+    lock_requests_waiting_for_decision,
     set_hard_lock,
 )
 from ._q_write import (  # noqa: F401

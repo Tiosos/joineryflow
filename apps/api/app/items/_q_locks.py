@@ -8,6 +8,7 @@ import json
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from .schemas import PatchItemIn
+from ..row_types import not_deleted
 from ._q_base import _apply_item_changes, _item_row
 
 
@@ -361,6 +362,61 @@ def list_lock_requests(
         {"iid": item_id, "status": status},
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+# Roles that may decide a lock request: `require_drafter()` on the approve / reject routes.
+_LOCK_DECIDER_ROLES = ("drafter", "manager", "admin")
+
+
+def lock_requests_waiting_for_decision(
+    db: Session, *, user: AuthUser, limit: int = 20
+) -> tuple[int, list[dict]]:
+    """(count, newest `limit` rows) of the pending lock requests `user` may decide.
+
+    Same rule as `decide_lock_request`: the item's lock owner, or a manager / admin, and only a
+    role the decide routes accept (drafter, manager, admin). Derived on read, never stored, so a
+    request that is approved or rejected drops out by itself and nothing is marked read. Scoped
+    to the caller's workspace through the item's project; a deleted item's requests are hidden.
+    """
+    if user.auth_role not in _LOCK_DECIDER_ROLES:
+        return 0, []
+    where = """
+        r.status = 'pending'
+        AND p.workspace_id = :w
+        AND (i.cutlist_owner_id = :uid OR CAST(:mgr AS boolean))
+    """
+    params = {"w": user.workspace_id, "uid": user.id,
+              "mgr": user.auth_role in ("manager", "admin"), "lim": limit}
+    count = db.execute(
+        text(
+            f"""
+            SELECT count(*)
+              FROM item_lock_request r
+              JOIN items i    ON i.item_id = r.item_id
+              JOIN projects p ON p.project_id = i.project_id
+             WHERE {where} AND {not_deleted("i")}
+            """
+        ),
+        params,
+    ).scalar_one()
+    rows = db.execute(
+        text(
+            f"""
+            SELECT r.request_id, r.item_id, i.num AS item_number, p.project_code,
+                   ru.full_name AS requested_by_name, r.created_at,
+                   ARRAY(SELECT jsonb_object_keys(r.requested_changes)) AS fields
+              FROM item_lock_request r
+              JOIN items i    ON i.item_id = r.item_id
+              JOIN projects p ON p.project_id = i.project_id
+              JOIN app_user ru ON ru.id = r.requested_by
+             WHERE {where} AND {not_deleted("i")}
+             ORDER BY r.created_at DESC, r.request_id DESC
+             LIMIT :lim
+            """
+        ),
+        params,
+    ).mappings().all()
+    return count, [dict(r) for r in rows]
 
 
 def decide_lock_request(
