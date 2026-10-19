@@ -5,6 +5,7 @@ import type { BatchOut } from "@/lib/procurement-types";
 import { ProcFetch } from "@/lib/procurement-fetch";
 import { AllocationEditor } from "./AllocationEditor";
 import { BatchStatusPill } from "@/components/procurement/BatchStatusPill";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   projectId: number;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function BatchDrawer({ projectId, initial, batchId, canWrite, onClose, onSaved }: Props) {
+  const { confirm } = useConfirm();
   const [batch, setBatch] = useState<Partial<BatchOut>>(initial ?? {});
   const [err, setErr]     = useState<string | null>(null);
 
@@ -147,7 +149,7 @@ export function BatchDrawer({ projectId, initial, batchId, canWrite, onClose, on
             {batchId != null && batch.status !== "CANCELLED" && (
               <button type="button" data-testid="cancel-batch"
                 onClick={async () => {
-                  if (!confirm("Cancel this batch?")) return;
+                  if (!(await confirm({ title: "Cancel this batch?", message: "A batch with allocations cannot be cancelled.", confirmLabel: "Cancel batch", cancelLabel: "Keep it" }))) return;
                   const r = await ProcFetch.cancelBatch(batchId);
                   if (!r.ok) setErr(await r.text());
                   else { onSaved(); onClose(); }

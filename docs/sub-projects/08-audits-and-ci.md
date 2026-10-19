@@ -397,3 +397,25 @@ Five entries remain (2 path, 3 body); none is an untested hole. Each reason now 
 Seen twice in full local runs: `expect(mine).toHaveLength(1)` received `[]` for the orders of the revision just generated, passing on retry. **Cause (a test race, not an app bug):** `EstimateDetailClient.confirmGenerateOrders` closes the preview dialog *before* the `generate-orders` POST returns (by design, so a failure's banner is not hidden behind the modal). The specs waited for the dialog to be hidden and then read `GET /api/orders` once, so they raced the request; one spec also `reload()`ed while the POST was in flight. Click-before-hydration (the usual suspect) and CPU load were tried first and did not reproduce it (30 runs, 4 busy loops, JS chunks delayed 1.5 s).
 
 **Reproduced deterministically** by delaying the POST 1.5 s with `page.route`: 5 of the 6 Generate Orders specs failed. **Fix:** `ordersGeneratedFor(page, rid)` polls for the orders instead of reading once, and the "nothing to order" spec waits for the server to cover the line before it reloads. With the same 1.5 s delay all six pass. The delay harness was a temporary `beforeEach`, not committed.
+
+## Shared confirm dialog for risky actions (2026-10-19, web only, no migration) — shipped
+
+About 40 native `window.confirm` / `prompt` / `alert` calls were scattered through the web app, each with its own wording
+and none testable or accessible. **Settled decision (user):** replace the risky ones first (delete, archive, cancel,
+reject, close-out); leave renames, "new" prompts, "discard unsaved changes" and `alert` for later.
+
+- **Component.** `components/confirm/ConfirmProvider.tsx`: `useConfirm()` returns `confirm(opts) -> Promise<boolean>` and
+  `askReason(opts) -> Promise<string | null>` (required or optional reason; trimmed; `null` when cancelled). One dialog at a
+  time (asking while one is open cancels the first). `role="alertdialog"`, labelled by its title, Esc and a click outside
+  cancel, Tab stays inside, focus goes to Cancel (destructive tone) or the reason box and returns to where it was.
+  Test ids: `confirm-dialog`, `confirm-dialog-message`, `confirm-dialog-cancel`, `confirm-dialog-confirm`,
+  `confirm-dialog-reason`.
+- **Converted (23 sites).** Catalog archive / mapping delete / stock remove; project contact, lift sketch, close-out;
+  batch, schedule, assignment and PO cancel; quote line, cutlist, group, invoice, order line, comment, customer, sample,
+  drawing, item delete; register document and attachment removal; Tracking bulk delete / restore; estimate Reject (reason
+  required) and Expire (reason optional).
+- **Tests.** `tests/e2e/confirm_dialog.spec.ts` (2). Eight existing specs that answered the native dialog with
+  `page.on("dialog")` now click `confirm-dialog-confirm` (`attachments_locks`, `comments`, `document_register`,
+  `item_soft_delete`, `po`). Whole suite twice on a production build: 190 passed, 2 skipped (search).
+- **Still native.** Cutlist rename and "new" prompts, Area / Room prompts (`AreaRoomPicker`), "Clone line" confirm,
+  "Discard unsaved grant changes" (twice), and every `window.alert`.

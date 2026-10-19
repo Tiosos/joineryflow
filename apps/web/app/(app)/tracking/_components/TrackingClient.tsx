@@ -15,6 +15,7 @@ import { CreateOrderDialog } from "./CreateOrderDialog";
 import { can } from "@/lib/permissions";
 import { BulkStatusDialog } from "./BulkStatusDialog";
 import { NewItemDialog } from "./NewItemDialog";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   project: ProjectOut;
@@ -42,6 +43,7 @@ export function TrackingClient({
   procurementReady,
   deletedView,
 }: Props) {
+  const { confirm } = useConfirm();
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -174,7 +176,7 @@ export function TrackingClient({
       action === "delete"
         ? "Their cutlists and related parts go with them. A manager or admin can restore them from the Deleted chip."
         : "Their cutlists and related parts come back with them.";
-    if (!window.confirm(`${verb} ${ids.length} item${ids.length === 1 ? "" : "s"}? ${detail}`)) return;
+    if (!(await confirm({ title: `${verb} ${ids.length} item${ids.length === 1 ? "" : "s"}?`, message: detail, confirmLabel: verb, tone: action === "delete" ? "danger" : "default" }))) return;
     let failed = 0;
     let locked = 0;
     for (const id of ids) {

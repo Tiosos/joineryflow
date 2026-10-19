@@ -10,6 +10,7 @@ import type {
   EstimateStatus,
   EstimateSummary,
 } from "@/lib/estimating-types";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   me: Me;
@@ -45,6 +46,7 @@ function fmtMoney(s: string | null | undefined): string {
 export default function CustomerDetailClient({
   me, customer, activeEstimates, archivedEstimates,
 }: Props) {
+  const { confirm } = useConfirm();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -55,7 +57,7 @@ export default function CustomerDetailClient({
   const isArchived = !!customer.archived_at;
 
   async function archive() {
-    if (!window.confirm(`Archive "${customer.name}"?`)) return;
+    if (!(await confirm({ title: `Archive "${customer.name}"?`, confirmLabel: "Archive" }))) return;
     setBusy(true);
     setError(null);
     try {

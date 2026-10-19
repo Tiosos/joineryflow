@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ContactKind, CreateContactIn, ProjectContactOut } from "@/lib/pm-types";
 import { projectContactsApi } from "@/lib/project-contacts-fetch";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   projectId: number;
@@ -101,11 +102,12 @@ function ContactRow({
   canEdit: boolean;
   onChanged: () => void;
 }) {
+  const { confirm } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function remove() {
-    if (!confirm(`Remove contact ${contact.name}?`)) return;
+    if (!(await confirm({ title: `Remove contact ${contact.name}?`, confirmLabel: "Remove" }))) return;
     setBusy(true);
     setError(null);
     try {

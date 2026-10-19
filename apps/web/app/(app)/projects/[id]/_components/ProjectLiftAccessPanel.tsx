@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ProjectLiftAccessOut } from "@/lib/pm-types";
 import { liftAccessApi } from "@/lib/project-lift-access-fetch";
 import { uploadFile } from "@/lib/file-upload";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   projectId: number;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ProjectLiftAccessPanel({ projectId, liftAccess, canEdit }: Props) {
+  const { confirm } = useConfirm();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [notes, setNotes] = useState(liftAccess?.notes ?? "");
@@ -55,7 +57,7 @@ export function ProjectLiftAccessPanel({ projectId, liftAccess, canEdit }: Props
   }
 
   async function removeSketch() {
-    if (!confirm("Remove the lift access sketch?")) return;
+    if (!(await confirm({ title: "Remove the lift access sketch?", confirmLabel: "Remove" }))) return;
     await save(notes, null);
   }
 

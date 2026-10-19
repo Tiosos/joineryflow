@@ -12,6 +12,7 @@ import type {
   CutlistPartRow,
 } from "@/lib/cutlist-types";
 import { can, type Me } from "@/lib/permissions";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   me: Me;
@@ -219,6 +220,7 @@ function CutlistDetail({
   onClose: () => void;
   call: (path: string, init: RequestInit) => Promise<boolean>;
 }) {
+  const { confirm } = useConfirm();
   const [linkId, setLinkId] = useState("");
   // §1218 asks for the parts and hardware themselves. Three panes rather than
   // one long page: the same cutlist is read as "who is on it", "what to cut"
@@ -243,7 +245,7 @@ function CutlistDetail({
   async function remove() {
     // The API refuses this while items are linked (HAS_ITEMS), so the
     // confirmation is about intent, not about cascading anything away.
-    if (!window.confirm(`Delete cutlist ${cutlist.cutlist_no}?`)) return;
+    if (!(await confirm({ title: `Delete cutlist ${cutlist.cutlist_no}?`, confirmLabel: "Delete cutlist" }))) return;
     if (await call(`/cutlists/${cutlist.cutlist_id}`, { method: "DELETE" })) {
       onClose();
     }

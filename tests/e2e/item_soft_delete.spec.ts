@@ -26,7 +26,6 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
   await mk(keepDesc);
   const goneId = await mk(goneDesc);
 
-  page.on("dialog", (d) => d.accept());
   const rows = page.locator('[data-testid="tracking-row"]');
   const row = (text: string) => rows.filter({ hasText: text });
 
@@ -34,6 +33,7 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
   await expect(row(goneDesc)).toHaveCount(1);
   await row(goneDesc).locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(row(goneDesc)).toHaveCount(0);                       // gone from the live list
   await expect(row(keepDesc)).toHaveCount(1);                       // the other one is untouched
 
@@ -49,6 +49,7 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
 
   await row(goneDesc).locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Restore", exact: true }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(row(goneDesc)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Deleted", exact: true }).click();   // back to the live list
@@ -75,10 +76,10 @@ async function projectWithItem(page: import("@playwright/test").Page, label: str
 test("the item editor's Delete button soft-deletes and returns to Tracking", async ({ page }) => {
   await login(page);
   const { pid, description, id } = await projectWithItem(page, "Editor delete");
-  page.on("dialog", (d) => d.accept());
 
   await page.goto(`/items/${id}`);
   await page.getByTestId("delete-item").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page).toHaveURL(new RegExp(`/tracking\\?project_id=${pid}`), { timeout: 30_000 });
   await expect(page.locator('[data-testid="tracking-row"]').filter({ hasText: description })).toHaveCount(0);
   expect((await page.request.get(`/api/items/${id}`)).status()).toBe(404);
@@ -91,7 +92,6 @@ test("a Hard Lock stops the delete: the editor button is off and Tracking skips 
   await login(page);                                                  // the manager may set the lock
   const { pid, description, id } = await projectWithItem(page, "Locked delete");
   expect((await page.request.post(`/api/items/${id}/hard-lock`)).status()).toBe(200);
-  page.on("dialog", (d) => d.accept());
 
   await page.goto(`/items/${id}`);
   await expect(page.getByTestId("delete-item")).toBeDisabled();
@@ -100,6 +100,7 @@ test("a Hard Lock stops the delete: the editor button is off and Tracking skips 
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: description });
   await row.locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByText("1 skipped (Hard Locked)")).toBeVisible();
   await expect(row).toHaveCount(1);                                   // still there, untouched
   expect((await page.request.get(`/api/items/${id}`)).status()).toBe(200);

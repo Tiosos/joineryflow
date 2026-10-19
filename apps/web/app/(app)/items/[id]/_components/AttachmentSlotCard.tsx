@@ -11,6 +11,7 @@ import { KIND_LABELS } from "@/lib/attachments-types";
 import { uploadFile } from "@/lib/file-upload";
 
 import { lockFromError } from "./cutlist/moduleLock";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 // sketchup holds a .skp, cabvision a .cvj; the other three slots take a PDF
 // (item_attachments/queries.py::KIND_MIME is the real, server-side gate —
@@ -54,6 +55,7 @@ export default function AttachmentSlotCard({
   onChanged,
   usedByCombined,
 }: Props) {
+  const { confirm } = useConfirm();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export default function AttachmentSlotCard({
   };
 
   const onDelete = async () => {
-    if (!confirm(`Remove the ${KIND_LABELS[slot.kind]} attachment? This action is logged.`)) return;
+    if (!(await confirm({ title: `Remove the ${KIND_LABELS[slot.kind]} attachment?`, message: "This action is logged.", confirmLabel: "Remove" }))) return;
     setBusy(true);
     setErr(null);
     try {

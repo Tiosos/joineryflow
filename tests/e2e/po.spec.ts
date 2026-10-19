@@ -89,13 +89,15 @@ test("orders are put on a PO, edited there, invoiced and the PO cancelled", asyn
 
     // cancelling the PO frees its orders
     await rows.nth(0).getByTestId("order-po-link").click();
-    page.on("dialog", d => void d.accept());
     await page.getByTestId("po-cancel").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("po-error")).toContainText("Remove the invoices first");   // a PO with invoices stays
     await page.getByTestId("po-invoice-open").click();
     await page.getByTestId("inv-delete").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("po-invoice-row")).toHaveCount(0);
     await page.getByTestId("po-cancel").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("po-modal").getByText("Cancelled", { exact: true })).toBeVisible();
     await page.getByTestId("po-done").click();
     await expect(rows.nth(0).getByTestId("order-po-link")).toHaveCount(0);

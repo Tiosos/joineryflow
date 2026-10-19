@@ -126,8 +126,8 @@ test("drafter mentions a manager through the picker; edit and delete work", asyn
   const target = page
     .getByTestId("comment-item")
     .filter({ hasText: "Plinth height rechecked" });
-  page.once("dialog", (d) => d.accept());
   await target.getByRole("button", { name: "Delete" }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByText("Plinth height rechecked")).toHaveCount(0);
 });
 

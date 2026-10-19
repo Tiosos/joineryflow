@@ -8,6 +8,7 @@ import { PartRow } from "./PartRow";
 import { HardwareRow } from "./HardwareRow";
 import { CatalogPicker } from "./CatalogPicker";
 import { LabourEditor } from "./LabourEditor";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface LineCardProps {
   line: Line;
@@ -19,6 +20,7 @@ interface LineCardProps {
 }
 
 export function LineCard({ line, isDraft, catalogs, onChanged, onClone, callApi }: LineCardProps) {
+  const { confirm } = useConfirm();
   const [showPicker, setShowPicker] = useState(false);
   const [showLabour, setShowLabour] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -61,7 +63,7 @@ export function LineCard({ line, isDraft, catalogs, onChanged, onClone, callApi 
   }
 
   async function deleteLine() {
-    if (!window.confirm(`Delete line "${line.description}"?`)) return;
+    if (!(await confirm({ title: `Delete line "${line.description}"?`, message: "Its parts, hardware and labour go with it.", confirmLabel: "Delete line" }))) return;
     const r = await callApi("DELETE", `/api/lines/${line.line_id}`);
     if (r.ok) await onChanged();
   }
