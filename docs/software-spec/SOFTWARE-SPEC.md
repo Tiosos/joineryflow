@@ -178,34 +178,35 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `CHRO-04` | **All results for “q” →** | link | Opens /search?q=… with type chips and paging. | — | — | — |
 | `CHRO-05` | **🔔 Notification bell** | button | Toggles the dropdown and refreshes it. Badge shows unread count (99+ cap). For the purchase_officer role the badge also counts orders waiting for a decision (labelled “need attention”, not “unread”) and lists them above comment notifications. | GET /notifications?limit=… | any signed-in user; ‘orders waiting’ only for purchase_officer with orderbook read | Polls on a timer; a failed poll keeps the last known state. |
 | `CHRO-06` | **Held saves waiting for your decision (bell)** | link | For the lock owner, managers and admins (drafter, manager, admin): the pending Controlled-Lock requests they may decide, above the orders and comments, each linking to its item. Counted on the badge; derived on every read, so a decided request leaves it. | GET /notifications (lock_requests_waiting) | drafter, manager or admin with tracking:write and list:read | — |
-| `CHRO-07` | **Mark all read (bell)** | button | Marks every comment notification read and clears the badge. | POST /notifications/read-all | — | — |
-| `CHRO-08` | **Notification row** | button | Marks that notification read, then navigates to the object it points to (comment thread, order…). | POST /notifications/{id}/read | — | — |
-| `CHRO-09` | **Sign out** | button | Ends the session (server deletes the session row), then replaces the route with /login?reason=signed_out. | POST /auth/logout | — | — |
+| `CHRO-07` | **Confirm dialog (risky actions)** | button | Delete, archive, cancel, reject, remove and close-out ask first in one shared dialog: a Cancel button (focused first for destructive actions), a confirm button named for the action, Esc and a click outside cancel. Reject asks for a reason (required); Expire takes an optional one. | — | any signed-in user (the action's own permission still applies) | Replaces the browser's native confirm box for those actions. |
+| `CHRO-08` | **Mark all read (bell)** | button | Marks every comment notification read and clears the badge. | POST /notifications/read-all | — | — |
+| `CHRO-09` | **Notification row** | button | Marks that notification read, then navigates to the object it points to (comment thread, order…). | POST /notifications/{id}/read | — | — |
+| `CHRO-10` | **Sign out** | button | Ends the session (server deletes the session row), then replaces the route with /login?reason=signed_out. | POST /auth/logout | — | — |
 
 **Primary tab strip**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-10` | **Dashboard** | tab | Go to /dashboard. | — | module dashboard:read (tab hidden otherwise) | — |
-| `CHRO-11` | **Tracking ↗** | tab | Opens /tracking in a NEW browser tab (so two modules can sit on two monitors, Q475/Q545). If you are already on it, navigates in place. | — | tracking:read | — |
-| `CHRO-12` | **List ↗** | tab | Opens the Cutlist module (/list) in a new tab. The ‘List’ tab IS the Cutlist module (Q474). | — | list:read | — |
-| `CHRO-13` | **Shop Dwgs** | tab | Go to /shop-dwgs. | — | shop_dwgs:read | — |
-| `CHRO-14` | **iSample** | tab | Go to /isample. | — | isample:read | — |
-| `CHRO-15` | **Orderbook ↗** | tab | Opens /orderbook in a new tab. | — | orderbook:read | — |
+| `CHRO-11` | **Dashboard** | tab | Go to /dashboard. | — | module dashboard:read (tab hidden otherwise) | — |
+| `CHRO-12` | **Tracking ↗** | tab | Opens /tracking in a NEW browser tab (so two modules can sit on two monitors, Q475/Q545). If you are already on it, navigates in place. | — | tracking:read | — |
+| `CHRO-13` | **List ↗** | tab | Opens the Cutlist module (/list) in a new tab. The ‘List’ tab IS the Cutlist module (Q474). | — | list:read | — |
+| `CHRO-14` | **Shop Dwgs** | tab | Go to /shop-dwgs. | — | shop_dwgs:read | — |
+| `CHRO-15` | **iSample** | tab | Go to /isample. | — | isample:read | — |
+| `CHRO-16` | **Orderbook ↗** | tab | Opens /orderbook in a new tab. | — | orderbook:read | — |
 
 **Secondary strip**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-16` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | any signed-in user (a tab shows only when its module’s read is granted) | — |
-| `CHRO-17` | **/it (admin only)** | tab | Admin surface link: permission groups, labour rates, staff photos, search health, shop-worker roster. | — | it_management:read (admin only) | — |
+| `CHRO-17` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | any signed-in user (a tab shows only when its module’s read is granted) | — |
+| `CHRO-18` | **/it (admin only)** | tab | Admin surface link: permission groups, labour rates, staff photos, search health, shop-worker roster. | — | it_management:read (admin only) | — |
 
 **Project sidebar (Dashboard only)**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-18` | **FAV / ALL toggle** | tab | Switches the sidebar list between favourite projects and all projects. | — | — | Only shown on Dashboard (HAppChrome.SIDEBAR_ROUTES). |
-| `CHRO-19` | **☆ / ★ favourite star** | button | Adds/removes the project from the user’s favourites. | POST\|DELETE /projects/{id}/favourites | any signed-in user | — |
+| `CHRO-19` | **FAV / ALL toggle** | tab | Switches the sidebar list between favourite projects and all projects. | — | — | Only shown on Dashboard (HAppChrome.SIDEBAR_ROUTES). |
+| `CHRO-20` | **☆ / ★ favourite star** | button | Adds/removes the project from the user’s favourites. | POST\|DELETE /projects/{id}/favourites | any signed-in user | — |
 
 ### Login
 
@@ -1487,19 +1488,20 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `CHRO-04` | All results for “q” → | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `CHRO-05` | 🔔 Notification bell | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `CHRO-06` | Held saves waiting for your decision (bell) | ✔ | ✔ | — | ✔ | — | — | — |
-| `CHRO-07` | Mark all read (bell) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-08` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-09` | Sign out | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-10` | Dashboard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-11` | Tracking ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-12` | List ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-13` | Shop Dwgs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-14` | iSample | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-15` | Orderbook ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-16` | Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-17` | /it (admin only) | ✔ | ✔ | — | — | — | — | — |
-| `CHRO-18` | FAV / ALL toggle | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-19` | ☆ / ★ favourite star | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-07` | Confirm dialog (risky actions) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-08` | Mark all read (bell) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-09` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-10` | Sign out | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-11` | Dashboard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-12` | Tracking ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-13` | List ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-14` | Shop Dwgs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-15` | iSample | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-16` | Orderbook ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-17` | Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-18` | /it (admin only) | ✔ | ✔ | — | — | — | — | — |
+| `CHRO-19` | FAV / ALL toggle | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-20` | ☆ / ★ favourite star | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-01` | Sign in | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-02` | × (dismiss notice) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-03` | Continue with SSO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
@@ -1782,16 +1784,16 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `SEAR-03` | Mark all read (page) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `SEAR-04` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 
-Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298, manager 287, editor 209, drafter 249, estimator 158, purchase_officer 177, viewer 142.
+Controls each role can use (of 299 with a computable rule; 2 are `?`): admin 299, manager 288, editor 210, drafter 250, estimator 159, purchase_officer 178, viewer 143.
 
 
 ## Appendix A. Source index of every `<button>` in the web app
 
-412 `<button>` elements in 131 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
+414 `<button>` elements in 132 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
 
 **`app/(app)/catalog/_components/BoardImageCell.tsx`**
 
-- L39 — remove
+- L39 — remove · `catalog-image-remove`
 
 **`app/(app)/catalog/_components/CatalogBulkImportDialog.tsx`**
 
@@ -1806,7 +1808,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/catalog/_components/CatalogRow.tsx`**
 
-- L322 — Archive
+- L324 — Archive · `catalog-row-archive`
 
 **`app/(app)/catalog/_components/CatalogTabs.tsx`**
 
@@ -1814,8 +1816,8 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/catalog/_components/MappingPanel.tsx`**
 
-- L37 — + New mapping
-- L68 — Delete
+- L39 — + New mapping
+- L70 — Delete · ``cv-mapping-delete-${r.cv_material_mapping_id}``
 
 **`app/(app)/catalog/_components/NewCatalogRowDialog.tsx`**
 
@@ -1830,15 +1832,15 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/catalog/_components/StockPanel.tsx`**
 
-- L223 — Remove
-- L336 — {busy ? "Saving…" : "Set stock"}
+- L226 — Remove · ``stock-remove-${row.inventory_id}``
+- L339 — {busy ? "Saving…" : "Set stock"}
 
 **`app/(app)/customers/[cid]/_components/CustomerDetailClient.tsx`**
 
-- L98 — {editing ? "Cancel" : "✎ Edit"} · `edit-customer-btn`
-- L108 — Archive · `archive-customer-btn`
-- L239 — Cancel
-- L246 — {submitting ? "Saving…" : "Save"} · `save-customer-btn`
+- L100 — {editing ? "Cancel" : "✎ Edit"} · `edit-customer-btn`
+- L110 — Archive · `archive-customer-btn`
+- L241 — Cancel
+- L248 — {submitting ? "Saving…" : "Save"} · `save-customer-btn`
 
 **`app/(app)/customers/_components/CustomersClient.tsx`**
 
@@ -1849,15 +1851,15 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/cut-floor/_components/CutFloorClient.tsx`**
 
-- L181 — ←
-- L195 — →
-- L221 — Optimise…
-- L230 — + Add to {date === initialDate ? "today" : date}
-- L290 — Start
-- L299 — Mark done
-- L309 — Cancel
-- L473 — Cancel
-- L480 — {submitting ? "Adding…" : "Add"}
+- L183 — ←
+- L197 — →
+- L223 — Optimise…
+- L232 — + Add to {date === initialDate ? "today" : date}
+- L292 — Start
+- L301 — Mark done
+- L311 — Cancel · ``cut-schedule-cancel-${row.id}``
+- L475 — Cancel
+- L482 — {submitting ? "Adding…" : "Add"}
 
 **`app/(app)/cut-floor/_components/OptimiseDialog.tsx`**
 
@@ -1870,16 +1872,16 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/estimating/_components/EstimateDetailClient.tsx`**
 
-- L317 — Back to current · `back-to-current`
-- L361 — Withdraw · `withdraw-btn`
-- L370 — {nextStageLabel(currentRev?.status) === "Submitted" ? "Lock & send" : `Advance → · `advance-btn`
-- L386 — Accept · `accept-btn`
-- L395 — Reject
-- L403 — Withdraw
-- L411 — Expire · `expire-btn`
-- L420 — Revise (new draft)
-- L434 — Convert to project · `convert-btn`
-- L483 — {pendingOrderLines > 0 ? "Generate orders" : "Review lines"} · `generate-orders-btn`
+- L319 — Back to current · `back-to-current`
+- L363 — Withdraw · `withdraw-btn`
+- L372 — {nextStageLabel(currentRev?.status) === "Submitted" ? "Lock & send" : `Advance → · `advance-btn`
+- L388 — Accept · `accept-btn`
+- L397 — Reject · `estimate-reject`
+- L405 — Withdraw · `estimate-withdraw-sent`
+- L413 — Expire · `expire-btn`
+- L422 — Revise (new draft)
+- L436 — Convert to project · `convert-btn`
+- L485 — {pendingOrderLines > 0 ? "Generate orders" : "Review lines"} · `generate-orders-btn`
 
 **`app/(app)/estimating/_components/EstimatingClient.tsx`**
 
@@ -1911,12 +1913,12 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/estimating/_components/estimate-detail/LineCard.tsx`**
 
-- L158 — ×
-- L175 — + Material · ``add-material-${line.line_id}``
-- L183 — + Labour · ``add-labour-${line.line_id}``
-- L191 — ✎ Edit · ``edit-line-${line.line_id}``
-- L199 — ⎘ Clone · ``clone-line-${line.line_id}``
-- L207 — Delete line
+- L160 — ×
+- L177 — + Material · ``add-material-${line.line_id}``
+- L185 — + Labour · ``add-labour-${line.line_id}``
+- L193 — ✎ Edit · ``edit-line-${line.line_id}``
+- L201 — ⎘ Clone · ``clone-line-${line.line_id}``
+- L209 — Delete line · ``delete-line-${line.line_id}``
 
 **`app/(app)/estimating/_components/estimate-detail/LineEditRow.tsx`**
 
@@ -1973,14 +1975,14 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/isample/_components/ReviewActions.tsx`**
 
-- L54 — Approve
-- L60 — Reject
-- L72 — Confirm reject
-- L82 — Cancel
-- L93 — Edit
-- L99 — {p.sample.photo_file_blob_id ? "Replace photo" : "Upload photo"}
-- L105 — Clear photo
-- L111 — Archive
+- L56 — Approve · `sample-approve`
+- L62 — Reject · `sample-reject`
+- L74 — Confirm reject · `sample-reject-confirm`
+- L84 — Cancel
+- L95 — Edit
+- L101 — {p.sample.photo_file_blob_id ? "Replace photo" : "Upload photo"}
+- L107 — Clear photo
+- L113 — Archive · `sample-archive`
 
 **`app/(app)/isample/_components/SampleCard.tsx`**
 
@@ -2004,12 +2006,12 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/it/_components/PermissionGroupsPanel.tsx`**
 
-- L146 — {g.name} {g.is_system && ( system )} {g.grants.length}
-- L179 — {creating ? "…" : "Create"}
-- L298 — {deleting ? "…" : "Delete group"}
-- L312 — {savingGrants ? "Saving…" : "Save grants"}
-- L465 — Remove
-- L512 — {adding ? "…" : "Add"}
+- L147 — {g.name} {g.is_system && ( system )} {g.grants.length}
+- L180 — {creating ? "…" : "Create"}
+- L300 — {deleting ? "…" : "Delete group"} · `group-delete`
+- L314 — {savingGrants ? "Saving…" : "Save grants"}
+- L467 — Remove · ``membership-remove-${m.membership_id}``
+- L514 — {adding ? "…" : "Add"}
 
 **`app/(app)/it/_components/SearchHealthPanel.tsx`**
 
@@ -2017,7 +2019,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/it/_components/StaffPhotosPanel.tsx`**
 
-- L56 — Remove
+- L56 — Remove · ``staff-photo-remove-${u.id}``
 
 **`app/(app)/items/[id]/_components/ActionsTab.tsx`**
 
@@ -2025,15 +2027,15 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/items/[id]/_components/AttachmentSlotCard.tsx`**
 
-- L141 — {populated ? (busy ? "Replacing…" : "Replace") : (busy ? "Uploading…" : "Upload"
-- L151 — Delete
+- L143 — {populated ? (busy ? "Replacing…" : "Replace") : (busy ? "Uploading…" : "Upload"
+- L153 — Delete · ``attachment-delete-${slot.kind}``
 
 **`app/(app)/items/[id]/_components/DocumentRegister.tsx`**
 
-- L123 — {busy ? "Working…" : "Add document"}
-- L182 — ↑
-- L192 — ↓
-- L202 — Remove
+- L125 — {busy ? "Working…" : "Add document"}
+- L184 — ↑
+- L194 — ↓
+- L204 — Remove · ``document-remove-${doc.document_id}``
 
 **`app/(app)/items/[id]/_components/DuplicateItemDialog.tsx`**
 
@@ -2054,8 +2056,8 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/items/[id]/_components/ItemHeader.tsx`**
 
-- L70 — {deleting ? "Deleting…" : "Delete"} · `delete-item`
-- L81 — ✕ · `close-editor`
+- L74 — {deleting ? "Deleting…" : "Delete"} · `delete-item`
+- L85 — ✕ · `close-editor`
 
 **`app/(app)/items/[id]/_components/LockRequestsBanner.tsx`**
 
@@ -2067,18 +2069,18 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 - L103 — {o === "no_impact" ? "No impact" : o === "partial" ? "Partial impact" : "Full im
 - L118 — {cur.approved ? `Start v${cur.approved.version + 1}` : "Generate material take"}
 - L165 — Regenerate
-- L170 — Approve
+- L170 — Approve · `take-approve`
 - L224 — Add line
-- L284 — Remove
+- L284 — Remove · ``take-line-remove-${line.line_id}``
 
 **`app/(app)/items/[id]/_components/QcTab.tsx`**
 
 - L113 — Raise
-- L156 — Mark resolved
+- L156 — Mark resolved · ``qc-defect-resolve-${d.defect_id}``
 - L244 — Add
-- L282 — ×
+- L282 — × · ``qc-checklist-remove-${row.checklist_item_id}``
 - L344 — + Log rework
-- L408 — Close
+- L408 — Close · ``qc-rework-close-${r.rework_id}``
 - L502 — Log
 - L509 — Cancel
 
@@ -2107,7 +2109,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 **`app/(app)/items/[id]/_components/cutlist/DeleteModuleDialog.tsx`**
 
 - L123 — Cancel
-- L131 — {busy ? "Deleting…" : "Delete module"}
+- L131 — {busy ? "Deleting…" : "Delete module"} · `delete-module-confirm`
 
 **`app/(app)/items/[id]/_components/cutlist/ModuleTree.tsx`**
 
@@ -2117,7 +2119,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 **`app/(app)/items/[id]/_components/cutlist/PartsGrid.tsx`**
 
 - L103 — + Add row
-- L239 — –
+- L239 — – · ``part-delete-${part.id}``
 
 **`app/(app)/items/[id]/_components/cutlist/UnknownCodeRow.tsx`**
 
@@ -2135,7 +2137,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 - L177 — −
 - L189 — +
-- L217 — –
+- L217 — – · ``hardware-line-delete-${line.id}``
 
 **`app/(app)/items/[id]/_components/hardware/Pantry.tsx`**
 
@@ -2144,13 +2146,13 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/list/_components/CutlistClient.tsx`**
 
-- L129 — + New cutlist
-- L263 — Rename
-- L271 — Delete
-- L281 — Close
-- L305 — Link
-- L331 — {label}
-- L386 — Unlink
+- L130 — + New cutlist
+- L265 — Rename
+- L273 — Delete · `cutlist-delete`
+- L283 — Close
+- L307 — Link
+- L333 — {label}
+- L388 — Unlink
 
 **`app/(app)/notifications/_components/NotificationsList.tsx`**
 
@@ -2195,7 +2197,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/orderbook/_components/SupplierListModal.tsx`**
 
-- L159 — Remove
+- L159 — Remove · `supplier-logo-remove`
 - L165 — {open === "new" ? "Add supplier" : "Save"} · `supplier-save`
 - L169 — Cancel
 - L188 — Add supplier · `supplier-add`
@@ -2213,7 +2215,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/orderbook/_components/orders/LineRow.tsx`**
 
-- L111 — ×
+- L111 — × · ``order-line-remove-${line.line_id}``
 
 **`app/(app)/orderbook/_components/orders/OrderAttachments.tsx`**
 
@@ -2221,14 +2223,14 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/orderbook/_components/orders/OrderDetailPanel.tsx`**
 
-- L309 — Close · `order-detail-close`
-- L335 — Reject order · `order-reject-confirm`
-- L349 — Cancel
-- L367 — Cancel order · `order-cancel-confirm`
-- L372 — Keep order
-- L459 — {t} · ``order-tab-${t}``
-- L475 — Open PO {order.po_no} · `order-create-po`
-- L480 — Create PO! · `order-create-po`
+- L311 — Close · `order-detail-close`
+- L337 — Reject order · `order-reject-confirm`
+- L351 — Cancel
+- L369 — Cancel order · `order-cancel-confirm`
+- L374 — Keep order · `order-cancel-keep`
+- L461 — {t} · ``order-tab-${t}``
+- L477 — Open PO {order.po_no} · `order-create-po`
+- L482 — Create PO! · `order-create-po`
 
 **`app/(app)/orderbook/_components/orders/OrderRowView.tsx`**
 
@@ -2240,7 +2242,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/orderbook/_components/orders/tabs/DeliveryTab.tsx`**
 
-- L68 — ×
+- L68 — × · ``delivery-docket-remove-${d.delivery_id}``
 - L77 — − · `delivery-remove`
 - L91 — + Add · `delivery-add`
 
@@ -2265,20 +2267,20 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 **`app/(app)/orderbook/_components/po/AuthorisationWindow.tsx`**
 
 - L122 — Close
-- L182 — remove
+- L182 — remove · `auth-signed-remove`
 - L186 — Close · `auth-close`
 - L187 — Create Form · `auth-create`
 
 **`app/(app)/orderbook/_components/po/InvoiceWindow.tsx`**
 
-- L195 — ‹
-- L198 — ›
-- L202 — + Add · `inv-add`
-- L224 — ↻ · `inv-refresh`
-- L234 — {d.gst_auto ? "✓" : "○"} · `inv-gst-auto`
-- L278 — remove
-- L285 — Close · `inv-close`
-- L287 — Delete · `inv-delete`
+- L197 — ‹
+- L200 — ›
+- L204 — + Add · `inv-add`
+- L226 — ↻ · `inv-refresh`
+- L236 — {d.gst_auto ? "✓" : "○"} · `inv-gst-auto`
+- L280 — remove · ``inv-file-remove-${s.key}``
+- L287 — Close · `inv-close`
+- L289 — Delete · `inv-delete`
 
 **`app/(app)/orderbook/_components/po/PaymentMethodSelect.tsx`**
 
@@ -2292,21 +2294,21 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/orderbook/_components/po/PurchaseOrderModal.tsx`**
 
-- L175 — Close · `po-done`
-- L212 — Done · `po-done`
-- L244 — {doc.delivery_order_id ? "Update Delivery" : "Add Delivery"} · `po-add-delivery`
-- L246 — Remove
-- L272 — {l.invoiced ? "✓" : "○"} · `po-line-invoiced`
-- L281 — − · `po-line-remove`
-- L299 — Add · `po-tbo-add`
-- L321 — −
-- L332 — Add contact · `po-contact-save`
-- L333 — Cancel
-- L336 — + Contact · `po-contact-add`
-- L375 — Add from TBO · `po-add-tbo`
-- L377 — Print · `po-print`
-- L380 — Authorisation Form · `po-auth`
-- L382 — Cancel PO · `po-cancel`
+- L177 — Close · `po-done`
+- L214 — Done · `po-done`
+- L246 — {doc.delivery_order_id ? "Update Delivery" : "Add Delivery"} · `po-add-delivery`
+- L248 — Remove · `po-remove-delivery`
+- L274 — {l.invoiced ? "✓" : "○"} · `po-line-invoiced`
+- L283 — − · `po-line-remove`
+- L301 — Add · `po-tbo-add`
+- L323 — −
+- L334 — Add contact · `po-contact-save`
+- L335 — Cancel
+- L338 — + Contact · `po-contact-add`
+- L377 — Add from TBO · `po-add-tbo`
+- L379 — Print · `po-print`
+- L382 — Authorisation Form · `po-auth`
+- L384 — Cancel PO · `po-cancel`
 
 **`app/(app)/projects/[id]/_components/ProjectAreasCommentsCard.tsx`**
 
@@ -2315,10 +2317,10 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/projects/[id]/_components/ProjectContactsPanel.tsx`**
 
-- L28 — + Add contact
-- L128 — Remove
-- L227 — Add
-- L234 — Cancel
+- L29 — + Add contact
+- L130 — Remove · ``project-contact-remove-${contact.contact_id}``
+- L229 — Add
+- L236 — Cancel
 
 **`app/(app)/projects/[id]/_components/ProjectFinancialsCard.tsx`**
 
@@ -2328,24 +2330,24 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/projects/[id]/_components/ProjectHeader.tsx`**
 
-- L69 — {closed ? "Closed" : busy ? "Closing…" : "Close out"}
+- L71 — {closed ? "Closed" : busy ? "Closing…" : "Close out"}
 
 **`app/(app)/projects/[id]/_components/ProjectLiftAccessPanel.tsx`**
 
-- L89 — Replace
-- L97 — Remove
-- L110 — {busy ? "Uploading…" : "Upload sketch"}
+- L91 — Replace
+- L99 — Remove · `lift-sketch-remove`
+- L112 — {busy ? "Uploading…" : "Upload sketch"}
 
 **`app/(app)/projects/[id]/procurement/_components/AllocationEditor.tsx`**
 
-- L59 — remove
+- L59 — remove · ``alloc-remove-${a.allocation_id}``
 - L86 — + Allocate · `alloc-add`
 
 **`app/(app)/projects/[id]/procurement/_components/BatchDrawer.tsx`**
 
-- L57 — ✕
-- L144 — Save · `save-batch`
-- L148 — Cancel batch
+- L59 — ✕
+- L146 — Save · `save-batch`
+- L150 — Cancel batch · `cancel-batch`
 
 **`app/(app)/projects/[id]/procurement/_components/BatchesTable.tsx`**
 
@@ -2419,14 +2421,14 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/shop-dwgs/_components/ReviewActions.tsx`**
 
-- L50 — Submit for review
-- L56 — Withdraw
-- L63 — Approve
-- L68 — Reject
-- L80 — Confirm reject
-- L90 — Cancel
-- L107 — Upload new revision
-- L113 — Archive drawing
+- L52 — Submit for review
+- L58 — Withdraw · `drawing-withdraw`
+- L65 — Approve · `drawing-approve`
+- L70 — Reject · `drawing-reject`
+- L82 — Confirm reject · `drawing-reject-confirm`
+- L92 — Cancel
+- L109 — Upload new revision
+- L115 — Archive drawing · `drawing-archive`
 
 **`app/(app)/shop-dwgs/_components/ShopDwgsClient.tsx`**
 
@@ -2443,10 +2445,10 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/shop-floor/_components/ShopFloorClient.tsx`**
 
-- L225 — ×
-- L238 — + Assign worker
-- L373 — Cancel
-- L380 — {submitting ? "Assigning…" : "Assign"}
+- L227 — × · ``assignment-cancel-${card.assignment!.assignment_id}``
+- L240 — + Assign worker
+- L375 — Cancel
+- L382 — {submitting ? "Assigning…" : "Assign"}
 
 **`app/(app)/shop-floor/station/[worker_id]/_components/PackingScanner.tsx`**
 
@@ -2456,7 +2458,7 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 - L157 — Start {active.stage_key}
 - L166 — Mark {active.stage_key} done
-- L244 — Undo
+- L244 — Undo · ``station-undo-${r.log_id}``
 - L352 — Cancel
 - L359 — {submitting ? "Marking…" : "Confirm done"}
 - L373 — Cancel
@@ -2517,14 +2519,14 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`app/(app)/tracking/_components/TrackingClient.tsx`**
 
-- L255 — ↻
-- L270 — Restore
-- L279 — Apply status…
-- L286 — Delete
-- L295 — Clear selection
-- L330 — Show
-- L337 — Hide
-- L442 — {label}
+- L257 — ↻
+- L272 — Restore · `tracking-restore`
+- L281 — Apply status…
+- L288 — Delete · `tracking-delete`
+- L297 — Clear selection
+- L332 — Show
+- L339 — Hide
+- L444 — {label}
 
 **`app/(app)/tracking/_components/items-table/Row.tsx`**
 
@@ -2565,18 +2567,23 @@ Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298
 
 **`components/comments/CommentThread.tsx`**
 
-- L127 — Comment · `comment-submit`
-- L246 — Save
-- L259 — Cancel
-- L292 — Reply
-- L305 — Cancel
-- L319 — Reply
-- L324 — Edit
-- L336 — Delete
+- L128 — Comment · `comment-submit`
+- L248 — Save
+- L261 — Cancel
+- L294 — Reply
+- L307 — Cancel
+- L321 — Reply
+- L326 — Edit
+- L338 — Delete · ``comment-delete-${comment.comment_id}``
 
 **`components/comments/MentionTextarea.tsx`**
 
 - L102 — {m.full_name} {m.auth_role}
+
+**`components/confirm/ConfirmProvider.tsx`**
+
+- L178 — {opts.cancelLabel ?? "Cancel"} · `confirm-dialog-cancel`
+- L187 — {opts.confirmLabel ?? (danger ? "Delete" : "Confirm")} · `confirm-dialog-confirm`
 
 **`components/pm/TeamCard.tsx`**
 
