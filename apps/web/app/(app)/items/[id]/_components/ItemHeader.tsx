@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ItemOut } from "@/lib/pm-types";
 import { PM, ApiError } from "@/lib/pm-fetch";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   item: ItemOut;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ItemHeader({ item, canDelete }: Props) {
+  const { confirm } = useConfirm();
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,9 +23,11 @@ export function ItemHeader({ item, canDelete }: Props) {
   // manager/admin can restore them from Tracking's Deleted chip.
   async function remove() {
     if (
-      !window.confirm(
-        `Delete item #${item.item_number ?? item.id}? Its related parts and cutlist go with it. A manager or admin can restore it from Tracking's Deleted chip.`,
-      )
+      !(await confirm({
+        title: `Delete item #${item.item_number ?? item.id}?`,
+        message: "Its related parts and cutlist go with it. A manager or admin can restore it from Tracking's Deleted chip.",
+        confirmLabel: "Delete item",
+      }))
     )
       return;
     setDeleting(true);

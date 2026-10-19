@@ -7,6 +7,7 @@ import type { CommentObjectType, CommentOut, Mentionable } from "@/lib/comments-
 import { formatLocalTs } from "./format";
 import { MentionTextarea } from "./MentionTextarea";
 import { mentionedIds, splitByMentions } from "./mentions";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 function errorMessage(e: unknown, fallback: string): string {
   const code = e instanceof Error ? e.message : "";
@@ -197,6 +198,7 @@ function CommentItem({
   onChanged: () => Promise<void>;
   onError: (msg: string | null) => void;
 }) {
+  const { confirm } = useConfirm();
   const [mode, setMode] = useState<"view" | "edit" | "reply">("view");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -336,8 +338,8 @@ function CommentItem({
             <button data-testid={`comment-delete-${comment.comment_id}`}
               type="button"
               className="hover:text-rose-700"
-              onClick={() => {
-                if (window.confirm("Delete this comment?")) {
+              onClick={async () => {
+                if (await confirm({ title: "Delete this comment?", confirmLabel: "Delete" })) {
                   void run(() => commentsApi.remove(comment.comment_id), "Failed to delete comment");
                 }
               }}

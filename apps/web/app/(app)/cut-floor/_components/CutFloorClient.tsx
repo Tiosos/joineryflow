@@ -16,6 +16,7 @@ import type {
   CutScheduleStatus,
 } from "@/lib/cut-floor-types";
 import { OptimiseDialog } from "./OptimiseDialog";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Project {
   id: number;
@@ -73,6 +74,7 @@ export function CutFloorClient({
   initialDate,
   initialProjectId,
 }: CutFloorClientProps) {
+  const { confirm } = useConfirm();
   const [date, setDate] = useState<string>(initialDate);
   const [projectId, setProjectId] = useState<number | null>(initialProjectId);
   const [rows, setRows] = useState<CutScheduleOut[]>([]);
@@ -122,7 +124,7 @@ export function CutFloorClient({
   }
 
   async function cancel(row: CutScheduleOut) {
-    if (!confirm(`Cancel schedule for "${row.cut_plan_name}"?`)) return;
+    if (!(await confirm({ title: `Cancel schedule for "${row.cut_plan_name}"?`, confirmLabel: "Cancel schedule", cancelLabel: "Keep it" }))) return;
     try {
       await cancelCutSchedule(row.id);
       await refresh();

@@ -12,6 +12,7 @@ import { SummaryCard } from "./estimate-detail/SummaryCard";
 import { NewLineForm } from "./estimate-detail/NewLineForm";
 import { DraggableLineList } from "./estimate-detail/DraggableLineList";
 import { RevisionRail } from "./estimate-detail/RevisionRail";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   me: Me;
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function EstimateDetailClient({ me, estimate: initialEstimate, catalogs }: Props) {
+  const { askReason } = useConfirm();
   const router = useRouter();
   const sp = useSearchParams();
   const [estimate, setEstimate] = useState(initialEstimate);
@@ -115,7 +117,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
   async function reject() {
     if (!currentRev) return;
-    const reason = window.prompt("Reason for rejection?");
+    const reason = await askReason({ title: "Reject this quote?", message: "The reason is kept on the revision.", reasonLabel: "Reason for rejection", confirmLabel: "Reject" });
     if (!reason) return;
     const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/reject`, {
       lost_reason: reason,
@@ -133,7 +135,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
   async function expire() {
     if (!currentRev) return;
-    const reason = window.prompt("Reason for expiry? (optional)");
+    const reason = await askReason({ title: "Expire this quote?", reasonLabel: "Reason for expiry", reasonRequired: false, confirmLabel: "Expire" });
     if (reason === null) return;
     const r = await callApi("POST", `/api/revisions/${currentRev.revision_id}/expire`, {
       lost_reason: reason || null,

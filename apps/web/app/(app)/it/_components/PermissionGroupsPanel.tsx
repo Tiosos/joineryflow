@@ -13,6 +13,7 @@ import { fetchUserList } from "@/lib/shop-floor-fetch";
 import type { UserAdminOut } from "@/lib/shop-floor-types";
 import { PM } from "@/lib/pm-fetch";
 import type { ProjectOut } from "@/lib/pm-types";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -225,6 +226,7 @@ function GroupDetail({
   onError: (msg: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { confirm } = useConfirm();
   const savedGrants = useMemo(() => grantsToMap(group.grants), [group]);
   const [grants, setGrants] = useState<GrantMap>(savedGrants);
   const [savingGrants, setSavingGrants] = useState(false);
@@ -271,7 +273,7 @@ function GroupDetail({
   }
 
   async function removeGroup() {
-    if (!window.confirm(`Delete group "${group.name}"?`)) return;
+    if (!(await confirm({ title: `Delete group "${group.name}"?`, message: "Its members lose the access this group gave them.", confirmLabel: "Delete group" }))) return;
     setDeleting(true);
     try {
       await PermissionGroups.remove(group.group_id);

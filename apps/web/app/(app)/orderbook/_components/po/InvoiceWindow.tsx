@@ -5,6 +5,7 @@ import { apiCall, jsonInit } from "@/lib/api";
 import type { InvoiceSlot, PaymentMethod, PoDoc, PoInvoice, PoLine } from "@/lib/po-types";
 import { fmtDate } from "../orders/shared";
 import { PaymentMethodSelect } from "./PaymentMethodSelect";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 const INPUT = "w-full rounded border border-h-line bg-h-bg px-1.5 py-1 text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent disabled:opacity-60";
 const BTN = "rounded border border-h-line bg-h-bg px-3 py-1 text-h-ink hover:bg-h-surface disabled:opacity-50";
@@ -67,6 +68,7 @@ export function InvoiceWindow({
   doc: PoDoc; line: PoLine; invoiceId: number | null; editable: boolean; methods: PaymentMethod[]; canKeep: boolean;
   onListChanged: () => void; apply: (d: PoDoc) => void; onSwitch: (id: number | null) => void; onClose: () => void;
 }) {
+  const { confirm } = useConfirm();
   const mine = doc.invoices.filter(i => i.order_id === line.order_id);
   const [recordId, setRecordId] = useState<number | null>(invoiceId);
   const saved = mine.find(i => i.invoice_id === recordId) ?? null;
@@ -164,7 +166,7 @@ export function InvoiceWindow({
   }
 
   async function remove() {
-    if (!saved || !window.confirm("Delete this invoice?")) return;
+    if (!saved || !(await confirm({ title: "Delete this invoice?", confirmLabel: "Delete invoice" }))) return;
     try { apply(await apiCall<PoDoc>(`${base}/invoices/${saved.invoice_id}`, { method: "DELETE" })); onClose(); }
     catch { setErr("Could not delete the invoice"); }
   }

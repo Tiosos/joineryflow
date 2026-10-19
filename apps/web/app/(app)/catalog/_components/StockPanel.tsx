@@ -10,6 +10,7 @@ import {
   upsertBoardInventory,
 } from "@/lib/cut-floor-fetch";
 import type { BoardInventoryRow } from "@/lib/cut-floor-types";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   canWrite: boolean;
@@ -122,6 +123,7 @@ function StockRow({
   canWrite: boolean;
   onChanged: () => void;
 }) {
+  const { confirm } = useConfirm();
   const [qty, setQty] = useState(String(row.qty_on_hand));
   const [location, setLocation] = useState(row.location ?? "");
   const [busy, setBusy] = useState(false);
@@ -145,9 +147,10 @@ function StockRow({
 
   async function remove() {
     if (
-      !window.confirm(
-        `Remove ${row.material_sku} ${row.len_mm}×${row.wid_mm} from stock?`,
-      )
+      !(await confirm({
+        title: `Remove ${row.material_sku} ${row.len_mm}×${row.wid_mm} from stock?`,
+        confirmLabel: "Remove",
+      }))
     ) {
       return;
     }

@@ -7,6 +7,7 @@ import { fmtDate, money, qty } from "../orders/shared";
 import { AuthorisationWindow } from "./AuthorisationWindow";
 import { InvoiceWindow } from "./InvoiceWindow";
 import { PoInvoices } from "./PoInvoices";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 const INPUT = "w-full rounded border border-h-line bg-h-bg px-1.5 py-1 text-h-ink focus:outline-none focus:ring-1 focus:ring-h-accent disabled:opacity-60";
 const BTN = "rounded border border-h-line bg-h-bg px-3 py-1 text-h-ink hover:bg-h-surface disabled:opacity-50";
@@ -29,6 +30,7 @@ const refusal: Record<string, string> = {
 export function PurchaseOrderModal({
   docId, canEdit, canKeepLists, onClose, onChanged,
 }: { docId: number; canEdit: boolean; canKeepLists: boolean; onClose: () => void; onChanged: () => void }) {
+  const { confirm } = useConfirm();
   const [doc, setDoc] = useState<PoDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [contacts, setContacts] = useState<SupplierContact[]>([]);
@@ -380,7 +382,7 @@ export function PurchaseOrderModal({
             <button type="button" data-testid="po-auth" onClick={() => setAuthOpen(true)} className={BTN}>Authorisation Form</button>
             {editable && (
               <button type="button" data-testid="po-cancel" className={`${BTN} ml-auto`}
-                onClick={() => { if (window.confirm(`Cancel PO ${doc.po_no}? Its orders go back to unordered.`)) void send("POST", "/cancel"); }}>Cancel PO</button>
+                onClick={async () => { if (await confirm({ title: `Cancel PO ${doc.po_no}?`, message: "Its orders go back to unordered.", confirmLabel: "Cancel PO", cancelLabel: "Keep it" })) void send("POST", "/cancel"); }}>Cancel PO</button>
             )}
           </div>
 

@@ -21,6 +21,7 @@ import { SupplierTab } from "./tabs/SupplierTab";
 import { TgSolidTab } from "./tabs/TgSolidTab";
 import { TimberTab } from "./tabs/TimberTab";
 import { TrackingTab } from "./tabs/TrackingTab";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 /**
  * The order pop-up: the old Orderbook's Details window. Left, the fields every order has and the
@@ -43,6 +44,7 @@ export function OrderDetailPanel({
   canApprove: boolean;
   costCentres: CostCentre[];
 }) {
+  const { confirm } = useConfirm();
   const [order, setOrder] = useState<OrderDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -165,7 +167,7 @@ export function OrderDetailPanel({
     // is idempotent here, and re-sending it would only 404 and misreport a
     // successful removal as "failed".
     if (!order?.lines.some(l => l.line_id === lineId)) return;
-    if (!window.confirm("Remove this line?")) return;
+    if (!(await confirm({ title: "Remove this line?", confirmLabel: "Remove line" }))) return;
     try {
       const res = await fetch(`/api/orders/${poId}/lines/${lineId}`, { method: "DELETE" });
       if (res.status === 404) return; // already removed elsewhere — goal met

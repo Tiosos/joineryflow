@@ -16,6 +16,7 @@ import type {
   ShopFloorStage,
   WorkerOut,
 } from "@/lib/shop-floor-types";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Project {
   id: number;
@@ -58,6 +59,7 @@ function statusPill(status: string | undefined): string {
 }
 
 export function ShopFloorClient({ me, projects, initialProjectId }: Props) {
+  const { confirm } = useConfirm();
   const [projectId, setProjectId] = useState<number | null>(initialProjectId);
   const [board, setBoard] = useState<BoardOut | null>(null);
   const [workers, setWorkers] = useState<WorkerOut[]>([]);
@@ -106,7 +108,7 @@ export function ShopFloorClient({ me, projects, initialProjectId }: Props) {
   }
 
   async function cancel(a: AssignmentOut) {
-    if (!confirm("Cancel this assignment?")) return;
+    if (!(await confirm({ title: "Cancel this assignment?", confirmLabel: "Cancel assignment", cancelLabel: "Keep it" }))) return;
     try {
       await cancelAssignment(a.assignment_id);
       await refresh();

@@ -128,8 +128,8 @@ test("a stale page shows the lock's reason when a slot write is refused", async 
   const message = page.getByText("Olive Owner has locked this item");
 
   // delete: refused, message shown, nothing removed
-  page.once("dialog", (d) => d.accept());
   await tabButtons(page).filter({ hasText: "Delete" }).first().click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(message.first()).toBeVisible({ timeout: 15_000 });
 
   // upload / replace: the file is stored, the bind is refused

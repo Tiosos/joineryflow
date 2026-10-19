@@ -12,6 +12,7 @@ import { uploadFile } from "@/lib/file-upload";
 import type { ItemDocumentOut } from "@/lib/pm-types";
 
 import { lockFromError } from "./cutlist/moduleLock";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   itemId: number;
@@ -34,6 +35,7 @@ function ddmmyyyy(iso: string): string {
 }
 
 export default function DocumentRegister({ itemId, canWrite, lockReason }: Props) {
+  const { confirm } = useConfirm();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [docs, setDocs] = useState<ItemDocumentOut[] | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -85,8 +87,8 @@ export default function DocumentRegister({ itemId, canWrite, lockReason }: Props
       await patchDocument(doc.document_id, { label: label.trim() === "" ? null : label.trim() });
     });
 
-  const remove = (doc: ItemDocumentOut) => {
-    if (!confirm(`Remove "${doc.label || doc.original_filename || "this document"}" from the register? This action is logged.`)) return;
+  const remove = async (doc: ItemDocumentOut) => {
+    if (!(await confirm({ title: `Remove "${doc.label || doc.original_filename || "this document"}" from the register?`, message: "This action is logged.", confirmLabel: "Remove" }))) return;
     return run(() => unbindDocument(doc.document_id));
   };
 

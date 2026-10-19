@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectOut } from "@/lib/pm-types";
 import { PM, ApiError } from "@/lib/pm-fetch";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   project: ProjectOut;
@@ -20,13 +21,14 @@ function money(v: number | null): string {
 }
 
 export function ProjectHeader({ project, canCloseOut }: Props) {
+  const { confirm } = useConfirm();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const closed = project.closed_at != null;
 
   async function closeOut() {
-    if (!confirm(`Close out ${project.project_code}?`)) {
+    if (!(await confirm({ title: `Close out ${project.project_code}?`, message: "Closing out is the only way to close a project.", confirmLabel: "Close out" }))) {
       return;
     }
     setBusy(true);

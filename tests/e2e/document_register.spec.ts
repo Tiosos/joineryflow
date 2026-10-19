@@ -94,8 +94,8 @@ test("a drafter adds, relabels, reorders and removes a document", async ({ page 
   await register(page).locator('input[type="file"]').setInputFiles(pdf("remove"));
   const target = rows(page).filter({ hasText: "e2e-remove.pdf" });
   await expect(target).toHaveCount(1, { timeout: 15_000 });
-  page.once("dialog", (d) => d.accept());
   await target.getByRole("button", { name: "Remove" }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(target).toHaveCount(0, { timeout: 15_000 });
   expect((await docs(page, id)).map((d) => d.document_id)).toEqual(before.map((d) => d.document_id));
 });
@@ -180,8 +180,8 @@ test("a stale page shows the lock's reason when a register write is refused", as
   await expect(first).toHaveValue(original);
 
   // remove: refused, row still there
-  page.once("dialog", (d) => d.accept());
   await rows(page).first().getByRole("button", { name: "Remove" }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(message.first()).toBeVisible({ timeout: 15_000 });
   await expect(rows(page)).toHaveCount(before.length);
 
