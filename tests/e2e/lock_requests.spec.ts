@@ -8,7 +8,8 @@ import { login } from "./helpers";
  *
  * Runs in a project of its own with its own item (CLAUDE.md §3: nothing seeded changes) and soft-
  * deletes it afterwards. Users: Noa (drafter) owns the lock, Theo (manager) asks, Rin (manager)
- * decides, Sam (viewer) looks.
+ * decides, Sam (viewer) looks. Bell entries are found by the link to this spec's own item: the
+ * seeded request on TRT-014 is in every decider's bell too.
  */
 const OWNER = "noa.lindqvist@hartwood.test";
 const ASKER = "theo.blake@hartwood.test";
@@ -53,6 +54,10 @@ async function heldSave(browser: Browser, label: string) {
   return { id, rid: detail.request_id as number, original, proposed, rin, noa, theo };
 }
 
+/** The bell entry for one item (its link), not any entry that happens to mention a field. */
+const bellEntry = (page: Page, itemId: number) =>
+  page.locator(`[data-testid="lock-request-waiting"][href="/items/${itemId}"]`);
+
 const description = async (page: Page, id: number) =>
   (await (await page.request.get(`/api/items/${id}`)).json()).description as string;
 
@@ -64,9 +69,9 @@ test("the lock owner sees the held save in the bell and the editor, and approvin
     await noa.goto("/dashboard");
     await expect(noa.getByTestId("notification-count")).toBeVisible({ timeout: 30_000 });
     await noa.getByTestId("notification-bell").click();
-    const entry = noa.getByTestId("lock-requests-waiting").getByTestId("lock-request-waiting").filter({ hasText: "description" });
-    await expect(entry.first()).toBeVisible();
-    await entry.first().click();
+    await expect(bellEntry(noa, h.id)).toBeVisible();
+    await expect(bellEntry(noa, h.id)).toContainText("description");
+    await bellEntry(noa, h.id).click();
     await expect(noa).toHaveURL(new RegExp(`/items/${h.id}`));
 
     // Editor banner: who proposed what, then Approve with a note.
@@ -85,7 +90,7 @@ test("the lock owner sees the held save in the bell and the editor, and approvin
     // Decided: gone from the bell too.
     await noa.goto("/dashboard");
     await noa.getByTestId("notification-bell").click();
-    await expect(noa.getByTestId("lock-request-waiting").filter({ hasText: "description" })).toHaveCount(0);
+    await expect(bellEntry(noa, h.id)).toHaveCount(0);
   } finally {
     await h.rin.request.delete(`/api/items/${h.id}`);
   }
@@ -106,17 +111,19 @@ test("a manager rejects a held save, which leaves the item untouched", async ({ 
   }
 });
 
-test("the person who asked and a viewer see neither a banner nor a bell entry", async ({ browser }) => {
+test("a viewer sees neither a banner nor a bell entry; a manager who asked still may decide it", async ({ browser }) => {
   const h = await heldSave(browser, "others");
   try {
     const viewer = await as(browser, VIEWER);
-    for (const page of [h.theo, viewer]) {
-      await page.goto(`/items/${h.id}`);
-      await expect(page.getByRole("heading", { name: /ITEM #/ })).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId("lock-requests-banner")).toHaveCount(0);
-      await page.getByTestId("notification-bell").click();
-      await expect(page.getByTestId("lock-requests-waiting")).toHaveCount(0);
-    }
+    await viewer.goto(`/items/${h.id}`);
+    await expect(viewer.getByRole("heading", { name: /ITEM #/ })).toBeVisible({ timeout: 30_000 });
+    await expect(viewer.getByTestId("lock-requests-banner")).toHaveCount(0);
+    await viewer.getByTestId("notification-bell").click();
+    await expect(viewer.getByTestId("lock-requests-waiting")).toHaveCount(0);
+
+    // A manager may decide any held save, including one they proposed (as the API already allows).
+    await h.theo.goto(`/items/${h.id}`);
+    await expect(h.theo.getByTestId("lock-requests-banner")).toBeVisible({ timeout: 30_000 });
   } finally {
     await h.rin.request.delete(`/api/items/${h.id}`);
   }
