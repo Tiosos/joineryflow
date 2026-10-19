@@ -28,15 +28,22 @@ from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..comments.queries import READ_MODULES
+from ..items.queries import lock_requests_waiting_for_decision
 from ..orders.queries import orders_waiting_for_decision
 from . import queries as q
-from .schemas import NotificationListOut, NotificationListWaitingOut, ReadAllOut
+from .schemas import (
+    NotificationListLockRequestsOut,
+    NotificationListOut,
+    NotificationListWaitingOut,
+    ReadAllOut,
+)
 
 router = APIRouter(tags=["notifications"])
 
 
-# Two reply shapes (see `NotificationListWaitingOut`), so no single `response_model`; the reply is
-# built from the right model below.
+# Three reply shapes (`NotificationListOut`, `NotificationListWaitingOut` for a purchase officer,
+# `NotificationListLockRequestsOut` for whoever may decide lock requests), so no single
+# `response_model`; the reply is built from the right model below.
 @router.get("/notifications", response_model=None,
             responses={200: {"model": NotificationListWaitingOut}})
 def list_notifications_route(
@@ -63,6 +70,19 @@ def list_notifications_route(
         return NotificationListWaitingOut(
             **out, orders_waiting_count=count,
             orders_waiting=[{**r, "url": f"/orderbook?order={quote(r['po_number'])}"} for r in rows],
+        )
+    # Lock requests waiting for a decision are the lock owner's, a manager's and an admin's (the
+    # people `decide_lock_request` lets decide), on the same first, unfiltered page. They need to
+    # be able to act on it (`tracking:write`, as the approve / reject routes) and to open the item
+    # the entry links to (`list:read`).
+    if (offset == 0 and not unread_only
+            and user.auth_role in ("drafter", "manager", "admin")
+            and has_permission_db(db, user, "tracking", "write")
+            and has_permission_db(db, user, "list", "read")):
+        count, rows = lock_requests_waiting_for_decision(db, user=user)
+        return NotificationListLockRequestsOut(
+            **out, lock_requests_waiting_count=count,
+            lock_requests_waiting=[{**r, "url": f"/items/{r['item_id']}"} for r in rows],
         )
     return NotificationListOut(**out)
 

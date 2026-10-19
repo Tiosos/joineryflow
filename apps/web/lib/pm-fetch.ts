@@ -7,7 +7,7 @@ import type {
   CreateModuleIn, PatchModuleIn,
   CreatePartIn, PatchPartIn,
   AddCatalogIn, CreateHardwareLineIn, PatchHardwareLineIn,
-  HardwareLineOut, ModuleOut, PartOut, ModuleDeleteImpact,
+  HardwareLineOut, ModuleOut, PartOut, ModuleDeleteImpact, LockRequestOut,
 } from "./pm-types";
 
 
@@ -105,6 +105,12 @@ export const PM = {
     call<ItemOut>(`/api/items/${id}/lock`, { method: "DELETE", cache: "no-store" }),
   transferLock: (id: number, body: LockTransferIn) =>
     call<ItemOut>(`/api/items/${id}/lock`, { ...jsonInit("POST", body), cache: "no-store" }),
+
+  // ===== Controlled Lock requests (B7 / Q509): the owner, a manager or an admin decides =====
+  pendingLockRequests: (id: number) =>
+    call<LockRequestOut[]>(`/api/items/${id}/lock-requests?status=pending`),
+  decideLockRequest: (rid: number, decision: "approve" | "reject", note: string | null) =>
+    call<LockRequestOut>(`/api/lock-requests/${rid}/${decision}`, { ...jsonInit("POST", { note }), cache: "no-store" }),
 
   // ===== Plan V1 §2 — duplicate a Joinery Item (drafter / manager / admin) =====
   duplicateItem: (id: number) =>

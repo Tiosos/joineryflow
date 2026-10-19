@@ -930,3 +930,43 @@ see *PM Workbench* above.
   had here), with this and *Generate Orders: per-line selection* both in. `tsc --noEmit` is clean.
 - **Out of scope (deferred):** a request flow for a refused write; locking QC records or comments; the
   Material Summary.
+
+## Lock-request screen: the item editor's banner and the bell (2026-10-19, no migration) — shipped
+
+Held saves under a Controlled Lock (B7 / Q509) had approve / reject / list routes but no screen:
+nobody was told a save was waiting. **Settled decisions (user, 2026-10-19):** the people who decide
+are the lock owner, managers and admins (what `decide_lock_request` already allowed); the bell lists
+the held saves for those people; the item editor shows a banner to the same people.
+
+- **API (read side only; the decide routes are unchanged).** `items.queries.lock_requests_waiting_for_decision`
+  returns `(count, newest 20)` of the pending requests a user may decide: the item's `cutlist_owner_id`
+  is the user, or the user is a manager / admin; only a role the decide routes accept (`require_drafter`:
+  drafter, manager, admin, so an editor who owns a lock is *not* told about what they cannot act on); scoped to
+  the caller's workspace through the item's project; a soft-deleted item's requests are hidden. Derived on every
+  call like the purchase officer's orders: no table, no read state, a request leaves the list when it is approved
+  or rejected, and a new proposal after a decision comes back.
+- **`GET /notifications`.** A drafter, manager or admin with `tracking:write` and `list:read` gets, on the first
+  unfiltered page (`offset=0`, not `unread_only`), `lock_requests_waiting` (rows: `request_id`, `item_id`,
+  `item_number`, `project_code`, `requested_by_name`, `fields` = the keys of `requested_changes`, `created_at`,
+  `url` = `/items/{id}`) and `lock_requests_waiting_count` (reply model `NotificationListLockRequestsOut`).
+  Everyone else, and a paged or unread-only call, gets `NotificationListOut`; a purchase officer keeps
+  `NotificationListWaitingOut` (the roles do not overlap: a purchase officer cannot write to tracking).
+- **Web.** `LockRequestsBanner` (item editor, below the Hard Lock banner): shown only to the lock owner, a manager
+  or an admin who is a drafter, manager or admin, and only while a request is pending (`GET
+  /items/{id}/lock-requests?status=pending`); lists who proposed which fields (new values), an optional note,
+  **Approve** / **Reject** (`POST /lock-requests/{id}/approve|reject`). A refusal (`ALREADY_DECIDED`, `HARD_LOCKED`,
+  `APPROVAL_LOCKED`, 403, 404) is shown in plain words. After a decision the item is re-read and the bell is told
+  to re-read at once (`jf:notifications-changed`). The bell shows a "Held saves waiting for your decision" block above
+  the orders and the comments and counts them on the badge (still "need attention", not "unread"); the Notifications
+  page has the same section.
+- **Tests.** `test_lock_requests_waiting_notification.py` (8): owner, manager and admin are told (every field of a
+  row checked); the asker, an unrelated drafter, an editor, a viewer, an estimator and a purchase officer are not;
+  approve and reject remove the entry; a new request after a decision returns; a deleted item's request is hidden;
+  two workspaces never see each other's; a paged or unread-only call carries nothing. **7 fail against the unfixed
+  source.** `tests/e2e/lock_requests.spec.ts` (3): the owner finds the held save in the bell, opens the item, approves
+  with a note and the change lands and the bell entry goes; a manager rejects and the item is untouched; the asker and
+  a viewer see neither. The spec builds its own project and item and soft-deletes it afterwards.
+- **Known gaps.** A request held on a *related part* (an `items` row with `row_type = 'related_part'`) is listed like
+  any other (the query does not narrow to Joinery Items), and the banner only exists on the Joinery Item editor.
+  The approval of a request whose item has since been Hard-locked or Approved is still refused by the API (409), as
+  before. No email or push: the bell is the only channel, by decision (Q521).

@@ -97,7 +97,7 @@ A supervisor assigns work on the **Shop Floor** board (**+ Assign worker** on a 
 
 - **Hard lock**: a manager or admin froze the item. Nobody can edit it until it is unlocked.
 - **Approved**: once an item's status is APPROVED, its design content (modules, parts, hardware, attachments) is frozen. You can still change status and add comments.
-- **Controlled lock** (the **Lock** button at the bottom of the item): the person who locked it, and managers and admins, can still edit. Others' edits to the item header are held as a request. *Note: there is no screen yet for the owner to approve held requests; it has been decided to add one.*
+- **Controlled lock** (the **Lock** button at the bottom of the item): the person who locked it, and managers and admins, can still edit. Others' edits to the item header are held as a request. The owner, managers and admins are told in two places: a banner at the top of the item (with **Approve** and **Reject** and an optional note) and the bell ("Held saves waiting for your decision"). Approving applies the change and credits the person who proposed it; rejecting leaves the item as it was.
 
 ## Things that look like they should work but do not (yet)
 

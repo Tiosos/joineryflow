@@ -7,6 +7,7 @@ import { ItemMetadataPanel } from "./_components/ItemMetadataPanel";
 import { EditorTabs } from "./_components/EditorTabs";
 import { SoftLockBanner } from "./_components/SoftLockBanner";
 import { HardLockBanner } from "./_components/HardLockBanner";
+import { LockRequestsBanner } from "./_components/LockRequestsBanner";
 import { ApprovalLockBanner } from "./_components/ApprovalLockBanner";
 import { EditorFooter } from "./_components/EditorFooter";
 
@@ -62,6 +63,11 @@ export default async function ItemEditorPage({
       <HardLockBanner
         item={item}
         canManage={me?.auth_role === "manager" || me?.auth_role === "admin"}
+      />
+      <LockRequestsBanner
+        item={item}
+        currentUserId={me?.id ?? null}
+        currentUserRole={me?.auth_role ?? null}
       />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
         <ItemMetadataPanel item={item} />

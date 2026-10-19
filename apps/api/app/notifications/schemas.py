@@ -31,6 +31,18 @@ class OrderWaitingOut(BaseModel):
     url: str
 
 
+class LockRequestWaitingOut(BaseModel):
+    request_id: int
+    item_id: int
+    item_number: int | None = None
+    project_code: str | None = None
+    requested_by_name: str | None = None
+    # The item fields the held save would change (the keys of `requested_changes`).
+    fields: list[str]
+    created_at: datetime
+    url: str
+
+
 class NotificationListOut(BaseModel):
     notifications: list[NotificationOut]
     unread_count: int
@@ -42,6 +54,15 @@ class NotificationListWaitingOut(NotificationListOut):
     it is decided. Everyone else, and paged or unread-only calls, get `NotificationListOut`."""
     orders_waiting: list[OrderWaitingOut]
     orders_waiting_count: int
+
+
+class NotificationListLockRequestsOut(NotificationListOut):
+    """The first page of someone who may decide lock requests (the lock owner, a manager, an
+    admin): also the held saves still pending on items they may decide, newest first (at most
+    20) and how many in all. Derived on read like the purchase officer's orders: a request leaves
+    when it is approved or rejected, so there is nothing to mark read."""
+    lock_requests_waiting: list[LockRequestWaitingOut]
+    lock_requests_waiting_count: int
 
 
 class ReadAllOut(BaseModel):

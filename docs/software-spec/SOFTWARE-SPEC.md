@@ -166,6 +166,8 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `(app)/layout.tsx`  
 *Purpose:* The shell around every signed-in page: top bar, 6 primary tabs, secondary strip, global search, notification bell, sign-out. Editor mode (/items/[id]) hides the TabStrip and SideBar. The browser never calls FastAPI directly: every request goes through the Next.js proxy (app/api/[...proxy]).
 
+*Screenshots (dev seed, manager login):* [Notification bell with held saves waiting](screenshots/bell-lock-requests.jpg)
+
 **Top bar**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
@@ -175,34 +177,35 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `CHRO-03` | **Search hit row** | link | Opens the hit (item editor, project, order, drawing…). Shows first code, title, subtitle. | — | — | — |
 | `CHRO-04` | **All results for “q” →** | link | Opens /search?q=… with type chips and paging. | — | — | — |
 | `CHRO-05` | **🔔 Notification bell** | button | Toggles the dropdown and refreshes it. Badge shows unread count (99+ cap). For the purchase_officer role the badge also counts orders waiting for a decision (labelled “need attention”, not “unread”) and lists them above comment notifications. | GET /notifications?limit=… | any signed-in user; ‘orders waiting’ only for purchase_officer with orderbook read | Polls on a timer; a failed poll keeps the last known state. |
-| `CHRO-06` | **Mark all read (bell)** | button | Marks every comment notification read and clears the badge. | POST /notifications/read-all | — | — |
-| `CHRO-07` | **Notification row** | button | Marks that notification read, then navigates to the object it points to (comment thread, order…). | POST /notifications/{id}/read | — | — |
-| `CHRO-08` | **Sign out** | button | Ends the session (server deletes the session row), then replaces the route with /login?reason=signed_out. | POST /auth/logout | — | — |
+| `CHRO-06` | **Held saves waiting for your decision (bell)** | link | For the lock owner, managers and admins (drafter, manager, admin): the pending Controlled-Lock requests they may decide, above the orders and comments, each linking to its item. Counted on the badge; derived on every read, so a decided request leaves it. | GET /notifications (lock_requests_waiting) | drafter, manager or admin with tracking:write and list:read | — |
+| `CHRO-07` | **Mark all read (bell)** | button | Marks every comment notification read and clears the badge. | POST /notifications/read-all | — | — |
+| `CHRO-08` | **Notification row** | button | Marks that notification read, then navigates to the object it points to (comment thread, order…). | POST /notifications/{id}/read | — | — |
+| `CHRO-09` | **Sign out** | button | Ends the session (server deletes the session row), then replaces the route with /login?reason=signed_out. | POST /auth/logout | — | — |
 
 **Primary tab strip**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-09` | **Dashboard** | tab | Go to /dashboard. | — | module dashboard:read (tab hidden otherwise) | — |
-| `CHRO-10` | **Tracking ↗** | tab | Opens /tracking in a NEW browser tab (so two modules can sit on two monitors, Q475/Q545). If you are already on it, navigates in place. | — | tracking:read | — |
-| `CHRO-11` | **List ↗** | tab | Opens the Cutlist module (/list) in a new tab. The ‘List’ tab IS the Cutlist module (Q474). | — | list:read | — |
-| `CHRO-12` | **Shop Dwgs** | tab | Go to /shop-dwgs. | — | shop_dwgs:read | — |
-| `CHRO-13` | **iSample** | tab | Go to /isample. | — | isample:read | — |
-| `CHRO-14` | **Orderbook ↗** | tab | Opens /orderbook in a new tab. | — | orderbook:read | — |
+| `CHRO-10` | **Dashboard** | tab | Go to /dashboard. | — | module dashboard:read (tab hidden otherwise) | — |
+| `CHRO-11` | **Tracking ↗** | tab | Opens /tracking in a NEW browser tab (so two modules can sit on two monitors, Q475/Q545). If you are already on it, navigates in place. | — | tracking:read | — |
+| `CHRO-12` | **List ↗** | tab | Opens the Cutlist module (/list) in a new tab. The ‘List’ tab IS the Cutlist module (Q474). | — | list:read | — |
+| `CHRO-13` | **Shop Dwgs** | tab | Go to /shop-dwgs. | — | shop_dwgs:read | — |
+| `CHRO-14` | **iSample** | tab | Go to /isample. | — | isample:read | — |
+| `CHRO-15` | **Orderbook ↗** | tab | Opens /orderbook in a new tab. | — | orderbook:read | — |
 
 **Secondary strip**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-15` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | any signed-in user (a tab shows only when its module’s read is granted) | — |
-| `CHRO-16` | **/it (admin only)** | tab | Admin surface link: permission groups, labour rates, staff photos, search health, shop-worker roster. | — | it_management:read (admin only) | — |
+| `CHRO-16` | **Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers** | tab | Navigation links to /catalog, /shop-floor, /cut-floor, /qc, /estimating, /customers. Customers uses the estimating module’s gate. A tab is hidden when read is denied; the API’s 403 is the real control. If the permissions map is entirely absent the strip fails OPEN (shows tabs) rather than blanking the nav. | — | any signed-in user (a tab shows only when its module’s read is granted) | — |
+| `CHRO-17` | **/it (admin only)** | tab | Admin surface link: permission groups, labour rates, staff photos, search health, shop-worker roster. | — | it_management:read (admin only) | — |
 
 **Project sidebar (Dashboard only)**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CHRO-17` | **FAV / ALL toggle** | tab | Switches the sidebar list between favourite projects and all projects. | — | — | Only shown on Dashboard (HAppChrome.SIDEBAR_ROUTES). |
-| `CHRO-18` | **☆ / ★ favourite star** | button | Adds/removes the project from the user’s favourites. | POST\|DELETE /projects/{id}/favourites | any signed-in user | — |
+| `CHRO-18` | **FAV / ALL toggle** | tab | Switches the sidebar list between favourite projects and all projects. | — | — | Only shown on Dashboard (HAppChrome.SIDEBAR_ROUTES). |
+| `CHRO-19` | **☆ / ★ favourite star** | button | Adds/removes the project from the user’s favourites. | POST\|DELETE /projects/{id}/favourites | any signed-in user | — |
 
 ### Login
 
@@ -377,7 +380,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/items/[id]?tab=…`  
 *Purpose:* Full editor for one item. Opens in its own window; hides the TabStrip and SideBar. Every write passes the lock checks (Hard, Approval, Controlled) before anything is written.
 
-*Screenshots (dev seed, manager login):* [Cutlist tab](screenshots/item-cutlist.jpg) · [CV import wizard](screenshots/item-cv-import.jpg) · [Hardware tab](screenshots/item-hardware.jpg) · [Board tab](screenshots/item-board.jpg) · [Material Take tab](screenshots/item-take.jpg) · [Attachments tab](screenshots/item-attachments.jpg) · [Actions tab](screenshots/item-actions.jpg) · [Query tab](screenshots/item-query.jpg) · [Comments tab](screenshots/item-comments.jpg) · [QC tab](screenshots/item-qc.jpg) · [Log tab](screenshots/item-log.jpg)
+*Screenshots (dev seed, manager login):* [Cutlist tab](screenshots/item-cutlist.jpg) · [CV import wizard](screenshots/item-cv-import.jpg) · [Hardware tab](screenshots/item-hardware.jpg) · [Board tab](screenshots/item-board.jpg) · [Material Take tab](screenshots/item-take.jpg) · [Attachments tab](screenshots/item-attachments.jpg) · [Actions tab](screenshots/item-actions.jpg) · [Query tab](screenshots/item-query.jpg) · [Comments tab](screenshots/item-comments.jpg) · [QC tab](screenshots/item-qc.jpg) · [Log tab](screenshots/item-log.jpg) · [Held-save banner (lock owner)](screenshots/item-lock-requests-banner.jpg)
 
 **Header and locks**
 
@@ -387,108 +390,110 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | `ITEM-02` | **✕ (close editor)** | button | window.close(); if the browser blocks that, falls back to /dashboard. | — | — | — |
 | `ITEM-03` | **Hard-lock / Unlock (banner)** | button | Hard Lock blocks every edit for everyone including the owner. Shown only to those who can manage it, or whenever locked. | POST\|DELETE /items/{id}/hard-lock | manager / admin | — |
 | `ITEM-04` | **Lock / Unlock (footer)** | button | Takes or releases the Controlled Lock (owner + manager/admin may pass; others’ edits become held lock requests). cutlist_owner_id is sticky. | POST\|DELETE /items/{id}/lock | tracking:write | — |
-| `ITEM-05` | **(no button) Lock requests** | link | The API can hold an edit made under someone else’s Controlled Lock as a lock request and has approve/reject routes, but NO web button calls them today. | GET /items/{id}/lock-requests · POST /lock-requests/{id}/approve\|reject | owner / manager / admin | DECIDED: build a banner with Approve/Reject on the item editor plus a bell notification (not built yet). |
+| `ITEM-05` | **Approve (held save)** | button | Lock-request banner under the lock banners: applies a non-owner's held save to the item (the edit log credits the person who proposed it; the lock does not move). An optional note is kept with the decision. | POST /lock-requests/{id}/approve | the lock owner, a manager or an admin (drafter, manager or admin) | Refused with a plain message when the item is Hard-locked, Approved or already decided. The banner shows only while a request is pending. |
+| `ITEM-06` | **Reject (held save)** | button | Discards the held save; the item is untouched. Optional note. | POST /lock-requests/{id}/reject | the lock owner, a manager or an admin (drafter, manager or admin) | — |
+| `ITEM-07` | **Note (optional) on a held save** | input | Free text stored as the decision note. | — | — | — |
 
 **Editor tabs**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-06` | **Cutlist · Hardware · Board · Material Take · Attachments · Actions · Query · Comments · QC · Log** | tab | Ten tabs; selection is kept in ?tab=. | — | — | — |
+| `ITEM-08` | **Cutlist · Hardware · Board · Material Take · Attachments · Actions · Query · Comments · QC · Log** | tab | Ten tabs; selection is kept in ?tab=. | — | — | — |
 
 **Cutlist tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-07` | **Import from CV** | button | Opens the Cabinet Vision import wizard (?import=cv). | — | cut_floor:write + not locked | — |
-| `ITEM-08` | **+ Add module** | button | Creates ‘New module’ numbered by position and selects it. | POST /items/{id}/modules | drafter / manager / admin | — |
-| `ITEM-09` | **Module (tree item)** | link | Selects a module and loads its parts grid. | — | — | — |
-| `ITEM-10` | **Delete module** | button | Opens the delete dialog (shows impact: parts and comments deleted). | GET /modules/{id}/delete-impact | — | — |
-| `ITEM-11` | **Delete module (confirm)** | button | Deletes the module and its parts. | DELETE /modules/{id} | drafter+ | Refused under Hard/Approval/Controlled lock. |
-| `ITEM-12` | **+ Add row** | button | Adds an empty part (qty 1) to the module; rows edit in place. | POST /modules/{id}/parts | — | — |
-| `ITEM-13` | **– (delete part)** | button | Removes the part; optimistic, reverts on failure. | DELETE /parts/{id} | — | — |
+| `ITEM-09` | **Import from CV** | button | Opens the Cabinet Vision import wizard (?import=cv). | — | cut_floor:write + not locked | — |
+| `ITEM-10` | **+ Add module** | button | Creates ‘New module’ numbered by position and selects it. | POST /items/{id}/modules | drafter / manager / admin | — |
+| `ITEM-11` | **Module (tree item)** | link | Selects a module and loads its parts grid. | — | — | — |
+| `ITEM-12` | **Delete module** | button | Opens the delete dialog (shows impact: parts and comments deleted). | GET /modules/{id}/delete-impact | — | — |
+| `ITEM-13` | **Delete module (confirm)** | button | Deletes the module and its parts. | DELETE /modules/{id} | drafter+ | Refused under Hard/Approval/Controlled lock. |
+| `ITEM-14` | **+ Add row** | button | Adds an empty part (qty 1) to the module; rows edit in place. | POST /modules/{id}/parts | — | — |
+| `ITEM-15` | **– (delete part)** | button | Removes the part; optimistic, reverts on failure. | DELETE /parts/{id} | — | — |
 
 **CV import wizard**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-14` | **Preview** | button | Uploads a file or pasted CSV text and parses it; produces unknown-code list. | POST /items/{id}/cv-imports/preview | cut_floor:write | — |
-| `ITEM-15` | **Use existing / Create new / Skip (per unknown code)** | toggle | Resolution for each CV code the resolver can’t find (order: mapping → synonyms → SKU → unknown). | — | — | — |
-| `ITEM-16` | **Continue / Back** | button | Moves between Upload → Resolve → Confirm phases. | — | — | — |
-| `ITEM-17` | **Import** | button | Commits the run. If the item already has an import this 409s unless ‘replace’ is ticked, which first warns how many modules/comments will be deleted. | POST /items/{id}/cv-imports/{run}/commit | cut_floor:write | — |
-| `ITEM-18` | **Cancel / Close** | button | Closes the wizard. | — | — | — |
+| `ITEM-16` | **Preview** | button | Uploads a file or pasted CSV text and parses it; produces unknown-code list. | POST /items/{id}/cv-imports/preview | cut_floor:write | — |
+| `ITEM-17` | **Use existing / Create new / Skip (per unknown code)** | toggle | Resolution for each CV code the resolver can’t find (order: mapping → synonyms → SKU → unknown). | — | — | — |
+| `ITEM-18` | **Continue / Back** | button | Moves between Upload → Resolve → Confirm phases. | — | — | — |
+| `ITEM-19` | **Import** | button | Commits the run. If the item already has an import this 409s unless ‘replace’ is ticked, which first warns how many modules/comments will be deleted. | POST /items/{id}/cv-imports/{run}/commit | cut_floor:write | — |
+| `ITEM-20` | **Cancel / Close** | button | Closes the wizard. | — | — | — |
 
 **Hardware tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-19` | **+ (Pantry row)** | button | Adds the project-catalog item to this item’s hardware lines at qty 1. | POST /items/{id}/hardware_lines | drafter+ | — |
-| `ITEM-20` | **+ Add from global** | button | Opens the global-source modal (six catalog tables) to put a material into the PROJECT hardware catalog. | GET /source_catalog/{table} | — | — |
-| `ITEM-21` | **Table tabs (modal)** | tab | Switches between the catalog tables. | — | — | — |
-| `ITEM-22` | **Add (modal row)** | button | Adds the row to the project hardware catalog (log-only governance; audited). | POST /projects/{pid}/hardware_catalog | — | — |
-| `ITEM-23` | **− / + (cart qty)** | button | Changes qty by 1 (min 1); debounced save 300 ms, reverts on error. | PATCH /hardware_lines/{id} | — | — |
-| `ITEM-24` | **– (cart delete)** | button | Removes the hardware line. | DELETE /hardware_lines/{id} | — | — |
-| `ITEM-25` | **✕ (modal)** | button | Closes the modal. | — | — | — |
+| `ITEM-21` | **+ (Pantry row)** | button | Adds the project-catalog item to this item’s hardware lines at qty 1. | POST /items/{id}/hardware_lines | drafter+ | — |
+| `ITEM-22` | **+ Add from global** | button | Opens the global-source modal (six catalog tables) to put a material into the PROJECT hardware catalog. | GET /source_catalog/{table} | — | — |
+| `ITEM-23` | **Table tabs (modal)** | tab | Switches between the catalog tables. | — | — | — |
+| `ITEM-24` | **Add (modal row)** | button | Adds the row to the project hardware catalog (log-only governance; audited). | POST /projects/{pid}/hardware_catalog | — | — |
+| `ITEM-25` | **− / + (cart qty)** | button | Changes qty by 1 (min 1); debounced save 300 ms, reverts on error. | PATCH /hardware_lines/{id} | — | — |
+| `ITEM-26` | **– (cart delete)** | button | Removes the hardware line. | DELETE /hardware_lines/{id} | — | — |
+| `ITEM-27` | **✕ (modal)** | button | Closes the modal. | — | — | — |
 
 **Material Take tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-26` | **Generate material take / Start v(n+1)** | button | Generates a take from parts + hardware (draft). If an approved one exists starts the next version. | POST /items/{id}/material-take/generate | drafter+ | — |
-| `ITEM-27` | **Regenerate** | button | Re-runs generation over the draft. | POST /material-takes/{id}/regenerate | — | — |
-| `ITEM-28` | **Add line / Remove** | button | Hand-edits take lines (generated first, then person-owned). | POST /material-takes/{id}/lines · DELETE …/lines/{lid} | — | — |
-| `ITEM-29` | **Approve** | button | Approves the draft; approved takes are immutable. | POST /material-takes/{id}/approve | list approve-capable roles | — |
-| `ITEM-30` | **No impact / Partial impact / Full impact** | button | Records the review outcome of an approved take after a design change. Partial and Full are disabled while a draft exists. | POST /material-takes/{id}/reviews | — | — |
+| `ITEM-28` | **Generate material take / Start v(n+1)** | button | Generates a take from parts + hardware (draft). If an approved one exists starts the next version. | POST /items/{id}/material-take/generate | drafter+ | — |
+| `ITEM-29` | **Regenerate** | button | Re-runs generation over the draft. | POST /material-takes/{id}/regenerate | — | — |
+| `ITEM-30` | **Add line / Remove** | button | Hand-edits take lines (generated first, then person-owned). | POST /material-takes/{id}/lines · DELETE …/lines/{lid} | — | — |
+| `ITEM-31` | **Approve** | button | Approves the draft; approved takes are immutable. | POST /material-takes/{id}/approve | list approve-capable roles | — |
+| `ITEM-32` | **No impact / Partial impact / Full impact** | button | Records the review outcome of an approved take after a design change. Partial and Full are disabled while a draft exists. | POST /material-takes/{id}/reviews | — | — |
 
 **Attachments tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-31` | **Upload / Replace (slot card)** | button | Uploads a file and binds it to one of five slots (cv_drawing, sketchup, cabvision, floor_plan, site_measure). One format per slot; 25 MB cap; signature AND extension must agree. | POST /files then POST /items/{id}/attachments/{kind} | list:write | — |
-| `ITEM-32` | **Delete (slot card)** | button | Confirms and clears the slot (logged). | DELETE /items/{id}/attachments/{kind} | — | — |
-| `ITEM-33` | **Add document (Register)** | button | Adds a document to the Document Register. | POST /items/{id}/documents | — | — |
-| `ITEM-34` | **↑ / ↓ (register)** | button | Reorders by renumbering sort_order 0..n-1. | PATCH /documents/{id} | — | — |
-| `ITEM-35` | **Remove (register)** | button | Confirms; unbinds the document (logged). | DELETE /documents/{id} | — | — |
+| `ITEM-33` | **Upload / Replace (slot card)** | button | Uploads a file and binds it to one of five slots (cv_drawing, sketchup, cabvision, floor_plan, site_measure). One format per slot; 25 MB cap; signature AND extension must agree. | POST /files then POST /items/{id}/attachments/{kind} | list:write | — |
+| `ITEM-34` | **Delete (slot card)** | button | Confirms and clears the slot (logged). | DELETE /items/{id}/attachments/{kind} | — | — |
+| `ITEM-35` | **Add document (Register)** | button | Adds a document to the Document Register. | POST /items/{id}/documents | — | — |
+| `ITEM-36` | **↑ / ↓ (register)** | button | Reorders by renumbering sort_order 0..n-1. | PATCH /documents/{id} | — | — |
+| `ITEM-37` | **Remove (register)** | button | Confirms; unbinds the document (logged). | DELETE /documents/{id} | — | — |
 
 **Actions tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-36` | **Set status** | button | Opens the Status dialog for this item. | PATCH /items/{id}/status | — | — |
-| `ITEM-37` | **Mark REQ done today** | button | Sets the REQ lifecycle stage’s done_date to today. Disabled when already done. | PATCH /items/{id}/lifecycle/{stage_key} | — | — |
-| `ITEM-38` | **Duplicate item** | button | Opens the Duplicate dialog. | — | tracking:write | — |
-| `ITEM-39` | **Duplicate (confirm)** | button | Same-project copy with its own new cutlist, status reset to CLEAR, QC checklist unticked; links to source via duplicated_from_item_id. | POST /items/{id}/duplicate | tracking:write | — |
-| `ITEM-40` | **Duplicated from #n** | link | Link to the source item. | — | — | — |
-| `ITEM-41` | **Jump to Orderbook** | link | Opens /orderbook?project=… for this item’s project. | — | — | — |
+| `ITEM-38` | **Set status** | button | Opens the Status dialog for this item. | PATCH /items/{id}/status | — | — |
+| `ITEM-39` | **Mark REQ done today** | button | Sets the REQ lifecycle stage’s done_date to today. Disabled when already done. | PATCH /items/{id}/lifecycle/{stage_key} | — | — |
+| `ITEM-40` | **Duplicate item** | button | Opens the Duplicate dialog. | — | tracking:write | — |
+| `ITEM-41` | **Duplicate (confirm)** | button | Same-project copy with its own new cutlist, status reset to CLEAR, QC checklist unticked; links to source via duplicated_from_item_id. | POST /items/{id}/duplicate | tracking:write | — |
+| `ITEM-42` | **Duplicated from #n** | link | Link to the source item. | — | — | — |
+| `ITEM-43` | **Jump to Orderbook** | link | Opens /orderbook?project=… for this item’s project. | — | — | — |
 
 **Query tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-42` | **Ask** | button | Raises a question on the item (only needs list:read). Refused under a Hard Lock. | POST /items/{id}/queries | list:read | — |
-| `ITEM-43` | **Answer / Save / Edit answer** | button | Answers or edits the answer. Refused under Hard or Controlled lock. | POST\|PATCH /queries/{id}/answer | list:write (drafter+) | — |
+| `ITEM-44` | **Ask** | button | Raises a question on the item (only needs list:read). Refused under a Hard Lock. | POST /items/{id}/queries | list:read | — |
+| `ITEM-45` | **Answer / Save / Edit answer** | button | Answers or edits the answer. Refused under Hard or Controlled lock. | POST\|PATCH /queries/{id}/answer | list:write (drafter+) | — |
 
 **QC tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-44` | **Raise (defect)** | button | Raises a defect on the item. | POST /items/{id}/qc/defects | qc:write | — |
-| `ITEM-45` | **Mark resolved** | button | Resolves a defect. | POST /qc/defects/{id}/resolve | qc:approve | — |
-| `ITEM-46` | **Add / × (checklist)** | button | Adds or removes a checklist line. | POST /items/{id}/qc/checklist · DELETE /qc/checklist/{id} | qc:write | — |
-| `ITEM-47` | **+ Log rework / Log / Cancel** | button | Logs a rework (internal or full; never reopens a stage). | POST /items/{id}/qc/rework | qc:write | — |
-| `ITEM-48` | **Close (rework)** | button | Closes a rework. | POST /qc/rework/{id}/close | qc:approve | — |
+| `ITEM-46` | **Raise (defect)** | button | Raises a defect on the item. | POST /items/{id}/qc/defects | qc:write | — |
+| `ITEM-47` | **Mark resolved** | button | Resolves a defect. | POST /qc/defects/{id}/resolve | qc:approve | — |
+| `ITEM-48` | **Add / × (checklist)** | button | Adds or removes a checklist line. | POST /items/{id}/qc/checklist · DELETE /qc/checklist/{id} | qc:write | — |
+| `ITEM-49` | **+ Log rework / Log / Cancel** | button | Logs a rework (internal or full; never reopens a stage). | POST /items/{id}/qc/rework | qc:write | — |
+| `ITEM-50` | **Close (rework)** | button | Closes a rework. | POST /qc/rework/{id}/close | qc:approve | — |
 
 **Comments tab**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-49` | **Comment** | button | Posts a comment with @mentions (by id). | POST /comments | any signed-in user with the module grant | — |
-| `ITEM-50` | **Reply / Edit / Delete / Save / Cancel** | button | One-level replies; author edits; creator-or-manager deletes (5-min undo rule lives in handlers). | POST\|PATCH\|DELETE /comments | — | — |
+| `ITEM-51` | **Comment** | button | Posts a comment with @mentions (by id). | POST /comments | any signed-in user with the module grant | — |
+| `ITEM-52` | **Reply / Edit / Delete / Save / Cancel** | button | One-level replies; author edits; creator-or-manager deletes (5-min undo rule lives in handlers). | POST\|PATCH\|DELETE /comments | — | — |
 
 **Label page**
 
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ITEM-51` | **Print label** | button | window.print() for the item QR label (/items/[id]/label). | — | — | — |
+| `ITEM-53` | **Print label** | button | window.print() for the item QR label (/items/[id]/label). | — | — | — |
 
 ### Project page and Procurement workbench
 
@@ -1481,19 +1486,20 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `CHRO-03` | Search hit row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `CHRO-04` | All results for “q” → | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `CHRO-05` | 🔔 Notification bell | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-06` | Mark all read (bell) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-07` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-08` | Sign out | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-09` | Dashboard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-10` | Tracking ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-11` | List ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-12` | Shop Dwgs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-13` | iSample | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-14` | Orderbook ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-15` | Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-16` | /it (admin only) | ✔ | ✔ | — | — | — | — | — |
-| `CHRO-17` | FAV / ALL toggle | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `CHRO-18` | ☆ / ★ favourite star | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-06` | Held saves waiting for your decision (bell) | ✔ | ✔ | — | ✔ | — | — | — |
+| `CHRO-07` | Mark all read (bell) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-08` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-09` | Sign out | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-10` | Dashboard | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-11` | Tracking ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-12` | List ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-13` | Shop Dwgs | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-14` | iSample | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-15` | Orderbook ↗ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-16` | Catalog / Shop Floor / Cut Floor / QC / Estimating / Customers | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-17` | /it (admin only) | ✔ | ✔ | — | — | — | — | — |
+| `CHRO-18` | FAV / ALL toggle | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `CHRO-19` | ☆ / ★ favourite star | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-01` | Sign in | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-02` | × (dismiss notice) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `LOGI-03` | Continue with SSO | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
@@ -1558,53 +1564,55 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `ITEM-02` | ✕ (close editor) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `ITEM-03` | Hard-lock / Unlock (banner) | ✔ | ✔ | — | — | — | — | — |
 | `ITEM-04` | Lock / Unlock (footer) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-05` | (no button) Lock requests | ✔ | ✔ | — | — | — | — | — |
-| `ITEM-06` | Cutlist · Hardware · Board · Material Take · Attachments · Actions · Q | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-07` | Import from CV | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-08` | + Add module | ✔ | ✔ | — | — | — | — | — |
-| `ITEM-09` | Module (tree item) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-10` | Delete module | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-11` | Delete module (confirm) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-12` | + Add row | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-13` | – (delete part) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-14` | Preview | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-15` | Use existing / Create new / Skip (per unknown code) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-16` | Continue / Back | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-17` | Import | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-18` | Cancel / Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-19` | + (Pantry row) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-20` | + Add from global | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-21` | Table tabs (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-22` | Add (modal row) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-23` | − / + (cart qty) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-24` | – (cart delete) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-25` | ✕ (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-26` | Generate material take / Start v(n+1) | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-27` | Regenerate | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-28` | Add line / Remove | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-29` | Approve | ? | ? | ? | ? | ? | ? | ? |
-| `ITEM-30` | No impact / Partial impact / Full impact | ? | ? | ? | ? | ? | ? | ? |
-| `ITEM-31` | Upload / Replace (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-32` | Delete (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-33` | Add document (Register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-34` | ↑ / ↓ (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-35` | Remove (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-36` | Set status | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-37` | Mark REQ done today | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-38` | Duplicate item | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-39` | Duplicate (confirm) | ✔ | ✔ | ✔ | ✔ | — | — | — |
-| `ITEM-40` | Duplicated from #n | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-41` | Jump to Orderbook | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-42` | Ask | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-43` | Answer / Save / Edit answer | ✔ | ✔ | — | ✔ | — | — | — |
-| `ITEM-44` | Raise (defect) | ✔ | ✔ | ✔ | — | — | — | — |
-| `ITEM-45` | Mark resolved | ✔ | ✔ | — | — | — | — | — |
-| `ITEM-46` | Add / × (checklist) | ✔ | ✔ | ✔ | — | — | — | — |
-| `ITEM-47` | + Log rework / Log / Cancel | ✔ | ✔ | ✔ | — | — | — | — |
-| `ITEM-48` | Close (rework) | ✔ | ✔ | — | — | — | — | — |
-| `ITEM-49` | Comment | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-50` | Reply / Edit / Delete / Save / Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `ITEM-51` | Print label | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-05` | Approve (held save) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-06` | Reject (held save) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-07` | Note (optional) on a held save | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-08` | Cutlist · Hardware · Board · Material Take · Attachments · Actions · Q | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-09` | Import from CV | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-10` | + Add module | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-11` | Module (tree item) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-12` | Delete module | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-13` | Delete module (confirm) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-14` | + Add row | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-15` | – (delete part) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-16` | Preview | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-17` | Use existing / Create new / Skip (per unknown code) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-18` | Continue / Back | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-19` | Import | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-20` | Cancel / Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-21` | + (Pantry row) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-22` | + Add from global | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-23` | Table tabs (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-24` | Add (modal row) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-25` | − / + (cart qty) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-26` | – (cart delete) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-27` | ✕ (modal) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-28` | Generate material take / Start v(n+1) | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-29` | Regenerate | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-30` | Add line / Remove | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-31` | Approve | ? | ? | ? | ? | ? | ? | ? |
+| `ITEM-32` | No impact / Partial impact / Full impact | ? | ? | ? | ? | ? | ? | ? |
+| `ITEM-33` | Upload / Replace (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-34` | Delete (slot card) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-35` | Add document (Register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-36` | ↑ / ↓ (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-37` | Remove (register) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-38` | Set status | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-39` | Mark REQ done today | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-40` | Duplicate item | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-41` | Duplicate (confirm) | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| `ITEM-42` | Duplicated from #n | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-43` | Jump to Orderbook | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-44` | Ask | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-45` | Answer / Save / Edit answer | ✔ | ✔ | — | ✔ | — | — | — |
+| `ITEM-46` | Raise (defect) | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-47` | Mark resolved | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-48` | Add / × (checklist) | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-49` | + Log rework / Log / Cancel | ✔ | ✔ | ✔ | — | — | — | — |
+| `ITEM-50` | Close (rework) | ✔ | ✔ | — | — | — | — | — |
+| `ITEM-51` | Comment | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-52` | Reply / Edit / Delete / Save / Cancel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `ITEM-53` | Print label | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `PROJ-01` | Close out | ✔ | ✔ | — | — | — | — | — |
 | `PROJ-02` | + Add contact / Add / Cancel / Remove | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | `PROJ-03` | Upload sketch / Replace / Remove | ✔ | ✔ | ✔ | ✔ | — | — | — |
@@ -1774,12 +1782,12 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `SEAR-03` | Mark all read (page) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `SEAR-04` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 
-Controls each role can use (of 295 with a computable rule; 2 are `?`): admin 295, manager 284, editor 208, drafter 245, estimator 157, purchase_officer 176, viewer 141.
+Controls each role can use (of 298 with a computable rule; 2 are `?`): admin 298, manager 287, editor 209, drafter 249, estimator 158, purchase_officer 177, viewer 142.
 
 
 ## Appendix A. Source index of every `<button>` in the web app
 
-410 `<button>` elements in 130 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
+412 `<button>` elements in 131 files (`apps/web`). Labels are as written in the source (expressions shown verbatim). The searchable version is in the HTML.
 
 **`app/(app)/catalog/_components/BoardImageCell.tsx`**
 
@@ -2049,6 +2057,11 @@ Controls each role can use (of 295 with a computable rule; 2 are `?`): admin 295
 - L70 — {deleting ? "Deleting…" : "Delete"} · `delete-item`
 - L81 — ✕ · `close-editor`
 
+**`app/(app)/items/[id]/_components/LockRequestsBanner.tsx`**
+
+- L133 — Approve · ``lock-request-approve-${r.request_id}``
+- L142 — Reject · ``lock-request-reject-${r.request_id}``
+
 **`app/(app)/items/[id]/_components/MaterialTakeTab.tsx`**
 
 - L103 — {o === "no_impact" ? "No impact" : o === "partial" ? "Partial impact" : "Full im
@@ -2141,8 +2154,8 @@ Controls each role can use (of 295 with a computable rule; 2 are `?`): admin 295
 
 **`app/(app)/notifications/_components/NotificationsList.tsx`**
 
-- L61 — Mark all read
-- L116 — {notificationText(n)} {n.object_label && · {n.object_label}} {formatLocalTs(n.cr
+- L65 — Mark all read
+- L147 — {notificationText(n)} {n.object_label && · {n.object_label}} {formatLocalTs(n.cr
 
 **`app/(app)/orderbook/_components/CostBreakdownModal.tsx`**
 
@@ -2536,9 +2549,9 @@ Controls each role can use (of 295 with a computable rule; 2 are `?`): admin 295
 
 **`components/chrome/NotificationBell.tsx`**
 
-- L79 — 🔔 {badge > 0 && ( {badge > 99 ? "99+" : badge} )} · `notification-bell`
-- L109 — Mark all read
-- L153 — {notificationText(n)} {n.object_label && ( · {n.object_label} )} {n.excerpt}
+- L87 — 🔔 {badge > 0 && ( {badge > 99 ? "99+" : badge} )} · `notification-bell`
+- L117 — Mark all read
+- L195 — {notificationText(n)} {n.object_label && ( · {n.object_label} )} {n.excerpt}
 
 **`components/chrome/ProjectSidebar.tsx`**
 
