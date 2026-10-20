@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
 import { useEffect, useState } from "react";
 
 export interface RoomRow {
@@ -47,6 +48,7 @@ export function AreaRoomPicker({
   canEdit: boolean;
   onChange: (next: { area_id?: number; room_id?: number }) => Promise<boolean>;
 }) {
+  const { askText, askFields } = useConfirm();
   const [areas, setAreas] = useState<AreaRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,8 +68,8 @@ export function AreaRoomPicker({
   async function pickArea(value: string) {
     setError(null);
     if (value === "__new__") {
-      const name = window.prompt("New area name (e.g. Joinery Lab, Block B)");
-      if (!name?.trim()) return;
+      const name = await askText({ title: "New area", label: "Area name", placeholder: "e.g. Joinery Lab, Block B", required: true, confirmLabel: "Add area" });
+      if (!name) return;
       setBusy(true);
       try {
         const r = await fetch(`/api/projects/${projectId}/areas`, {
@@ -102,9 +104,17 @@ export function AreaRoomPicker({
     setError(null);
     if (area == null) return;
     if (value === "__new__") {
-      const rmNo = window.prompt("New room number (e.g. 057)");
-      if (!rmNo?.trim()) return;
-      const rmDesc = window.prompt("Room description (optional)") ?? "";
+      const room = await askFields({
+        title: "New room",
+        fields: [
+          { name: "rm_no", label: "Room number", placeholder: "e.g. 057", required: true },
+          { name: "rm_desc", label: "Room description" },
+        ],
+        confirmLabel: "Add room",
+      });
+      if (!room) return;
+      const rmNo = room.rm_no;
+      const rmDesc = room.rm_desc;
       setBusy(true);
       try {
         const r = await fetch(`/api/areas/${area.area_id}/rooms`, {
