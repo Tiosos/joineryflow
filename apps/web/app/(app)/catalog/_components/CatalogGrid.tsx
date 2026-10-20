@@ -69,7 +69,7 @@ export default function CatalogGrid(p: Props) {
             <th className="px-3 py-2">Default supplier</th>
             <th className="px-3 py-2" title="The supplier Generate Orders orders this material from">Supplier link</th>
             <th className="px-3 py-2">Lead (d)</th>
-            <th className="px-3 py-2" title="Per unit, ex GST. An order made from this material starts at this price">Unit cost</th>
+            <th className="px-3 py-2" title="Price per ordered unit, ex GST. Orders start from this; if empty, from the old cost column.">Unit cost</th>
             {isBoard && BOARD_TEXT_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBoard && BOARD_NUMBER_FIELDS.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
             {isBoard && <th className="px-3 py-2">Image</th>}

@@ -53,9 +53,9 @@ _COST = {"board_materials": "cost_per_sheet", "custom_made": "cost", "benchtop_m
 
 
 def test_a_hardware_line_of_kind_glass_is_refused_never_a_500():
-    # Review finding 1 claimed a 500 here. It does not reproduce: the catalog resolver has no
-    # GLASS hardware entry, so add_hardware answers 409 CATALOG_ROW_NOT_FOUND before any INSERT
-    # reaches the 0069 CHECK. This pins "refused, nothing written".
+    # Review finding 1 claimed a 500 here (it never was one). Glass is a quote *part* kind, not a
+    # hardware kind: HardwareMaterialType omits it, so the request is a plain 422 and nothing is
+    # written (the 0069 CHECK on estimate_line_hardware refuses GLASS as well).
     ctx = _bootstrap()
     c = ctx["client"]
     cust = c.post("/customers", json={"name": "K"}).json()
@@ -67,7 +67,7 @@ def test_a_hardware_line_of_kind_glass_is_refused_never_a_500():
     r = c.post(f"/lines/{line['line_id']}/hardware",
                json={"material_type": "GLASS", "material_id": gid, "qty": 1})
 
-    assert r.status_code in (409, 422), r.text
+    assert r.status_code == 422, r.text
     assert _sql_scalar("SELECT count(*) FROM estimate_line_hardware WHERE line_id = :l",
                        l=line["line_id"]) == 0
     # the same material is fine as a part

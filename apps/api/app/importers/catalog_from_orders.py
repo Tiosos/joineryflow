@@ -95,7 +95,12 @@ _HIRE = re.compile(r"vertical lift|scissor lift|boom lift|\bhire\b|haulotte", re
 _APPLIANCE = re.compile(r"dishwasher|dishdrawer|\boven\b|cooktop|rangehood|fridge|microwave", re.I)
 _GLASS = re.compile(r"\bfloat\b|toughened|\bglass\b|\bfpar\b", re.I)
 _EDGING = re.compile(r"unglued|edging|\bedge\b", re.I)
-_SOLID_TOP = re.compile(r"^solid top|solid tasmanian oak|\bdar\b", re.I)
+# Solid Timber (user decision, 2026-10-20): "Solid Top - Tas Oak DAR 190 x 19 @ 2300mm" is timber.
+_SOLID_TOP = re.compile(
+    r"^solid top|solid timber|solid tasmanian oak|\bdar\b"
+    r"|^solid (tas(manian)? )?(oak|ash|walnut|blackbutt|spotted gum|maple|jarrah|messmate)\b", re.I)
+# Text that says laminate, TG or solid surface (Corian-like) is not timber: it keeps the old guess.
+_NOT_TIMBER = re.compile(r"laminate|\btg\b|tg[ _-]?solid|solid surface|corian", re.I)
 _HARDWARE = re.compile(
     r"hinge|runner|handle|\bpull\b|\bbin\b|\bleg\b|basket|bolt|\bnut\b|washer|anchor|threaded rod|glove|silicone|"
     r"hypersil|paint|dulux|kg of|drill|cutter|\btool\b|end cap|shelf|\bally\b|aluminium|table (base|frame)|tabel|"
@@ -123,7 +128,9 @@ def classify(code: str | None, description: str, supplier: str | None) -> tuple[
             return "edging", "edging", "low"
         return "board", "a sheet size, then the material", "high"
     if _SOLID_TOP.search(d):
-        return "benchtop", "a solid timber top", "low"
+        if _NOT_TIMBER.search(d):
+            return "benchtop", "a solid top (laminate, TG or solid surface wording)", "low"
+        return "timber", "solid timber", "low"
     if _HARDWARE.search(d) or _BRANDS.search(supplier or "") or _BRANDS.search(d):
         return "hardware", "a fitting, fixing or supply", "low"
     return "skip", "could not tell", "low"

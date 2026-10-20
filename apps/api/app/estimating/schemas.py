@@ -23,7 +23,7 @@ EstimateStatus = Literal[
     "WON", "LOST", "WITHDRAWN",
 ]
 PartMaterialType = Literal["BOARD", "CUSTOM", "BENCHTOP", "GLASS", "TIMBER"]
-HardwareMaterialType = Literal["HARDWARE", "APPLIANCE", "EDGING", "GLASS"]
+HardwareMaterialType = Literal["HARDWARE", "APPLIANCE", "EDGING"]
 OrderMaterialType = Literal[
     "BOARD", "CUSTOM", "BENCHTOP", "GLASS", "TIMBER", "HARDWARE", "APPLIANCE", "EDGING",
 ]

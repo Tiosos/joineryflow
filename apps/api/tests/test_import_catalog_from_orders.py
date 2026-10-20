@@ -43,7 +43,14 @@ def _xlsx(tmp_path, name, headers, rows):
     ("RTR46ZM123000", "THREADED ROD 4.6 ZINC M12 X 3000MM", None, "hardware"),
     ("53236238", "1264 X 474 X 4 Silver Float FPAR", "Barton Glass", "glass"),
     ("34207667", "1264 X 474 X 4 Silver FPAR", None, "glass"),
-    ("Tg_802932", "Solid Top - Tas Oak DAR 190 x 42 @ 2200mm", None, "benchtop"),
+    ("Tg_802932", "Solid Top - Tas Oak DAR 190 x 42 @ 2200mm", None, "timber"),                  # Solid Timber (2026-10-20)
+    ("Tg_900001", "Solid Top - Tas Oak DAR 190 x 19 @ 2300mm", None, "timber"),
+    ("ST-1", "Solid Timber Top 40mm Blackbutt", None, "timber"),
+    ("ST-2", "Solid Oak slab 2400 x 600", None, "timber"),
+    ("LT-1", "Solid Top - Laminate Oak DAR", None, "benchtop"),                                   # laminate / TG keep the old guess
+    ("LT-2", "Solid Top - TG Solid Oak DAR", None, "benchtop"),
+    ("SS-1", "Solid Top - Solid Surface White", None, "benchtop"),
+    ("SS-2", "Solid Surface Corian Glacier White", None, "skip"),                                 # never timber, never guessed
     ("DD60D19", "Fisher Paykel Integrated Double DishDrawer Dishwasher", None, "appliance"),
     ("TG_DeliveryFee", "Delivery Fee", None, "skip"),
     ("Surcharge", "+0.50% Logistics Surcharge", None, "skip"),

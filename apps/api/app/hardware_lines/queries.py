@@ -94,7 +94,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier) AS supplier,
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_sheet) AS unit_cost
                 FROM board_materials
 
                 UNION ALL
@@ -105,7 +105,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_unit) AS unit_cost
                 FROM hardware_materials
 
                 UNION ALL
@@ -116,7 +116,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_unit) AS unit_cost
                 FROM edging_materials
 
                 UNION ALL
@@ -127,7 +127,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_unit) AS unit_cost
                 FROM glass_materials
 
                 UNION ALL
@@ -138,7 +138,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_unit) AS unit_cost
                 FROM timber_materials
 
                 UNION ALL
@@ -149,7 +149,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(vendor, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost) AS unit_cost
                 FROM custom_made
 
                 UNION ALL
@@ -160,7 +160,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_slab) AS unit_cost
                 FROM benchtop_materials
 
                 UNION ALL
@@ -171,7 +171,7 @@ def list_catalog(
                     sku,
                     description,
                     COALESCE(supplier, default_supplier),
-                    unit_cost
+                    COALESCE(unit_cost, cost_per_unit) AS unit_cost
                 FROM appliances
 
                 UNION ALL
@@ -714,6 +714,19 @@ def delete_hardware_line(
 
 _ALLOWED_SOURCE_TABLES = frozenset(_SOURCE_TABLE_MAP.keys())
 
+# The price a catalog row shows: `unit_cost`, else the table's own cost column (the same rule
+# Generate Orders starts an order line from). equipment_hire has no per-unit cost column.
+_PRICE_EXPR = {
+    "board_materials": "COALESCE(unit_cost, cost_per_sheet)",
+    "hardware_materials": "COALESCE(unit_cost, cost_per_unit)",
+    "custom_made": "COALESCE(unit_cost, cost)",
+    "benchtop_materials": "COALESCE(unit_cost, cost_per_slab)",
+    "appliances": "COALESCE(unit_cost, cost_per_unit)",
+    "edging_materials": "COALESCE(unit_cost, cost_per_unit)",
+    "glass_materials": "COALESCE(unit_cost, cost_per_unit)",
+    "timber_materials": "COALESCE(unit_cost, cost_per_unit)",
+}
+
 
 def list_source_catalog(
     db: Session,
@@ -737,7 +750,8 @@ def list_source_catalog(
     rows = db.execute(
         text(
             f"""
-            SELECT {pk_col} AS source_id, sku, description, {supplier_expr}, unit_cost
+            SELECT {pk_col} AS source_id, sku, description, {supplier_expr},
+                   {_PRICE_EXPR.get(table, 'unit_cost')} AS unit_cost
             FROM {table}
             WHERE workspace_id = :wid
             ORDER BY description
