@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { ItemOut, ItemStatus } from "@/lib/pm-types";
+import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import type { BulkStatusResponse } from "./BulkStatusDialog";
 import { lockFromError, moduleLockReason } from "@/app/(app)/items/[id]/_components/cutlist/moduleLock";
 
 interface Props {
@@ -12,13 +14,21 @@ interface Props {
   currentUserRole?: string | null;
   onClose: () => void;
   onUpdated: () => void;
+  /** "Update Status To All": the project, how many items it has (for the confirm), and what to do with the
+   *  reply. Only Tracking passes them; without `onBulkApplied` the button is not shown (the item editor). */
+  projectId?: number;
+  projectItemCount?: number;
+  onBulkApplied?: (result: BulkStatusResponse) => void;
 }
 
 const STATUS_CHOICES: ItemStatus[] = [
   "CLEAR", "VOID", "NOTE!", "LIVE", "APPROVED", "HOLD",
 ];
 
-export function StatusPopup({ itemId, currentUserId, currentUserRole, onClose, onUpdated }: Props) {
+export function StatusPopup({
+  itemId, currentUserId, currentUserRole, onClose, onUpdated, projectId, projectItemCount = 0, onBulkApplied,
+}: Props) {
+  const { confirm } = useConfirm();
   const [item, setItem] = useState<ItemOut | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -60,6 +70,35 @@ export function StatusPopup({ itemId, currentUserId, currentUserRole, onClose, o
       : null;
   const canSubmit =
     !!pickedStatus && note.trim().length > 0 && !submitting && !!item && !lockReason;
+
+  const canSubmitAll = !!pickedStatus && note.trim().length > 0 && !submitting && !!item && projectItemCount > 0;
+
+  async function submitAll() {
+    if (!canSubmitAll || !pickedStatus || projectId == null || !onBulkApplied) return;
+    const ok = await confirm({
+      title: `Set ${projectItemCount} item${projectItemCount === 1 ? "" : "s"} to ${pickedStatus}?`,
+      message: `This will change ${projectItemCount} item${projectItemCount === 1 ? "" : "s"} in this project, each with your note. Related parts are not changed. Items under a Hard Lock or someone else's Controlled Lock are skipped and listed.`,
+      confirmLabel: `Set all to ${pickedStatus}`,
+    });
+    if (!ok) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const r = await fetch(`/api/projects/${projectId}/bulk-status`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: pickedStatus, note: note.trim() }),
+        cache: "no-store",
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      onBulkApplied((await r.json()) as BulkStatusResponse);
+      onClose();
+    } catch (e: unknown) {
+      setSubmitError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function submit() {
     if (!canSubmit || !item || !pickedStatus) return;
@@ -152,15 +191,19 @@ export function StatusPopup({ itemId, currentUserId, currentUserRole, onClose, o
                   <div className="mt-2 text-xs text-[#b4443d]">{submitError}</div>
                 ) : null}
                 <div className="mt-3 flex items-center gap-2">
+                  {onBulkApplied && (
                   <button
                     type="button"
-                    disabled
-                    title="Bulk update not yet wired"
-                    className="flex items-center gap-2 rounded border border-[#b4443d] bg-[#b4443d] px-3 py-2 text-xs font-semibold text-white opacity-50 disabled:cursor-not-allowed"
+                    data-testid="status-update-all"
+                    disabled={!canSubmitAll}
+                    onClick={submitAll}
+                    title={`Applies this status and note to all ${projectItemCount} items in the project`}
+                    className="flex items-center gap-2 rounded border border-[#b4443d] bg-[#b4443d] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span>⚠</span>
                     <span className="leading-tight">Update Status<br />To All</span>
                   </button>
+                  )}
                   <button
                     type="button"
                     disabled={!canSubmit}

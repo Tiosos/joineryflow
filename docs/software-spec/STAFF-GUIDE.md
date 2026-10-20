@@ -46,7 +46,7 @@ You are the main data-entry person: the item editor is yours.
 **Daily tasks:**
 1. **Tracking** → pick a project → **+ New item**, or tick one row and press **Edit item**.
 2. In the item editor, choose the **Area** and **Room** (the last option of each list adds a new one in a small dialog), then work through the tabs: **Cutlist** (add modules and parts, or **Import from CV** to paste or upload Cabinet Vision output and resolve unknown codes), **Hardware** (add from the project's catalog, or **+ Add from global**), **Attachments** (five fixed slots and the Document Register), **Query** (ask or answer questions), **Material Take** (generate, edit, approve).
-3. **Set status** with a note, or **Mark REQ done today**, from the **Actions** tab or by clicking the status pill on Tracking.
+3. **Set status** with a note, or **Mark REQ done today**, from the **Actions** tab or by clicking the status pill on Tracking. In the status pop-up on Tracking, **Update Status To All** gives every item in the project the same status and note (it asks first and shows how many items; related parts and items under a lock are left alone and listed).
 4. **Shop Dwgs**: upload a drawing, submit it for review, upload new revisions. **iSample**: create and edit samples.
 5. **Cut Floor**: optimise parts onto sheets, save a plan and schedule it.
 6. **Orderbook**: add orders (they start as *Pending*).
@@ -106,7 +106,6 @@ A supervisor assigns work on the **Shop Floor** board (**+ Assign worker** on a 
 ## Things that look like they should work but do not (yet)
 
 - **Continue with SSO** on the login page does nothing yet.
-- **Update Status To All** in a row's status pop-up is disabled. Use **Apply status…** on the grid after ticking the rows you want (up to 500).
 - Project Information tabs **Cars**, **OH&S** and **Scope** are greyed out; they are not built.
 
 ## Who to ask

@@ -323,6 +323,12 @@ class BulkItemStatusIn(BaseModel):
     note: str = Field(min_length=1)
 
 
+class ProjectBulkStatusIn(BaseModel):
+    """Payload for POST /projects/{pid}/bulk-status: one status + note for every live item."""
+    status: StatusKey
+    note: str = Field(min_length=1)
+
+
 class LockedItemOut(BaseModel):
     """An item a bulk status change skipped because a lock refuses the caller."""
     item_id: int

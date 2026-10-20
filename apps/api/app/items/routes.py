@@ -5,9 +5,11 @@ from ..auth.rbac import require_drafter, require_permission
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..projects.queries import get_project
+from ..workspace_scope import project_in_workspace
 from .queries import (
     ItemContentLocked,
     bulk_patch_item_status,
+    bulk_patch_project_item_status,
     claim_or_release_lock,
     clear_hard_lock,
     create_item,
@@ -35,6 +37,7 @@ from .schemas import (
     PatchItemIn,
     PatchItemStatusIn,
     PatchLifecycleIn,
+    ProjectBulkStatusIn,
     TrackingGridOut,
 )
 
@@ -348,6 +351,26 @@ def post_bulk_status(
         status=payload.status,
         note=payload.note,
         actor=user,
+    )
+    db.commit()
+    return result
+
+
+@router.post("/projects/{pid}/bulk-status", response_model=BulkItemStatusOut)
+def post_project_bulk_status(
+    pid: int,
+    payload: ProjectBulkStatusIn,
+    user: AuthUser = Depends(require_permission("tracking", "write")),
+    db: Session = Depends(get_db),
+):
+    """Apply a status + shared note to every live joinery item of the project, in one
+    transaction (the Status pop-up's "Update Status To All"). Related parts are not touched;
+    locked items are skipped and listed, like POST /items/bulk-status. No 500-item cap."""
+    if not project_in_workspace(db, project_id=pid, workspace_id=user.workspace_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    result = bulk_patch_project_item_status(
+        db, project_id=pid, workspace_id=user.workspace_id,
+        status=payload.status, note=payload.note, actor=user,
     )
     db.commit()
     return result

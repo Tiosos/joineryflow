@@ -69,6 +69,7 @@ from ._q_status import (  # noqa: F401
     VALID_STAGE_KEYS,
     _write_approval_lock_audit,
     bulk_patch_item_status,
+    bulk_patch_project_item_status,
     patch_item_status,
     patch_lifecycle,
 )
