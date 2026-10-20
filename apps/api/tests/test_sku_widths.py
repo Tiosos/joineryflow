@@ -182,6 +182,20 @@ def test_an_order_line_sku_is_capped_at_255_on_create_and_patch():
     assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"sku": None}).status_code == 200
 
 
+def test_an_order_line_description_and_unit_are_capped_at_their_columns():
+    buyer, wid, _ = login("purchase_officer")
+    oid = _order_with_a_line(buyer, wid)
+    line = {"item_description": "d" * 500, "quantity": "1", "unit_price": "1", "unit": "u" * 50}
+    ok = buyer.post(f"/orders/{oid}/lines", json=line)
+    assert ok.status_code == 201, ok.text
+    lid = ok.json()["lines"][0]["line_id"]
+    assert buyer.post(f"/orders/{oid}/lines", json={**line, "item_description": "d" * 501}).status_code == 422
+    assert buyer.post(f"/orders/{oid}/lines", json={**line, "unit": "u" * 51}).status_code == 422
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"item_description": "e" * 500, "unit": "m" * 50}).status_code == 200
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"item_description": "e" * 501}).status_code == 422
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"unit": "m" * 51}).status_code == 422
+
+
 # ---- Convert-to-Project: a 255-character catalog description onto parts.part_name (varchar(128)) ----
 
 def test_a_long_catalog_description_converts_to_a_project_and_part_name_is_cut_to_its_column():
