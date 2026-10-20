@@ -2,7 +2,7 @@
 
 A plain-language guide to what each role can do in JoineryFlow. For every button and screen in detail, see `button-reference.html`; for the technical rules, see `SOFTWARE-SPEC.md`.
 
-> **Written from the code on 2026-10-19, not from watching people use the software.** The permissions below are the *default* ones. An admin can change them on the IT page (`/it`), so what you can click at your workplace may differ. If a button you expect is missing or greyed out, hover over it: many say why.
+> **Written from the code on 2026-10-20, not from watching people use the software.** The permissions below are the *default* ones. An admin can change them on the IT page (`/it`), so what you can click at your workplace may differ. If a button you expect is missing or greyed out, hover over it: many say why.
 
 ## The basics (everyone)
 
@@ -11,6 +11,8 @@ A plain-language guide to what each role can do in JoineryFlow. For every button
 - **Search** box (top): type to find projects, items, orders, suppliers, drawings, samples, customers or quotes. Press `/` to jump into it, arrow keys to choose, Enter to open.
 - **Bell** (top): comment notifications and @mentions. *Mark all read* clears it. Purchase officers also see orders waiting for a decision here.
 - **Comments**: most records have a comment thread. You can reply, edit your own comment and @mention a colleague.
+- **Asking and confirming**: risky actions (delete, archive, cancel, reject, close out) ask first in a dialog; names (a new cutlist, a rename, a new area or room) are typed in a dialog too. **Enter** confirms; **Esc**, **Cancel** or a click outside do nothing.
+- **Undo**: after you confirm a bulk delete in Tracking, or an archive of a catalog row, customer, shop drawing or sample, a box at the bottom left says what you did and offers **Undo** for 10 seconds. Nothing has really happened until the 10 seconds end, so Undo simply cancels it. If you close the tab or leave the app inside the 10 seconds the action is carried out straight away; if the whole browser or computer is switched off in that time it is lost. Deleting a single item from the item editor is immediate (no Undo).
 - **Locks**: an item can be locked so nobody breaks work in progress. A locked control is greyed out and says why. See "Locks in plain words" at the end.
 - **Dashboard**: tiles for your role, "My Day", today's deliveries, your team's status and recent activity. Click a tile to jump to the list behind it. Use **✎ Update status** on the team card to tell everyone whether you are In, On site, Shop, WFH or Off.
 
@@ -20,7 +22,8 @@ A plain-language guide to what each role can do in JoineryFlow. For every button
 
 **Day to day:**
 - Add a new person to the right group (IT page → group → *Add*). A member can be limited to one project.
-- Change a group's grants and press **Save grants**. The page warns you if you switch groups with unsaved changes.
+- Change a group's grants and press **Save grants**. The page asks "Discard unsaved grant changes?" if you switch groups with unsaved changes.
+- **View as role** (below the groups): pick a role to see, read only, what its group allows right now (every module and read/write/approve/comment) and which tabs that role sees. It does not log you in as that role, and it shows grants only, not rules such as "you cannot approve your own upload".
 - Everything a manager can do (below).
 
 ## Manager
@@ -41,7 +44,7 @@ You are the main data-entry person: the item editor is yours.
 
 **Daily tasks:**
 1. **Tracking** → pick a project → **+ New item**, or tick one row and press **Edit item**.
-2. In the item editor, work through the tabs: **Cutlist** (add modules and parts, or **Import from CV** to paste or upload Cabinet Vision output and resolve unknown codes), **Hardware** (add from the project's catalog, or **+ Add from global**), **Attachments** (five fixed slots and the Document Register), **Query** (ask or answer questions), **Material Take** (generate, edit, approve).
+2. In the item editor, choose the **Area** and **Room** (the last option of each list adds a new one in a small dialog), then work through the tabs: **Cutlist** (add modules and parts, or **Import from CV** to paste or upload Cabinet Vision output and resolve unknown codes), **Hardware** (add from the project's catalog, or **+ Add from global**), **Attachments** (five fixed slots and the Document Register), **Query** (ask or answer questions), **Material Take** (generate, edit, approve).
 3. **Set status** with a note, or **Mark REQ done today**, from the **Actions** tab or by clicking the status pill on Tracking.
 4. **Shop Dwgs**: upload a drawing, submit it for review, upload new revisions. **iSample**: create and edit samples.
 5. **Cut Floor**: optimise parts onto sheets, save a plan and schedule it.
