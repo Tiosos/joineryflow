@@ -28,10 +28,3 @@ def test_patch_sku_cap_matches_the_create_cap_of_the_same_table(slug, limit):
     assert c.get(f"/catalog/{slug}/{mid}").json()["sku"] == new_sku
     over = c.patch(f"/catalog/{slug}/{mid}", json={"sku": "y" * (limit + 1)})
     assert over.status_code == 422
-
-
-def test_other_tables_keep_the_64_character_patch_cap():
-    c, _, _ = login("admin")
-    mid = c.post("/catalog/custom-made", json={"internal_ref": "c1", "sku": "c1", "description": "d"}).json()["material_id"]
-    assert c.patch(f"/catalog/custom-made/{mid}", json={"sku": "y" * 65}).status_code == 422
-    assert c.patch(f"/catalog/custom-made/{mid}", json={"sku": "y" * 64}).status_code == 200

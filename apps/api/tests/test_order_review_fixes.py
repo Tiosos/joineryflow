@@ -83,7 +83,7 @@ def test_a_decider_cancelling_a_rejected_order_clears_its_rejection_note(ws):
 # ── 2. the order patch takes the same limits as create ──
 
 @pytest.mark.parametrize("field,limit", [
-    ("order_number", 50), ("supplier_ref_no", 100), ("product_code", 100),
+    ("order_number", 50), ("supplier_ref_no", 100), ("product_code", 255),
     ("unit_of_measure", 50), ("location", 255), ("product_website", 500),
 ])
 def test_order_patch_refuses_a_value_longer_than_its_column(ws, field, limit):

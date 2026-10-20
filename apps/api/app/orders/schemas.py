@@ -178,7 +178,7 @@ class CreateOrderIn(BaseModel):
     order_number: str | None = Field(default=None, max_length=50)
     supplier_ref_no: str | None = Field(default=None, max_length=100)
     priority: OrderPriority = "Medium"
-    product_code: str | None = Field(default=None, max_length=100)
+    product_code: str | None = Field(default=None, max_length=255)
     product_description: str | None = None
 
     quantity: Decimal | None = None
@@ -221,7 +221,7 @@ class PatchOrderIn(BaseModel):
     order_number: str | None = Field(default=None, max_length=50)
     supplier_ref_no: str | None = Field(default=None, max_length=100)
     location: str | None = Field(default=None, max_length=255)
-    product_code: str | None = Field(default=None, max_length=100)
+    product_code: str | None = Field(default=None, max_length=255)
     product_description: str | None = None
     quantity: Decimal | None = None
     unit_of_measure: str | None = Field(default=None, max_length=50)
