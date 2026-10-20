@@ -168,7 +168,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `(app)/layout.tsx`  
 *Purpose:* The shell around every signed-in page: top bar, 6 primary tabs, secondary strip, global search, notification bell, sign-out. Editor mode (/items/[id]) hides the TabStrip and SideBar. The browser never calls FastAPI directly: every request goes through the Next.js proxy (app/api/[...proxy]).
 
-*Screenshots (dev seed, manager login):* [Notification bell with held saves waiting](screenshots/bell-lock-requests.jpg)
+*Screenshots (dev seed, manager login):* [Notification bell with held saves waiting](screenshots/bell-lock-requests.jpg) · [Undo toast after a bulk delete (the row is already hidden)](screenshots/tracking-undo-toast.jpg)
 
 **Top bar**
 
@@ -843,7 +843,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/it`  
 *Purpose:* RBAC groups, labour rates, search health, staff photos, shop-worker roster.
 
-*Screenshots (dev seed, manager login):* [IT management](screenshots/it-management.jpg)
+*Screenshots (dev seed, manager login):* [IT management](screenshots/it-management.jpg) · [View as role (drafter)](screenshots/it-view-as-role.jpg)
 
 **Panels**
 
