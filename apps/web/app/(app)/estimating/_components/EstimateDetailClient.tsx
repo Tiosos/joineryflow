@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function EstimateDetailClient({ me, estimate: initialEstimate, catalogs }: Props) {
-  const { askReason } = useConfirm();
+  const { askReason, confirm } = useConfirm();
   const router = useRouter();
   const sp = useSearchParams();
   const [estimate, setEstimate] = useState(initialEstimate);
@@ -198,7 +198,7 @@ export default function EstimateDetailClient({ me, estimate: initialEstimate, ca
 
   async function cloneLine(line: Line) {
     if (!currentRev || !canWrite || !isDraft) return;
-    if (!window.confirm(`Clone "${line.description}" with all parts/hardware/labour?`)) return;
+    if (!(await confirm({ title: `Clone "${line.description}"?`, message: "The copy gets all parts, hardware and labour.", confirmLabel: "Clone", tone: "default" }))) return;
     const create = await callApi("POST", `/api/revisions/${currentRev.revision_id}/lines`, {
       description: `${line.description} (copy)`,
       qty: parseFloat(line.qty) || 1,

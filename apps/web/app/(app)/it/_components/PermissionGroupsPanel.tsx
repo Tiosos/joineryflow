@@ -57,6 +57,7 @@ function mapsEqual(a: GrantMap, b: GrantMap): boolean {
  * migration `0037`; IT could only configure access by calling it directly.
  */
 export function PermissionGroupsPanel() {
+  const { confirm } = useConfirm();
   const [groups, setGroups] = useState<GroupOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,8 +73,11 @@ export function PermissionGroupsPanel() {
     void PM.projects().then((r) => setProjects(r.projects)).catch(() => {});
   }, []);
 
-  function selectGroup(id: number) {
-    if (detailDirty && !window.confirm("Discard unsaved grant changes?")) return;
+  const discardChanges = () =>
+    confirm({ title: "Discard unsaved grant changes?", confirmLabel: "Discard", cancelLabel: "Keep editing" });
+
+  async function selectGroup(id: number) {
+    if (detailDirty && !(await discardChanges())) return;
     setDetailDirty(false);
     setSelectedId(id);
   }
@@ -101,7 +105,7 @@ export function PermissionGroupsPanel() {
   async function createGroup() {
     const name = newGroupName.trim();
     if (!name) return;
-    if (detailDirty && !window.confirm("Discard unsaved grant changes?")) return;
+    if (detailDirty && !(await discardChanges())) return;
     setCreating(true);
     setError(null);
     try {
