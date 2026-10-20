@@ -11,6 +11,7 @@ import type { Me } from "@/lib/session";
 
 import NewRevisionDialog from "./NewRevisionDialog";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props {
   detail: DrawingDetail;
@@ -24,6 +25,7 @@ const WRITER_ROLES   = new Set(["drafter", "manager", "admin", "editor"]);
 
 export default function ReviewActions({ detail, selectedRev, me, onAfter }: Props) {
   const { confirm } = useConfirm();
+  const { defer } = useUndo();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -115,7 +117,12 @@ export default function ReviewActions({ detail, selectedRev, me, onAfter }: Prop
         <button type="button" data-testid="drawing-archive" disabled={busy}
                 onClick={async () => {
                   if (!(await confirm({ title: "Archive this drawing?", message: "It will move to the Archive queue.", confirmLabel: "Archive" }))) return;
-                  run(() => archiveDrawing(detail.drawing_id));
+                  setBusy(true);
+                  defer({
+                    message: "Archived the drawing",
+                    run: async () => { await archiveDrawing(detail.drawing_id); await onAfter(); },
+                    onSettle: () => setBusy(false),
+                  });
                 }}
                 className="rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-muted hover:text-h-ink disabled:opacity-50">
           Archive drawing

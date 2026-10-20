@@ -11,6 +11,7 @@ import type {
   EstimateSummary,
 } from "@/lib/estimating-types";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props {
   me: Me;
@@ -47,6 +48,7 @@ export default function CustomerDetailClient({
   me, customer, activeEstimates, archivedEstimates,
 }: Props) {
   const { confirm } = useConfirm();
+  const { defer } = useUndo();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,23 +62,25 @@ export default function CustomerDetailClient({
     if (!(await confirm({ title: `Archive "${customer.name}"?`, confirmLabel: "Archive" }))) return;
     setBusy(true);
     setError(null);
-    try {
-      const r = await fetch(`/api/customers/${customer.customer_id}/archive`, {
-        method: "POST",
-      });
-      if (!r.ok) {
-        let msg = `Archive failed (${r.status})`;
-        try {
-          const j = await r.json();
-          if (j?.detail?.code) msg = j.detail.code;
-        } catch { /* ignore */ }
-        setError(msg);
-        return;
-      }
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
+    defer({
+      message: `Archived "${customer.name}"`,
+      run: async () => {
+        const r = await fetch(`/api/customers/${customer.customer_id}/archive`, {
+          method: "POST",
+          keepalive: true,
+        });
+        if (!r.ok) {
+          let msg = `Archive failed (${r.status})`;
+          try {
+            const j = await r.json();
+            if (j?.detail?.code) msg = j.detail.code;
+          } catch { /* ignore */ }
+          throw new Error(msg);
+        }
+        router.refresh();
+      },
+      onSettle: () => setBusy(false),
+    });
   }
 
   return (

@@ -55,7 +55,7 @@ export async function patchRow(slug: CatalogSlug, mid: number, body: Record<stri
 
 export async function archiveRow(slug: CatalogSlug, mid: number): Promise<CatalogRow> {
   const res = await fetch(`/api/catalog/${slug}/${mid}/archive`, {
-    method: "POST", credentials: "include",
+    method: "POST", credentials: "include", keepalive: true,
   });
   if (!res.ok) throw new Error(`archiveRow: ${res.status} ${await res.text()}`);
   return res.json();

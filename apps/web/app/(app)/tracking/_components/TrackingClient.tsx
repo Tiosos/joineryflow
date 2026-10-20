@@ -16,6 +16,7 @@ import { can } from "@/lib/permissions";
 import { BulkStatusDialog } from "./BulkStatusDialog";
 import { NewItemDialog } from "./NewItemDialog";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props {
   project: ProjectOut;
@@ -37,13 +38,20 @@ function todayISO(): string {
 export function TrackingClient({
   project,
   projects,
-  items,
+  items: allItems,
   me,
   canEdit,
   procurementReady,
   deletedView,
 }: Props) {
   const { confirm } = useConfirm();
+  const { defer } = useUndo();
+  // Rows whose delete is waiting out its Undo window: hidden at once, back if it is undone or fails.
+  const [pendingDelete, setPendingDelete] = useState<Set<number>>(new Set());
+  const items = useMemo(
+    () => (pendingDelete.size === 0 ? allItems : allItems.filter((it) => !pendingDelete.has(it.id))),
+    [allItems, pendingDelete],
+  );
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -177,12 +185,31 @@ export function TrackingClient({
         ? "Their cutlists and related parts go with them. A manager or admin can restore them from the Deleted chip."
         : "Their cutlists and related parts come back with them.";
     if (!(await confirm({ title: `${verb} ${ids.length} item${ids.length === 1 ? "" : "s"}?`, message: detail, confirmLabel: verb, tone: action === "delete" ? "danger" : "default" }))) return;
+    if (action === "delete") {
+      clearSelection();
+      setPendingDelete((cur) => new Set([...cur, ...ids]));
+      defer({
+        message: `Deleted ${ids.length} item${ids.length === 1 ? "" : "s"}`,
+        run: () => applyDeleted(action, ids),
+        onSettle: () =>
+          setPendingDelete((cur) => {
+            const next = new Set(cur);
+            ids.forEach((id) => next.delete(id));
+            return next;
+          }),
+      });
+      return;
+    }
+    await applyDeleted(action, ids);
+  }
+
+  async function applyDeleted(action: "delete" | "restore", ids: number[]) {
     let failed = 0;
     let locked = 0;
     for (const id of ids) {
       const res =
         action === "delete"
-          ? await fetch(`/api/items/${id}`, { method: "DELETE" })
+          ? await fetch(`/api/items/${id}`, { method: "DELETE", keepalive: true })
           : await fetch(`/api/items/${id}/restore`, { method: "POST" });
       if (res.ok) continue;
       // 409 on a delete is a Hard Lock; on a restore it is a related part whose parent is deleted.

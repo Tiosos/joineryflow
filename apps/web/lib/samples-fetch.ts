@@ -99,7 +99,7 @@ export async function rejectSample(sampleId: number, reviewNote: string): Promis
 }
 
 export async function archiveSample(sampleId: number): Promise<void> {
-  const r = await fetch(`/api/samples/${sampleId}/archive`, { method: "POST" });
+  const r = await fetch(`/api/samples/${sampleId}/archive`, { method: "POST", keepalive: true });
   if (!r.ok && r.status !== 409) {
     throw new Error(`archive failed: ${r.status}`);
   }
