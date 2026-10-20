@@ -57,10 +57,12 @@ export interface TextOptions extends ConfirmOptions {
   placeholder?: string;
 }
 
-type Pending =
+type PendingBody =
   | { kind: "confirm"; opts: ConfirmOptions; resolve: (ok: boolean) => void }
   | { kind: "reason"; opts: ReasonOptions; resolve: (reason: string | null) => void }
   | { kind: "fields"; opts: FieldsOptions; resolve: (values: Record<string, string> | null) => void };
+/** `id` is new for every prompt, so a prompt that replaces another of the same title starts from scratch. */
+type Pending = PendingBody & { id: number };
 
 interface Api {
   /** Resolves true when confirmed, false when cancelled (Cancel, Esc, backdrop). */
@@ -83,13 +85,16 @@ export function useConfirm(): Api {
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null);
+  // The ref is written here, not at render: two prompts asked in the same tick must see each other.
   const pendingRef = useRef<Pending | null>(null);
-  pendingRef.current = pending;
+  const seq = useRef(0);
 
-  const open = useCallback((next: Pending) => {
+  const open = useCallback((body: PendingBody) => {
     // A second request while one is open cancels the first.
     const cur = pendingRef.current;
     if (cur) (cur.resolve as (v: boolean | null) => void)(cur.kind === "confirm" ? false : null);
+    const next: Pending = { ...body, id: ++seq.current };
+    pendingRef.current = next;
     setPending(next);
   }, []);
 
@@ -110,6 +115,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const settle = useCallback((value: boolean | string | Record<string, string> | null) => {
     const cur = pendingRef.current;
     if (!cur) return;
+    pendingRef.current = null;
     setPending(null);
     if (cur.kind === "confirm") cur.resolve(value === true);
     else if (cur.kind === "reason") cur.resolve(typeof value === "string" ? value : null);
@@ -119,7 +125,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      {pending && <ConfirmDialog key={pending.opts.title + pending.kind} pending={pending} onSettle={settle} />}
+      {pending && <ConfirmDialog key={pending.id} pending={pending} onSettle={settle} />}
     </Ctx.Provider>
   );
 }

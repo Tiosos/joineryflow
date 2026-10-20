@@ -28,7 +28,7 @@ class _EnrichmentFields(BaseModel):
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
     # What Generate Orders and "add from catalog" start an order line's price from.
-    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=4)
     # The old system's product type (Glass, Supplies, Paint...): finer than the six tabs, kept as text.
     product_type: str | None = Field(default=None, max_length=64)
 
@@ -162,7 +162,7 @@ class PatchBaseIn(BaseModel):
     # reads `model_fields_set`.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
-    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=4)
     product_type: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)
@@ -193,6 +193,7 @@ class PatchHardwareIn(PatchBaseIn):
 
 
 class PatchGlassIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # glass_materials.sku is varchar(255), as CreateGlassIn
     colour: str | None = Field(default=None, max_length=128)
     edge_finish: str | None = Field(default=None, max_length=128)
     glass_type: str | None = Field(default=None, max_length=128)
@@ -206,6 +207,7 @@ class PatchGlassIn(PatchBaseIn):
 
 
 class PatchTimberIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # timber_materials.sku is varchar(255), as CreateTimberIn
     colour: str | None = Field(default=None, max_length=128)
     finish: str | None = Field(default=None, max_length=128)
     grain: str | None = Field(default=None, max_length=64)

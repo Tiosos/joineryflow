@@ -193,7 +193,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
               onSave={(v) => save({ default_lead_time_days: v === "" ? null : Number(v) })} />
       </td>
       <td className="px-3 py-1 w-24">
-        <Cell value={row.unit_cost} type="number" step="0.01" label="Unit cost" canWrite={canWrite}
+        <Cell value={row.unit_cost} type="number" step="0.0001" label="Unit cost" canWrite={canWrite}
               onSave={(v) => save({ unit_cost: v === "" ? null : Number(v) })} />
       </td>
       {tab === "board" && BOARD_TEXT_FIELDS.map((f) => (

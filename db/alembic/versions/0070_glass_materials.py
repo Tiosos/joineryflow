@@ -139,7 +139,29 @@ def upgrade():
     """)
 
 
+def _refuse_too_long_skus():
+    """The legacy `custom_made.internal_ref` is varchar(64) but `glass_materials.sku` is varchar(255): refuse the
+    downgrade, naming the rows, rather than cut a SKU short (code-review fix, 2026-10-20). Alembic runs
+    the whole downgrade in one transaction, so nothing is changed when this raises."""
+    op.execute("""
+        DO $$
+        DECLARE bad text; n integer;
+        BEGIN
+            SELECT count(*) INTO n FROM glass_materials WHERE char_length(sku) > 64;
+            IF n > 0 THEN
+                SELECT string_agg(format('id %s sku %L (%s characters, limit 64)', material_id, sku, char_length(sku)),
+                                  '; ' ORDER BY material_id)
+                  INTO bad
+                  FROM (SELECT material_id, sku FROM glass_materials WHERE char_length(sku) > 64
+                         ORDER BY material_id LIMIT 50) x;
+                RAISE EXCEPTION '0070 downgrade refused, % SKU(s) in glass_materials are longer than custom_made.internal_ref allows and would be cut short; shorten or remove them first. Rows %', n, bad;
+            END IF;
+        END $$;
+    """)
+
+
 def downgrade():
+    _refuse_too_long_skus()
     op.execute("""
         CREATE TEMP TABLE _glass_back (old_id bigint, new_id bigint) ON COMMIT DROP;
         WITH moved AS (

@@ -38,11 +38,11 @@ def _xlsx(tmp_path, name, headers, rows):
 @pytest.mark.parametrize("code,desc,supplier,table", [
     ("708321", "3600 x 1800 x 18 - Raw Natural MR PB", "Boards Ltd", "board"),
     ("976411", "3600 x 1200 x 0.7 - ELEGANT OAK -[Finish: NATURAL]", None, "board"),
-    ("114575", "100 x 21 x 1 - Elegant Oak UnGlued", None, "hardware"),             # edging has no table of its own
+    ("114575", "100 x 21 x 1 - Elegant Oak UnGlued", None, "edging"),
     ("9088199", "Sensys angle hinge W90", "Hettich", "hardware"),
     ("RTR46ZM123000", "THREADED ROD 4.6 ZINC M12 X 3000MM", None, "hardware"),
-    ("53236238", "1264 X 474 X 4 Silver Float FPAR", "Barton Glass", "custom_made"),
-    ("34207667", "1264 X 474 X 4 Silver FPAR", None, "custom_made"),
+    ("53236238", "1264 X 474 X 4 Silver Float FPAR", "Barton Glass", "glass"),
+    ("34207667", "1264 X 474 X 4 Silver FPAR", None, "glass"),
     ("Tg_802932", "Solid Top - Tas Oak DAR 190 x 42 @ 2200mm", None, "benchtop"),
     ("DD60D19", "Fisher Paykel Integrated Double DishDrawer Dishwasher", None, "appliance"),
     ("TG_DeliveryFee", "Delivery Fee", None, "skip"),
@@ -209,3 +209,90 @@ def test_a_sheet_with_no_table_column_takes_the_table_from_the_type_and_hire_nee
     assert res.created["hire"] == 1 and anomalies == []
     assert _q("SELECT contract_ref, project_id, product_type FROM equipment_hire WHERE workspace_id = :w", w=wid) == [
         ("Q-1", pid, "Equipment Hire")]
+
+
+def test_type_decides_the_table_and_table_is_read_only_when_type_is_empty_or_unknown(tmp_path):
+    rows = _review(tmp_path, [
+        {"Code": "A", "Description": "d", "Type": "Glass", "Table": "hardware"},        # Type wins
+        {"Code": "B", "Description": "d", "Type": "Edging", "Table": "skip"},          # Type wins over skip
+        {"Code": "C", "Description": "d", "Type": "Supplies", "Table": "board"},       # known type, other table
+        {"Code": "D", "Description": "d", "Type": "Whatever", "Table": "timber"},      # unknown Type: Table used
+        {"Code": "E", "Description": "d", "Table": "benchtop"},                        # no Type: Table used
+        {"Code": "F", "Description": "d", "Type": "Glass"},                            # no Table: Type
+        {"Code": "G", "Description": "d", "Type": "Whatever"},                         # neither: skip
+    ])
+    assert [r.table for r in rows] == ["glass", "edging", "hardware", "timber", "benchtop", "glass", "skip"]
+
+
+def test_the_read_me_sheet_says_type_wins(tmp_path):
+    out = tmp_path / "review.xlsx"
+    co.write_review(co.propose([_order("A", "3600 x 1800 x 18 - Raw MR PB")]), out)
+    guide = " ".join(str(c.value) for row in openpyxl.load_workbook(out)["Read me"].iter_rows() for c in row)
+    assert "it decides the table and Table is ignored" in guide and "only when Type is empty" in guide
+
+
+def test_a_unit_cost_over_ten_whole_digits_is_refused_by_the_reader(tmp_path):
+    ok = _review(tmp_path, [{"Code": "A", "Description": "d", "Table": "board", "Unit cost": "9999999999.9999"}])
+    assert ok[0].unit_cost == Decimal("9999999999.9999")
+    with pytest.raises(co.ImportErrorReport, match="unit cost"):
+        _review(tmp_path, [{"Code": "A", "Description": "d", "Table": "board", "Unit cost": 10 ** 10}])
+
+
+def _second_workspace(slug="other-ws"):
+    db = SessionLocal()
+    try:
+        other = db.execute(text("INSERT INTO workspace(slug, name) VALUES (:s, 'Other') RETURNING id"),
+                           {"s": slug}).scalar()
+        db.commit()
+        return other
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("type_,table,code_col,per_workspace", [
+    ("edging", "edging_materials", "sku", True),
+    ("glass", "glass_materials", "sku", True),
+    ("timber", "timber_materials", "sku", True),
+    ("hardware", "hardware_materials", "sku", False),
+    ("board", "board_materials", "code", False),
+    ("custom_made", "custom_made", "internal_ref", False),
+])
+def test_another_workspaces_code_blocks_only_where_the_database_constraint_is_global(
+        tmp_path, type_, table, code_col, per_workspace):
+    _, wid, uid = login("admin")
+    other = _second_workspace()
+    cols = {"board": "code, ", "custom_made": "internal_ref, "}.get(type_, "")
+    vals = {"board": ":c, ", "custom_made": ":c, "}.get(type_, "")
+    db = SessionLocal()
+    try:
+        db.execute(text(f"INSERT INTO {table}({cols}workspace_id, sku, description) VALUES ({vals}:w, :c, 'theirs')"),
+                   {"w": other, "c": "SHARED-9"})
+        db.commit()
+    finally:
+        db.close()
+    rows = _review(tmp_path, [{"Code": "SHARED-9", "Description": "mine", "Table": type_}])
+    res, anomalies = _apply(wid, uid, rows)
+    if per_workspace:                    # UNIQUE (workspace_id, sku): the other workspace's SKU is no conflict
+        assert res.created[type_] == 1 and anomalies == []
+        assert _q(f"SELECT count(*) FROM {table} WHERE sku = 'SHARED-9'")[0][0] == 2
+    else:                                # a global unique code: reported, not crashed on
+        assert dict(res.created) == {} and [k for k, _ in anomalies] == ["code_used_elsewhere"]
+
+
+def test_own_row_counts_as_existing_even_when_another_workspace_holds_the_same_code(tmp_path):
+    _, wid, uid = login("admin")
+    other = _second_workspace()
+    db = SessionLocal()
+    try:
+        for w in (other, wid, other):       # the other workspace's row is first by id and second again
+            if w == wid:
+                db.execute(text("INSERT INTO glass_materials(workspace_id, sku, description) VALUES (:w, 'DUP', 'mine')"),
+                           {"w": w})
+            else:
+                db.execute(text("INSERT INTO glass_materials(workspace_id, sku, description) VALUES (:w, 'DUP', 'x')"
+                                " ON CONFLICT DO NOTHING"), {"w": w})
+        db.commit()
+    finally:
+        db.close()
+    res, anomalies = _apply(wid, uid, _review(tmp_path, [{"Code": "DUP", "Description": "d", "Table": "glass"}]))
+    assert (res.existing, dict(res.created), anomalies) == (1, {}, [])

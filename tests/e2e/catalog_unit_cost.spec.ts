@@ -22,6 +22,12 @@ test("the Catalog grid shows a material's unit cost and edits it", async ({ page
     await input.blur();
     await expect.poll(cost).toBe(13.75);
 
+    await input.fill("1.2345");                             // up to four decimals are kept (0078)
+    await input.blur();
+    await expect.poll(cost).toBe(1.2345);
+    await page.reload();
+    await expect(row.getByLabel("Unit cost")).toHaveValue("1.2345");
+
     await input.fill("");                                   // an empty cell clears the price
     await input.blur();
     await expect.poll(cost).toBeNull();

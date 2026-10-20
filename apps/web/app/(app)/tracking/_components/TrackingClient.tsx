@@ -220,14 +220,24 @@ export function TrackingClient({
   async function applyDeleted(action: "delete" | "restore", ids: number[]) {
     let failed = 0;
     let locked = 0;
-    for (const id of ids) {
-      const res =
-        action === "delete"
-          ? await fetch(`/api/items/${id}`, { method: "DELETE", keepalive: true })
-          : await fetch(`/api/items/${id}/restore`, { method: "POST" });
-      if (res.ok) continue;
+    const responses: (Response | null)[] = [];
+    if (action === "delete") {
+      // All requests of a batch go out together, so leaving the page inside the undo window (the
+      // flush on pagehide) still sends every delete, not just the first. Keepalive requests share a
+      // browser quota of about 64 KB in flight, so a big selection goes 50 at a time.
+      for (let i = 0; i < ids.length; i += 50) {
+        const settled = await Promise.allSettled(
+          ids.slice(i, i + 50).map((id) => fetch(`/api/items/${id}`, { method: "DELETE", keepalive: true })),
+        );
+        responses.push(...settled.map((r) => (r.status === "fulfilled" ? r.value : null)));
+      }
+    } else {
+      for (const id of ids) responses.push(await fetch(`/api/items/${id}/restore`, { method: "POST" }));
+    }
+    for (const res of responses) {
+      if (res?.ok) continue;
       // 409 on a delete is a Hard Lock; on a restore it is a related part whose parent is deleted.
-      if (res.status === 409) locked += 1;
+      if (res?.status === 409) locked += 1;
       else failed += 1;
     }
     const done = ids.length - failed - locked;
