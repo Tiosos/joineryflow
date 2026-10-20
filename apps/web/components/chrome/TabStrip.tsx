@@ -18,7 +18,7 @@ interface Tab {
   newTab?: true;
 }
 
-const TABS: Tab[] = [
+export const TABS: Tab[] = [
   { href: "/dashboard",  label: "Dashboard", module: "dashboard" },
   { href: "/tracking",   label: "Tracking",  module: "tracking",  newTab: true },
   { href: "/list",       label: "List",      module: "list",      newTab: true },
@@ -27,7 +27,7 @@ const TABS: Tab[] = [
   { href: "/orderbook",  label: "Orderbook", module: "orderbook", newTab: true },
 ];
 
-const SECONDARY_TABS: Tab[] = [
+export const SECONDARY_TABS: Tab[] = [
   { href: "/catalog",    label: "Catalog",    module: "catalog" },
   { href: "/shop-floor", label: "Shop Floor", module: "shop_floor" },
   { href: "/cut-floor",  label: "Cut Floor",  module: "cut_floor" },

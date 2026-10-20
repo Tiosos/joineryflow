@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { LabourRatesPanel } from "./_components/LabourRatesPanel";
 import { PermissionGroupsPanel } from "./_components/PermissionGroupsPanel";
 import { SearchHealthPanel } from "./_components/SearchHealthPanel";
+import { ViewAsRolePanel } from "./_components/ViewAsRolePanel";
 import { StaffPhotosPanel } from "./_components/StaffPhotosPanel";
 import { WorkerRosterPanel } from "./_components/WorkerRosterPanel";
 
@@ -20,6 +21,7 @@ export default async function ITPage() {
         <p className="text-sm text-h-muted">Admin-only.</p>
       </header>
       <PermissionGroupsPanel />
+      <ViewAsRolePanel />
       <WorkerRosterPanel />
       <StaffPhotosPanel />
       <LabourRatesPanel />
