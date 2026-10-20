@@ -168,7 +168,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `(app)/layout.tsx`  
 *Purpose:* The shell around every signed-in page: top bar, 6 primary tabs, secondary strip, global search, notification bell, sign-out. Editor mode (/items/[id]) hides the TabStrip and SideBar. The browser never calls FastAPI directly: every request goes through the Next.js proxy (app/api/[...proxy]).
 
-*Screenshots (dev seed, manager login):* [Notification bell with held saves waiting](screenshots/bell-lock-requests.jpg) · [Undo toast after a bulk delete (the row is already hidden)](screenshots/tracking-undo-toast.jpg)
+*Screenshots (dev seed, manager login):* [Notification bell with held saves waiting](screenshots/bell-lock-requests.jpg) · [Undo toast after a bulk delete (the row is already hidden)](screenshots/tracking-undo-toast.jpg) · [Search box type-ahead (query ALF)](screenshots/search-typeahead.jpg)
 
 **Top bar**
 
@@ -864,7 +864,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/search · /notifications`  
 *Purpose:* Full pages behind the top-bar search and the bell.
 
-*Screenshots (dev seed, manager login):* [Search results](screenshots/search-results.jpg) · [Notifications](screenshots/notifications.jpg)
+*Screenshots (dev seed, manager login):* [Search results (query ALF, with type chips and counts)](screenshots/search-results.jpg) · [Notifications](screenshots/notifications.jpg)
 
 **Pages**
 
