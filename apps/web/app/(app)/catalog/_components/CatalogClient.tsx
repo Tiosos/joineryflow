@@ -1,5 +1,6 @@
 "use client";
 
+import { useUndo } from "@/components/undo/UndoProvider";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -54,6 +55,7 @@ interface Props {
 }
 
 export default function CatalogClient(props: Props) {
+  const { notify } = useUndo();
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -286,7 +288,7 @@ export default function CatalogClient(props: Props) {
             setBulkOpen(false);
             setReloadTick((n) => n + 1);
             if (resp.errors.length > 0) {
-              window.alert(`Created ${resp.created}; ${resp.errors.length} errors`);
+              notify(`Bulk import: created ${resp.created}; ${resp.errors.length} errors`);
             }
           }}
         />

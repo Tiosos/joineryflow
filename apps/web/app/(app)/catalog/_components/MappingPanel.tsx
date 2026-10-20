@@ -7,11 +7,13 @@ import type { CvMappingListResp } from "@/lib/catalog-types";
 
 import NewMappingDialog from "./NewMappingDialog";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props { canWrite: boolean; }
 
 export default function MappingPanel({ canWrite }: Props) {
   const { confirm } = useConfirm();
+  const { notify } = useUndo();
   const [list, setList] = useState<CvMappingListResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export default function MappingPanel({ canWrite }: Props) {
   const onDelete = async (mid: number) => {
     if (!(await confirm({ title: "Delete this mapping?", message: "CV imports will no longer map this code to the catalog row.", confirmLabel: "Delete" }))) return;
     try { await deleteCvMapping(mid); setTick((n) => n + 1); }
-    catch (e) { window.alert(String(e)); }
+    catch (e) { notify(`Could not delete the mapping: ${String(e)}`); }
   };
 
   return (

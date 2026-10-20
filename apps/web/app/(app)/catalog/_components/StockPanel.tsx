@@ -11,6 +11,7 @@ import {
 } from "@/lib/cut-floor-fetch";
 import type { BoardInventoryRow } from "@/lib/cut-floor-types";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props {
   canWrite: boolean;
@@ -124,6 +125,7 @@ function StockRow({
   onChanged: () => void;
 }) {
   const { confirm } = useConfirm();
+  const { notify } = useUndo();
   const [qty, setQty] = useState(String(row.qty_on_hand));
   const [location, setLocation] = useState(row.location ?? "");
   const [busy, setBusy] = useState(false);
@@ -139,7 +141,7 @@ function StockRow({
       await patchBoardInventory(row.inventory_id, patch);
       onChanged();
     } catch (e) {
-      window.alert(String(e));
+      notify(`Could not save the change: ${String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -159,7 +161,7 @@ function StockRow({
       await deleteBoardInventory(row.inventory_id);
       onChanged();
     } catch (e) {
-      window.alert(String(e));
+      notify(`Could not delete the stock row: ${String(e)}`);
     } finally {
       setBusy(false);
     }

@@ -127,7 +127,7 @@ function SupplierLink({
 
 export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChanged }: Props) {
   const { confirm } = useConfirm();
-  const { defer } = useUndo();
+  const { defer, notify } = useUndo();
   const mid = row.material_id ?? row.hire_id;
   if (mid == null) {
     // Defensive: shouldn't happen — every catalog row has either material_id (5 tables)
@@ -144,7 +144,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
       await patchRow(slug, mid, patch);
       onChanged();
     } catch (e) {
-      window.alert(String(e));
+      notify(`Could not save the change: ${String(e)}`);
     } finally {
       setBusy(false);
     }
