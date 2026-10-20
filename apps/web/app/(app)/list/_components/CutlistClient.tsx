@@ -40,6 +40,7 @@ export default function CutlistClient({
   open,
 }: Props) {
   const router = useRouter();
+  const { askText } = useConfirm();
   const canWrite = can(me, "list", "write");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -92,7 +93,7 @@ export default function CutlistClient({
   async function createCutlist() {
     // Q442: the number is allocated by the server on creation. The caller
     // never supplies one, so this posts a name at most.
-    const name = window.prompt("Name for the new cutlist (optional)");
+    const name = await askText({ title: "New cutlist", label: "Name", confirmLabel: "Create cutlist" });
     if (name === null) return;
     const ok = await call(`/projects/${selectedProjectId}/cutlists`, {
       method: "POST",
@@ -220,7 +221,7 @@ function CutlistDetail({
   onClose: () => void;
   call: (path: string, init: RequestInit) => Promise<boolean>;
 }) {
-  const { confirm } = useConfirm();
+  const { confirm, askText } = useConfirm();
   const [linkId, setLinkId] = useState("");
   // §1218 asks for the parts and hardware themselves. Three panes rather than
   // one long page: the same cutlist is read as "who is on it", "what to cut"
@@ -228,7 +229,7 @@ function CutlistDetail({
   const [pane, setPane] = useState<"items" | "parts" | "hardware">("items");
 
   async function rename() {
-    const name = window.prompt("Cutlist name", cutlist.name ?? "");
+    const name = await askText({ title: "Rename cutlist", label: "Cutlist name", initial: cutlist.name ?? "", confirmLabel: "Rename" });
     if (name === null) return;
     // §L Q511/Q512: carry the version this prompt was opened against, so a
     // rename that raced with someone else's is a named conflict, not a
