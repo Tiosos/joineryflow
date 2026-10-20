@@ -111,3 +111,48 @@ test("Reject asks for a reason, which stays on the quote; Expire takes one or no
   await expect(dialog(page)).toHaveCount(0);
   expect((await c.call("get", `/estimates/${c.eid}/revisions/${c.rid}`)).status).toBe("SUBMITTED");
 });
+
+/**
+ * Prompts asked from code, not by a click: a click cannot get a second prompt in while one is open (the
+ * backdrop is in the way), so these two cases reach the provider's own API through React's fiber tree.
+ */
+const FIND_API = `() => {   // plain JS: it runs in the page
+  const el = document.querySelector("main") ?? document.body;
+  const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  let f = el[key];
+  while (f && !(f.memoizedProps && f.memoizedProps.value && typeof f.memoizedProps.value.askReason === "function")) f = f.return;
+  if (!f) throw new Error("no ConfirmProvider above <main>");
+  return f.memoizedProps.value;
+}`;
+
+test("asking a second prompt in the same tick cancels the first instead of leaving it hanging", async ({ page }) => {
+  await login(page);
+  const first = await page.evaluate(async (src) => {
+    const api = (0, eval)(`(${src})`)();
+    const a = api.confirm({ title: "First question" });
+    api.confirm({ title: "Second question" });                 // same tick: must settle the first (false)
+    return Promise.race([a, new Promise((r) => setTimeout(() => r("hung"), 2000))]);
+  }, FIND_API);
+  expect(first).toBe(false);
+  await expect(page.getByRole("alertdialog", { name: "Second question" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(dialog(page)).toHaveCount(0);
+});
+
+test("a prompt that replaces another with the same title starts empty", async ({ page }) => {
+  await login(page);
+  await page.evaluate((src) => {
+    const api = (0, eval)(`(${src})`)();
+    (window as any).__first = api.askReason({ title: "Why?" });
+  }, FIND_API);
+  const box = page.getByRole("alertdialog", { name: "Why?" }).locator("textarea");
+  await box.fill("a reason typed into the first prompt");
+  await page.evaluate((src) => {
+    const api = (0, eval)(`(${src})`)();
+    (window as any).__second = api.askReason({ title: "Why?" });   // replaces the first
+  }, FIND_API);
+  expect(await page.evaluate(() => (window as any).__first)).toBeNull();     // the first was cancelled
+  await expect(box).toHaveValue("");                                         // and nothing carried over
+  await page.getByTestId("confirm-dialog-cancel").click();
+  expect(await page.evaluate(() => (window as any).__second)).toBeNull();
+});

@@ -295,15 +295,35 @@ def catalog_matches(db: Session, *, po_id: int, workspace_id: int) -> list[dict]
 
 def catalog_match_image(db: Session, *, po_id: int, workspace_id: int, n: int) -> tuple[bool, int | None]:
     """(the order exists here, the picture blob of its n-th catalog match). Only rows that match the order's
-    product code can be reached, so the Orderbook never opens a picture of an arbitrary catalog row."""
-    matches = catalog_matches(db, po_id=po_id, workspace_id=workspace_id)
-    if matches is None:
+    product code can be reached, so the Orderbook never opens a picture of an arbitrary catalog row.
+
+    The same matches in the same order as `catalog_matches` (live first, then `CATALOG_MATCH_ORDER`, then
+    oldest row first, at most `_PER_TABLE` per table, hire only on the order's own project), but one narrow
+    query that returns just the n-th row's picture, not every match with its fields."""
+    order = order_row(db, po_id=po_id, workspace_id=workspace_id)
+    if order is None:
         return False, None
-    if n >= len(matches) or not matches[n]["has_image"]:
+    code = (order["product_code"] or "").strip()
+    if not code:
         return True, None
-    m = matches[n]
-    _, blob = cq.image_blob(db, type_=m["type"], mid=m["id"], workspace_id=workspace_id)
-    return True, blob
+    params: dict = {"w": workspace_id, "c": code, "n": n}
+    parts = []
+    for rank, type_ in enumerate(CATALOG_MATCH_ORDER):
+        table, pk = cq.REGISTRY[type_][0], cq.REGISTRY[type_][1]
+        extra = ""
+        if type_ == "hire":
+            if order["project_id"] is None:
+                continue
+            extra, params["p"] = " AND project_id = :p", order["project_id"]
+        parts.append(
+            f"(SELECT {rank} AS rank, {pk} AS id, (archived_at IS NOT NULL) AS archived, image_blob FROM {table}"
+            f" WHERE workspace_id = :w AND lower(btrim(sku)) = lower(:c){extra}"
+            f" ORDER BY (archived_at IS NOT NULL), {pk} LIMIT {_PER_TABLE})"
+        )
+    row = db.execute(
+        text(" UNION ALL ".join(parts) + " ORDER BY archived, rank, id OFFSET :n LIMIT 1"), params
+    ).first()
+    return True, (row.image_blob if row is not None else None)
 
 
 # ── Product image ───────────────────────────────────────────────────────────────────────────────

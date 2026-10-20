@@ -73,6 +73,36 @@ test("leaving the page sends a pending delete at once", async ({ page }) => {
   }).toPass({ timeout: 10_000 });
 });
 
+test("leaving the page sends every pending delete of a bulk selection, not just the first", async ({ page }) => {
+  await login(page);
+  const stamp = Date.now();
+  const made = await page.request.post("/api/projects", {
+    data: { project_code: `UM-${stamp}`, name: `Undo many ${stamp}` },
+  });
+  expect(made.status()).toBe(201);
+  const pid = (await made.json()).id as number;
+  const ids: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const r = await page.request.post(`/api/projects/${pid}/items`, {
+      data: { description: `Many ${i} ${stamp}`, code: null, qty: 1 },
+    });
+    expect(r.status()).toBe(201);
+    ids.push((await r.json()).id as number);
+  }
+
+  await page.goto(`/tracking?project_id=${pid}`);
+  const rows = page.locator('[data-testid="tracking-row"]').filter({ hasText: `${stamp}` });
+  await expect(rows).toHaveCount(4);
+  for (let i = 0; i < 4; i++) await rows.nth(i).locator('input[type="checkbox"]').check();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("undo-toast")).toContainText("Deleted 4 items");
+  await page.goto("/login");               // a full navigation: pagehide flushes the action
+  await expect(async () => {
+    for (const id of ids) expect((await page.request.get(`/api/items/${id}`)).status()).toBe(404);
+  }).toPass({ timeout: 10_000 });
+});
+
 test("archiving a customer waits for the window; Undo keeps it", async ({ page }) => {
   await login(page, "kai.ngata@hartwood.test");               // estimator
   const made = await page.request.post("/api/customers", { data: { name: `Undo customer ${Date.now()}` } });

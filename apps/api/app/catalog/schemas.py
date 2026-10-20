@@ -28,14 +28,14 @@ class _EnrichmentFields(BaseModel):
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
     # What Generate Orders and "add from catalog" start an order line's price from.
-    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=4)
     # The old system's product type (Glass, Supplies, Paint...): finer than the six tabs, kept as text.
     product_type: str | None = Field(default=None, max_length=64)
 
 
 class CreateBoardIn(_EnrichmentFields):
     code: str = Field(min_length=1, max_length=32)
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(min_length=1, max_length=255)    # the sku column is varchar(255); `code` is its own field
     description: str = Field(min_length=1, max_length=255)
     colour: str | None = Field(default=None, max_length=128)
     substrate: str | None = Field(default=None, max_length=128)
@@ -107,7 +107,7 @@ class CreateHardwareIn(_EnrichmentFields):
 
 class CreateCustomMadeIn(_EnrichmentFields):
     internal_ref: str = Field(min_length=1, max_length=64)
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(min_length=1, max_length=255)    # the sku column is varchar(255); `internal_ref` is its own field
     description: str = Field(min_length=1, max_length=255)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
@@ -115,7 +115,7 @@ class CreateCustomMadeIn(_EnrichmentFields):
 
 class CreateBenchtopIn(_EnrichmentFields):
     slab_id: str = Field(min_length=1, max_length=64)
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(min_length=1, max_length=255)    # the sku column is varchar(255); `slab_id` is its own field
     description: str = Field(min_length=1, max_length=255)
     colour: str | None = Field(default=None, max_length=128)
     underside: str | None = Field(default=None, max_length=128)
@@ -136,7 +136,7 @@ class CreateBenchtopIn(_EnrichmentFields):
 
 class CreateApplianceIn(_EnrichmentFields):
     model_number: str = Field(min_length=1, max_length=64)
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(min_length=1, max_length=255)    # the sku column is varchar(255); `model_number` is its own field
     description: str = Field(min_length=1, max_length=255)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
@@ -144,7 +144,7 @@ class CreateApplianceIn(_EnrichmentFields):
 
 class CreateEquipmentHireIn(_EnrichmentFields):
     contract_ref: str = Field(min_length=1, max_length=64)
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(min_length=1, max_length=255)    # the sku column is varchar(255); `contract_ref` is its own field
     description: str = Field(min_length=1, max_length=255)
     project_id: int
     um: str | None = Field(default=None, max_length=32)
@@ -162,13 +162,14 @@ class PatchBaseIn(BaseModel):
     # reads `model_fields_set`.
     default_supplier_id: int | None = None
     default_lead_time_days: int | None = Field(default=None, ge=0, le=999)
-    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=15, decimal_places=4)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=4)
     product_type: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=255)
     sku: str | None = Field(default=None, max_length=64)
 
 
 class PatchBoardIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # the sku column is varchar(255), as its Create schema
     code: str | None = Field(default=None, max_length=32)
     grain_locked: bool | None = None
     colour: str | None = Field(default=None, max_length=128)
@@ -193,6 +194,7 @@ class PatchHardwareIn(PatchBaseIn):
 
 
 class PatchGlassIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # glass_materials.sku is varchar(255), as CreateGlassIn
     colour: str | None = Field(default=None, max_length=128)
     edge_finish: str | None = Field(default=None, max_length=128)
     glass_type: str | None = Field(default=None, max_length=128)
@@ -206,6 +208,7 @@ class PatchGlassIn(PatchBaseIn):
 
 
 class PatchTimberIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # timber_materials.sku is varchar(255), as CreateTimberIn
     colour: str | None = Field(default=None, max_length=128)
     finish: str | None = Field(default=None, max_length=128)
     grain: str | None = Field(default=None, max_length=64)
@@ -229,12 +232,14 @@ class PatchEdgingIn(PatchBaseIn):
 
 
 class PatchCustomMadeIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # the sku column is varchar(255), as its Create schema
     internal_ref: str | None = Field(default=None, max_length=64)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchBenchtopIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # the sku column is varchar(255), as its Create schema
     slab_id: str | None = Field(default=None, max_length=64)
     grain_locked: bool | None = None
     colour: str | None = Field(default=None, max_length=128)
@@ -255,12 +260,14 @@ class PatchBenchtopIn(PatchBaseIn):
 
 
 class PatchApplianceIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # the sku column is varchar(255), as its Create schema
     model_number: str | None = Field(default=None, max_length=64)
     um: str | None = Field(default=None, max_length=32)
     product_website: str | None = Field(default=None, max_length=255)
 
 
 class PatchEquipmentHireIn(PatchBaseIn):
+    sku: str | None = Field(default=None, max_length=255)    # the sku column is varchar(255), as its Create schema
     contract_ref: str | None = Field(default=None, max_length=64)
     project_id: int | None = None
     um: str | None = Field(default=None, max_length=32)

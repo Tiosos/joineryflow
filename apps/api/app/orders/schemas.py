@@ -178,7 +178,7 @@ class CreateOrderIn(BaseModel):
     order_number: str | None = Field(default=None, max_length=50)
     supplier_ref_no: str | None = Field(default=None, max_length=100)
     priority: OrderPriority = "Medium"
-    product_code: str | None = Field(default=None, max_length=100)
+    product_code: str | None = Field(default=None, max_length=255)
     product_description: str | None = None
 
     quantity: Decimal | None = None
@@ -221,7 +221,7 @@ class PatchOrderIn(BaseModel):
     order_number: str | None = Field(default=None, max_length=50)
     supplier_ref_no: str | None = Field(default=None, max_length=100)
     location: str | None = Field(default=None, max_length=255)
-    product_code: str | None = Field(default=None, max_length=100)
+    product_code: str | None = Field(default=None, max_length=255)
     product_description: str | None = None
     quantity: Decimal | None = None
     unit_of_measure: str | None = Field(default=None, max_length=50)
@@ -306,11 +306,11 @@ class CostCentreListOut(BaseModel):
 
 
 class CreateOrderLineIn(BaseModel):
-    item_description: str
+    item_description: str = Field(max_length=500)   # po_line_items.item_description varchar(500)
     quantity: Decimal
     unit_price: Decimal
-    sku: str | None = None
-    unit: str | None = None
+    sku: str | None = Field(default=None, max_length=255)   # po_line_items.sku varchar(255) (0079)
+    unit: str | None = Field(default=None, max_length=50)   # po_line_items.unit varchar(50)
     material_table: str | None = None
     material_id: int | None = None
     attributes: dict = Field(default_factory=dict)
@@ -330,10 +330,10 @@ class PatchOrderLineIn(BaseModel):
     below rejects an explicit `null` for the three before it ever reaches
     `patch_line()`'s UPDATE, which would otherwise 500 on the column's own
     constraint instead of a clean 422."""
-    item_description: str | None = None
-    sku: str | None = None
+    item_description: str | None = Field(default=None, max_length=500)   # po_line_items.item_description varchar(500)
+    sku: str | None = Field(default=None, max_length=255)   # po_line_items.sku varchar(255) (0079)
     quantity: Decimal | None = None
-    unit: str | None = None
+    unit: str | None = Field(default=None, max_length=50)   # po_line_items.unit varchar(50)
     unit_price: Decimal | None = None
 
     @model_validator(mode="after")

@@ -6,8 +6,9 @@ description, the supplier). The orders workbook is the same one `orders_grid` im
     python -m app.importers.catalog_from_orders propose ORDERS.xlsx --out review.xlsx
         # no database: one row per product code, with a guessed catalog table and the reason
 
-    (a person corrects the Table column of review.xlsx: board, hardware, custom_made, benchtop,
-     appliance, or skip)
+    (a person fills the Type column of review.xlsx, or corrects the Table column: board, hardware,
+     custom_made, benchtop, appliance, edging, glass, timber, hire or skip. A Type the importer knows
+     decides the table; the Table column is read only when Type is empty or unknown)
 
     python -m app.importers.catalog_from_orders import review.xlsx --workspace-slug SLUG \\
         --actor-email EMAIL [--commit]                       # a dry run, rolled back, unless --commit
@@ -44,8 +45,10 @@ from ..catalog import queries as catalog_queries
 ORDER_HEADERS = ("_PCode", "_BoardGroup", "Supplier", "Date_Ordered", "QTY", "_Cost_Sub")
 REVIEW_HEADERS = ("Code", "Description", "Supplier", "Unit cost", "Orders", "Type", "Table", "Reason", "Confidence", "Note")
 TABLES = ("board", "hardware", "custom_made", "benchtop", "appliance", "hire", "edging", "glass", "timber", "skip")
-# The Catalog screen's tabs are the product types; each type's items live in one of the six tables until
-# the types get tables of their own. A person never sees or edits this: Type (column F) is the only input.
+# The Catalog screen's tabs are the product types; each type's items live in one table (nine tables).
+# Type (column F) wins: when it is one of these keys the row goes to that table, whatever the Table column
+# (G) says (user decision, 2026-10-20). Table is read only when Type is empty or not a key here, so a sheet
+# with only a Table column (an old review sheet) still works.
 TYPE_TABLE = {
     "laminate benchtop": "benchtop", "hardware": "hardware", "glass": "glass", "supplies": "hardware",
     "contractor manufacturing": "custom_made", "board": "board", "laminate": "board", "delivery": "custom_made",
@@ -92,7 +95,12 @@ _HIRE = re.compile(r"vertical lift|scissor lift|boom lift|\bhire\b|haulotte", re
 _APPLIANCE = re.compile(r"dishwasher|dishdrawer|\boven\b|cooktop|rangehood|fridge|microwave", re.I)
 _GLASS = re.compile(r"\bfloat\b|toughened|\bglass\b|\bfpar\b", re.I)
 _EDGING = re.compile(r"unglued|edging|\bedge\b", re.I)
-_SOLID_TOP = re.compile(r"^solid top|solid tasmanian oak|\bdar\b", re.I)
+# Solid Timber (user decision, 2026-10-20): "Solid Top - Tas Oak DAR 190 x 19 @ 2300mm" is timber.
+_SOLID_TOP = re.compile(
+    r"^solid top|solid timber|solid tasmanian oak|\bdar\b"
+    r"|^solid (tas(manian)? )?(oak|ash|walnut|blackbutt|spotted gum|maple|jarrah|messmate)\b", re.I)
+# Text that says laminate, TG or solid surface (Corian-like) is not timber: it keeps the old guess.
+_NOT_TIMBER = re.compile(r"laminate|\btg\b|tg[ _-]?solid|solid surface|corian", re.I)
 _HARDWARE = re.compile(
     r"hinge|runner|handle|\bpull\b|\bbin\b|\bleg\b|basket|bolt|\bnut\b|washer|anchor|threaded rod|glove|silicone|"
     r"hypersil|paint|dulux|kg of|drill|cutter|\btool\b|end cap|shelf|\bally\b|aluminium|table (base|frame)|tabel|"
@@ -114,13 +122,15 @@ def classify(code: str | None, description: str, supplier: str | None) -> tuple[
     if _APPLIANCE.search(d):
         return "appliance", "an appliance", "high"
     if _GLASS.search(d):
-        return "custom_made", "cut-to-size glass", "low"
+        return "glass", "cut-to-size glass", "low"
     if _DIMS.match(d):
         if _EDGING.search(d):
-            return "hardware", "edging", "low"
+            return "edging", "edging", "low"
         return "board", "a sheet size, then the material", "high"
     if _SOLID_TOP.search(d):
-        return "benchtop", "a solid timber top", "low"
+        if _NOT_TIMBER.search(d):
+            return "benchtop", "a solid top (laminate, TG or solid surface wording)", "low"
+        return "timber", "solid timber", "low"
     if _HARDWARE.search(d) or _BRANDS.search(supplier or "") or _BRANDS.search(d):
         return "hardware", "a fitting, fixing or supply", "low"
     return "skip", "could not tell", "low"
@@ -194,7 +204,8 @@ def write_review(products: list[Product], out: str | Path) -> None:
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     guide = wb.create_sheet("Read me")
-    for line in ("Correct the Table column (G), then keep the file for the import step. Type (F) is optional free text: the old system's product type, kept on the catalog item.",
+    for line in ("Fill Type (F) or correct Table (G), then keep the file for the import step. Type is the old system's product type, kept on the catalog item; when it is one of: "
+                 + ", ".join(sorted(TYPE_TABLE)) + " it decides the table and Table is ignored. Table is used only when Type is empty or not in that list.",
                  "Table is one of: " + ", ".join(TABLES) + ". `skip` leaves the product out of the catalog.",
                  "Unit cost is the latest order's line total divided by its quantity, ex GST; clear a cell to import no price.",
                  "Equipment hire is never imported (it belongs to a project).",
@@ -230,8 +241,9 @@ def read_review(path: str | Path) -> list[ReviewRow]:
     for n, r in enumerate(it, start=2):
         rec = dict(zip(header, r))
         ptype = _clean(rec.get("Type"))
-        # A Table column (the old review sheets) wins; otherwise the table follows from the Type.
-        table = (_clean(rec.get("Table")) or TYPE_TABLE.get((ptype or "").lower()) or "skip").lower()
+        # A Type the importer knows decides the table; the Table column (old review sheets, and what
+        # `propose` guessed) is read only when Type is empty or unknown. Neither: skip.
+        table = (TYPE_TABLE.get((ptype or "").lower()) or _clean(rec.get("Table")) or "skip").lower()
         if table not in TABLES:
             bad.append(f"row {n}: {table!r}")
             continue
@@ -242,7 +254,7 @@ def read_review(path: str | Path) -> list[ReviewRow]:
         if _clean(rec.get("Unit cost")) is not None:
             try:
                 cost = Decimal(str(rec.get("Unit cost"))).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-                if cost < 0 or cost >= Decimal(10) ** 11:
+                if cost < 0 or cost >= Decimal(10) ** 10:
                     raise ValueError
             except Exception:
                 bad.append(f"row {n}: unit cost {rec.get('Unit cost')!r}")
@@ -256,6 +268,24 @@ def read_review(path: str | Path) -> list[ReviewRow]:
         raise ImportErrorReport("Table must be one of " + ", ".join(TABLES) + " and Unit cost a number of 0 or more; got "
                                 + "; ".join(bad[:10]))
     return out
+
+
+# The tables whose code column (`code`, `sku`, `internal_ref`...) is UNIQUE across all workspaces, a
+# `0001` artefact (checked against the constraints in 0001/0007/0017: board `code`, hardware `sku`,
+# custom_made `internal_ref`, benchtop `slab_id`, appliances `model_number`, equipment_hire `contract_ref`).
+# Edging, Glass and Timber are UNIQUE (workspace_id, sku) only: another workspace's SKU never blocks them.
+_GLOBAL_CODE = frozenset({"board", "hardware", "custom_made", "benchtop", "appliance", "hire"})
+
+
+def _code_owners(db: Session, *, type_: str, table: str, code_col: str, code: str,
+                 workspace_id: int) -> set[int | None]:
+    """The workspaces holding `code` in `table`, where holding it would make an insert fail: this
+    workspace's own SKU, plus (global tables only) any workspace's code column."""
+    if type_ in _GLOBAL_CODE:
+        sql = f"SELECT workspace_id FROM {table} WHERE {code_col} = :c OR (workspace_id = :w AND sku = :c)"
+    else:
+        sql = f"SELECT workspace_id FROM {table} WHERE workspace_id = :w AND sku = :c"
+    return {row[0] for row in db.execute(text(sql), {"c": code, "w": workspace_id})}
 
 
 @dataclass
@@ -293,10 +323,9 @@ def apply(db: Session, rows: list[ReviewRow], *, workspace_id: int, actor_id: in
             continue
         table, _id, _cols, _ins = catalog_queries.REGISTRY[r.table]
         code_col = CODE_COLUMN[r.table]
-        hit = db.execute(text(f"SELECT workspace_id FROM {table} WHERE {code_col} = :c OR "
-                              "(workspace_id = :w AND sku = :c) LIMIT 1"), {"c": r.code, "w": workspace_id}).first()
-        if hit is not None:
-            if hit[0] == workspace_id:
+        owners = _code_owners(db, type_=r.table, table=table, code_col=code_col, code=r.code, workspace_id=workspace_id)
+        if owners:
+            if workspace_id in owners:
                 res.existing += 1
             else:
                 anomalies.append(("code_used_elsewhere", f"row {r.row}: {r.code} is already used by another "

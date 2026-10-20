@@ -102,6 +102,10 @@ def _resolve_order_sources_batch(
     resolves the real vendor — `default_supplier_id` (migration 0029), not
     the free-text `default_supplier` those two read — because a purchase
     order needs a real `vendors.vendor_id` to attach to, not a name string.
+    **The price an order line starts from is the catalog `unit_cost` (ex GST), or the table's
+    own cost column (`cost_per_sheet` / `cost` / `cost_per_slab` / `cost_per_unit`) when
+    `unit_cost` is NULL.** The quote's snapshotted costs (`_resolve_part_snapshot` /
+    `_resolve_hardware_snapshot`) are a separate path and still read the own column only.
     Reads **current** catalog pricing deliberately: Plan V1 §21 requires
     stale project-specific pricing to be caught before PO creation, and
     generation typically happens well after the quote was priced.
@@ -117,7 +121,7 @@ def _resolve_order_sources_batch(
     sql = text(
         f"""
         SELECT t.{id_col} AS material_id, t.{sku_col} AS sku, t.description,
-               t.{cost_col} AS cost,
+               COALESCE(t.unit_cost, t.{cost_col}) AS cost,
                t.default_supplier_id AS supplier_id, v.name AS supplier_name,
                (t.archived_at IS NOT NULL) AS archived
           FROM {table} t

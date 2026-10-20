@@ -179,3 +179,80 @@ def test_board_reply_carries_sheet_size_and_thickness_as_json_numbers(ws):
     assert (it["fields"]["sheet_len_mm"], it["fields"]["sheet_wid_mm"], it["fields"]["thickness_mm"]) == (3600, 1200, 0.7)
     [none] = _items(ws["buyer"], _order(ws, product_code="bd-none"))
     assert (none["fields"]["sheet_len_mm"], none["fields"]["thickness_mm"]) == (None, None)
+
+
+def _png(tag: int) -> bytes:
+    return PNG + bytes([tag])
+
+
+def test_the_picture_for_n_is_the_picture_of_the_nth_listed_match(ws):
+    """Pins the picture route to the list route: live before archived, the fixed table order, the hire
+    project rule, and a match without a picture answers 404 at its own n (no shifting)."""
+    c, wid = ws["cat"], ws["wid"]
+    _, _, uid = login("manager", wid=wid)
+    pid = _sql("INSERT INTO projects(project_code, name, pm_id, workspace_id) VALUES ('IMG','IMG',:u,:w) RETURNING project_id",
+               u=uid, w=wid)
+    other = _sql("INSERT INTO projects(project_code, name, pm_id, workspace_id) VALUES ('IM2','IM2',:u,:w) RETURNING project_id",
+                 u=uid, w=wid)
+    made: dict[tuple[str, int], bytes] = {}
+
+    def add(type_, slug, body, tag, picture=True):
+        r = c.post(f"/catalog/{slug}", json={"sku": " img-1 ", "description": f"d{tag}", **body})
+        assert r.status_code == 201, r.text
+        mid = r.json().get("material_id") or r.json()["hire_id"]
+        if picture:
+            assert c.put(f"/catalog/{slug}/{mid}/image", files={"file": ("p.png", _png(tag))}).status_code == 204
+            made[(type_, mid)] = _png(tag)
+        return mid
+
+    old = add("board", "board-materials", {"code": "IMG-OLD"}, 1)
+    assert c.post(f"/catalog/board-materials/{old}/archive").status_code in (200, 204)
+    add("glass", "glass-materials", {}, 2)
+    add("hardware", "hardware-materials", {"sku": "IMG-1"}, 3, picture=False)          # live, no picture
+    add("timber", "timber-materials", {}, 4)
+    add("board", "board-materials", {"code": "IMG-NEW", "sku": "IMG-1"}, 5)
+    add("hire", "equipment-hire", {"contract_ref": "eh-img", "project_id": pid}, 6)
+    add("hire", "equipment-hire", {"contract_ref": "eh-oth", "project_id": other, "sku": " IMG-1"}, 7)   # another project: never listed
+
+    oid = _order(ws, product_code="IMG-1", project_id=pid)
+    listed = _items(ws["buyer"], oid)
+    types = [(i["type"], i["archived"]) for i in listed]
+    assert types[-1] == ("board", True) and ("hire", False) in types and len(listed) >= 6
+    for n, it in enumerate(listed):
+        got = ws["buyer"].get(f"/orders/{oid}/catalog-item/image", params={"n": n})
+        if (it["type"], it["id"]) in made:
+            assert got.status_code == 200 and got.content == made[(it["type"], it["id"])], (n, it)
+        else:
+            assert it["has_image"] is False and got.status_code == 404, (n, it)
+    assert ws["buyer"].get(f"/orders/{oid}/catalog-item/image", params={"n": len(listed)}).status_code == 404
+    # the other project's hire row is unreachable by any n, and so is a project-less order's
+    assert all(b != _png(7) for b in (ws["buyer"].get(f"/orders/{oid}/catalog-item/image", params={"n": n}).content
+                                      for n in range(len(listed))))
+    bare = _order(ws, product_code="IMG-1")
+    assert [i["type"] for i in _items(ws["buyer"], bare)] == [t for t, _ in types if t != "hire"]
+
+
+def test_the_picture_lookup_is_one_targeted_query_not_the_full_match_list(ws):
+    from sqlalchemy import event
+
+    from app.db import SessionLocal, engine
+    from app.order_tabs import queries as q
+
+    c = ws["cat"]
+    mid = _mk(c, "glass-materials", "q-1")
+    c.put(f"/catalog/glass-materials/{mid}/image", files={"file": ("p.png", PNG)})
+    oid = _order(ws, product_code="q-1")
+    seen: list[str] = []
+
+    def count(conn, cursor, statement, *a):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count)
+    db = SessionLocal()
+    try:
+        found, blob = q.catalog_match_image(db, po_id=oid, workspace_id=ws["wid"], n=0)
+    finally:
+        db.close()
+        event.remove(engine, "before_cursor_execute", count)
+    assert found and blob is not None
+    assert len(seen) <= 2, seen          # the order, then one lookup of the n-th match's picture (was 11)
