@@ -331,7 +331,8 @@ def convert_to_project(
                     # line with two different BOARD parts).
                     "s": part_seq,
                     "q": int(Decimal(str(p["qty"])).quantize(Decimal("1"))),
-                    "n": p.get("description_snapshot") or p.get("sku_snapshot") or "part",
+                    # `parts.part_name` is varchar(128); the snapshot (255) keeps the full text.
+                    "n": (p.get("description_snapshot") or p.get("sku_snapshot") or "part")[:128],
                     "l": p.get("len_mm"),
                     "w": p.get("wid_mm"),
                     "bmid": board_mid,

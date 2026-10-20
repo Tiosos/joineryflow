@@ -309,7 +309,7 @@ class CreateOrderLineIn(BaseModel):
     item_description: str
     quantity: Decimal
     unit_price: Decimal
-    sku: str | None = None
+    sku: str | None = Field(default=None, max_length=255)   # po_line_items.sku varchar(255) (0079)
     unit: str | None = None
     material_table: str | None = None
     material_id: int | None = None
@@ -331,7 +331,7 @@ class PatchOrderLineIn(BaseModel):
     `patch_line()`'s UPDATE, which would otherwise 500 on the column's own
     constraint instead of a clean 422."""
     item_description: str | None = None
-    sku: str | None = None
+    sku: str | None = Field(default=None, max_length=255)   # po_line_items.sku varchar(255) (0079)
     quantity: Decimal | None = None
     unit: str | None = None
     unit_price: Decimal | None = None

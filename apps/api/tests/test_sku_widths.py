@@ -152,3 +152,81 @@ def test_an_order_takes_a_product_code_as_long_as_a_catalog_sku():
             == "q" * 200
     finally:
         s.close()
+
+
+# ---- order lines: the SKU cap is the column's (po_line_items.sku varchar(255)) ----
+
+def _order_with_a_line(buyer, wid):
+    s = SessionLocal()
+    try:
+        vid = s.execute(text("INSERT INTO vendors(name, category, workspace_id) VALUES ('V', 'Board', :w)"
+                             " RETURNING vendor_id"), {"w": wid}).scalar()
+        s.commit()
+    finally:
+        s.close()
+    r = buyer.post("/orders", json={"vendor_id": vid, "description": "o", "total_amount": "10"})
+    assert r.status_code == 201, r.text
+    return r.json()["po_id"]
+
+
+def test_an_order_line_sku_is_capped_at_255_on_create_and_patch():
+    buyer, wid, _ = login("purchase_officer")
+    oid = _order_with_a_line(buyer, wid)
+    line = {"item_description": "x", "quantity": "1", "unit_price": "1"}
+    ok = buyer.post(f"/orders/{oid}/lines", json={**line, "sku": "s" * 255})
+    assert ok.status_code == 201, ok.text
+    lid = ok.json()["lines"][0]["line_id"]
+    assert buyer.post(f"/orders/{oid}/lines", json={**line, "sku": "s" * 256}).status_code == 422
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"sku": "t" * 255}).status_code == 200
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"sku": "u" * 256}).status_code == 422
+    assert buyer.patch(f"/orders/{oid}/lines/{lid}", json={"sku": None}).status_code == 200
+
+
+# ---- Convert-to-Project: a 255-character catalog description onto parts.part_name (varchar(128)) ----
+
+def test_a_long_catalog_description_converts_to_a_project_and_part_name_is_cut_to_its_column():
+    ctx = _bootstrap()
+    c = ctx["client"]
+    desc = "".join(str(i % 10) for i in range(255))
+    ids = {}
+    s = SessionLocal()
+    try:
+        for kind, (table, cost_col, code_col, is_part) in _ONTO_A_QUOTE.items():
+            cols = ["workspace_id", "sku", "description", cost_col]
+            vals = [":w", ":sku", ":d", "10"]
+            if code_col:
+                cols.append(code_col)
+                vals.append(":code")
+            ids[kind] = s.execute(
+                text(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join(vals)}) RETURNING material_id"),
+                {"w": ctx["wid"], "sku": f"{kind}-{uuid.uuid4().hex[:8]}", "d": desc,
+                 "code": uuid.uuid4().hex[:12]},
+            ).scalar()
+        s.commit()
+    finally:
+        s.close()
+    cust = c.post("/customers", json={"name": "W"}).json()
+    est = c.post("/estimates", json={"customer_id": cust["customer_id"], "title": "W"}).json()
+    rid = est["current_revision_id"]
+    line = c.post(f"/revisions/{rid}/lines", json={"description": "d" * 255, "qty": 1}).json()
+    for kind, mid in ids.items():
+        is_part = _ONTO_A_QUOTE[kind][3]
+        r = c.post(f"/lines/{line['line_id']}/{'parts' if is_part else 'hardware'}",
+                   json={"material_type": kind, "material_id": mid, "qty": 1})
+        assert r.status_code == 201, (kind, r.text)
+        if is_part:
+            assert r.json()["description_snapshot"] == desc, kind     # the snapshot keeps the full text
+    _advance_to_won(c, rid)
+    pid = _convert(c, rid)
+    s = SessionLocal()
+    try:
+        names = [r[0] for r in s.execute(text(
+            "SELECT p.part_name FROM parts p JOIN modules m ON m.module_id = p.module_id"
+            " JOIN items i ON i.item_id = m.item_id WHERE i.project_id = :p"), {"p": pid})]
+        assert len(names) == 5
+        assert all(n == desc[:128] for n in names)
+        full = s.execute(text("SELECT count(*) FROM estimate_line_part WHERE description_snapshot = :d"),
+                         {"d": desc}).scalar()
+        assert full == 5
+    finally:
+        s.close()
