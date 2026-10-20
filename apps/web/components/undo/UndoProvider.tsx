@@ -44,7 +44,11 @@ interface Shown {
   failed?: boolean;
 }
 
-const Ctx = createContext<{ defer: (opts: DeferOptions) => void } | null>(null);
+const Ctx = createContext<{
+  defer: (opts: DeferOptions) => void;
+  /** An error notice that stays until dismissed (replaces `window.alert` for failures). */
+  notify: (message: string) => void;
+} | null>(null);
 
 export function useUndo() {
   const api = useContext(Ctx);
@@ -85,6 +89,11 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     e.onSettle?.();
   }, []);
 
+  const notify = useCallback(
+    (message: string) => setEntries((cur) => [...cur, { id: nextId.current++, message, failed: true }]),
+    [],
+  );
+
   const dismiss = useCallback((id: number) => setEntries((cur) => cur.filter((x) => x.id !== id)), []);
 
   const defer = useCallback(
@@ -107,7 +116,7 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     };
   }, [fire]);
 
-  const api = useMemo(() => ({ defer }), [defer]);
+  const api = useMemo(() => ({ defer, notify }), [defer, notify]);
 
   return (
     <Ctx.Provider value={api}>

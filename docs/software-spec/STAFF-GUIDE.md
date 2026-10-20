@@ -13,6 +13,7 @@ A plain-language guide to what each role can do in JoineryFlow. For every button
 - **Comments**: most records have a comment thread. You can reply, edit your own comment and @mention a colleague.
 - **Asking and confirming**: risky actions (delete, archive, cancel, reject, close out) ask first in a dialog; names (a new cutlist, a rename, a new area or room) are typed in a dialog too. **Enter** confirms; **Esc**, **Cancel** or a click outside do nothing.
 - **Undo**: after you confirm a bulk delete in Tracking, or an archive of a catalog row, customer, shop drawing or sample, a box at the bottom left says what you did and offers **Undo** for 10 seconds. Nothing has really happened until the 10 seconds end, so Undo simply cancels it. If you close the tab or leave the app inside the 10 seconds the action is carried out straight away; if the whole browser or computer is switched off in that time it is lost. Deleting a single item from the item editor is immediate (no Undo).
+- **Error notices**: when a save or delete is refused (for example on the Catalog grid), a dark notice at the bottom left says what failed. It stays until you press **Dismiss**.
 - **Locks**: an item can be locked so nobody breaks work in progress. A locked control is greyed out and says why. See "Locks in plain words" at the end.
 - **Dashboard**: tiles for your role, "My Day", today's deliveries, your team's status and recent activity. Click a tile to jump to the list behind it. Use **✎ Update status** on the team card to tell everyone whether you are In, On site, Shop, WFH or Off.
 
