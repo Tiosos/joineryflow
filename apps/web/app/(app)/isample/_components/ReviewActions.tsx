@@ -9,6 +9,7 @@ import {
 } from "@/lib/samples-fetch";
 import type { Sample } from "@/lib/samples-types";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Me { id: number; auth_role: string; }
 
@@ -26,6 +27,7 @@ const MANAGER_ROLES = new Set(["manager", "admin"]);
 
 export default function ReviewActions(p: Props) {
   const { confirm } = useConfirm();
+  const { defer } = useUndo();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -113,7 +115,12 @@ export default function ReviewActions(p: Props) {
         <button data-testid="sample-archive" type="button" disabled={busy}
                 onClick={async () => {
                   if (!(await confirm({ title: "Archive this sample?", confirmLabel: "Archive" }))) return;
-                  run(() => archiveSample(p.sample.sample_id));
+                  setBusy(true);
+                  defer({
+                    message: "Archived the sample",
+                    run: async () => { await archiveSample(p.sample.sample_id); await p.onAfter(); },
+                    onSettle: () => setBusy(false),
+                  });
                 }}
                 className="ml-auto rounded border border-h-line bg-h-surface px-3 py-1.5 text-sm text-h-muted hover:text-h-ink disabled:opacity-50">
           Archive

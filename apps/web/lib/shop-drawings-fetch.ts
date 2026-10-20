@@ -76,7 +76,7 @@ export async function patchDrawing(
 }
 
 export async function archiveDrawing(drawingId: number): Promise<void> {
-  const r = await fetch(`/api/shop-drawings/${drawingId}/archive`, { method: "POST" });
+  const r = await fetch(`/api/shop-drawings/${drawingId}/archive`, { method: "POST", keepalive: true });
   if (!r.ok) throw new Error(`archive failed: ${r.status}`);
 }
 

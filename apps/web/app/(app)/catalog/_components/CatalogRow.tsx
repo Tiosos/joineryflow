@@ -17,6 +17,7 @@ import { APPLIANCE_TEXT_FIELDS } from "./applianceFields";
 import { HARDWARE_TEXT_FIELDS } from "./hardwareFields";
 import type { MaterialTab } from "./CatalogClient";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { useUndo } from "@/components/undo/UndoProvider";
 
 interface Props {
   tab: MaterialTab;
@@ -126,6 +127,7 @@ function SupplierLink({
 
 export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChanged }: Props) {
   const { confirm } = useConfirm();
+  const { defer } = useUndo();
   const mid = row.material_id ?? row.hire_id;
   if (mid == null) {
     // Defensive: shouldn't happen — every catalog row has either material_id (5 tables)
@@ -151,9 +153,11 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
   const onArchive = async () => {
     if (!(await confirm({ title: "Archive this row?", message: "It leaves the catalog lists; it is archived, not deleted.", confirmLabel: "Archive" }))) return;
     setBusy(true);
-    try { await archiveRow(slug, mid); onChanged(); }
-    catch (e) { window.alert(String(e)); }
-    finally { setBusy(false); }
+    defer({
+      message: "Archived the row",
+      run: async () => { await archiveRow(slug, mid); onChanged(); },
+      onSettle: () => setBusy(false),
+    });
   };
 
   return (

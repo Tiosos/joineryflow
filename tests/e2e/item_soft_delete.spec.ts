@@ -34,11 +34,13 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
   await row(goneDesc).locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(row(goneDesc)).toHaveCount(0);                       // gone from the live list
+  await expect(row(goneDesc)).toHaveCount(0);                       // hidden at once
   await expect(row(keepDesc)).toHaveCount(1);                       // the other one is untouched
 
-  // A deleted item answers 404 like a missing one.
-  expect((await page.request.get(`/api/items/${goneId}`)).status()).toBe(404);
+  // The delete is sent when the 10-second Undo window ends; then the item answers 404 like a missing one.
+  await expect(async () => {
+    expect((await page.request.get(`/api/items/${goneId}`)).status()).toBe(404);
+  }).toPass({ timeout: 20_000 });
 
   await page.getByRole("button", { name: "Deleted", exact: true }).click();
   await expect(page).toHaveURL(/deleted=1/);
@@ -101,7 +103,7 @@ test("a Hard Lock stops the delete: the editor button is off and Tracking skips 
   await row.locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByText("1 skipped (Hard Locked)")).toBeVisible();
+  await expect(page.getByText("1 skipped (Hard Locked)")).toBeVisible({ timeout: 20_000 });   // after the Undo window
   await expect(row).toHaveCount(1);                                   // still there, untouched
   expect((await page.request.get(`/api/items/${id}`)).status()).toBe(200);
 });
