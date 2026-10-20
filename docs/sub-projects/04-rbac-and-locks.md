@@ -970,3 +970,7 @@ the held saves for those people; the item editor shows a banner to the same peop
   any other (the query does not narrow to Joinery Items), and the banner only exists on the Joinery Item editor.
   The approval of a request whose item has since been Hard-locked or Approved is still refused by the API (409), as
   before. No email or push: the bell is the only channel, by decision (Q521).
+
+## View as role on /it (2026-10-20)
+
+`ViewAsRolePanel` on `/it`, under Permission groups: pick a role and see its modules × read/write/approve/comment grid and the tabs it sees. Read only, no API change: it reads the system groups from `GET /permission-groups` (the live DB engine, not the shipped `MATRIX`), so a grant an admin changed above shows at once. It shows grants only; per-object rules (uploader is not the approver, locks, creator-or-manager) are not grants and are not shown. Decided with the customer: a read-only matrix, not an impersonated preview of the app. `TABS` / `SECONDARY_TABS` are exported from `TabStrip.tsx` so the panel and the strip cannot disagree. Spec: `tests/e2e/view_as_role.spec.ts`.
