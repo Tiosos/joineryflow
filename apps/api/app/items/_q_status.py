@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
+from ..row_types import joinery_items_only, not_deleted
 from ..edit_log import write_edit_log_many
 from .schemas import PatchLifecycleIn
 from ._q_base import _VALID_STATUS_KEYS, _item_row
@@ -119,6 +120,41 @@ def _write_approval_lock_audit(
             db, workspace_id=workspace_id, actor_id=actor_id,
             event="item.approval_unlock", target=str(item_id), payload={},
         )
+
+
+def bulk_patch_project_item_status(
+    db: Session,
+    *,
+    project_id: int,
+    workspace_id: int,
+    status: str,
+    note: str,
+    actor: AuthUser,
+) -> dict:
+    """Apply one status + note to every live joinery item of a project, in one transaction.
+
+    Related parts are not touched (they keep their own status). Locked items are skipped and
+    listed, exactly as in `bulk_patch_item_status`, which does the writing. The caller has
+    already checked the project is in the workspace.
+    """
+    ids = [
+        r[0]
+        for r in db.execute(
+            text(
+                f"""
+                SELECT i.item_id FROM items i
+                WHERE i.project_id = :p AND {joinery_items_only("i")} AND {not_deleted("i")}
+                ORDER BY i.item_id
+                """
+            ),
+            {"p": project_id},
+        )
+    ]
+    if not ids:
+        return {"updated": 0, "not_found": [], "locked": []}
+    return bulk_patch_item_status(
+        db, item_ids=ids, workspace_id=workspace_id, status=status, note=note, actor=actor
+    )
 
 
 def bulk_patch_item_status(

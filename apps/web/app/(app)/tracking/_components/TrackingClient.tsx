@@ -13,7 +13,7 @@ import { ProjectDetailModal } from "./ProjectDetailModal";
 import { StatusPopup } from "./StatusPopup";
 import { CreateOrderDialog } from "./CreateOrderDialog";
 import { can } from "@/lib/permissions";
-import { BulkStatusDialog } from "./BulkStatusDialog";
+import { BulkStatusDialog, type BulkStatusResponse } from "./BulkStatusDialog";
 import { NewItemDialog } from "./NewItemDialog";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
 import { useUndo } from "@/components/undo/UndoProvider";
@@ -174,6 +174,20 @@ export function TrackingClient({
     else next.set("deleted", "1");
     clearSelection();
     router.push(`/tracking?${next.toString()}`);
+  }
+
+  // The banner under the grid after a bulk status change (ticked rows or the whole project).
+  function showBulkResult(result: BulkStatusResponse) {
+    const parts: string[] = [`${result.updated} updated`];
+    if (result.not_found.length > 0) parts.push(`${result.not_found.length} not found`);
+    if (result.locked.length > 0)
+      parts.push(
+        `${result.locked.length} skipped (locked: ${result.locked
+          .map((l) => `#${items.find((it) => it.id === l.item_id)?.item_number ?? l.item_id}`)
+          .join(", ")})`,
+      );
+    setBulkBanner(parts.join(" · "));
+    refresh();
   }
 
   // Soft delete / restore, one request per ticked row: the API answers each on its own.
@@ -402,6 +416,9 @@ export function TrackingClient({
       />
       <StatusPopup
         itemId={statusPopupId}
+        projectId={project.id}
+        projectItemCount={items.filter((it) => it.row_type !== "related_part").length}
+        onBulkApplied={showBulkResult}
         currentUserId={me?.id ?? null}
         currentUserRole={me?.auth_role ?? null}
         onClose={() => setStatusPopupId(null)}
@@ -428,17 +445,8 @@ export function TrackingClient({
         itemIds={Array.from(selectedIds)}
         onClose={() => setBulkDialogOpen(false)}
         onApplied={(result) => {
-          const parts: string[] = [`${result.updated} updated`];
-          if (result.not_found.length > 0) parts.push(`${result.not_found.length} not found`);
-          if (result.locked.length > 0)
-            parts.push(
-              `${result.locked.length} skipped (locked: ${result.locked
-                .map((l) => `#${items.find((it) => it.id === l.item_id)?.item_number ?? l.item_id}`)
-                .join(", ")})`,
-            );
-          setBulkBanner(parts.join(" · "));
+          showBulkResult(result);
           clearSelection();
-          refresh();
         }}
       />
     </div>

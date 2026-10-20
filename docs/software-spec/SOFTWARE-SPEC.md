@@ -278,7 +278,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 *Route:* `/tracking?project_id=…`  
 *Purpose:* The main production grid for one project: one row per joinery item, with sub-tabs of columns, quick filters, bulk actions and pop-ups. Related parts nest under their parent. Soft-deleted items appear only under the Deleted chip.
 
-*Screenshots (dev seed, manager login):* [Tracking grid](screenshots/tracking.jpg) · [Project switcher](screenshots/tracking-project-switcher.jpg) · [Item detail modal](screenshots/tracking-item-detail.jpg) · [Status pop-up (note the disabled ‘Update Status To All’)](screenshots/tracking-status-popup.jpg) · [New item dialog](screenshots/tracking-new-item.jpg) · [Project information pop-up](screenshots/tracking-info.jpg)
+*Screenshots (dev seed, manager login):* [Tracking grid](screenshots/tracking.jpg) · [Project switcher](screenshots/tracking-project-switcher.jpg) · [Item detail modal](screenshots/tracking-item-detail.jpg) · [Status pop-up (‘Update Status To All’ stays greyed until a status and a note are filled in)](screenshots/tracking-status-popup.jpg) · [New item dialog](screenshots/tracking-new-item.jpg) · [Project information pop-up](screenshots/tracking-info.jpg)
 
 **Project info bar**
 
@@ -339,7 +339,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | Id | Control | Kind | What it does | API | Who | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `TRAC-30` | **Status choices** | toggle | Select the new Status (CLEAR VOID NOTE! LIVE APPROVED HOLD). A note is required. | — | — | A Hard or Controlled lock disables this and shows the reason; APPROVED does not block status changes. |
-| `TRAC-31` | **⚠ Update Status To All** | button | Disabled placeholder (tooltip: ‘Bulk update not yet wired’). Use ‘Apply status…’ on the grid instead. | — | — | Kept deliberately as a planned control (decision 2026-10-19). Disabled with the tooltip ‘Bulk update not yet wired’. When built it applies to every item in the project, shows ‘This will change N items’, requires the note, and skips and lists locked items like bulk status. |
+| `TRAC-31` | **⚠ Update Status To All** | button | Applies the chosen status and note to every live joinery item of the project (related parts are not changed). Asks first: ‘Set N items to STATUS?’ with the count. Locked items are skipped and listed in the banner under the grid, like bulk status. | POST /projects/{pid}/bulk-status | tracking:write | One transaction, no 500-item cap. Needs a status and a note. Shown on Tracking only (not when the pop-up is opened from the item editor). Each item gets a status log, audit and edit-log row. |
 | `TRAC-32` | **↻ Update Current Item** | button | Saves the status + note on this one item and writes audit_log + item_edit_log. | PATCH /items/{id}/status | tracking:write | — |
 | `TRAC-33` | **Close** | button | Closes the pop-up. | — | — | — |
 
@@ -877,7 +877,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 
 ## 11. REST API catalogue
 
-348 routes extracted from `apps/api/app`. The permission shown is the `require_permission(module, action)` guard; `current_user` means any signed-in user; `require_drafter` means drafter/manager/admin.
+349 routes extracted from `apps/api/app`. The permission shown is the `require_permission(module, action)` guard; `current_user` means any signed-in user; `require_drafter` means drafter/manager/admin.
 
 ### `areas`
 
@@ -1084,6 +1084,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 | POST | `/items/{id}/lock` | tracking:write | Claim lock (no body) or transfer lock to another user (body with owner_id). |
 | PATCH | `/items/{id}/status` | tracking:write | Update items.status.  Allowed for any role with tracking:write     (admin, manager, editor, drafter — NOT purc |
 | POST | `/items/bulk-status` | tracking:write | Apply a status + shared note to many items in one transaction. |
+| POST | `/projects/{pid}/bulk-status` | tracking:write | Apply a status + shared note to every live joinery item of the project, in one     transaction (the Status pop |
 | PATCH | `/items/{id}/lifecycle/{stage_key}` | tracking:write | UPSERT due_date / done_date for a lifecycle stage on an item.     Allowed for any role with tracking:write.    |
 | DELETE | `/items/{id}/lock` | tracking:write | Release a lock on an item.  cutlist_owner_id is NOT cleared (sticky). |
 | POST | `/items/{id}/hard-lock` | tracking:write | Manager/admin only. Blocks PATCH /items/{id} for everyone, including     the current owner, until cleared with |
@@ -1443,7 +1444,7 @@ Each row: **id · control · kind · what it does · API · who can use it · no
 - Q480 SharePoint URL; Q547 drawing filename; Task and Change comment threads (no entities); Q472 rule engine (per-object rules stay in handlers); §21’s wider Procurement flow.
 - PO approval reporting: cost centres have no delete, no cross-centre report and no hard budget limit.
 - E3 data import: only the item grid and the orders grid are imported; modules, parts, hardware, drawings and QC still need their own exports.
-- Planned, kept on purpose (decision 2026-10-19): login ‘Continue with SSO’ and status pop-up ‘Update Status To All’ do nothing yet.
+- Planned, kept on purpose (decision 2026-10-19): login ‘Continue with SSO’ does nothing yet (provider not decided).
 - Legacy `/procurement/*` retired October 2026 (code in `legacy/procurement_v0/`, unmounted).
 
 Three decisions deliberately depart from Plan V1’s prose and must not be “fixed”: **Q499** (PM confirmation of the Material Summary is advisory), **Q513** (no rollback of change states), **Q527** (fixed KPI catalogue).
@@ -1455,7 +1456,7 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | Q-01 | Audience | Who reads these two files — developers, the joinery staff/customer, or both? It decides the language (technical vs. plain), whether API routes stay in the spec, and whether I add a short ‘day in the life’ walkthrough per role. | Both: keep the spec technical, add a plain-language ‘What this does for me’ line per screen. |
 | Q-02 | Source of truth | CLAUDE.md says per-sub-project history lives in docs/sub-projects/ and Plan V1 is the roadmap. Should this spec replace, sit beside, or link into those files? Two documents describing the same behaviour will drift. | Keep it as docs/software-spec/ and make the sub-project files link to it; regenerate the button tables from code (see S-01). |
 | Q-03 | Login · Continue with SSO | The button only calls preventDefault — it does nothing. Remove it, hide it, or is SSO (which provider?) planned? | DECIDED 2026-10-19: keep it (SSO is planned). Provider still to be named. |
-| Q-04 | Status pop-up · ‘Update Status To All’ | Permanently disabled with the tooltip ‘Bulk update not yet wired’, yet ‘Apply status…’ on the grid already does bulk updates (up to 500). Is the pop-up button meant to be removed, or to apply to a different set (e.g. all rows of this cutlist)? | DECIDED 2026-10-19: keep it as a planned control. Its intended scope (this item vs. a whole cutlist) is still open. |
+| Q-04 | Status pop-up · ‘Update Status To All’ | Permanently disabled with the tooltip ‘Bulk update not yet wired’, yet ‘Apply status…’ on the grid already does bulk updates (up to 500). Is the pop-up button meant to be removed, or to apply to a different set (e.g. all rows of this cutlist)? | DECIDED 2026-10-19 and BUILT: it applies to every live joinery item in the project (not related parts), with a count confirm and a required note, in one transaction (POST /projects/{pid}/bulk-status). |
 | Q-05 | Controlled Lock requests | The API holds an edit made under someone else’s Controlled Lock as a lock request (and has approve/reject/list routes), but no web button calls them. Where should the owner approve/reject — item editor banner, a Notifications entry, or both? | DECIDED 2026-10-19 and BUILT (PR #125): banner on the item editor for the lock owner, managers and admins plus a bell list. |
 | Q-06 | Disabled tabs: Cars, OH&S, Scope | Project Information shows three permanently disabled tabs (blocked on Q550 / Q572). Keep showing them, or hide until specified? | Hide; list them under ‘Not built’ in the spec. |
 | Q-07 | Per-role button matrix | Roles are DB-governed (groups + memberships), not fixed. The spec records the permission each route needs, not what each of the 13 seeded users sees. Do you want a role × button matrix, and for which workspace/DB (the dev seed, or your real groups)? | Generate it from the seeded groups; I can add it as a table. |
@@ -1470,7 +1471,7 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | Id | Suggestion | Why | Priority |
 | --- | --- | --- | --- |
 | S-01 | **Generate the button table from code in CI** | The extractor I used (a ~40-line script) finds every <button>, its label, handler, data-testid and line. Run in CI it would fail the build when a button is added/removed without the spec being regenerated, so the spec can never drift. | High |
-| S-02 | **Label planned controls as planned** | You chose to keep ‘Continue with SSO’ and ‘Update Status To All’. A visible ‘Coming soon’ tooltip on the SSO button (the status one already has one) keeps users from reporting them as bugs. | Low |
+| S-02 | **Label planned controls as planned** | You chose to keep ‘Continue with SSO’ (‘Update Status To All’ is now built). A visible ‘Coming soon’ tooltip on the SSO button keeps users from reporting them as bugs. | Low |
 | S-03 | **Build the lock-request UI (decided)** | DONE (PR #125). Banner with Approve/Reject on the item editor plus a bell notification, as you chose. Needs tests under CLAUDE.md §9 and a workspace-isolation check; do it as its own PR. | High |
 | S-04 | **Replace window.confirm / prompt / alert** | DONE (PRs #126, #128 and the Catalog error toasts): confirms, reasons, names and small forms use one shared dialog; the Catalog window.alert error notices became toasts (`notify`), so no native dialog is left. Originally: About 40 native dialogs are used (delete, archive, rename, cancel, expiry reason…). They cannot be styled, translated or tested reliably and block the thread. A single shared ConfirmDialog (with required-reason and typed-confirm variants) would also fix inconsistent wording. | Medium |
 | S-05 | **Only 114 of 409 buttons have a data-testid** | Most e2e flake shapes in CLAUDE.md §3 (‘locator matches a different element with the same role’) come from this. Add stable test ids to destructive and state-changing buttons first. | Medium |
@@ -1555,7 +1556,7 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `TRAC-28` | Status pill | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | `TRAC-29` | Open item availability | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `TRAC-30` | Status choices | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `TRAC-31` | ⚠ Update Status To All | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `TRAC-31` | ⚠ Update Status To All | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | `TRAC-32` | ↻ Update Current Item | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | `TRAC-33` | Close | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `TRAC-34` | Apply <STATUS> | ✔ | ✔ | ✔ | ✔ | — | — | — |
@@ -1795,7 +1796,7 @@ Three decisions deliberately depart from Plan V1’s prose and must not be “fi
 | `SEAR-03` | Mark all read (page) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `SEAR-04` | Notification row | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 
-Controls each role can use (of 304 with a computable rule; 2 are `?`): admin 304, manager 293, editor 213, drafter 254, estimator 162, purchase_officer 181, viewer 146.
+Controls each role can use (of 304 with a computable rule; 2 are `?`): admin 304, manager 293, editor 213, drafter 254, estimator 161, purchase_officer 180, viewer 145.
 
 
 ## Appendix A. Source index of every `<button>` in the web app

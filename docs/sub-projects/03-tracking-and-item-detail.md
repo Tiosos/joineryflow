@@ -591,3 +591,7 @@ sub-tab's `order_no`, so a Draft or Pending order counts), on the item itself **
 related parts are where most orders are raised (Q417); a related part still rides with its parent like under the other chips.
 Not the issued-only `issued_order_no`. Client-side in `TrackingClient.tsx` (`quick` key `orders`); no API change. e2e
 `tracking_orders_chip.spec.ts` (own project, one ordered and one plain item).
+
+## Update Status To All (2026-10-20)
+
+The Status pop-up's second button, long a disabled placeholder, is built. Decided with the customer: it applies to **every live joinery item of the project** (related parts keep their own status), with a count confirm ("Set N items to STATUS?") and a required note. `POST /projects/{pid}/bulk-status` (`tracking:write`; another workspace's project is a 404) selects the project's live joinery items (`joinery_items_only` + `not_deleted`) and hands them to `bulk_patch_item_status`, so it is **one transaction with no 500-item cap**, locked items (Hard Lock, someone else's Controlled Lock) are skipped and listed, and each item gets the same status log, `item.status.bulk` audit row and edit-log row. The web shows the same banner as Apply status. Shown on Tracking only: the item editor's Actions tab opens the same pop-up without it. Tests: `tests/test_project_bulk_status.py`, `tests/e2e/status_update_all.spec.ts`.
