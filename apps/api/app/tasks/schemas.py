@@ -70,6 +70,8 @@ class TaskOut(BaseModel):
     completed_at: datetime | None
     cancelled_at: datetime | None
     field_versions: dict[str, int] = Field(default_factory=dict)
+    comment_count: int = 0
+    can_comment: bool = False
     created_at: datetime
     updated_at: datetime
 

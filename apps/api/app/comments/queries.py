@@ -1,7 +1,7 @@
 """SQL helpers for comments (migrations 0042 + 0043, Plan V1 §29).
 
 One thread entity over Project / Area / Room / Joinery Item / Module /
-Shop-drawing revision. The object is one of six real FK columns
+Shop-drawing revision / Task (0082). The object is one of seven real FK columns
 (`_OBJECT_COL`); replies inherit their parent's object and are one level deep
 (a DB rule, see the migration).
 
@@ -19,11 +19,12 @@ from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..edit_log import write_edit_log
 from ..row_types import live_joinery_items
+from ..tasks import queries as tasks_q
 
 # Fixed map — the only place a column name is interpolated into SQL.
 _OBJECT_COL = {
     "project": "project_id", "area": "area_id", "room": "room_id", "item": "item_id",
-    "module": "module_id", "revision": "revision_id",
+    "module": "module_id", "revision": "revision_id", "task": "task_id",
 }
 
 # Project, Area, Room and Item are Tracking's own hierarchy (areas/rooms already
@@ -37,6 +38,9 @@ MODULE = "tracking"
 COMMENT_MODULE = {
     "project": MODULE, "area": MODULE, "room": MODULE, "item": MODULE,
     "module": "list", "revision": "shop_dwgs",
+    # A task's thread follows the task, not a module: who may read it is the tasks module's own
+    # visibility, and who may post is `tasks.queries.can_comment` (both per task, in the routes).
+    "task": None,
 }
 
 # Every module whose `read` grant is needed to open what the thread links to. An
@@ -49,18 +53,21 @@ COMMENT_MODULE = {
 READ_MODULES = {
     "project": (MODULE,), "area": (MODULE,), "room": (MODULE,),
     "item": (MODULE, "list"), "module": ("list",), "revision": ("shop_dwgs",),
+    "task": (),
 }
 
 _EXCERPT = 200
 
 _COMMENT_COLS = """
     c.comment_id, c.workspace_id, c.object_type,
-    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id, c.module_id, c.revision_id)
+    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id, c.module_id, c.revision_id, c.task_id)
         AS object_id,
     c.parent_comment_id, c.author_id, ua.full_name AS author_name,
     c.body, c.created_at, c.edited_at, c.deleted_at
 """
 _COMMENT_JOIN = "LEFT JOIN app_user ua ON ua.id = c.author_id"
+_OBJECT_ID = ("COALESCE(c.project_id, c.area_id, c.room_id, c.item_id, c.module_id, c.revision_id,"
+              " c.task_id)")
 
 
 def _object_in_workspace(
@@ -91,23 +98,27 @@ def _object_in_workspace(
                          JOIN shop_drawing d ON d.drawing_id = v.drawing_id
                          JOIN projects p ON p.project_id = d.project_id
                         WHERE v.revision_id = :id AND p.workspace_id = :w""",
+        # Existence in this workspace only. Whether the *caller* may see the task (a private task
+        # is not everyone's) is the route's check (`tasks.queries.get_task`), made before this.
+        "task": "SELECT 1 FROM task t WHERE t.task_id = :id AND t.workspace_id = :w",
     }[object_type]
     if lock:
         sql += " FOR KEY SHARE OF " + {
             "project": "p", "area": "a", "room": "r", "item": "i",
-            "module": "m", "revision": "v",
+            "module": "m", "revision": "v", "task": "t",
         }[object_type]
     return db.execute(text(sql), {"id": object_id, "w": workspace_id}).first() is not None
 
 
-def object_type_of(db: Session, *, comment_id: int, workspace_id: int) -> str | None:
-    """The object type a comment belongs to, or None if it is not in this
-    workspace. The routes need it *before* the permission check: which module
-    gates a comment depends on what it is a comment on."""
-    return db.execute(
-        text("SELECT object_type FROM comment WHERE comment_id = :c AND workspace_id = :w"),
+def object_ref(db: Session, *, comment_id: int, workspace_id: int) -> tuple[str, int] | None:
+    """`(object_type, object_id)` of a comment in this workspace, or None. A task's thread needs the
+    id too, because who may use it depends on that task."""
+    row = db.execute(
+        text(f"SELECT c.object_type, {_OBJECT_ID} AS object_id FROM comment c"
+             " WHERE c.comment_id = :c AND c.workspace_id = :w"),
         {"c": comment_id, "w": workspace_id},
-    ).scalar()
+    ).first()
+    return (row[0], row[1]) if row else None
 
 
 def _row(
@@ -217,11 +228,11 @@ def list_comments(
 
 
 def _readers(
-    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str
+    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str, object_id: int,
 ) -> set[int]:
     """Of `user_ids`, those who are active in this workspace and can currently
     read what this object's thread links to (`READ_MODULES`). Checked against
-    the Dynamic RBAC engine, workspace-wide."""
+    the Dynamic RBAC engine, workspace-wide. For a task's thread, those who can see that task."""
     if not user_ids:
         return set()
     rows = db.execute(
@@ -234,6 +245,15 @@ def _readers(
         ),
         {"w": workspace_id, "ids": user_ids},
     ).mappings().all()
+    if object_type == "task":
+        return {
+            r["id"] for r in rows
+            if tasks_q.get_task(
+                db, task_id=object_id,
+                actor=AuthUser(id=r["id"], workspace_id=r["workspace_id"], email=r["email"],
+                               full_name=r["full_name"], auth_role=r["auth_role"]),
+            ) is not None
+        }
     return {
         r["id"]
         for r in rows
@@ -283,12 +303,13 @@ def counts_for_project(
 
 
 def _bad_mentions(
-    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str
+    db: Session, *, workspace_id: int, user_ids: list[int], object_type: str, object_id: int,
 ) -> list[int]:
     """Ids that cannot be mentioned: not an active user of this workspace, or a
     user who cannot read this thread's object (a notification linking them to a
     record they cannot open is worse than refusing the mention)."""
-    ok = _readers(db, workspace_id=workspace_id, user_ids=user_ids, object_type=object_type)
+    ok = _readers(db, workspace_id=workspace_id, user_ids=user_ids,
+                  object_type=object_type, object_id=object_id)
     return sorted(set(user_ids) - ok)
 
 
@@ -326,6 +347,10 @@ def _log_item(
             text("SELECT item_id FROM modules WHERE module_id = :m"),
             {"m": row["object_id"]},
         ).scalar()
+    elif row["object_type"] == "task":
+        item_id = db.execute(
+            text("SELECT item_id FROM task WHERE task_id = :t"), {"t": row["object_id"]},
+        ).scalar()
     else:
         return
     if item_id is not None:
@@ -360,7 +385,8 @@ def create_comment(
         return "NOT_FOUND", None
 
     ids = sorted(set(mentioned_user_ids))
-    bad = _bad_mentions(db, workspace_id=ws, user_ids=ids, object_type=object_type)
+    bad = _bad_mentions(db, workspace_id=ws, user_ids=ids, object_type=object_type,
+                        object_id=object_id)
     if bad:
         return "BAD_MENTION", bad
 
@@ -385,7 +411,8 @@ def create_comment(
         # A reply is never refused over its recipient, but it is only *sent* to a
         # parent author who can still open the thread.
         if parent["author_id"] in _readers(
-            db, workspace_id=ws, user_ids=[parent["author_id"]], object_type=object_type
+            db, workspace_id=ws, user_ids=[parent["author_id"]],
+            object_type=object_type, object_id=object_id,
         ):
             recipients[parent["author_id"]] = "reply"
     _notify(db, workspace_id=ws, actor_id=actor.id, comment_id=cid, recipients=recipients)
@@ -431,7 +458,7 @@ def edit_comment(
         # must not block an unrelated edit just because that person has since
         # lost access (the UI resends every `@Name` still in the text).
         bad = _bad_mentions(
-            db, workspace_id=ws, object_type=row["object_type"],
+            db, workspace_id=ws, object_type=row["object_type"], object_id=row["object_id"],
             user_ids=[u for u in new_ids if u not in old_ids],
         )
         if bad:

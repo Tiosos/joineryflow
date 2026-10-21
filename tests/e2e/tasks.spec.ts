@@ -138,6 +138,50 @@ test("a project's page and a cutlist's Tasks pane add tasks on that project and 
   }
 });
 
+test("a task's comment thread: post in the task row; a mention reaches the bell and opens the task", async ({ page }) => {
+  const DRAFTER = "noa.lindqvist@hartwood.test";
+  await login(page, DRAFTER);
+  const noaId = (await (await page.request.get("/api/auth/me")).json()).id as number;
+  await page.context().clearCookies();
+  await login(page);
+  const { stamp, itemId } = await fixture(page, "thread");
+  const title = `Thread task ${stamp}`;
+  const made = await page.request.post("/api/tasks", { data: { title, item_id: itemId } });
+  expect(made.status()).toBe(201);
+  const taskId = (await made.json()).task_id as number;
+  try {
+    // a comment typed into the task's own thread, on the item's Tasks tab
+    await page.goto(`/items/${itemId}?tab=tasks`);
+    const row = page.getByTestId("task-row").filter({ hasText: title });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByTestId("task-comments-toggle")).toHaveText("Comments");
+    await row.getByTestId("task-comments-toggle").click();
+    await row.getByTestId("comment-input").fill(`Rang them ${stamp}`);
+    await row.getByTestId("comment-submit").click();
+    await expect(row.getByTestId("comment-item").filter({ hasText: `Rang them ${stamp}` })).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByTestId("task-comments-toggle")).toHaveText("Comments (1)", { timeout: 30_000 });
+
+    // a mention of Noa, who can see the task, reaches her bell and opens the task with its thread
+    const mention = await page.request.post("/api/comments", {
+      data: { object_type: "task", object_id: taskId, body: `@Noa Lindqvist can you check ${stamp}`, mentioned_user_ids: [noaId] },
+    });
+    expect(mention.status()).toBe(201);
+    await page.context().clearCookies();
+    await login(page, DRAFTER);
+    await page.goto("/dashboard");
+    await openBell(page);
+    await page.locator("button").filter({ hasText: title }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?task=${taskId}`), { timeout: 30_000 });
+    const thread = page.getByTestId("task-thread");
+    await expect(thread.getByText(`can you check ${stamp}`)).toBeVisible({ timeout: 30_000 });
+    await expect(thread.getByText(`Rang them ${stamp}`)).toBeVisible();
+  } finally {
+    await page.context().clearCookies();
+    await login(page);
+    await page.request.post(`/api/tasks/${taskId}/status`, { data: { status: "cancelled" } });
+  }
+});
+
 /**
  * Tasks in Global Search (migration 0081). Like search.spec.ts these need Meilisearch and the
  * search-worker: skipped locally on a 503, a failure in CI. The worker indexes asynchronously, so

@@ -15,8 +15,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (it is "0081", tasks in search).
-HEAD = "0081"
+# The current head revision: bump it with each new migration (it is "0082", comments on a task).
+HEAD = "0082"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -281,3 +281,38 @@ def test_0081_downgrade_removes_the_task_search_triggers_and_upgrade_queues_exis
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD and triggers() == want
     with eng.connect() as c:                                  # the existing task was queued again
         assert c.execute(text("SELECT entity_id FROM search_outbox WHERE entity_type = 'task'")).scalar() == tid
+
+
+# --- 0082: comments on a task ------------------------------------------------------------------------
+
+def test_0082_downgrade_drops_task_threads_and_keeps_the_others_then_upgrade_restores_the_shape(scratch):
+    eng, alembic = scratch
+    wid = _workspace(eng)
+    with eng.begin() as c:
+        uid = c.execute(text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                             " VALUES (:w, 'a@m.test', 'A', 'x', 'admin') RETURNING id"), {"w": wid}).scalar()
+        pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES ('M-1', 'M', :w)"
+                             " RETURNING project_id"), {"w": wid}).scalar()
+        tid = c.execute(text("INSERT INTO task(workspace_id, title, created_by) VALUES (:w, 't', :u)"
+                             " RETURNING task_id"), {"w": wid, "u": uid}).scalar()
+        c.execute(text("INSERT INTO comment(workspace_id, task_id, author_id, body) VALUES (:w, :t, :u, 'on task')"),
+                  {"w": wid, "t": tid, "u": uid})
+        c.execute(text("INSERT INTO comment(workspace_id, project_id, author_id, body) VALUES (:w, :p, :u, 'on project')"),
+                  {"w": wid, "p": pid, "u": uid})
+    with pytest.raises(Exception):                   # exactly one target: two is refused
+        with eng.begin() as c:
+            c.execute(text("INSERT INTO comment(workspace_id, task_id, project_id, author_id, body)"
+                           " VALUES (:w, :t, :p, :u, 'two')"), {"w": wid, "t": tid, "p": pid, "u": uid})
+    with eng.connect() as c:
+        got = dict(c.execute(text("SELECT object_type, body FROM comment")).all())
+    assert got == {"task": "on task", "project": "on project"}
+
+    assert alembic("downgrade", "0081").returncode == 0 and _version(eng) == "0081"
+    with eng.connect() as c:
+        assert dict(c.execute(text("SELECT object_type, body FROM comment")).all()) == {"project": "on project"}
+        assert c.execute(text("SELECT count(*) FROM information_schema.columns"
+                              " WHERE table_name = 'comment' AND column_name = 'task_id'")).scalar() == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM information_schema.columns"
+                              " WHERE table_name = 'comment' AND column_name = 'task_id'")).scalar() == 1

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { CommentThread } from "@/components/comments/CommentThread";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
 import { useUndo } from "@/components/undo/UndoProvider";
 import { commentsApi } from "@/lib/comments-fetch";
@@ -67,6 +68,8 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   // The task a link (the bell, a search hit) points at, when the current list does not hold it
   // (someone else's, unassigned, or already done): it is shown pinned above the list.
   const [linked, setLinked] = useState<TaskOut | null | "gone">(null);
+  // The task whose comment thread is open (one at a time). A link to a task opens its own.
+  const [thread, setThread] = useState<number | null>(highlight ?? null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -254,6 +257,27 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
                 <span>{`From ${t.created_by_name ?? "someone"}`}</span>
               </div>
               {t.description && <p className="mt-1 whitespace-pre-wrap text-sm text-h-ink">{t.description}</p>}
+              <button
+                type="button"
+                data-testid="task-comments-toggle"
+                aria-expanded={thread === t.task_id}
+                onClick={() => setThread(thread === t.task_id ? null : t.task_id)}
+                className="mt-1 text-xs text-h-muted hover:text-h-ink"
+              >
+                {t.comment_count > 0 ? `Comments (${t.comment_count})` : "Comments"}
+              </button>
+              {thread === t.task_id && (
+                <div className="mt-2 border-t border-h-line pt-2" data-testid="task-thread">
+                  <CommentThread
+                    objectType="task"
+                    objectId={t.task_id}
+                    currentUserId={meId}
+                    currentUserRole={meRole}
+                    canComment={t.can_comment}
+                    onMutated={() => void load()}
+                  />
+                </div>
+              )}
             </li>
           );
         })}

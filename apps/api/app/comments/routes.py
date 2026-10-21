@@ -6,7 +6,9 @@ Room / Item, `list` for a Module, `shop_dwgs` for a shop-drawing revision.
 Reading needs `read` on every module the thread links into; posting, editing
 and deleting need `comment` on the object's own module — the first place the
 `comment` action is actually enforced. Because the module is a property of the
-object, the edit / delete / reply routes look the comment's type up first.
+object, the edit / delete / reply routes look the comment's object up first.
+A Task's thread (0082) follows the task instead: it is visible to those who can see the task
+(a 404 for anyone else), and posting needs `tasks.queries.can_comment`.
 The author-only edit rule and the author-or-manager delete rule are in the
 query layer (per-object rules stay out of the matrix, Q472 not being built).
 """
@@ -17,6 +19,7 @@ from ..auth.rbac import current_user, require_permission
 from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
+from ..tasks import queries as task_q
 from . import queries as q
 from .schemas import (
     CommentCountsOut,
@@ -34,24 +37,45 @@ def _forbidden() -> HTTPException:
     return HTTPException(403, "forbidden")
 
 
-def _require_read_access(db: Session, user: AuthUser, object_type: str) -> None:
-    """`read` on every module the thread links into (`READ_MODULES`)."""
+def _visible_task(db: Session, user: AuthUser, task_id: int | None) -> dict:
+    """A task's thread is the task's own business: a task the caller cannot see (a private task, a
+    target they cannot read, a deleted item's) is a 404, like a missing one."""
+    row = task_q.get_task(db, actor=user, task_id=task_id) if task_id is not None else None
+    if row is None:
+        raise HTTPException(404, "not found")
+    return row
+
+
+def _require_read_access(
+    db: Session, user: AuthUser, object_type: str, object_id: int | None = None
+) -> None:
+    """`read` on every module the thread links into (`READ_MODULES`); a task's thread: the task."""
+    if object_type == "task":
+        _visible_task(db, user, object_id)
+        return
     for module in q.READ_MODULES[object_type]:
         if not has_permission_db(db, user, module, "read"):
             raise _forbidden()
 
 
-def _require_comment(db: Session, user: AuthUser, object_type: str) -> None:
-    """`comment` on the object's own module (`COMMENT_MODULE`)."""
+def _require_comment(
+    db: Session, user: AuthUser, object_type: str, object_id: int | None = None
+) -> None:
+    """`comment` on the object's own module (`COMMENT_MODULE`); a task's thread: see the task and
+    `tasks.queries.can_comment`."""
+    if object_type == "task":
+        if not task_q.can_comment(db, user, _visible_task(db, user, object_id)):
+            raise _forbidden()
+        return
     if not has_permission_db(db, user, q.COMMENT_MODULE[object_type], "comment"):
         raise _forbidden()
 
 
-def _type_of_existing(db: Session, user: AuthUser, comment_id: int) -> str:
-    t = q.object_type_of(db, comment_id=comment_id, workspace_id=user.workspace_id)
-    if t is None:
+def _ref_of_existing(db: Session, user: AuthUser, comment_id: int) -> tuple[str, int]:
+    ref = q.object_ref(db, comment_id=comment_id, workspace_id=user.workspace_id)
+    if ref is None:
         raise HTTPException(404, "not found")
-    return t
+    return ref
 
 
 def _fail(code: str, payload: object = None) -> HTTPException:
@@ -71,7 +95,7 @@ def list_comments_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    _require_read_access(db, user, object_type)
+    _require_read_access(db, user, object_type, object_id)
     rows = q.list_comments(
         db, object_type=object_type, object_id=object_id,
         workspace_id=user.workspace_id,
@@ -103,13 +127,13 @@ def create_comment_route(
 ):
     # A reply names no object: its type is its parent's. An unknown parent falls
     # through to `create_comment`, which answers 404.
-    object_type = body.object_type
+    object_type, object_id = body.object_type, body.object_id
     if object_type is None:
-        object_type = q.object_type_of(
-            db, comment_id=body.parent_id, workspace_id=user.workspace_id)
+        ref = q.object_ref(db, comment_id=body.parent_id, workspace_id=user.workspace_id)
+        object_type, object_id = ref if ref else (None, None)
     if object_type is not None:
-        _require_comment(db, user, object_type)
-        _require_read_access(db, user, object_type)
+        _require_comment(db, user, object_type, object_id)
+        _require_read_access(db, user, object_type, object_id)
     code, out = q.create_comment(
         db, actor=user, object_type=body.object_type, object_id=body.object_id,
         parent_id=body.parent_id, body=body.body,
@@ -128,7 +152,7 @@ def edit_comment_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    _require_comment(db, user, _type_of_existing(db, user, cid))
+    _require_comment(db, user, *_ref_of_existing(db, user, cid))
     code, out = q.edit_comment(
         db, actor=user, comment_id=cid, body=body.body,
         mentioned_user_ids=body.mentioned_user_ids,
@@ -145,7 +169,7 @@ def delete_comment_route(
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    _require_comment(db, user, _type_of_existing(db, user, cid))
+    _require_comment(db, user, *_ref_of_existing(db, user, cid))
     code = q.delete_comment(db, actor=user, comment_id=cid)
     if code != "OK":
         raise _fail(code)

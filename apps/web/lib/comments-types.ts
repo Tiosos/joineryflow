@@ -8,7 +8,8 @@ export type CommentObjectType =
   | "room"
   | "item"
   | "module"
-  | "revision";
+  | "revision"
+  | "task";
 
 export interface CommentMention {
   user_id: number;

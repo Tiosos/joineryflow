@@ -29,6 +29,11 @@ export interface TaskOut {
   completed_at: string | null;
   cancelled_at: string | null;
   field_versions: Record<string, number>;
+  /** Live comments on the task's thread (a deleted one is not counted). */
+  comment_count: number;
+  /** May the caller post in the thread (the task's target module's `comment` grant, or any person
+   *  on a task with no target). Reading it needs only that the caller can see the task. */
+  can_comment: boolean;
   created_at: string;
   updated_at: string;
 }

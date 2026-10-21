@@ -33,7 +33,7 @@ from ..db import get_db
 from ..comments.queries import READ_MODULES
 from ..items.queries import lock_requests_waiting_for_decision
 from ..orders.queries import orders_waiting_for_decision
-from ..tasks.queries import list_tasks
+from ..tasks.queries import list_tasks, scope as task_scope
 from . import queries as q
 from .schemas import (
     NotificationListLockRequestsOut,
@@ -63,6 +63,7 @@ def list_notifications_route(
     out = q.list_notifications(
         db, user_id=user.id, workspace_id=user.workspace_id,
         unread_only=unread_only, limit=limit, offset=offset, types=types,
+        task_scope=task_scope(db, user),
     )
     # The caller's own open tasks ride on the same first, unfiltered page, for every role (a task
     # is assigned to a person, whatever their role). Visibility is the tasks module's own: a task
