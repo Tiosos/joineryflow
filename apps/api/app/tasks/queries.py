@@ -40,18 +40,10 @@ _TARGET_COLS = ("project_id", "item_id", "cutlist_id")
 _KIND_COL = {"project": "project_id", "item": "item_id", "cutlist": "cutlist_id"}
 _PRIVILEGED_ROLES = ("manager", "admin")
 
-_SELECT = f"""
-    SELECT t.task_id, t.title, t.description, t.status, t.assignee_id,
-           au.full_name AS assignee_name, t.created_by, cu.full_name AS created_by_name,
-           t.due_date, t.source, t.project_id, t.item_id, t.cutlist_id,
-           CASE WHEN t.project_id IS NOT NULL THEN 'project'
-                WHEN t.item_id    IS NOT NULL THEN 'item'
-                WHEN t.cutlist_id IS NOT NULL THEN 'cutlist' END AS target_type,
-           CASE WHEN t.project_id IS NOT NULL THEN p.project_code
-                WHEN t.item_id    IS NOT NULL THEN COALESCE(NULLIF(i.code, ''), CAST(i.num AS text))
-                WHEN t.cutlist_id IS NOT NULL THEN CAST(c.cutlist_no AS text)
-                                                   || COALESCE(' ' || c.name, '') END AS target_label,
-           t.completed_at, t.cancelled_at, t.field_versions, t.created_at, t.updated_at
+# The tasks the caller may see: `:w` (workspace), `:u` (the caller), `:priv`, `:rt`, `:rl` (from
+# `scope`). Used by every read here and by the notification inbox, which must hide a task thread
+# from a recipient who can no longer see the task.
+_FROM_VISIBLE = f"""
     FROM task t
     LEFT JOIN app_user au ON au.id = t.assignee_id
     LEFT JOIN app_user cu ON cu.id = t.created_by
@@ -68,13 +60,31 @@ _SELECT = f"""
          OR (:rl AND t.cutlist_id IS NOT NULL)
       )
 """
+FROM_VISIBLE = _FROM_VISIBLE
+
+_SELECT = f"""
+    SELECT t.task_id, t.title, t.description, t.status, t.assignee_id,
+           au.full_name AS assignee_name, t.created_by, cu.full_name AS created_by_name,
+           t.due_date, t.source, t.project_id, t.item_id, t.cutlist_id,
+           CASE WHEN t.project_id IS NOT NULL THEN 'project'
+                WHEN t.item_id    IS NOT NULL THEN 'item'
+                WHEN t.cutlist_id IS NOT NULL THEN 'cutlist' END AS target_type,
+           CASE WHEN t.project_id IS NOT NULL THEN p.project_code
+                WHEN t.item_id    IS NOT NULL THEN COALESCE(NULLIF(i.code, ''), CAST(i.num AS text))
+                WHEN t.cutlist_id IS NOT NULL THEN CAST(c.cutlist_no AS text)
+                                                   || COALESCE(' ' || c.name, '') END AS target_label,
+           t.completed_at, t.cancelled_at, t.field_versions, t.created_at, t.updated_at,
+           (SELECT count(*) FROM comment cm
+             WHERE cm.task_id = t.task_id AND cm.deleted_at IS NULL) AS comment_count
+    {_FROM_VISIBLE}
+"""
 
 
 def _is_privileged(actor: AuthUser) -> bool:
     return actor.auth_role in _PRIVILEGED_ROLES
 
 
-def _scope(db: Session, actor: AuthUser) -> dict:
+def scope(db: Session, actor: AuthUser) -> dict:
     """Bind values for the visibility predicate in `_SELECT`."""
     return {
         "w": actor.workspace_id, "u": actor.id, "priv": _is_privileged(actor),
@@ -149,10 +159,27 @@ def _log_item(db: Session, row: dict, *, actor_id: int, field: str,
                        old_value=old, new_value=new)
 
 
+def can_comment(db: Session, actor: AuthUser, task: dict) -> bool:
+    """May `actor` post in this task's thread (comments, migration 0082)? A task on a project, item
+    or cutlist: `comment` on the module its target follows. A task with no target has no module,
+    and a person who can see it (its creator, assignee, a manager or admin) is its whole audience,
+    so seeing it is enough, as making one for yourself needs no grant either."""
+    target = task["target_type"]
+    return target is None or has_permission_db(db, actor, _module(target), "comment")
+
+
+def _with_can_comment(db: Session, actor: AuthUser, rows: list[dict]) -> list[dict]:
+    """Adds `can_comment` to each row, asking the permission engine once per module."""
+    granted = {m: has_permission_db(db, actor, m, "comment") for m in ("tracking", "list")}
+    for r in rows:
+        r["can_comment"] = r["target_type"] is None or granted[_module(r["target_type"])]
+    return rows
+
+
 def get_task(db: Session, *, actor: AuthUser, task_id: int) -> dict | None:
     r = db.execute(text(_SELECT + " AND t.task_id = :t"),
-                   {**_scope(db, actor), "t": task_id}).mappings().first()
-    return dict(r) if r else None
+                   {**scope(db, actor), "t": task_id}).mappings().first()
+    return _with_can_comment(db, actor, [dict(r)])[0] if r else None
 
 
 def list_tasks(
@@ -160,7 +187,7 @@ def list_tasks(
     project_id: int | None, item_id: int | None, cutlist_id: int | None,
     due_before, limit: int, offset: int,
 ) -> dict:
-    where, params = "", {**_scope(db, actor)}
+    where, params = "", {**scope(db, actor)}
     if assignee_id is not None:
         where += " AND t.assignee_id = :f_assignee"
         params["f_assignee"] = assignee_id
@@ -190,7 +217,7 @@ def list_tasks(
              LIMIT :limit OFFSET :offset"""),
         {**params, "limit": limit, "offset": offset},
     ).mappings().all()
-    return {"items": [dict(r) for r in rows], "total": total}
+    return {"items": _with_can_comment(db, actor, [dict(r) for r in rows]), "total": total}
 
 
 def create_task(db: Session, *, actor: AuthUser, payload: CreateTaskIn) -> tuple[str, dict | None]:

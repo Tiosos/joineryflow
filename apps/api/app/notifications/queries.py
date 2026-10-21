@@ -9,11 +9,18 @@ the recipient can no longer read (see `notifications/routes.py`).
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..tasks.queries import FROM_VISIBLE as _TASKS_VISIBLE
+
 _VISIBLE = """
     FROM notification n
     JOIN comment c ON c.comment_id = n.comment_id AND c.deleted_at IS NULL
     WHERE n.recipient_id = :u AND n.workspace_id = :w
 """
+# A task thread is shown only while the recipient can still see the task (a private task, a target
+# they can no longer read, a deleted item's): the tasks module's own visibility, with the
+# recipient's `scope` (`tasks.queries.scope`) bound as :priv, :rt, :rl beside :u and :w.
+_TASK_VISIBLE = (f" AND (c.task_id IS NULL OR c.task_id IN"
+                 f" (SELECT t.task_id {_TASKS_VISIBLE}))")
 
 
 def _url(
@@ -30,6 +37,8 @@ def _url(
         # `comments=1` opens the drawer's comment panel on arrival.
         return (f"/shop-dwgs?project={project_id}&drawing={parent_id}"
                 f"&rev={object_id}&comments=1")
+    if object_type == "task":
+        return f"/tasks?task={object_id}"
     if object_type == "project":
         return f"/projects/{object_id}"
     # Area and Room threads live on the project page's Areas & Rooms card, which
@@ -41,7 +50,7 @@ def _url(
 
 def list_notifications(
     db: Session, *, user_id: int, workspace_id: int, unread_only: bool,
-    limit: int, offset: int, types: list[str],
+    limit: int, offset: int, types: list[str], task_scope: dict,
 ) -> dict:
     """`types` are the object types the recipient can currently read; the caller
     works them out, this only filters."""
@@ -52,7 +61,7 @@ def list_notifications(
                    ua.full_name AS actor_name, c.comment_id,
                    left(c.body, 140) AS excerpt, c.object_type,
                    COALESCE(c.project_id, c.area_id, c.room_id, c.item_id,
-                            c.module_id, c.revision_id) AS object_id,
+                            c.module_id, c.revision_id, c.task_id) AS object_id,
                    COALESCE(c.project_id, a.project_id, ra.project_id, i.project_id,
                             mi.project_id, sd.project_id) AS project_id,
                    COALESCE(mo.item_id, sr.drawing_id) AS parent_id,
@@ -66,6 +75,7 @@ def list_notifications(
                         WHEN 'module'  THEN mo.module_no || COALESCE(' ' || mo.name, '')
                                             || ' (#' || mi.num::text || ')'
                         WHEN 'revision' THEN sd.title || ' · v' || sr.rev_no::text
+                        WHEN 'task'    THEN tk.title
                         ELSE '#' || i.num::text || COALESCE(' ' || i.description, '')
                    END AS object_label
               FROM notification n
@@ -80,16 +90,19 @@ def list_notifications(
               LEFT JOIN items mi   ON mi.item_id   = mo.item_id
               LEFT JOIN shop_drawing_revision sr ON sr.revision_id = c.revision_id
               LEFT JOIN shop_drawing sd ON sd.drawing_id = sr.drawing_id
+              LEFT JOIN task tk ON tk.task_id = c.task_id
              WHERE n.recipient_id = :u AND n.workspace_id = :w
                AND c.object_type = ANY(:types)
                AND (i.item_id IS NULL OR NOT i.deleted)
                AND (mi.item_id IS NULL OR NOT mi.deleted)
+               {_TASK_VISIBLE}
                {"AND n.read_at IS NULL" if unread_only else ""}
              ORDER BY n.created_at DESC, n.notification_id DESC
              LIMIT :lim OFFSET :off
             """
         ),
-        {"u": user_id, "w": workspace_id, "lim": limit, "off": offset, "types": types},
+        {**task_scope, "u": user_id, "w": workspace_id, "lim": limit, "off": offset,
+         "types": types},
     ).mappings().all()
     notifications = []
     for r in rows:
@@ -103,18 +116,18 @@ def list_notifications(
     return {
         "notifications": notifications,
         "unread_count": unread_count(
-            db, user_id=user_id, workspace_id=workspace_id, types=types
+            db, user_id=user_id, workspace_id=workspace_id, types=types, task_scope=task_scope
         ),
     }
 
 
 def unread_count(
-    db: Session, *, user_id: int, workspace_id: int, types: list[str]
+    db: Session, *, user_id: int, workspace_id: int, types: list[str], task_scope: dict
 ) -> int:
     return db.execute(
         text(f"SELECT count(*) {_VISIBLE} AND n.read_at IS NULL"
-             " AND c.object_type = ANY(:types)"),
-        {"u": user_id, "w": workspace_id, "types": types},
+             f" AND c.object_type = ANY(:types){_TASK_VISIBLE}"),
+        {**task_scope, "u": user_id, "w": workspace_id, "types": types},
     ).scalar_one()
 
 
