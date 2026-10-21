@@ -314,3 +314,17 @@ def test_a_purchase_officer_and_a_manager_get_tasks_beside_their_waiting_lists(w
     assert client(ws, "purchase_officer").get("/notifications").json()["tasks_open_count"] == 1
     body = mgr.get("/notifications").json()
     assert body["tasks_open_count"] == 1 and "lock_requests_waiting" in body
+
+
+def test_a_projects_task_list_covers_its_items_and_cutlists_and_a_cutlists_is_its_own(ws):
+    """What the project page's and the cutlist pane's Tasks panels read."""
+    mgr = client(ws, "manager")
+    _make(mgr, title="on the project", project_id=ws["pid"])
+    _make(mgr, title="on the item", item_id=ws["iid"])
+    _make(mgr, title="on the cutlist", cutlist_id=ws["cid"])
+    _make(mgr, title="no target")
+    in_project = {t["title"] for t in mgr.get(f"/tasks?project_id={ws['pid']}&limit=200").json()["items"]}
+    assert in_project == {"on the project", "on the item", "on the cutlist"}
+    on_cutlist = mgr.get(f"/tasks?cutlist_id={ws['cid']}&limit=200").json()["items"]
+    assert [t["title"] for t in on_cutlist] == ["on the cutlist"] and on_cutlist[0]["target_type"] == "cutlist"
+    assert on_cutlist[0]["target_label"].endswith("Run 1")
