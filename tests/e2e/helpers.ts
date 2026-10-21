@@ -24,14 +24,12 @@ export async function login(page: Page, email: string = MANAGER) {
   await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
 
-/** The Undo window of `components/undo/UndoProvider` (`UNDO_MS`); keep the two in step. */
-const UNDO_MS = 10_000;
-
 /**
- * Delete and archive wait out a 10-second Undo window before the request is sent. Call
+ * Delete and archive wait out an Undo window (10 s today) before the request is sent. Call
  * `page.clock.install()` before the page that starts the action loads, then this once the
- * toast is up: it jumps the page's timers instead of waiting the window out in real time.
+ * toast is up: it jumps the page's timers past any plausible window instead of waiting it
+ * out in real time, so the helper does not depend on the window's exact length.
  */
 export async function endUndoWindow(page: Page) {
-  await page.clock.fastForward(UNDO_MS);
+  await page.clock.fastForward(60_000);
 }

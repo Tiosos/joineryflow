@@ -222,16 +222,15 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
 
-      - name: Install Playwright browser and system dependencies
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: apps/web
-        env:
-          CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
-        run: |
-          if [ "$CACHE_HIT" = "true" ]; then
-            pnpm exec playwright install-deps chromium
-          else
-            pnpm exec playwright install --with-deps chromium
-          fi
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: apps/web
+        run: pnpm exec playwright install-deps chromium
 
       # The second pass below is the re-runnability guard. It always runs on a
       # push to main; on a pull request only when the PR touches what can break
