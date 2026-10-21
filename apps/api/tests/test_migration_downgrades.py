@@ -15,6 +15,9 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
+# The current head revision: bump it with each new migration (it is "0081", tasks in search).
+HEAD = "0081"
+
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
 
@@ -44,7 +47,7 @@ def scratch():
 
 
 def _to_0078(alembic):
-    """The scratch database is at head (`0079`); these tests were written at `0078`, so go down one first."""
+    """The scratch database is at head; these tests were written at `0078`, so go down first."""
     r = alembic("downgrade", "0078")
     assert r.returncode == 0, r.stderr
 
@@ -83,7 +86,7 @@ def test_0078_unit_cost_widens_and_a_downgrade_rounds_to_cents(scratch):
     assert str(got["a"]) == "1.23" and str(got["c"]) == "2.51"           # rounded half up
     assert str(got["b"]) == "9999999999.99"                              # capped, not an overflow
     assert alembic("upgrade", "head").returncode == 0
-    assert _unit_cost_types(eng) == {(14, 4)} and _version(eng) == "0079"
+    assert _unit_cost_types(eng) == {(14, 4)} and _version(eng) == HEAD
     with eng.begin() as c:
         c.execute(text("UPDATE glass_materials SET unit_cost = 1.2345 WHERE sku = 'a'"))
         assert str(c.execute(text("SELECT unit_cost FROM glass_materials WHERE sku = 'a'")).scalar()) == "1.2345"
@@ -112,7 +115,7 @@ def _too_long_then_short(scratch, table, floor, legacy_check):
     with eng.connect() as c:
         assert c.execute(text(legacy_check)).scalar() == "short-sku"
     assert alembic("upgrade", "head").returncode == 0
-    assert _version(eng) == "0079"
+    assert _version(eng) == HEAD
 
 
 def floor_rev(table):
@@ -164,7 +167,7 @@ def _purchase_order(eng, w, code) -> int:
 
 def test_0079_widens_the_four_sku_copies_and_rebuilds_the_view_unchanged(scratch):
     eng, alembic = scratch
-    assert _version(eng) == "0079"
+    assert _version(eng) == HEAD
     assert set(_copy_widths(eng).values()) == {255}
     after = _view(eng)
     assert alembic("downgrade", "0078").returncode == 0
@@ -221,10 +224,60 @@ def test_0079_downgrade_refuses_a_value_the_narrow_column_cannot_hold_then_narro
     assert r.returncode != 0
     assert f"0079 downgrade refused" in r.stderr and f"{table}.{col}" in r.stderr
     assert f"id {rid} value '{long_value}' ({limit + 5} characters, limit {limit})" in r.stderr
-    assert _version(eng) == "0079" and set(_copy_widths(eng).values()) == {255}    # nothing changed
+    assert _version(eng) == HEAD and set(_copy_widths(eng).values()) == {255}    # nothing changed
     assert _view(eng) == view_before
     with eng.begin() as c:
         c.execute(text(f"UPDATE {table} SET {col} = 'short' WHERE {col} = :v"), {"v": long_value})
     assert alembic("downgrade", "0078").returncode == 0
     assert _version(eng) == "0078" and _view(eng) == view_before
-    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == "0079"
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+
+
+# --- 0080: the task table -----------------------------------------------------------------------
+
+def test_0080_creates_the_task_table_and_downgrade_drops_it_and_back(scratch):
+    eng, alembic = scratch
+
+    def has_task() -> bool:
+        with eng.connect() as c:
+            return c.execute(text("SELECT to_regclass('public.task') IS NOT NULL")).scalar()
+
+    assert _version(eng) == HEAD and has_task()
+    assert alembic("downgrade", "0079").returncode == 0
+    assert _version(eng) == "0079" and not has_task()
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD and has_task()
+
+
+# --- 0081: tasks in search ---------------------------------------------------------------------------
+
+def test_0081_downgrade_removes_the_task_search_triggers_and_upgrade_queues_existing_tasks(scratch):
+    eng, alembic = scratch
+
+    def triggers() -> set[str]:
+        with eng.connect() as c:
+            return set(c.execute(text(
+                "SELECT tgname FROM pg_trigger WHERE tgname LIKE 'search_%task'")).scalars())
+
+    want = {"search_enqueue_task", "search_fanout_projects_task", "search_fanout_items_task",
+            "search_fanout_cutlist_task", "search_fanout_app_user_task"}
+    assert _version(eng) == HEAD and triggers() == want
+    wid = _workspace(eng)
+    with eng.begin() as c:
+        uid = c.execute(text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                             " VALUES (:w, 'a@m.test', 'A', 'x', 'admin') RETURNING id"), {"w": wid}).scalar()
+        tid = c.execute(text("INSERT INTO task(workspace_id, title, created_by) VALUES (:w, 't', :u)"
+                             " RETURNING task_id"), {"w": wid, "u": uid}).scalar()
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM search_outbox WHERE entity_type = 'task'")).scalar() == 1
+
+    assert alembic("downgrade", "0080").returncode == 0
+    assert _version(eng) == "0080" and triggers() == set()
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM search_outbox WHERE entity_type = 'task'")).scalar() == 0
+    with eng.begin() as c:                                    # the narrowed check refuses a task row
+        with pytest.raises(Exception):
+            c.execute(text("INSERT INTO search_outbox(entity_type, entity_id) VALUES ('task', 1)"))
+
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD and triggers() == want
+    with eng.connect() as c:                                  # the existing task was queued again
+        assert c.execute(text("SELECT entity_id FROM search_outbox WHERE entity_type = 'task'")).scalar() == tid

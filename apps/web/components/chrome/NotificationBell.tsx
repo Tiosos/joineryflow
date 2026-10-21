@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notificationsApi } from "@/lib/comments-fetch";
 import type { LockRequestWaiting, NotificationOut, OrderWaiting } from "@/lib/comments-types";
+import type { TaskOpen } from "@/lib/tasks-types";
 
 const POLL_MS = 60_000;
 const PREVIEW = 6;
@@ -27,12 +28,16 @@ export function NotificationBell() {
   const [waitingCount, setWaitingCount] = useState(0);
   const [lockWaiting, setLockWaiting] = useState<LockRequestWaiting[]>([]);
   const [lockCount, setLockCount] = useState(0);
-  // Orders and lock requests waiting for a decision count on the badge too; they have no read
-  // state, they leave when decided. So the badge is "need attention", not "unread".
-  const badge = unread + waitingCount + lockCount;
+  const [tasks, setTasks] = useState<TaskOpen[]>([]);
+  const [taskCount, setTaskCount] = useState(0);
+  // Orders and lock requests waiting for a decision, and your own open tasks, count on the badge
+  // too; they have no read state, they leave when decided or done. So the badge is "need attention",
+  // not "unread".
+  const badge = unread + waitingCount + lockCount + taskCount;
+  const shownTasks = tasks.slice(0, PREVIEW);
   const shownWaiting = waiting.slice(0, PREVIEW);
   const shownLock = lockWaiting.slice(0, PREVIEW);
-  const showEmpty = items.length === 0 && waitingCount === 0 && lockCount === 0;
+  const showEmpty = items.length === 0 && waitingCount === 0 && lockCount === 0 && taskCount === 0;
 
   const refresh = useCallback(async () => {
     try {
@@ -43,6 +48,8 @@ export function NotificationBell() {
       setWaitingCount(r.orders_waiting_count ?? 0);
       setLockWaiting(r.lock_requests_waiting ?? []);
       setLockCount(r.lock_requests_waiting_count ?? 0);
+      setTasks(r.tasks_open ?? []);
+      setTaskCount(r.tasks_open_count ?? 0);
     } catch {
       // A failed poll keeps the last known state; the next tick retries.
     }
@@ -151,6 +158,37 @@ export function NotificationBell() {
                   {`+${lockCount - shownLock.length} more`}
                 </Link>
               )}
+            </div>
+          )}
+          {taskCount > 0 && (
+            <div data-testid="tasks-open" className="border-b border-h-line">
+              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
+                {`Your tasks (${taskCount})`}
+              </div>
+              <ul>
+                {shownTasks.map((t) => (
+                  <li key={t.task_id}>
+                    <Link
+                      href={t.url}
+                      onClick={() => setOpen(false)}
+                      data-testid="task-open"
+                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
+                    >
+                      <span className="block truncate">{t.title}</span>
+                      <span className="text-xs text-h-muted">
+                        {[t.due_date ? `Due ${t.due_date}` : null, t.target_label].filter(Boolean).join(" · ") || "No due date"}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/tasks"
+                onClick={() => setOpen(false)}
+                className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
+              >
+                {taskCount > shownTasks.length ? `+${taskCount - shownTasks.length} more · all my tasks` : "All my tasks"}
+              </Link>
             </div>
           )}
           {waitingCount > 0 && (

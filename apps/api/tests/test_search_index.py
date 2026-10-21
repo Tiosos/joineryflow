@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 from app.search.index import (
-    FakeIndex, MeiliIndex, SearchQuery, SearchUnavailable, build_filter,
+    FakeIndex, MeiliIndex, SearchQuery, SearchUnavailable, TaskScope, build_filter,
 )
 
 
@@ -84,6 +84,32 @@ def test_delete(index):
     _put(index, [_doc(1), _doc(2)])
     index.wait(index.delete(["item-1"]))
     assert {h["id"] for h in index.search(_q("Kitchen")).hits} == {"item-2"}
+
+
+def _task_doc(i, visibility, private_to=(1,), ws=1):
+    return {**_doc(i, ws=ws, type_="task", title="Chase the hinge supplier", codes=[]),
+            "visibility": visibility, "private_to": list(private_to)}
+
+
+def test_task_rows_are_filtered_by_visibility_and_person(index):
+    """Tasks are the one type whose rows are not all equally visible (migration 0081): the filter
+    keeps a private task from anyone but its people and managers, a project/item task to those who
+    read Tracking and a cutlist task to those who read List. Runs on the real engine under `meili`."""
+    _put(index, [_task_doc(1, "tracking"), _task_doc(2, "list"), _task_doc(3, "private", [7]),
+                 _task_doc(4, "private", [8, 7]), _doc(5, title="Hinge on the island")])
+
+    def ids(scope, types=("task",)):
+        return {h["id"] for h in index.search(
+            _q("hinge", types=list(types), task_scope=scope)).hits}
+
+    assert ids(TaskScope(7, True, True, False)) == {"task-1", "task-2", "task-3", "task-4"}
+    assert ids(TaskScope(8, True, False, False)) == {"task-1", "task-4"}
+    assert ids(TaskScope(9, False, False, False)) == set()
+    assert ids(TaskScope(9, False, True, True)) == {"task-2", "task-3", "task-4"}   # a manager: all private
+    assert ids(TaskScope(8, True, False, False), ("item", "task")) == {"item-5", "task-1", "task-4"}
+    assert ids(TaskScope(9, False, False, False), ("item", "task")) == {"item-5"}
+    assert index.search(_q("hinge", types=["task"], task_scope=TaskScope(7, True, True, False),
+                           workspace_id=2)).hits == []
 
 
 def test_ensure_is_idempotent(index):

@@ -460,7 +460,7 @@ def test_the_inbox_hides_what_the_recipient_can_no_longer_read(ws):
     assert inbox["unread_count"] == 1
     assert [n["object_type"] for n in inbox["notifications"]] == ["project"]
     _set_grants(gid, [])                                             # loses tracking:read too
-    assert _inbox(ws, "manager") == {"notifications": [], "unread_count": 0}
+    assert _inbox(ws, "manager") == {"notifications": [], "unread_count": 0, "tasks_open": [], "tasks_open_count": 0}
     _set_grants(gid, [("tracking", "read"), ("list", "read")])       # hidden, not deleted
     assert _inbox(ws, "manager")["unread_count"] == 2
 

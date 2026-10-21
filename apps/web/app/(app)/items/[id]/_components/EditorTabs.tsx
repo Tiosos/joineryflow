@@ -12,6 +12,7 @@ import { ActionsTab } from "./ActionsTab";
 import { QueryTab } from "./QueryTab";
 import { QcTab } from "./QcTab";
 import { CommentThread } from "@/components/comments/CommentThread";
+import { TaskPanel } from "@/components/tasks/TaskPanel";
 
 interface EditorTabsProps {
   item: ItemOut;
@@ -33,6 +34,7 @@ const TABS = [
   "actions",
   "query",
   "comments",
+  "tasks",
   "qc",
   "log",
 ] as const;
@@ -47,6 +49,7 @@ const TAB_LABELS: Record<Tab, string> = {
   actions: "Actions",
   query: "Query",
   comments: "Comments",
+  tasks: "Tasks",
   qc: "QC",
   log: "Log",
 };
@@ -141,6 +144,15 @@ export function EditorTabs({
             currentUserId={currentUserId}
             currentUserRole={currentUserRole}
             canComment={canComment}
+          />
+        )}
+        {current === "tasks" && currentUserId != null && (
+          // Tasks are not locked by a Hard or Controlled item lock (like comments); the API decides.
+          <TaskPanel
+            scope={{ kind: "item", itemId: item.id }}
+            meId={currentUserId}
+            meRole={currentUserRole ?? ""}
+            canCreate={canComment}
           />
         )}
         {current === "qc" && (

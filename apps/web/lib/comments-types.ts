@@ -1,5 +1,6 @@
 // Mirrors apps/api/app/comments/schemas.py and notifications/schemas.py
 // (migrations 0042 + 0043, Plan V1 §29). Timestamps arrive as ISO strings.
+import type { TaskOpen } from "./tasks-types";
 
 export type CommentObjectType =
   | "project"
@@ -88,6 +89,9 @@ export interface NotificationList {
   /** Drafters, managers and admins only; left out of the reply for everyone else. */
   lock_requests_waiting?: LockRequestWaiting[];
   lock_requests_waiting_count?: number;
+  /** The caller's own tasks still to do (every role); derived on read, no read state. */
+  tasks_open?: TaskOpen[];
+  tasks_open_count?: number;
 }
 
 /** Live comment counts per area / room of one project (absent = none). */

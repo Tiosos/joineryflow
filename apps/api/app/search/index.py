@@ -18,13 +18,14 @@ import httpx
 # values from this tuple, so no caller-supplied string reaches a filter.
 TYPES: tuple[str, ...] = (
     "project", "item", "related_part", "cutlist", "order", "supplier",
-    "drawing", "sample", "customer", "estimate", "material",
+    "drawing", "sample", "customer", "estimate", "material", "task",
 )
 
 SETTINGS: dict = {
     # Order matters: an exact code outranks a description that mentions it.
     "searchableAttributes": ["codes", "title", "subtitle", "body"],
-    "filterableAttributes": ["workspace_id", "type", "project_id", "archived", "status"],
+    "filterableAttributes": ["workspace_id", "type", "project_id", "archived", "status",
+                             "visibility", "private_to"],
     "sortableAttributes": ["updated_at"],
     # Binding (spec §3.2): joinery_number_seq is shared (Q541), so a number one
     # keystroke off is a different record and must never match.
@@ -36,6 +37,43 @@ class SearchUnavailable(Exception):
     """Meilisearch could not be reached or answered with a server error."""
 
 
+@dataclass(frozen=True)
+class TaskScope:
+    """Who is asking, for the one type whose rows are not all equally visible (tasks).
+
+    A task document carries `visibility` (`tracking`: on a project or item; `list`: on a cutlist;
+    `private`: no target) and `private_to` (its creator and assignee). A task is seen with `read` on
+    the module its target follows, and a task with no target by its creator, assignee, managers
+    and admins: the same rules as `GET /tasks` (tasks/queries.py)."""
+    user_id: int
+    tracking: bool      # tracking:read
+    cutlist: bool       # list:read
+    privileged: bool    # manager or admin
+
+
+def task_visible(doc: dict, scope: TaskScope | None) -> bool:
+    """`build_filter`'s task clause, applied to one document (the FakeIndex's mirror of it)."""
+    if scope is None:
+        return False
+    v = doc.get("visibility")
+    if v == "tracking":
+        return scope.tracking
+    if v == "list":
+        return scope.cutlist
+    return v == "private" and (scope.privileged or scope.user_id in (doc.get("private_to") or []))
+
+
+def _task_clause(scope: TaskScope) -> str | None:
+    parts = []
+    if scope.tracking:
+        parts.append('visibility = "tracking"')
+    if scope.cutlist:
+        parts.append('visibility = "list"')
+    parts.append('visibility = "private"' if scope.privileged
+                 else f'(visibility = "private" AND private_to = {int(scope.user_id)})')
+    return "(type = task AND (" + " OR ".join(parts) + "))"
+
+
 @dataclass
 class SearchQuery:
     q: str
@@ -45,6 +83,7 @@ class SearchQuery:
     include_archived: bool = False
     limit: int = 20
     offset: int = 0
+    task_scope: TaskScope | None = None
 
 
 @dataclass
@@ -61,11 +100,17 @@ def build_filter(query: SearchQuery) -> str:
     loudly) or a member of `TYPES`. The workspace clause is unconditional.
     """
     types = [t for t in query.types if t in TYPES]
-    if not types:
+    plain = [t for t in types if t != "task"]
+    kinds = []
+    if plain:
+        kinds.append("type IN [" + ", ".join(plain) + "]")
+    if "task" in types and query.task_scope is not None:
+        kinds.append(_task_clause(query.task_scope))
+    if not kinds:
         raise ValueError("no searchable types")
     parts = [
         f"workspace_id = {int(query.workspace_id)}",
-        "type IN [" + ", ".join(types) + "]",
+        kinds[0] if len(kinds) == 1 else "(" + " OR ".join(kinds) + ")",
     ]
     if query.project_id is not None:
         parts.append(f"project_id = {int(query.project_id)}")
@@ -227,6 +272,7 @@ class FakeIndex:
             return (
                 d["workspace_id"] == query.workspace_id
                 and d["type"] in allowed
+                and (d["type"] != "task" or task_visible(d, query.task_scope))
                 and (query.project_id is None or d.get("project_id") == query.project_id)
                 and (query.include_archived or not d.get("archived"))
             )

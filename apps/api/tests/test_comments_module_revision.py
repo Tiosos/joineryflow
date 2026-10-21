@@ -282,7 +282,7 @@ def test_the_inbox_follows_each_types_own_modules(ws):
     assert [n["object_type"] for n in inbox["notifications"]] == ["module"]
     assert inbox["unread_count"] == 1
     _set_grants(gid, [])
-    assert _inbox(ws, "manager") == {"notifications": [], "unread_count": 0}
+    assert _inbox(ws, "manager") == {"notifications": [], "unread_count": 0, "tasks_open": [], "tasks_open_count": 0}
     _set_grants(gid, [("tracking", "read"), ("list", "read"), ("shop_dwgs", "read")])
     assert _inbox(ws, "manager")["unread_count"] == 3                     # hidden, not deleted
 
