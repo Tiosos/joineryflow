@@ -10,6 +10,7 @@ import { ProjectLiftAccessPanel } from "./_components/ProjectLiftAccessPanel";
 import { ProjectLabourHoursCard } from "./_components/ProjectLabourHoursCard";
 import { ProjectFinancialsCard } from "./_components/ProjectFinancialsCard";
 import { ProjectCommentsCard } from "./_components/ProjectCommentsCard";
+import { ProjectTasksCard } from "./_components/ProjectTasksCard";
 import { ProjectAreasCommentsCard } from "./_components/ProjectAreasCommentsCard";
 
 async function fetchProject(id: number, cookieHeader: string): Promise<ProjectOut | null> {
@@ -103,6 +104,14 @@ export default async function ProjectDetailPage({
 
       <ProjectLabourHoursCard hours={project.labour_hours} />
 
+      {me && (
+        <ProjectTasksCard
+          projectId={project.id}
+          currentUserId={me.id}
+          currentUserRole={me.auth_role}
+          canComment={can(me, "tracking", "comment")}
+        />
+      )}
       <ProjectCommentsCard
         projectId={project.id}
         currentUserId={me?.id ?? null}

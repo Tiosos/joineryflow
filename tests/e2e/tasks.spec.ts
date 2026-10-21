@@ -97,6 +97,47 @@ test("the item editor's Tasks tab adds a task, and cancelling asks first", async
   }).toPass({ timeout: 20_000 });
 });
 
+test("a project's page and a cutlist's Tasks pane add tasks on that project and cutlist", async ({ page }) => {
+  await login(page);
+  const { stamp, pid, itemId } = await fixture(page, "entry");
+  const made = await page.request.post(`/api/projects/${pid}/cutlists`, { data: { name: `Entry run ${stamp}` } });
+  expect(made.status()).toBeLessThan(300);
+  const cutlistId = (await made.json()).cutlist_id as number;
+  const onItem = await page.request.post("/api/tasks", { data: { title: `Item task ${stamp}`, item_id: itemId } });
+  expect(onItem.status()).toBe(201);
+  const ids = [(await onItem.json()).task_id as number];
+  try {
+    // the project page lists the project's own tasks and those on its items, and makes new ones
+    await page.goto(`/projects/${pid}`);
+    const card = page.getByTestId("project-tasks");
+    await expect(card.getByTestId("task-row").filter({ hasText: `Item task ${stamp}` })).toBeVisible({ timeout: 30_000 });
+    await card.getByTestId("task-new").click();
+    await card.getByLabel("Task title").fill(`Project task ${stamp}`);
+    await card.getByRole("button", { name: "Add task" }).click();
+    const projectRow = card.getByTestId("task-row").filter({ hasText: `Project task ${stamp}` });
+    await expect(projectRow).toBeVisible({ timeout: 30_000 });
+    await expect(projectRow).toContainText("Project TK-");
+    ids.push(Number(await projectRow.getAttribute("data-task-id")));
+
+    // a cutlist's Tasks pane lists and makes the cutlist's own
+    await page.goto(`/list?project_id=${pid}&cutlist=${cutlistId}`);
+    await page.getByRole("button", { name: "Tasks", exact: true }).click();
+    const pane = page.getByTestId("task-panel");
+    await expect(pane.getByTestId("tasks-empty")).toBeVisible({ timeout: 30_000 });
+    await pane.getByTestId("task-new").click();
+    await pane.getByLabel("Task title").fill(`Cutlist task ${stamp}`);
+    await pane.getByRole("button", { name: "Add task" }).click();
+    const cutlistRow = pane.getByTestId("task-row").filter({ hasText: `Cutlist task ${stamp}` });
+    await expect(cutlistRow).toBeVisible({ timeout: 30_000 });
+    await expect(cutlistRow).toContainText("Cutlist ");
+    ids.push(Number(await cutlistRow.getAttribute("data-task-id")));
+    const body = await (await page.request.get(`/api/tasks?cutlist_id=${cutlistId}`)).json();
+    expect(body.items.map((t: { title: string }) => t.title)).toEqual([`Cutlist task ${stamp}`]);
+  } finally {
+    for (const id of ids) await page.request.post(`/api/tasks/${id}/status`, { data: { status: "cancelled" } });
+  }
+});
+
 /**
  * Tasks in Global Search (migration 0081). Like search.spec.ts these need Meilisearch and the
  * search-worker: skipped locally on a 503, a failure in CI. The worker indexes asynchronously, so

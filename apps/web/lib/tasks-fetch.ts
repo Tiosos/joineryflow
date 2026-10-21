@@ -4,6 +4,9 @@ import type { CreateTaskBody, PatchTaskBody, TaskList, TaskOut, TaskStatus } fro
 export interface TaskQuery {
   assignee?: "me" | number;
   status?: TaskStatus | "active";
+  /** Tasks on this project, or on any of its items and cutlists. */
+  projectId?: number;
+  cutlistId?: number;
   limit?: number;
 }
 
@@ -12,6 +15,8 @@ export const tasksApi = {
     const qs = new URLSearchParams();
     if (q.assignee !== undefined) qs.set("assignee", String(q.assignee));
     if (q.status) qs.set("status", q.status);
+    if (q.projectId !== undefined) qs.set("project_id", String(q.projectId));
+    if (q.cutlistId !== undefined) qs.set("cutlist_id", String(q.cutlistId));
     qs.set("limit", String(q.limit ?? 100));
     return apiCall<TaskList>(`/api/tasks?${qs}`);
   },

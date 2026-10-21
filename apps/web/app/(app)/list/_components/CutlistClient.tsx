@@ -13,6 +13,7 @@ import type {
 } from "@/lib/cutlist-types";
 import { can, type Me } from "@/lib/permissions";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
+import { TaskPanel } from "@/components/tasks/TaskPanel";
 
 interface Props {
   me: Me;
@@ -190,6 +191,7 @@ export default function CutlistClient({
         {open ? (
           <CutlistDetail
             cutlist={open}
+            me={me}
             canWrite={canWrite}
             busy={busy}
             unlinkedItems={unlinkedItems}
@@ -208,6 +210,7 @@ export default function CutlistClient({
 
 function CutlistDetail({
   cutlist,
+  me,
   canWrite,
   busy,
   unlinkedItems,
@@ -215,6 +218,7 @@ function CutlistDetail({
   call,
 }: {
   cutlist: CutlistDetailOut;
+  me: Me;
   canWrite: boolean;
   busy: boolean;
   unlinkedItems: TrackingItemRow[];
@@ -226,7 +230,7 @@ function CutlistDetail({
   // §1218 asks for the parts and hardware themselves. Three panes rather than
   // one long page: the same cutlist is read as "who is on it", "what to cut"
   // and "what to buy" by different people.
-  const [pane, setPane] = useState<"items" | "parts" | "hardware">("items");
+  const [pane, setPane] = useState<"items" | "parts" | "hardware" | "tasks">("items");
 
   async function rename() {
     const name = await askText({ title: "Rename cutlist", label: "Cutlist name", initial: cutlist.name ?? "", confirmLabel: "Rename" });
@@ -330,6 +334,7 @@ function CutlistDetail({
           ["items", `Items (${cutlist.items.length})`],
           ["parts", `Parts (${cutlist.parts.length})`],
           ["hardware", `Hardware (${cutlist.hardware.length})`],
+          ["tasks", "Tasks"],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -348,6 +353,15 @@ function CutlistDetail({
         <PartsPane parts={cutlist.parts} />
       ) : pane === "hardware" ? (
         <HardwarePane hardware={cutlist.hardware} />
+      ) : pane === "tasks" ? (
+        <div className="p-3">
+          <TaskPanel
+            scope={{ kind: "cutlist", cutlistId: cutlist.cutlist_id }}
+            meId={me.id}
+            meRole={me.auth_role}
+            canCreate={can(me, "list", "comment")}
+          />
+        </div>
       ) : (
       <table className="w-full text-xs">
         <thead className="bg-h-bg text-h-muted">

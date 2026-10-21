@@ -7,11 +7,23 @@ import { useConfirm } from "@/components/confirm/ConfirmProvider";
 import { useUndo } from "@/components/undo/UndoProvider";
 import { commentsApi } from "@/lib/comments-fetch";
 import { taskErrorText, tasksApi } from "@/lib/tasks-fetch";
-import { TASK_STATUS_LABEL, type TaskOut, type TaskStatus } from "@/lib/tasks-types";
+import { TASK_STATUS_LABEL, type CreateTaskBody, type TaskOut, type TaskStatus } from "@/lib/tasks-types";
 
 export type TaskScope =
   | { kind: "mine" }
-  | { kind: "item"; itemId: number };
+  | { kind: "item"; itemId: number }
+  | { kind: "project"; projectId: number }
+  | { kind: "cutlist"; cutlistId: number };
+
+/** The target a task made here points at (none on the My tasks page). */
+function targetOf(scope: TaskScope): Pick<CreateTaskBody, "project_id" | "item_id" | "cutlist_id"> {
+  switch (scope.kind) {
+    case "item": return { item_id: scope.itemId };
+    case "project": return { project_id: scope.projectId };
+    case "cutlist": return { cutlist_id: scope.cutlistId };
+    default: return {};
+  }
+}
 
 interface Props {
   scope: TaskScope;
@@ -58,11 +70,15 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const mine = scope.kind === "mine";
   const itemId = scope.kind === "item" ? scope.itemId : null;
+  const projectId = scope.kind === "project" ? scope.projectId : null;
+  const cutlistId = scope.kind === "cutlist" ? scope.cutlistId : null;
   const load = useCallback(async () => {
     try {
-      const r = itemId != null
-        ? await tasksApi.forItem(itemId)
+      const r = itemId != null ? await tasksApi.forItem(itemId)
+        : projectId != null ? await tasksApi.list({ projectId, limit: 200 })
+        : cutlistId != null ? await tasksApi.list({ cutlistId, limit: 200 })
         : filter === "mine" ? await tasksApi.list({ assignee: "me", status: "active" })
         : await tasksApi.list({ status: filter === "active" ? "active" : filter });
       setRows(r.items);
@@ -70,14 +86,14 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
     } catch (e) {
       setError(taskErrorText(e));
     }
-  }, [itemId, filter]);
+  }, [itemId, projectId, cutlistId, filter]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (highlight == null || itemId != null) return;
+    if (highlight == null || !mine) return;
     if (rows?.some((t) => t.task_id === highlight)) {
       setLinked(null);
       return;
@@ -88,7 +104,7 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
     return () => {
       live = false;
     };
-  }, [highlight, itemId, rows]);
+  }, [highlight, mine, rows]);
 
   const mayChange = (t: TaskOut) =>
     meRole === "admin" || meRole === "manager" || t.created_by === meId || t.assignee_id === meId;
@@ -126,7 +142,7 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   return (
     <div className="grid gap-3" data-testid="task-panel">
       <div className="flex flex-wrap items-center gap-2">
-        {scope.kind === "mine" && FILTERS.map((f) => (
+        {mine && FILTERS.map((f) => (
           <button
             key={f.key}
             type="button"
@@ -157,7 +173,7 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
       {adding && (
         <NewTask
           meId={meId}
-          itemId={itemId}
+          target={targetOf(scope)}
           onCreated={async () => {
             setAdding(false);
             await load();
@@ -248,11 +264,11 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
 
 function NewTask({
   meId,
-  itemId,
+  target,
   onCreated,
 }: {
   meId: number;
-  itemId: number | null;
+  target: ReturnType<typeof targetOf>;
   onCreated: () => Promise<void>;
 }) {
   const { notify } = useUndo();
@@ -277,7 +293,7 @@ function NewTask({
         description: description.trim() || null,
         assignee_id: assignee === "" ? null : Number(assignee),
         due_date: due || null,
-        item_id: itemId,
+        ...target,
       });
       await onCreated();
     } catch (err) {
