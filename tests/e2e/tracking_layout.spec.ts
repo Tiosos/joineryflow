@@ -172,10 +172,9 @@ test.describe("pinned columns", () => {
         .evaluate((el) => Math.round(el.getBoundingClientRect().left));
       const [cutBefore, listerBefore, reqBefore] = [await left("CUTLIST"), await left("LISTER"), await left("REQ")];
       await card.evaluate((el) => { el.scrollLeft = 200; });
-      await page.waitForTimeout(200);
+      await expect.poll(() => left("REQ")).toBeLessThan(reqBefore);   // the date columns moved
       expect(await left("CUTLIST")).toBe(cutBefore);                  // pinned
       expect(await left("LISTER")).toBe(listerBefore);                // the last pinned column
-      expect(await left("REQ")).toBeLessThan(reqBefore);              // the date columns moved
     });
   });
   test.describe("on a narrow window", () => {

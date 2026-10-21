@@ -18,7 +18,10 @@ export default defineConfig({
     headless: true,
     trace: "retain-on-failure",
   },
-  reporter: "list",
+  // CI also writes a JSON report (PW_JSON_REPORT) so the job can list the slowest tests.
+  reporter: process.env.PW_JSON_REPORT
+    ? [["list"], ["json", { outputFile: process.env.PW_JSON_REPORT }]]
+    : "list",
   timeout: 90_000,
   // CI retries a failed test once (a real failure fails twice; the one known
   // flake is a dev-proxy ECONNRESET). Never skip or quarantine to get green.

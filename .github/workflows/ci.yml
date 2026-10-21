@@ -212,26 +212,79 @@ jobs:
           done
           echo "search index not ready — search specs may skip"; exit 0
 
+      # The browser download is cached per Playwright version (the lockfile
+      # pins it). System libraries are not part of the cache, so a hit still
+      # installs those.
+      - name: Cache Playwright browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+
       - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: apps/web
+        run: pnpm exec playwright install-deps chromium
+
+      # The second pass below is the re-runnability guard. It always runs on a
+      # push to main; on a pull request only when the PR touches what can break
+      # re-runnability (specs, seed, migrations, Playwright config, this file).
+      - name: Decide whether the second pass runs
+        id: second-pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename')
+          if echo "$files" | grep -qE '^(tests/e2e/|seed/|db/|apps/web/playwright\.config\.ts$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Second Playwright pass skipped: no e2e, seed, migration or config change in this PR."
+          fi
 
       - name: Run Playwright
         working-directory: apps/web
         env:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
+          PW_JSON_REPORT: playwright-pass-1.json
         run: pnpm exec playwright test
 
       # The same suite again on the same database, without re-seeding: a spec that
       # consumes or changes seeded data (a notification, an estimate, a take, a
       # question) passes the first time and fails here. See CLAUDE.md §3.
       - name: Run Playwright again (same database)
+        if: steps.second-pass.outputs.run == 'true'
         working-directory: apps/web
         env:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
+          PW_JSON_REPORT: playwright-pass-2.json
         run: pnpm exec playwright test
+
+      # Where the time goes: the slowest tests and spec files of each pass.
+      - name: Slowest Playwright tests
+        if: always()
+        working-directory: apps/web
+        run: python3 ../../scripts/playwright_slowest.py playwright-pass-1.json playwright-pass-2.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-timing
+          path: apps/web/playwright-pass-*.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload Playwright traces
         if: failure()

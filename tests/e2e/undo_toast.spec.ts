@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { login } from "./helpers";
+import { endUndoWindow, login } from "./helpers";
 
 /**
  * Delete and archive wait out a 10-second Undo window before the request is sent. Runs in
@@ -45,12 +45,14 @@ test("without Undo the delete is sent when the window ends", async ({ page }) =>
   const { pid, description, id } = await projectWithItems(page, "No undo");
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: description });
 
+  await page.clock.install();
   await page.goto(`/tracking?project_id=${pid}`);
   await row.locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
   // Still there while the toast is up: nothing has been sent yet.
   expect((await page.request.get(`/api/items/${id}`)).status()).toBe(200);
+  await endUndoWindow(page);
   await expect(async () => {
     expect((await page.request.get(`/api/items/${id}`)).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
@@ -109,6 +111,7 @@ test("archiving a customer waits for the window; Undo keeps it", async ({ page }
   expect(made.status()).toBeLessThan(300);
   const cid = (await made.json()).customer_id as number;
 
+  await page.clock.install();
   await page.goto(`/customers/${cid}`);
   await page.getByRole("button", { name: "Archive", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
@@ -119,6 +122,7 @@ test("archiving a customer waits for the window; Undo keeps it", async ({ page }
 
   await page.getByRole("button", { name: "Archive", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await endUndoWindow(page);
   await expect(async () => {
     const after = await (await page.request.get(`/api/customers/${cid}`)).json();
     expect(after.archived_at).toBeTruthy();
