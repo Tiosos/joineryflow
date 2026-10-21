@@ -23,3 +23,12 @@ export async function login(page: Page, email: string = MANAGER) {
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/(home|dashboard)$/, { timeout: 30_000 });
 }
+
+/**
+ * Delete and archive wait out a 10-second Undo window before the request is sent. Call
+ * `page.clock.install()` before the page that starts the action loads, then this once the
+ * toast is up: it jumps the page's timers instead of waiting the window out in real time.
+ */
+export async function endUndoWindow(page: Page) {
+  await page.clock.fastForward(10_000);
+}

@@ -15,6 +15,46 @@ Coverage must not drop: each item says what it keeps. Timings below are estimate
 | 7 | Small clean-ups. | **Part done** | Done: `tracking_layout` pinned-column test polls instead of `waitForTimeout(200)`; `search.spec` retries the `/` shortcut instead of `networkidle`. Kept on purpose: the two `waitForTimeout(500)` in `undo_toast.spec.ts`, which guard that *nothing* is sent after Undo (a negative check needs a wait). Open: lower the many `timeout: 30_000` ceilings (only helps failing runs); check whether `legacy-screenshots` / `screenshot-login` belong in the default CI run. |
 | 8 | **Measure first.** CI now writes a JSON report per pass (`PW_JSON_REPORT`, `apps/web/playwright.config.ts`) and `scripts/playwright_slowest.py` puts the 15 slowest tests and spec files of each pass in the job summary; the reports are uploaded as the `playwright-timing` artifact. | **Done** (read the first CI run) | Next: use those numbers to choose between items 3, 4 and 5. Locally: `PW_JSON_REPORT=r.json make e2e`, then `python3 scripts/playwright_slowest.py apps/web/r.json`. |
 
+## First measurement (PR #144, 2026-10-21)
+
+E2E job 16 min 35 s (main, run #143) to 11 min 22 s. Pass 1: 6 min 59 s to 4 min 47 s; pass 2: 7 min 15 s to
+4 min 55 s (about 31% from the API login alone). Pass 1 has 212 tests and 279 s of test time against a 287 s step, so
+almost all the time is the tests. The tail is flat (average 1.3 s a test; the 15th slowest is 2 s), which is why
+reworking single heavy specs (items 3, 4) would pay little. What stood out:
+
+| Finding | Seconds per pass | Action |
+| --- | --- | --- |
+| Four tests wait the real 10 s Undo window (`undo_toast` x2, `item_soft_delete` x2) | about 46 | **Done** (item 9) |
+| `legacy-screenshots.spec.ts` (static `legacy/*.html` mocks, not the app) | 13.6 | **Decided: leave as is** (user, 2026-10-21) |
+| Everything else | flat tail | Only parallelism (item 5) moves it |
+
+| 9 | **Fast-forward the Undo window** with Playwright's fake clock (`page.clock.install()` before the page loads, `endUndoWindow(page)` in `helpers.ts` once the toast is up) in the four tests that waited it out. | **Done** (unverified until CI runs) | The tests still prove the request is sent only when the window ends (they check "not sent yet" first). Risk: the fake clock also moves the page's `Date`. Tests that press Undo or leave the page still use real time. |
+
+## Audit for item 5 (parallel project), first pass
+
+Method: grep of all 66 specs for writes, seeded-row references and global aggregates, then a read of the risky ones.
+**This is a static reading, not proof**: shared state also hides in lists, counts and bells that grep cannot see.
+
+What can be shared between specs on one database:
+1. **Seeded rows that some spec changes** (ALF-001, TRT-014): specs that read them break if a mutator runs at the same time.
+2. **Workspace-wide aggregates**: the purchase officer's bell and badge (every Pending order), tasks in the bell, dashboard tiles, QC tiles, cost-centre totals, search, catalog lists.
+3. **User and role state** (permission groups, view-as-role).
+
+| Group | Specs | Why |
+| --- | --- | --- |
+| **A. Probably safe in parallel** (own project or unique names, no shared aggregate) | `undo_toast`, `item_soft_delete`, `item_duplicate`, `module_delete`, `status_locks`, `status_update_all`, `cutlist_locks`, `hardware_locks`, `attachments_locks`, `document_register`, `pdf_generation`, `prompt_dialogs`, `confirm_dialog` (bell use to check), `tracking_orders_chip`, `catalog_*` single-test files (new rows by unique SKU; `catalog_board_fields`, `catalog_error_toast`, `catalog_type` assert counts: check) | Create their own project / rows, assert by name |
+| **B. Read seeded rows, need no concurrent mutator** | `qc_dashboard` (exact counts on ALF-001 / TRT-014; no other spec writes QC records), `comment_counts`, `cv_import`, `shop_drawings`, `isample`, `item_project_detail`, `material_take`, `search`, `tracking_factory_tg_solid`, `catalog` | Safe among themselves; unsafe next to group C mutators of the same rows |
+| **C. Mutate seeded rows or shared aggregates: keep serial** | `comments`, `comments_module_revision`, `queries_takes_locks`, `tracking_modal_files`, `cv_replace_comments`, `cutlist_related_parts`, `tracking_layout`, `tasks` (ALF-001, bell, tiles); `lock_requests` (TRT-014, bell); `orders_waiting`, `order_decision`, `budget_report`, `po`, `po_invoice_authorisation`, `order_*`, `orderbook_layout` (Pending orders feed the purchase officer's bell and the cost-centre totals); `estimating` (declares `mode: "serial"`); `view_as_role`; `smoke`, `drafter_editor`, `pm_workbench` (dashboard tiles) | Shared by design |
+
+Unverified guesses to settle before moving anything: whether the orders specs' bell and badge assertions depend on the
+count of all Pending orders; which group-A specs read a dashboard or bell count.
+
+**Proposed next step (needs a go-ahead):** a non-required CI experiment job that runs the suite on a fresh database
+with `--workers=3` (files in parallel; tests inside a file stay in order), twice, and reports which files fail. Failing
+files go to a serial `Playwright project`; files that pass in both runs go to the parallel one. This is cheaper and
+more reliable than reading every spec, and a stable result must hold on the second pass too. Rough ceiling: group A is
+a minority of the time, so expect a gain of maybe a third of the pass, not a half.
+
 ## Verification state of the done items
 
 The changes were made without a running stack, so they have **not** been run here: confirm with `make e2e` (or

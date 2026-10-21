@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { login } from "./helpers";
+import { endUndoWindow, login } from "./helpers";
 
 /**
  * Soft delete from Tracking: Delete flags the ticked rows, the Deleted chip lists them, and
@@ -29,6 +29,7 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
   const rows = page.locator('[data-testid="tracking-row"]');
   const row = (text: string) => rows.filter({ hasText: text });
 
+  await page.clock.install();
   await page.goto(`/tracking?project_id=${pid}`);
   await expect(row(goneDesc)).toHaveCount(1);
   await row(goneDesc).locator('input[type="checkbox"]').check();
@@ -38,6 +39,7 @@ test("Delete hides an item; the Deleted chip lists it; Restore brings it back", 
   await expect(row(keepDesc)).toHaveCount(1);                       // the other one is untouched
 
   // The delete is sent when the 10-second Undo window ends; then the item answers 404 like a missing one.
+  await endUndoWindow(page);
   await expect(async () => {
     expect((await page.request.get(`/api/items/${goneId}`)).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
@@ -98,11 +100,13 @@ test("a Hard Lock stops the delete: the editor button is off and Tracking skips 
   await page.goto(`/items/${id}`);
   await expect(page.getByTestId("delete-item")).toBeDisabled();
 
+  await page.clock.install();
   await page.goto(`/tracking?project_id=${pid}`);
   const row = page.locator('[data-testid="tracking-row"]').filter({ hasText: description });
   await row.locator('input[type="checkbox"]').check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await endUndoWindow(page);
   await expect(page.getByText("1 skipped (Hard Locked)")).toBeVisible({ timeout: 20_000 });   // after the Undo window
   await expect(row).toHaveCount(1);                                   // still there, untouched
   expect((await page.request.get(`/api/items/${id}`)).status()).toBe(200);
