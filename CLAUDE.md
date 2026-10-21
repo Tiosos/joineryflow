@@ -122,7 +122,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
-| `tests/e2e/` | Playwright specs (59 spec files, plus `helpers.ts`; see §3) |
+| `tests/e2e/` | Playwright specs (66 spec files, plus `helpers.ts`; see §3) |
 | `docs/plan-v1/` | **Plan V1**: customer's target spec, gap analysis, open questions (Q432–Q586) |
 | `docs/archive/` | Archived specs + plans for built sub-projects (read `docs/archive/README.md` first); current state lives in `docs/sub-projects/` |
 | `docs/sub-projects/` | History of every built sub-project, moved out of this file |
@@ -144,6 +144,8 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - `make test` runs pytest in parallel (`-n auto --dist loadfile`): each xdist worker builds its own `<db>_gwN` database (migrate + seed, in `conftest.py`), so your dev database is untouched. `make test-serial` runs one process against `DATABASE_URL` and TRUNCATEs `workspace`, `app_user`, `session`, `audit_log`, so re-run `make seed` afterwards.
 - Without Docker: needs Python ≥3.12 (make a venv), `pip install -e ".[dev]"`, `DATABASE_URL` at a migrated Postgres, then pytest. The seed finds its sample files relative to itself, so `python -m seed.hartwood_joinery` works outside the container too.
 - `search-worker` runs with **no `--reload`** — restart it after editing `app/search/`.
+- Single test: `docker compose exec api pytest -q -n0 apps/api/tests/test_x.py::test_name` (`-n0` = one process; adjust the path to where pytest sees the tests in the container). Single e2e spec: `pnpm --dir apps/web exec playwright test tests/e2e/foo.spec.ts` (the Playwright `testDir` is `../../tests/e2e`).
+- Checks CI runs besides pytest and e2e: `pnpm --dir apps/web exec tsc --noEmit` and `pnpm --dir apps/web build` (tsc alone misses server/client boundary errors, which only the bundler reports), and `ruff check --select F401,F841,F811 apps/api/app apps/api/tests`.
 
 ## 3. Testing rules
 
@@ -184,6 +186,7 @@ make e2e-docker   # Playwright via official image (Windows-friendly)
 - `(app)/layout.tsx` does server-side `fetchMe()` and renders chrome. Editor mode (`/items/[id]`) hides TabStrip + SideBar. The project SideBar shows on Dashboard only (`HAppChrome.SIDEBAR_ROUTES`); Tracking (header bar) and Shop Dwgs (filter row) have their own project switchers and need the width.
 - **IA is fixed: 6 primary tabs** `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook` (the `List` tab *is* the Cutlist module, Q474) plus admin-only `/it`. New top-level surfaces go on the **secondary strip**: `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers`. The strip hides a tab when `can(me, module, "read")` is false; the API's 403 is the real control.
 - State: raw `fetch()` + URL search params + controlled inputs. **No TanStack Query / React Hook Form / Zustand.**
+- **This is not the Next.js you know** (`apps/web/AGENTS.md`): this version has breaking changes. Read the relevant guide in `apps/web/node_modules/next/dist/docs/` before writing web code, and heed deprecation notices.
 - Design tokens live once in `globals.css` (`@theme inline`) and `lib/tokens.ts`. **Do not invent colours** — use `bg-h-*`, `text-h-*`, `border-h-line`. Inter for UI, JetBrains Mono (`.h-mono`) for part #, PO #, ETAs, money. No `tailwind.config.ts`.
 - **Money and quantities backed by a Pydantic `Decimal` arrive as JSON strings.** Type them `string` in `lib/*-types.ts`; typing `number` compiles then throws at `toFixed`. A field the API declares `float` or `int` (e.g. `unit_cost`/`qty` in `lib/pm-types.ts`, from `hardware_lines`) arrives as a JSON number and is typed `number`. Check the Pydantic type, not the name.
 - **Risky actions confirm through `useConfirm()`** (`components/confirm/ConfirmProvider`, mounted in `(app)/layout.tsx`): `if (!(await confirm({ title, message, confirmLabel }))) return;`, or `askReason({...})` when a reason is needed. Do not add `window.confirm` / `window.prompt` for delete, archive, cancel, reject or close-out. e2e specs answer it with `getByTestId("confirm-dialog-confirm")`, not `page.on("dialog")`.
