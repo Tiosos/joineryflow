@@ -22,6 +22,7 @@ from .schemas import (
     CostCentreIn,
     CostBreakdownOut,
     CostCentreListOut,
+    CostCentreReportOut,
     CostCentreOut,
     PatchCostCentreIn,
     CreateOrderIn,
@@ -319,6 +320,19 @@ def list_cost_centres_route(
 ):
     return {"cost_centers": [
         _for_viewer(r, user) for r in q.list_cost_centres(db, workspace_id=user.workspace_id)]}
+
+
+# Literal, declared before any parameterised `/cost-centers/{id}` route (CLAUDE.md §8).
+@router.get("/cost-centers/report", response_model=CostCentreReportOut)
+def cost_centre_report_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    """The budget across every cost centre, with the orders outside any of them. Managers and admins
+    only, like every ledger figure (`BUDGET_FORBIDDEN`)."""
+    if user.auth_role not in ("manager", "admin"):
+        raise HTTPException(403, {"code": "BUDGET_FORBIDDEN"})
+    return q.cost_centre_report(db, workspace_id=user.workspace_id)
 
 
 @router.post("/cost-centers", response_model=CostCentreOut, status_code=201, response_model_exclude_none=True)

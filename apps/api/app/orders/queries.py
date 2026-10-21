@@ -21,6 +21,7 @@ cutlist link/unlink paths. It is deliberately in this module rather than in
 `cutlists/`: the orders own the column being written.
 """
 import json
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -160,7 +161,7 @@ def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -
 # (still outstanding) is Commitment + Release; spent is Expenditure. The same sums
 # `v_budget_utilisation` makes, split in two. An Adjustment is not counted, like the view.
 _COST_CENTRE_SELECT = """
-    SELECT cc.cost_center_id, cc.code, cc.name, cc.budget_amount,
+    SELECT cc.cost_center_id, cc.code, cc.name, cc.budget_amount, cc.fiscal_year,
            cc.is_active IS NOT FALSE AS is_active,
            COALESCE(SUM(bt.amount) FILTER (WHERE bt.transaction_type IN ('Commitment', 'Release')), 0)::numeric(15, 2)
                AS committed,
@@ -183,6 +184,38 @@ def _cost_centre_rows(db: Session, *, workspace_id: int, cost_center_id: int | N
 
 def list_cost_centres(db: Session, *, workspace_id: int) -> list[dict]:
     return _cost_centre_rows(db, workspace_id=workspace_id)
+
+
+def cost_centre_report(db: Session, *, workspace_id: int) -> dict:
+    """The budget across every cost centre (managers and admins; the route gates it): each one's
+    ledger figures and how many orders sit on it, the totals, and the orders that have no cost centre
+    at all, which the ledger cannot see (`v_budget_utilisation` reads `cost_centers`), so a quiet
+    "Unallocated" line says how much is ordered outside any budget.
+
+    "Orders" are every order but Cancelled and Rejected (their money is not spent, as in
+    `cost_breakdown`); an order with no total counts as 0. Inactive cost centres are included and
+    flagged. The totals add up every row shown."""
+    rows = _cost_centre_rows(db, workspace_id=workspace_id)
+    counts = db.execute(
+        text(
+            "SELECT po.cost_center_id, count(*) AS n, COALESCE(sum(COALESCE(po.total_amount, 0)), 0) AS total"
+            f" {_ORDER_FROM} WHERE {_ORDER_WORKSPACE} AND po.status NOT IN ('Cancelled', 'Rejected')"
+            " GROUP BY po.cost_center_id"
+        ),
+        {"w": workspace_id},
+    ).mappings().all()
+    by_cc = {c["cost_center_id"]: c for c in counts}
+    for r in rows:
+        r["order_count"] = by_cc.get(r["cost_center_id"], {"n": 0})["n"]
+    zero = Decimal("0.00")
+    totals = {k: sum((r[k] for r in rows), zero) for k in ("budget_amount", "committed", "spent", "remaining")}
+    totals["order_count"] = sum(r["order_count"] for r in rows)
+    none = by_cc.get(None)
+    return {
+        "rows": rows,
+        "totals": totals,
+        "unallocated": {"order_count": none["n"] if none else 0, "total_amount": none["total"] if none else zero},
+    }
 
 
 def create_cost_centre(

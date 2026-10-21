@@ -305,6 +305,40 @@ class CostCentreListOut(BaseModel):
     cost_centers: list[CostCentreOut]
 
 
+class CostCentreReportRowOut(BaseModel):
+    """One cost centre in the budget report (managers and admins only, so every figure is present)."""
+    cost_center_id: int
+    code: str
+    name: str
+    fiscal_year: int | None = None
+    is_active: bool = True
+    budget_amount: Decimal
+    committed: Decimal
+    spent: Decimal
+    remaining: Decimal
+    order_count: int
+
+
+class CostCentreReportTotalsOut(BaseModel):
+    budget_amount: Decimal
+    committed: Decimal
+    spent: Decimal
+    remaining: Decimal
+    order_count: int
+
+
+class UnallocatedOut(BaseModel):
+    """Orders (not Cancelled / Rejected) that have no cost centre: outside every budget."""
+    order_count: int
+    total_amount: Decimal
+
+
+class CostCentreReportOut(BaseModel):
+    rows: list[CostCentreReportRowOut]
+    totals: CostCentreReportTotalsOut
+    unallocated: UnallocatedOut
+
+
 class CreateOrderLineIn(BaseModel):
     item_description: str = Field(max_length=500)   # po_line_items.item_description varchar(500)
     quantity: Decimal
