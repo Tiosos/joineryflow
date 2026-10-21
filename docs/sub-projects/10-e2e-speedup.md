@@ -49,9 +49,10 @@ What can be shared between specs on one database:
 Unverified guesses to settle before moving anything: whether the orders specs' bell and badge assertions depend on the
 count of all Pending orders; which group-A specs read a dashboard or bell count.
 
-**Proposed next step (needs a go-ahead):** a non-required CI experiment job that runs the suite on a fresh database
-with `--workers=3` (files in parallel; tests inside a file stay in order), twice, and reports which files fail. Failing
-files go to a serial `Playwright project`; files that pass in both runs go to the parallel one. This is cheaper and
+**Experiment built (user go-ahead 2026-10-21):** `.github/workflows/e2e-parallel-experiment.yml` (not a required check, not part of CI; manual `workflow_dispatch`, or a PR that changes the workflow or `scripts/playwright_failures.py`) runs the suite on a fresh database
+with `--workers=3` (`PW_WORKERS`, `PW_RETRIES=0`; files in parallel, tests inside a file in order), twice on one fresh database, and
+`scripts/playwright_failures.py` lists in the job summary the files that failed in either run. Failing files go to a serial
+Playwright project; files that pass both runs go to the parallel one (next step, not built). This is cheaper and
 more reliable than reading every spec, and a stable result must hold on the second pass too. Rough ceiling: group A is
 a minority of the time, so expect a gain of maybe a third of the pass, not a half.
 
