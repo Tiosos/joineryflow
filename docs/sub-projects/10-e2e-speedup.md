@@ -8,9 +8,9 @@ Coverage must not drop: each item says what it keeps. Timings below are estimate
 | --- | --- | --- | --- |
 | 1 | **Sign in through the API, not the form.** `tests/e2e/helpers.ts::login` posts to `/api/auth/login` (what the form calls), then opens `/dashboard`. Saves a page load and hydration on each of ~232 logins (est. 4-8 min). | **Done** | The login form is still driven by `smoke.spec.ts` (login to tabs to logout). Not done: a `storageState` setup project (would save the API call too, but a session revoked by one spec would break the rest). |
 | 2 | **Run the second CI pass (the re-runnability guard) less often.** User decision 2026-10-21: it runs on every push to `main`, and on a PR only when the PR touches `tests/e2e/`, `seed/`, `db/`, `apps/web/playwright.config.ts` or `ci.yml`; other PRs run one pass. It stays a conditional step of the required `E2E (Playwright)` job (no name change). | **Done** (unverified until CI runs) | Departs from the old `CLAUDE.md` §3 wording (always twice); §3 updated. Risk: an API change that makes a spec non-re-runnable is only caught after merge, on `main`. The PR file list comes from `gh api .../pulls/N/files`. |
-| 3 | Set up data through the API instead of the UI (projects, items, orders) in the heaviest files: `catalog_supplier_link` (636 lines, 14 tests), `orderbook_layout`, `tracking_layout`. | Open | Review spec by spec; the UI must stay for what the test checks. |
-| 4 | Share one page per file for read-only specs (serial `describe` + `beforeAll` page), e.g. `qc_dashboard`. | Open | Trades isolation for a small gain; only after 1 and only where tests share a start state. Keep tests separate for failure granularity. |
-| 5 | Parallelism: put read-only / self-contained specs in a separate Playwright project with `workers > 1`; keep stateful ones serial. Or shard CI across jobs. | Open, largest remaining win | Needs an audit of each spec's shared state (specs share data today, `CLAUDE.md` §3); a shard also needs its own database. |
+| 3 | Set up data through the API instead of the UI (projects, items, orders) in the heaviest files: `catalog_supplier_link` (636 lines, 14 tests), `orderbook_layout`, `tracking_layout`. | **Closed: not pursued** (user, 2026-10-21) | Review spec by spec; the UI must stay for what the test checks. |
+| 4 | Share one page per file for read-only specs (serial `describe` + `beforeAll` page), e.g. `qc_dashboard`. | **Closed: not pursued** (user, 2026-10-21) | Trades isolation for a small gain; only after 1 and only where tests share a start state. Keep tests separate for failure granularity. |
+| 5 | Parallelism: put read-only / self-contained specs in a separate Playwright project with `workers > 1`; keep stateful ones serial. Or shard CI across jobs. | **Closed after an experiment: not adopted** (user, 2026-10-21). See below | Needs an audit of each spec's shared state (specs share data today, `CLAUDE.md` §3); a shard also needs its own database. |
 | 6 | CI around the tests. | **Part done** | Done: Playwright browser cached (`actions/cache`, keyed on `apps/web/pnpm-lock.yaml`; a hit still runs `install-deps`). Open: Docker layer cache (buildx + GitHub Actions cache) for `docker compose up --build`; starting the browser install in parallel with the web build. Job names unchanged (they are required checks). |
 | 7 | Small clean-ups. | **Part done** | Done: `tracking_layout` pinned-column test polls instead of `waitForTimeout(200)`; `search.spec` retries the `/` shortcut instead of `networkidle`. Kept on purpose: the two `waitForTimeout(500)` in `undo_toast.spec.ts`, which guard that *nothing* is sent after Undo (a negative check needs a wait). Open: lower the many `timeout: 30_000` ceilings (only helps failing runs); check whether `legacy-screenshots` / `screenshot-login` belong in the default CI run. |
 | 8 | **Measure first.** CI now writes a JSON report per pass (`PW_JSON_REPORT`, `apps/web/playwright.config.ts`) and `scripts/playwright_slowest.py` puts the 15 slowest tests and spec files of each pass in the job summary; the reports are uploaded as the `playwright-timing` artifact. | **Done** (read the first CI run) | Next: use those numbers to choose between items 3, 4 and 5. Locally: `PW_JSON_REPORT=r.json make e2e`, then `python3 scripts/playwright_slowest.py apps/web/r.json`. |
@@ -49,12 +49,23 @@ What can be shared between specs on one database:
 Unverified guesses to settle before moving anything: whether the orders specs' bell and badge assertions depend on the
 count of all Pending orders; which group-A specs read a dashboard or bell count.
 
-**Experiment built (user go-ahead 2026-10-21):** `.github/workflows/e2e-parallel-experiment.yml` (not a required check, not part of CI; manual `workflow_dispatch`, or a PR that changes the workflow or `scripts/playwright_failures.py`) runs the suite on a fresh database
-with `--workers=3` (`PW_WORKERS`, `PW_RETRIES=0`; files in parallel, tests inside a file in order), twice on one fresh database, and
-`scripts/playwright_failures.py` lists in the job summary the files that failed in either run. Failing files go to a serial
-Playwright project; files that pass both runs go to the parallel one (next step, not built). This is cheaper and
-more reliable than reading every spec, and a stable result must hold on the second pass too. Rough ceiling: group A is
-a minority of the time, so expect a gain of maybe a third of the pass, not a half.
+**Experiment result and decision (2026-10-21).** The experiment ran the whole suite twice with 3 workers on one database:
+2 min 36 s and 2 min 51 s against about 5.5 min serial (roughly 2x), and 66 of 68 files passed both runs. The two failures were
+real races on shared seeded items, not random flakes: `cv_replace_comments` (JO-TP01, which `cv_import` also imports onto; 5 files use it)
+and `document_register` (JO-K-101, which 7 other lock/attachment specs use). A file that passed once is weak evidence, because
+files that share an item only collide when they happen to run at the same moment. By a static count, 30 of the 68 files
+reference a seeded row (ALF-001 in 18, JO-K-101 in 8, JO-TP01 in 5, TRT-014 in 3) and would stay serial; 38 do not (the 12 single-test
+`catalog_*` files, `undo_toast`, `item_soft_delete`, `pdf_generation`, `prompt_dialogs`, the order/PO files, which share bell and cost-centre
+totals). A parallel group of those 38 would save roughly a quarter to a third of a pass, at the cost of an explicit file list to
+maintain (with a check that fails on an unclassified new spec) and race risk.
+
+**Decision: stop here.** The suite is about 31% faster and the rest is not worth the upkeep. The experiment workflow
+(`e2e-parallel-experiment.yml`), its report script and the `PW_WORKERS` / `PW_RETRIES` config hooks were removed. To revisit: run the suite with
+`--workers=3` on a fresh database, treat any file that touches a shared seeded item as serial, and repeat the run several times before trusting it.
+
+**Second measurement (PR #144, after the Undo fake clock).** The four 10 s Undo tests left the top 15 (slowest test now 6.6 s), so the fake
+clock works. Total test time still rose, 279 s to 323 s, but tests this change did not touch got 40-50% slower too (`pdf_generation` 4.4 to
+6.6 s), which points to a slower runner, not a regression.
 
 ## Verification state of the done items
 

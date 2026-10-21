@@ -25,8 +25,6 @@ export default defineConfig({
   timeout: 90_000,
   // CI retries a failed test once (a real failure fails twice; the one known
   // flake is a dev-proxy ECONNRESET). Never skip or quarantine to get green.
-  retries: process.env.PW_RETRIES ? Number(process.env.PW_RETRIES) : process.env.CI ? 1 : 0,
-  // One worker: specs share a database and state (CLAUDE.md §3). PW_WORKERS is for the
-  // parallel experiment (.github/workflows/e2e-parallel-experiment.yml) only.
-  workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
+  retries: process.env.CI ? 1 : 0,
+  workers: 1,
 });
