@@ -1,5 +1,5 @@
 """Schemas for the in-app notification inbox (migration 0042, Q521)."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -43,9 +43,23 @@ class LockRequestWaitingOut(BaseModel):
     url: str
 
 
+class TaskOpenOut(BaseModel):
+    task_id: int
+    title: str
+    status: str
+    due_date: date | None
+    target_label: str | None
+    url: str
+
+
 class NotificationListOut(BaseModel):
     notifications: list[NotificationOut]
     unread_count: int
+    # The caller's own tasks still to do (open + in progress), soonest due first, at most 20, and how
+    # many in all. Derived on read like `orders_waiting` (no table, no read state): a task leaves when
+    # it is done or cancelled. First, unfiltered page only; empty otherwise.
+    tasks_open: list[TaskOpenOut] = []
+    tasks_open_count: int = 0
 
 
 class NotificationListWaitingOut(NotificationListOut):

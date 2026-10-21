@@ -10,6 +10,9 @@ and module threads (their link opens the item editor), without `shop_dwgs:read`
 the revision threads. Their notifications are hidden, not deleted — they
 reappear if access is restored.
 
+Every role's first, unfiltered page also carries their own open tasks (`tasks_open`, derived the same way:
+no rows stored, a task leaves when it is done or cancelled).
+
 A purchase officer's first, unfiltered page also carries the orders still waiting for a decision (`orders_waiting`),
 derived from `purchase_orders.status = 'Pending'` on every call: no rows are stored, so nothing is
 marked read and an order disappears the moment it is Approved, Rejected or Cancelled.
@@ -30,6 +33,7 @@ from ..db import get_db
 from ..comments.queries import READ_MODULES
 from ..items.queries import lock_requests_waiting_for_decision
 from ..orders.queries import orders_waiting_for_decision
+from ..tasks.queries import list_tasks
 from . import queries as q
 from .schemas import (
     NotificationListLockRequestsOut,
@@ -60,6 +64,21 @@ def list_notifications_route(
         db, user_id=user.id, workspace_id=user.workspace_id,
         unread_only=unread_only, limit=limit, offset=offset, types=types,
     )
+    # The caller's own open tasks ride on the same first, unfiltered page, for every role (a task
+    # is assigned to a person, whatever their role). Visibility is the tasks module's own: a task
+    # on a target they can no longer read is left out.
+    if offset == 0 and not unread_only:
+        mine = list_tasks(
+            db, actor=user, assignee_id=user.id, status="active", project_id=None,
+            item_id=None, cutlist_id=None, due_before=None, limit=20, offset=0,
+        )
+        out["tasks_open_count"] = mine["total"]
+        out["tasks_open"] = [
+            {"task_id": t["task_id"], "title": t["title"], "status": t["status"],
+             "due_date": t["due_date"], "target_label": t["target_label"],
+             "url": f"/tasks?task={t['task_id']}"}
+            for t in mine["items"]
+        ]
     # Orders waiting for a decision are the purchase officer's (the customer's choice: that role
     # only, not everyone with `orderbook:approve`), only while they can read the Orderbook, and
     # only on a first, unfiltered page: the bell and the page ask for that, a paged or unread-only

@@ -35,6 +35,8 @@ export const SECONDARY_TABS: Tab[] = [
   { href: "/estimating", label: "Estimating", module: "estimating" },
   // /customers is the estimating module's customer registry — same gate.
   { href: "/customers",  label: "Customers",  module: "estimating" },
+  // Tasks have no module of their own: they sit on Tracking's grants (spec 2026-10-21-tasks §4).
+  { href: "/tasks",      label: "Tasks",      module: "tracking" },
 ];
 
 export function TabStrip({ user }: { user: Me }) {

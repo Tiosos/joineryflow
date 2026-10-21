@@ -164,7 +164,9 @@ def list_tasks(
     if assignee_id is not None:
         where += " AND t.assignee_id = :f_assignee"
         params["f_assignee"] = assignee_id
-    if status is not None:
+    if status == "active":                      # open + in_progress: what is still to do
+        where += " AND t.status IN ('open', 'in_progress')"
+    elif status is not None:
         where += " AND t.status = :f_status"
         params["f_status"] = status
     if project_id is not None:

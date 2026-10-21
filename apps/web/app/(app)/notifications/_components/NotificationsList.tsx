@@ -8,6 +8,7 @@ import { notificationText } from "@/components/chrome/NotificationBell";
 import { formatLocalTs } from "@/components/comments/format";
 import { notificationsApi } from "@/lib/comments-fetch";
 import type { LockRequestWaiting, NotificationOut, OrderWaiting } from "@/lib/comments-types";
+import type { TaskOpen } from "@/lib/tasks-types";
 
 const PAGE = 100;
 
@@ -19,6 +20,8 @@ export function NotificationsList() {
   const [waitingCount, setWaitingCount] = useState(0);
   const [lockWaiting, setLockWaiting] = useState<LockRequestWaiting[]>([]);
   const [lockCount, setLockCount] = useState(0);
+  const [tasks, setTasks] = useState<TaskOpen[]>([]);
+  const [taskCount, setTaskCount] = useState(0);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +34,8 @@ export function NotificationsList() {
       setWaitingCount(r.orders_waiting_count ?? 0);
       setLockWaiting(r.lock_requests_waiting ?? []);
       setLockCount(r.lock_requests_waiting_count ?? 0);
+      setTasks(r.tasks_open ?? []);
+      setTaskCount(r.tasks_open_count ?? 0);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notifications");
@@ -106,6 +111,33 @@ export function NotificationsList() {
         </section>
       )}
 
+      {/* like the waiting orders: the API leaves the tasks out of an unread-only call */}
+      {!unreadOnly && taskCount > 0 && (
+        <section data-testid="tasks-open-list" className="grid gap-2">
+          <h2 className="text-sm font-semibold text-h-ink">{`Your tasks (${taskCount})`}</h2>
+          <ul className="grid gap-2">
+            {tasks.map((t) => (
+              <li key={t.task_id}>
+                <Link
+                  href={t.url}
+                  className="block rounded border border-h-line bg-h-surface px-3 py-2 text-sm text-h-ink hover:bg-h-bg"
+                >
+                  {t.title}
+                  <span className="text-xs text-h-muted">
+                    {` · ${[t.due_date ? `Due ${t.due_date}` : null, t.target_label].filter(Boolean).join(" · ") || "No due date"}`}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {taskCount > tasks.length && (
+            <Link href="/tasks" className="text-xs text-h-muted hover:text-h-ink">
+              {`All ${taskCount} tasks`}
+            </Link>
+          )}
+        </section>
+      )}
+
       {!unreadOnly && lockCount > 0 && (
         <section data-testid="lock-requests-waiting-list" className="grid gap-2">
           <h2 className="text-sm font-semibold text-h-ink">
@@ -135,7 +167,7 @@ export function NotificationsList() {
 
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       {!rows && !error && <p className="text-sm text-h-muted">Loading…</p>}
-      {rows && rows.length === 0 && (unreadOnly || (waitingCount === 0 && lockCount === 0)) && (
+      {rows && rows.length === 0 && (unreadOnly || (waitingCount === 0 && lockCount === 0 && taskCount === 0)) && (
         <p className="text-sm text-h-muted">
           {unreadOnly ? "Nothing unread." : "No notifications yet."}
         </p>

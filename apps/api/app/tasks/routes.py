@@ -41,7 +41,8 @@ def _fail(code: str, payload: object = None) -> HTTPException:
 @router.get("/tasks", response_model=TaskListOut)
 def list_tasks_route(
     assignee: str | None = Query(None, description="`me` or a user id"),
-    status: Literal["open", "in_progress", "done", "cancelled"] | None = None,
+    status: Literal["open", "in_progress", "done", "cancelled", "active"] | None = Query(
+        None, description="`active` = open + in_progress"),
     project_id: int | None = None,
     item_id: int | None = None,
     cutlist_id: int | None = None,

@@ -281,3 +281,36 @@ def test_unauthenticated_requests_are_401(ws):
     anon = TestClient(app)
     assert anon.get("/tasks").status_code == 401
     assert anon.post("/tasks", json={"title": "x"}).status_code == 401
+
+
+# --- the bell: GET /notifications carries the caller's open tasks --------------------------
+
+def test_notifications_carry_my_open_tasks_soonest_due_first(ws):
+    mgr = client(ws, "manager")
+    mine = ws["uid"]["drafter"]
+    _make(mgr, title="later", assignee_id=mine, due_date="2026-12-01", item_id=ws["iid"])
+    soon = _make(mgr, title="soon", assignee_id=mine, due_date="2026-11-01")
+    done = _make(mgr, title="done", assignee_id=mine)
+    _make(mgr, title="not mine", assignee_id=ws["uid"]["editor"])
+    mgr.post(f"/tasks/{done['task_id']}/status", json={"status": "done"})
+    r = client(ws, "drafter").get("/notifications").json()
+    assert r["tasks_open_count"] == 2
+    assert [t["title"] for t in r["tasks_open"]] == ["soon", "later"]
+    assert r["tasks_open"][1]["target_label"] and r["tasks_open"][0]["url"] == f"/tasks?task={soon['task_id']}"
+    # not on a paged or unread-only call
+    assert client(ws, "drafter").get("/notifications?unread_only=true").json()["tasks_open"] == []
+    assert client(ws, "drafter").get("/notifications?offset=1").json()["tasks_open_count"] == 0
+    # a finished task leaves the bell
+    client(ws, "drafter").post(f"/tasks/{soon['task_id']}/status", json={"status": "in_progress"})
+    assert client(ws, "drafter").get("/notifications").json()["tasks_open_count"] == 2
+    client(ws, "drafter").post(f"/tasks/{soon['task_id']}/status", json={"status": "cancelled"})
+    assert client(ws, "drafter").get("/notifications").json()["tasks_open_count"] == 1
+
+
+def test_a_purchase_officer_and_a_manager_get_tasks_beside_their_waiting_lists(ws):
+    mgr = client(ws, "manager")
+    _make(mgr, title="for po", assignee_id=ws["uid"]["purchase_officer"])
+    _make(mgr, title="for mgr", assignee_id=ws["uid"]["manager"])
+    assert client(ws, "purchase_officer").get("/notifications").json()["tasks_open_count"] == 1
+    body = mgr.get("/notifications").json()
+    assert body["tasks_open_count"] == 1 and "lock_requests_waiting" in body
