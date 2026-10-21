@@ -212,9 +212,25 @@ jobs:
           done
           echo "search index not ready — search specs may skip"; exit 0
 
+      # The browser download is cached per Playwright version (the lockfile
+      # pins it). System libraries are not part of the cache, so a hit still
+      # installs those.
+      - name: Cache Playwright browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+
       - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: apps/web
+        run: pnpm exec playwright install-deps chromium
 
       - name: Run Playwright
         working-directory: apps/web

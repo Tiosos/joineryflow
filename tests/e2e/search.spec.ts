@@ -29,11 +29,12 @@ async function skipWithoutSearch(page: import("@playwright/test").Page) {
 test("a cutlist number in the top bar opens that cutlist", async ({ page }) => {
   await login(page);
   await skipWithoutSearch(page);
-  // The "/" shortcut is attached on hydration; pressing earlier is a no-op.
-  await page.waitForLoadState("networkidle");
-  await page.keyboard.press("/");
+  // The "/" shortcut is attached on hydration; pressing earlier is a no-op, so retry.
   const box = page.getByRole("searchbox", { name: "Search", exact: true });
-  await expect(box).toBeFocused();
+  await expect(async () => {
+    await page.keyboard.press("/");
+    await expect(box).toBeFocused({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await box.fill("297830");
 
   const hit = page.getByRole("option").filter({ hasText: "SS Bench run (shared)" });
