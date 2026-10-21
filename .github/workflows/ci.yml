@@ -256,6 +256,7 @@ jobs:
         env:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
+          PW_JSON_REPORT: playwright-pass-1.json
         run: pnpm exec playwright test
 
       # The same suite again on the same database, without re-seeding: a spec that
@@ -267,7 +268,23 @@ jobs:
         env:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
+          PW_JSON_REPORT: playwright-pass-2.json
         run: pnpm exec playwright test
+
+      # Where the time goes: the slowest tests and spec files of each pass.
+      - name: Slowest Playwright tests
+        if: always()
+        working-directory: apps/web
+        run: python3 ../../scripts/playwright_slowest.py playwright-pass-1.json playwright-pass-2.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-timing
+          path: apps/web/playwright-pass-*.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload Playwright traces
         if: failure()
