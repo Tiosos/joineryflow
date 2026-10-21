@@ -18,7 +18,7 @@ from ..auth.rbac import current_user, require_permission
 from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
-from .index import TYPES, SearchIndex, SearchQuery, SearchUnavailable, get_index
+from .index import TYPES, SearchIndex, SearchQuery, SearchUnavailable, TaskScope, get_index
 
 router = APIRouter(tags=["search"])
 
@@ -28,6 +28,9 @@ TYPE_MODULE: dict[str, str] = {
     "cutlist": "list", "order": "orderbook", "supplier": "orderbook",
     "drawing": "shop_dwgs", "sample": "isample", "customer": "estimating",
     "estimate": "estimating", "material": "catalog",
+    # Not gated by a module: a task is seen per row (its target's module, or its people), which
+    # `TaskScope` / `build_filter` apply. Every signed-in user may search for tasks.
+    "task": None,
 }
 assert set(TYPE_MODULE) == set(TYPES)
 
@@ -45,6 +48,15 @@ def search_index() -> SearchIndex:
     return _index
 
 
+def task_scope(db: Session, user: AuthUser) -> TaskScope:
+    return TaskScope(
+        user_id=user.id,
+        tracking=has_permission_db(db, user, "tracking", "read"),
+        cutlist=has_permission_db(db, user, "list", "read"),
+        privileged=user.auth_role in ("manager", "admin"),
+    )
+
+
 def readable_types(db: Session, user: AuthUser) -> list[str]:
     """Dynamic RBAC engine (Plan V1 §3.4), not the static `MATRIX` — a group's
     grants, customised via the Permission Groups admin UI, now decide which
@@ -57,12 +69,12 @@ def readable_types(db: Session, user: AuthUser) -> list[str]:
     stays hidden from search, the same ceiling `project_param` draws
     everywhere else it's adopted.
 
-    Each distinct module is resolved once, not once per type: 11 types map
-    onto 7 modules, and this runs on every keystroke of the TopBar box."""
+    Each distinct module is resolved once, not once per type: 12 types map
+    onto 7 modules (tasks onto none, see `TYPE_MODULE`), and this runs on every keystroke of the TopBar box."""
     readable = {
-        m: has_permission_db(db, user, m, "read") for m in set(TYPE_MODULE.values())
+        m: has_permission_db(db, user, m, "read") for m in set(TYPE_MODULE.values()) if m
     }
-    return [t for t in TYPES if readable[TYPE_MODULE[t]]]
+    return [t for t in TYPES if TYPE_MODULE[t] is None or readable[TYPE_MODULE[t]]]
 
 
 def _unavailable() -> HTTPException:
@@ -91,7 +103,7 @@ def search(
         return empty
 
     base = dict(q=q, workspace_id=me.workspace_id, project_id=project_id,
-                include_archived=include_archived)
+                include_archived=include_archived, task_scope=task_scope(db, me))
     try:
         result = index.search(SearchQuery(types=wanted, limit=limit, offset=offset, **base))
         counts = result.type_counts

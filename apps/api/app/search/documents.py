@@ -24,6 +24,8 @@ from urllib.parse import quote
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..row_types import live_joinery_items
+
 # Catalog table (= outbox kind) -> (catalog page tab, pk, legacy unique column,
 # supplier expression, extra body columns). `custom_made` names its supplier
 # column `vendor` (CLAUDE.md); 0017's `default_supplier` wins where set.
@@ -51,7 +53,7 @@ MATERIALS = {
 
 KINDS: tuple[str, ...] = (
     "project", "item", "cutlist", "order", "supplier", "drawing", "sample",
-    "customer", "estimate", *MATERIALS,
+    "customer", "estimate", "task", *MATERIALS,
 )
 
 
@@ -66,6 +68,7 @@ SOURCE_TABLES: dict[str, tuple[str, str]] = {
     "sample": ("sample", "sample_id"),
     "customer": ("customer", "customer_id"),
     "estimate": ("estimate", "estimate_id"),
+    "task": ("task", "task_id"),
     **{k: (k, v[1]) for k, v in MATERIALS.items()},
 }
 
@@ -98,8 +101,9 @@ def _epoch(ts) -> int:
 
 def _doc(*, type_, entity_id, id_=None, workspace_id, project_id=None,
          project_code=None, codes, title, subtitle="", body="", status=None,
-         archived=False, updated_at=None, url=None) -> dict:
+         archived=False, updated_at=None, url=None, **extra) -> dict:
     return {
+        **extra,
         "id": id_ or f"{type_}-{entity_id}",
         "type": type_,
         "entity_id": entity_id,
@@ -341,10 +345,60 @@ def _materials(kind):
     return load
 
 
+_TASK_STATUS = {"open": "Open", "in_progress": "In progress", "done": "Done", "cancelled": "Cancelled"}
+
+
+def _tasks(db, ids):
+    """Tasks (migration 0080/0081). Besides the usual keys a task document carries `visibility`
+    (`tracking` on a project or item, `list` on a cutlist, `private` with no target) and
+    `private_to` (creator and assignee): the search filter keeps a private task from anyone else
+    (`index.TaskScope`). A task whose item or cutlist is soft-deleted is not indexed, so it drops
+    out of search exactly as it drops out of `/tasks`. Done and cancelled tasks are `archived`."""
+    for r in _rows(db, f"""
+        SELECT t.task_id, t.workspace_id, t.title, t.description, t.status, t.due_date,
+               t.created_by, t.assignee_id, t.project_id, t.item_id, t.cutlist_id, t.updated_at,
+               au.full_name AS assignee_name, cu.full_name AS creator_name,
+               COALESCE(t.project_id, i.project_id, c.project_id) AS target_project_id,
+               p.project_code, i.num AS item_num, i.code AS item_code,
+               c.cutlist_no, c.name AS cutlist_name
+          FROM task t
+          LEFT JOIN app_user au ON au.id = t.assignee_id
+          LEFT JOIN app_user cu ON cu.id = t.created_by
+          LEFT JOIN items i ON i.item_id = t.item_id AND {live_joinery_items("i")}
+          LEFT JOIN cutlist c ON c.cutlist_id = t.cutlist_id AND NOT c.deleted
+          LEFT JOIN projects p ON p.project_id = COALESCE(t.project_id, i.project_id, c.project_id)
+         WHERE t.task_id = ANY(:ids)
+           AND (t.item_id IS NULL OR i.item_id IS NOT NULL)
+           AND (t.cutlist_id IS NULL OR c.cutlist_id IS NOT NULL)""", ids):
+        if r["item_id"] is not None:
+            label = f"Item {r['item_code'] or r['item_num']}"
+        elif r["cutlist_id"] is not None:
+            label = f"Cutlist {r['cutlist_no']}"
+        elif r["project_id"] is not None:
+            label = f"Project {r['project_code']}"
+        else:
+            label = None
+        yield _doc(
+            type_="task", entity_id=r["task_id"], workspace_id=r["workspace_id"],
+            project_id=r["target_project_id"], project_code=r["project_code"],
+            codes=_codes(r["project_code"] if r["project_id"] is not None else None,
+                         r["item_num"], r["item_code"], r["cutlist_no"]),
+            title=r["title"],
+            subtitle=_join(label, _TASK_STATUS[r["status"]],
+                           f"Due {r['due_date']}" if r["due_date"] else None),
+            body=_words(r["description"], r["assignee_name"], r["creator_name"]),
+            status=r["status"], archived=r["status"] in ("done", "cancelled"),
+            updated_at=r["updated_at"], url=f"/tasks?task={r['task_id']}",
+            visibility=("tracking" if r["project_id"] is not None or r["item_id"] is not None
+                        else "list" if r["cutlist_id"] is not None else "private"),
+            private_to=sorted({u for u in (r["created_by"], r["assignee_id"]) if u is not None}),
+        )
+
+
 LOADERS = {
     "project": _projects, "item": _items, "cutlist": _cutlists, "order": _orders,
     "supplier": _suppliers, "drawing": _drawings, "sample": _samples,
-    "customer": _customers, "estimate": _estimates,
+    "customer": _customers, "estimate": _estimates, "task": _tasks,
     **{k: _materials(k) for k in MATERIALS},
 }
 

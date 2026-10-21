@@ -2,7 +2,7 @@
 
 export type SearchType =
   | "project" | "item" | "related_part" | "cutlist" | "order" | "supplier"
-  | "drawing" | "sample" | "customer" | "estimate" | "material";
+  | "drawing" | "sample" | "customer" | "estimate" | "material" | "task";
 
 export const TYPE_LABELS: Record<SearchType, string> = {
   project: "Projects",
@@ -16,6 +16,7 @@ export const TYPE_LABELS: Record<SearchType, string> = {
   customer: "Customers",
   estimate: "Estimates",
   material: "Catalog",
+  task: "Tasks",
 };
 
 export interface SearchHit {

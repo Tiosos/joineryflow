@@ -15,8 +15,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (it is "0080", the task table).
-HEAD = "0080"
+# The current head revision: bump it with each new migration (it is "0081", tasks in search).
+HEAD = "0081"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -246,3 +246,38 @@ def test_0080_creates_the_task_table_and_downgrade_drops_it_and_back(scratch):
     assert alembic("downgrade", "0079").returncode == 0
     assert _version(eng) == "0079" and not has_task()
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD and has_task()
+
+
+# --- 0081: tasks in search ---------------------------------------------------------------------------
+
+def test_0081_downgrade_removes_the_task_search_triggers_and_upgrade_queues_existing_tasks(scratch):
+    eng, alembic = scratch
+
+    def triggers() -> set[str]:
+        with eng.connect() as c:
+            return set(c.execute(text(
+                "SELECT tgname FROM pg_trigger WHERE tgname LIKE 'search_%task'")).scalars())
+
+    want = {"search_enqueue_task", "search_fanout_projects_task", "search_fanout_items_task",
+            "search_fanout_cutlist_task", "search_fanout_app_user_task"}
+    assert _version(eng) == HEAD and triggers() == want
+    wid = _workspace(eng)
+    with eng.begin() as c:
+        uid = c.execute(text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                             " VALUES (:w, 'a@m.test', 'A', 'x', 'admin') RETURNING id"), {"w": wid}).scalar()
+        tid = c.execute(text("INSERT INTO task(workspace_id, title, created_by) VALUES (:w, 't', :u)"
+                             " RETURNING task_id"), {"w": wid, "u": uid}).scalar()
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM search_outbox WHERE entity_type = 'task'")).scalar() == 1
+
+    assert alembic("downgrade", "0080").returncode == 0
+    assert _version(eng) == "0080" and triggers() == set()
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM search_outbox WHERE entity_type = 'task'")).scalar() == 0
+    with eng.begin() as c:                                    # the narrowed check refuses a task row
+        with pytest.raises(Exception):
+            c.execute(text("INSERT INTO search_outbox(entity_type, entity_id) VALUES ('task', 1)"))
+
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD and triggers() == want
+    with eng.connect() as c:                                  # the existing task was queued again
+        assert c.execute(text("SELECT entity_id FROM search_outbox WHERE entity_type = 'task'")).scalar() == tid

@@ -52,6 +52,9 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   const { notify } = useUndo();
   const [filter, setFilter] = useState<Filter>("mine");
   const [rows, setRows] = useState<TaskOut[] | null>(null);
+  // The task a link (the bell, a search hit) points at, when the current list does not hold it
+  // (someone else's, unassigned, or already done): it is shown pinned above the list.
+  const [linked, setLinked] = useState<TaskOut | null | "gone">(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -72,6 +75,20 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (highlight == null || itemId != null) return;
+    if (rows?.some((t) => t.task_id === highlight)) {
+      setLinked(null);
+      return;
+    }
+    if (rows === null) return;
+    let live = true;
+    tasksApi.get(highlight).then((t) => live && setLinked(t)).catch(() => live && setLinked("gone"));
+    return () => {
+      live = false;
+    };
+  }, [highlight, itemId, rows]);
 
   const mayChange = (t: TaskOut) =>
     meRole === "admin" || meRole === "manager" || t.created_by === meId || t.assignee_id === meId;
@@ -104,6 +121,7 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
   }
 
   const today = todayLocal();
+  const shown = linked && linked !== "gone" ? [linked, ...(rows ?? [])] : (rows ?? []);
 
   return (
     <div className="grid gap-3" data-testid="task-panel">
@@ -150,12 +168,15 @@ export function TaskPanel({ scope, meId, meRole, highlight, canCreate }: Props) 
 
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       {rows === null && !error && <p className="text-sm text-h-muted">Loading…</p>}
-      {rows !== null && rows.length === 0 && (
+      {linked === "gone" && (
+        <p className="text-sm text-h-muted" data-testid="task-gone">That task is not available.</p>
+      )}
+      {rows !== null && shown.length === 0 && (
         <p className="text-sm text-h-muted" data-testid="tasks-empty">No tasks here.</p>
       )}
 
       <ul className="grid gap-2">
-        {rows?.map((t) => {
+        {shown.map((t) => {
           const href = targetHref(t);
           const closed = t.status === "done" || t.status === "cancelled";
           const overdue = !closed && t.due_date != null && t.due_date < today;

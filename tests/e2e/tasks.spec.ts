@@ -51,7 +51,11 @@ test("a task assigned to me waits in the bell, opens My tasks, and finishing it 
     await expect(row).toContainText("For");
 
     await row.getByRole("combobox", { name: /Status of/ }).selectOption("done");
-    await expect(row).toHaveCount(0, { timeout: 30_000 }); // My tasks lists only what is still to do
+    // The task the link points at stays pinned, now Done; the list itself holds only what is to do.
+    await expect(row.getByRole("combobox", { name: /Status of/ })).toHaveValue("done", { timeout: 30_000 });
+    await page.goto("/tasks");
+    await expect(page.getByTestId("task-panel")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(`[data-testid="task-row"][data-task-id="${taskId}"]`)).toHaveCount(0);
 
     await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page.locator(`[data-testid="task-row"][data-task-id="${taskId}"]`)).toBeVisible();
@@ -91,4 +95,75 @@ test("the item editor's Tasks tab adds a task, and cancelling asks first", async
   await expect(async () => {
     expect((await (await page.request.get(`/api/tasks/${taskId}`)).json()).status).toBe("cancelled");
   }).toPass({ timeout: 20_000 });
+});
+
+/**
+ * Tasks in Global Search (migration 0081). Like search.spec.ts these need Meilisearch and the
+ * search-worker: skipped locally on a 503, a failure in CI. The worker indexes asynchronously, so
+ * each lookup is retried until the new task shows.
+ */
+async function skipWithoutSearch(page: Page) {
+  const res = await page.request.get("/api/search?q=297830");
+  if (res.status() !== 503) return;
+  expect(process.env.CI, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE) in CI").toBeFalsy();
+  test.skip(true, "Meilisearch is not reachable (503 SEARCH_UNAVAILABLE)");
+}
+
+async function taskTitles(page: Page, q: string, extra = ""): Promise<string[]> {
+  const body = await (await page.request.get(`/api/search?q=${encodeURIComponent(q)}${extra}`)).json();
+  return (body.hits as { type: string; title: string }[]).filter((h) => h.type === "task").map((h) => h.title);
+}
+
+test("a task is found in search, and opening the hit lands on it", async ({ page }) => {
+  await login(page);
+  await skipWithoutSearch(page);
+  const { stamp, itemId } = await fixture(page, "search");
+  const word = `Hingeplate${stamp}`;
+  const made = await page.request.post("/api/tasks", { data: { title: `Order the ${word}`, item_id: itemId } });
+  expect(made.status()).toBe(201);
+  const taskId = (await made.json()).task_id as number;
+  try {
+    await expect(async () => {
+      expect(await taskTitles(page, word)).toEqual([`Order the ${word}`]);
+    }).toPass({ timeout: 30_000 });
+
+    await page.goto(`/search?q=${word}`);
+    await expect(page.getByRole("button", { name: /^Tasks 1$/ })).toBeVisible({ timeout: 30_000 });
+    await page.getByText(`Order the ${word}`).first().click();
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?task=${taskId}`), { timeout: 30_000 });
+    await expect(page.locator(`[data-testid="task-row"][data-task-id="${taskId}"]`)).toBeVisible();
+  } finally {
+    await page.request.post(`/api/tasks/${taskId}/status`, { data: { status: "cancelled" } });
+  }
+});
+
+test("a task with no target is found only by its people and managers", async ({ page }) => {
+  const DRAFTER = "noa.lindqvist@hartwood.test"; // creates it, assigned to herself
+  const EDITOR = "juno.okafor@hartwood.test";    // a colleague who can read Tracking: must not find it
+  const MANAGER_EMAIL = "rin.park@hartwood.test";
+  await login(page, DRAFTER);
+  await skipWithoutSearch(page);
+  const word = `Privatehinge${Date.now()}`;
+  const me = (await (await page.request.get("/api/auth/me")).json()).id as number;
+  const made = await page.request.post("/api/tasks", { data: { title: `Call ${word}`, assignee_id: me } });
+  expect(made.status()).toBe(201);
+  const taskId = (await made.json()).task_id as number;
+  try {
+    await expect(async () => {
+      expect(await taskTitles(page, word)).toEqual([`Call ${word}`]);       // the creator and assignee
+    }).toPass({ timeout: 30_000 });
+
+    await page.context().clearCookies();
+    await login(page, MANAGER_EMAIL);
+    expect(await taskTitles(page, word)).toEqual([`Call ${word}`]);         // a manager sees every task
+
+    await page.context().clearCookies();
+    await login(page, EDITOR);
+    expect(await taskTitles(page, word)).toEqual([]);                       // a colleague does not
+    expect(await taskTitles(page, word, "&include_archived=true")).toEqual([]);
+  } finally {
+    await page.context().clearCookies();
+    await login(page, DRAFTER);
+    await page.request.post(`/api/tasks/${taskId}/status`, { data: { status: "cancelled" } });
+  }
 });

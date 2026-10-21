@@ -15,6 +15,7 @@ export const tasksApi = {
     qs.set("limit", String(q.limit ?? 100));
     return apiCall<TaskList>(`/api/tasks?${qs}`);
   },
+  get: (id: number) => apiCall<TaskOut>(`/api/tasks/${id}`),
   forItem: (itemId: number) => apiCall<TaskList>(`/api/items/${itemId}/tasks?limit=200`),
   create: (body: CreateTaskBody) => apiCall<TaskOut>("/api/tasks", jsonInit("POST", body)),
   patch: (id: number, body: PatchTaskBody) =>
