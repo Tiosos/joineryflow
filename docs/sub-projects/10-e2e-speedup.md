@@ -14,6 +14,7 @@ Coverage must not drop: each item says what it keeps. Timings below are estimate
 | 6 | CI around the tests. | **Part done** | Done: Playwright browser cached (`actions/cache`, keyed on `apps/web/pnpm-lock.yaml`; a hit still runs `install-deps`). Open: Docker layer cache (buildx + GitHub Actions cache) for `docker compose up --build`; starting the browser install in parallel with the web build. Job names unchanged (they are required checks). |
 | 7 | Small clean-ups. | **Part done** | Done: `tracking_layout` pinned-column test polls instead of `waitForTimeout(200)`; `search.spec` retries the `/` shortcut instead of `networkidle`. Kept on purpose: the two `waitForTimeout(500)` in `undo_toast.spec.ts`, which guard that *nothing* is sent after Undo (a negative check needs a wait). Open: lower the many `timeout: 30_000` ceilings (only helps failing runs); check whether `legacy-screenshots` / `screenshot-login` belong in the default CI run. |
 | 8 | **Measure first.** CI now writes a JSON report per pass (`PW_JSON_REPORT`, `apps/web/playwright.config.ts`) and `scripts/playwright_slowest.py` puts the 15 slowest tests and spec files of each pass in the job summary; the reports are uploaded as the `playwright-timing` artifact. | **Done** (read the first CI run) | Next: use those numbers to choose between items 3, 4 and 5. Locally: `PW_JSON_REPORT=r.json make e2e`, then `python3 scripts/playwright_slowest.py apps/web/r.json`. |
+| 9 | **Fast-forward the Undo window** with Playwright's fake clock (`page.clock.install()` before the page loads, `endUndoWindow(page)` in `helpers.ts` once the toast is up) in the four tests that waited it out. | **Done** (unverified until CI runs) | The tests still prove the request is sent only when the window ends (they check "not sent yet" first). Risk: the fake clock also moves the page's `Date`. Tests that press Undo or leave the page still use real time. |
 
 ## First measurement (PR #144, 2026-10-21)
 
@@ -24,11 +25,10 @@ reworking single heavy specs (items 3, 4) would pay little. What stood out:
 
 | Finding | Seconds per pass | Action |
 | --- | --- | --- |
-| Four tests wait the real 10 s Undo window (`undo_toast` x2, `item_soft_delete` x2) | about 46 | **Done** (item 9) |
+| Four tests wait the real 10 s Undo window (`undo_toast` x2, `item_soft_delete` x2) | about 46 | **Done** (table row 9) |
 | `legacy-screenshots.spec.ts` (static `legacy/*.html` mocks, not the app) | 13.6 | **Decided: leave as is** (user, 2026-10-21) |
 | Everything else | flat tail | Only parallelism (item 5) moves it |
 
-| 9 | **Fast-forward the Undo window** with Playwright's fake clock (`page.clock.install()` before the page loads, `endUndoWindow(page)` in `helpers.ts` once the toast is up) in the four tests that waited it out. | **Done** (unverified until CI runs) | The tests still prove the request is sent only when the window ends (they check "not sent yet" first). Risk: the fake clock also moves the page's `Date`. Tests that press Undo or leave the page still use real time. |
 
 ## Audit for item 5 (parallel project), first pass
 
