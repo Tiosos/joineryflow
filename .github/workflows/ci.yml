@@ -232,6 +232,25 @@ jobs:
         working-directory: apps/web
         run: pnpm exec playwright install-deps chromium
 
+      # The second pass below is the re-runnability guard. It always runs on a
+      # push to main; on a pull request only when the PR touches what can break
+      # re-runnability (specs, seed, migrations, Playwright config, this file).
+      - name: Decide whether the second pass runs
+        id: second-pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename')
+          if echo "$files" | grep -qE '^(tests/e2e/|seed/|db/|apps/web/playwright\.config\.ts$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Second Playwright pass skipped: no e2e, seed, migration or config change in this PR."
+          fi
+
       - name: Run Playwright
         working-directory: apps/web
         env:
@@ -243,6 +262,7 @@ jobs:
       # consumes or changes seeded data (a notification, an estimate, a take, a
       # question) passes the first time and fails here. See CLAUDE.md §3.
       - name: Run Playwright again (same database)
+        if: steps.second-pass.outputs.run == 'true'
         working-directory: apps/web
         env:
           CI: "true"
