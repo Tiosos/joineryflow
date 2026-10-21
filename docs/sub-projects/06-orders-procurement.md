@@ -833,6 +833,9 @@
     (`v_budget_utilisation` reads `cost_centers`); there is no "unallocated spend" view, and
     nothing flags that such an order has no budget line. Whether there should be one is a product
     call, not a bug.
+    **Decided 2026-10-22: shown.** The budget report (`GET /cost-centers/report`, Orderbook > Budget
+    report, managers and admins) has an *Unallocated* line: live orders (not Cancelled / Rejected)
+    with no cost centre, their count and total, linking to the Orders list with `?cost_center=none`.
   - **No route assigns a cost centre to an existing order** (above). Not built; it is what would
     make "attach it later, then commit" possible.
   - ~~The legacy `/procurement/*` namespace still does not use the order-status guard.~~

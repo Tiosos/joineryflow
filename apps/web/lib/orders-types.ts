@@ -107,6 +107,29 @@ export interface CostCentre {
   remaining?: string;
 }
 
+/** `GET /cost-centers/report` (managers and admins): the budget across every cost centre. Money is a
+ *  Pydantic `Decimal`, so it arrives as a string. */
+export interface CostCentreReportRow {
+  cost_center_id: number;
+  code: string;
+  name: string;
+  fiscal_year: number | null;
+  is_active: boolean;
+  budget_amount: string;
+  committed: string;
+  spent: string;
+  remaining: string;
+  /** Orders on it, not counting Cancelled or Rejected. */
+  order_count: number;
+}
+
+export interface CostCentreReport {
+  rows: CostCentreReportRow[];
+  totals: { budget_amount: string; committed: string; spent: string; remaining: string; order_count: number };
+  /** Orders with no cost centre (not Cancelled or Rejected): outside every budget. */
+  unallocated: { order_count: number; total_amount: string };
+}
+
 /** `GET /orders/cost-breakdown` and `GET /projects/{id}/budget`: material cost by order type. */
 export interface CostBreakdownOrder {
   po_id: number;

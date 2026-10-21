@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { can, type Me } from "@/lib/permissions";
 import type { CostCentre, OrderCategory, OrderRow } from "@/lib/orders-types";
@@ -61,6 +62,9 @@ export function OrdersClient({ me }: { me: Me | null }) {
   // Q418: the number Tracking sent us here with.
   const selected = params.get("order") ?? "";
   const view = params.get("view") ?? "";
+  // The budget report's links: one cost centre's orders (`<id>`) or those with none (`none`), not
+  // counting Cancelled or Rejected, so the number the report gave is the number of rows shown.
+  const costCentreFilter = params.get("cost_center") ?? "";
   const poParam = params.get("po") ?? "";
   const poId = /^[1-9]\d*$/.test(poParam) ? Number(poParam) : null;
   const [ticked, setTicked] = useState<Set<number>>(new Set());
@@ -113,6 +117,10 @@ export function OrdersClient({ me }: { me: Me | null }) {
 
   const shown = useMemo(() => rows.filter(r => {
     const open = !["Delivered", "Cancelled", "Rejected"].includes(r.status);
+    if (costCentreFilter) {
+      if (["Cancelled", "Rejected"].includes(r.status)) return false;
+      if (costCentreFilter === "none" ? r.cost_center_id != null : String(r.cost_center_id) !== costCentreFilter) return false;
+    }
     if (view === "rto") return r.status === "Approved" && !r.date_ordered;
     if (view === "tbo") return open && !r.date_ordered;
     if (view === "due") return open && !r.arrived_date && !!r.due_date && r.due_date >= today && r.due_date <= weekAhead;
@@ -120,7 +128,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
     if (view === "arrived") return !!r.arrived_date;
     if (view === "mine") return r.requester_id === me?.id;
     return true;
-  }), [rows, view, today, weekAhead, me]);
+  }), [rows, view, today, weekAhead, me, costCentreFilter]);
 
   // Grouped under the order type, in the lookup's order; a type the lookup no longer lists goes last.
   const groups = useMemo(() => {
@@ -233,10 +241,25 @@ export function OrdersClient({ me }: { me: Me | null }) {
         <span className="text-xs text-h-muted">
           {loading ? "Loading…" : `${shown.length} order${shown.length === 1 ? "" : "s"}`}
         </span>
+        {costCentreFilter && (
+          <span data-testid="cost-centre-filter" className="flex items-center gap-1.5 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink">
+            {costCentreFilter === "none"
+              ? "No cost centre"
+              : `Cost centre ${costCentres.find(c => String(c.cost_center_id) === costCentreFilter)?.code ?? costCentreFilter}`}
+            <button type="button" aria-label="Clear the cost centre filter" onClick={() => setParam("cost_center", "")}
+              className="text-h-muted hover:text-h-ink">×</button>
+          </span>
+        )}
         <button type="button" data-testid="cost-centre-breakdown-open" onClick={() => setCostOpen(true)}
           className="ml-auto rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink hover:bg-h-surface">
           Cost centre
         </button>
+        {(me?.auth_role === "manager" || me?.auth_role === "admin") && (
+          <Link href="/orderbook/budget" data-testid="budget-report-link"
+            className="rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink hover:bg-h-surface">
+            Budget report
+          </Link>
+        )}
         {canManageCostCentres && (
           <span data-testid="cost-centres" className="flex items-center gap-1.5 text-xs text-h-muted">
             {costCentres.filter(c => c.is_active).length} cost centre{costCentres.filter(c => c.is_active).length === 1 ? "" : "s"}
