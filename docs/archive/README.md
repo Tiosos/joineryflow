@@ -22,6 +22,7 @@ Design specs and implementation plans written before each sub-project was built,
 - `2026-09-18-cutlist-related-parts-orderbook.md` — Cutlist, related parts, Orderbook
 - `2026-09-24-material-take.md` — Material Take
 - `2026-09-24-search.md` — Global Search
+- `2026-10-21-tasks.md` — Tasks (API built; web not yet)
 
 ## How to read a plan
 ### Every plan carries a status header

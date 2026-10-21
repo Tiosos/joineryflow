@@ -3503,6 +3503,34 @@ def main() -> None:
                 "1 on the item's first module and 1 on a shop-drawing revision"
             )
 
+        # ------------------------------------------------------------------
+        # Tasks (migration 0080): two, made through the same query function the
+        # API uses so the audit rows are real. Neither targets an item (an item
+        # task would add an item_edit_log row to a project the e2e specs use).
+        # Idempotent: the two seeded titles are dropped first.
+        # ------------------------------------------------------------------
+        from app.tasks import queries as _tk
+        from app.tasks.schemas import CreateTaskIn as _CreateTaskIn
+
+        _tk_titles = ("Confirm the walnut sample with the client",
+                      "Review the October supplier price list")
+        _tk_project = db.execute(text("SELECT project_id FROM projects WHERE project_code = 'TRT-014'"
+                                      " AND workspace_id = :w"), {"w": wid}).scalar()
+        _tk_manager = _actor_by("auth_role = 'manager'")
+        _tk_admin = _actor_by("auth_role = 'admin'")
+        _tk_drafter = _actor_by("auth_role = 'drafter'")
+        if _tk_project and _tk_manager and _tk_admin and _tk_drafter:
+            db.execute(text("DELETE FROM task WHERE workspace_id = :w AND title = ANY(:t)"),
+                       {"w": wid, "t": list(_tk_titles)})
+            _code, _ = _tk.create_task(db, actor=_tk_manager, payload=_CreateTaskIn(
+                title=_tk_titles[0], project_id=_tk_project, assignee_id=_tk_drafter.id,
+                due_date=date.today() + timedelta(days=7)))
+            assert _code == "OK", _code
+            _code, _ = _tk.create_task(db, actor=_tk_admin, payload=_CreateTaskIn(title=_tk_titles[1]))
+            assert _code == "OK", _code
+            db.commit()
+            print("seeded tasks: 1 on TRT-014 assigned to the drafter, 1 with no target")
+
         print(
             f"seeded workspace {wid} with {len(USERS)} users, "
             f"{len(PROJECTS)} projects, {len(PROJECTS) * len(ITEMS_PER_PROJECT)} items"

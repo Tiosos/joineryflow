@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0079` (head `0079_sku_copies_255`) |
+| `db/` | Alembic migrations `0001`→`0080` (head `0080_task`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
@@ -252,7 +252,7 @@ Three lock types on an item: **Hard** (`hard_locked_at`, manager/admin set it, b
 
 **Held saves (Controlled-Lock requests)** are decided by the lock owner, a manager or an admin (drafter, manager, admin only: `require_drafter`): the item editor shows a banner with Approve / Reject, and `GET /notifications` lists them (`lock_requests_waiting`, derived, no read state) in the bell for those people. History: `docs/sub-projects/04-rbac-and-locks.md`.
 
-**Deliberately not locked:** QC records, comments, Material Summary, project hardware catalog, `POST /files`, Shop Floor's `item_stages` fan-out, reads and print routes. `cutlist_owner_id` is sticky — only `item_locked` matters. Web mirror: `cutlist/moduleLock.ts` (`moduleLockReason`, `lockFromError`, scopes `content | status | records`); one notice per tab, controls disabled with the reason, 409 fallback reverts the edit.
+**Deliberately not locked:** QC records, comments, tasks, Material Summary, project hardware catalog, `POST /files`, Shop Floor's `item_stages` fan-out, reads and print routes. `cutlist_owner_id` is sticky — only `item_locked` matters. Web mirror: `cutlist/moduleLock.ts` (`moduleLockReason`, `lockFromError`, scopes `content | status | records`); one notice per tab, controls disabled with the reason, 409 fallback reverts the edit.
 
 ## 10. What is built
 
@@ -307,12 +307,15 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 ### Data migration (E3) — `09-e3-pilot-data-import.md`
 - **FileMaker Tracking 2.0 importer (`0053`).** `python -m app.importers.tracking_grid FILE.xlsx …` imports one project's items, cutlists, areas, rooms, stage dates (done dates; REQ is a due date), statuses and factories, keeping FileMaker's item and cutlist numbers. A dry run does the real inserts and rolls back; `--commit` keeps them and writes one audit row. Customer exports are never committed. Only the item grid is covered here (an installed item also gets REQ done, or Tracking's Overdue counts it). **Orders grid (second slice):** `python -m app.importers.orders_grid FILE.xlsx …` imports one project's orders (one `purchase_orders` row per FileMaker row, `OrderNumber` kept as `order_number` and shown in the Orders list's **Order no.** column, no PO documents; the requester is matched to a staff member by first name or kept in internal comments; an order is linked to an item only when its cutlist has exactly one; mapping in the module docstring and `docs/sub-projects/09-e3-pilot-data-import.md`). **Catalog (third slice):** the old catalog could not be exported, so `python -m app.importers.catalog_from_orders propose ORDERS.xlsx --out review.xlsx` guesses a catalog table per product code on the orders, a person corrects the sheet, and `… import review.xlsx --workspace-slug … --actor-email … [--commit]` writes code, SKU (= the code the Cutlists tab matches on), description, supplier, unit cost (the latest order's line total ÷ quantity, ex GST; a 0 stays 0) and the optional Type column (`product_type`) through the catalog's own insert; no equipment hire. Modules, parts, hardware, drawings and QC still need their own exports.
 
+### Tasks — `docs/archive/2026-10-21-tasks.md`
+- **Tasks API (`0080`, Q524).** A `task` has a title, assignee, due date and status (`open`, `in_progress`, `done`, `cancelled`) and at most one target: a project, a Joinery Item or a cutlist (all optional). Only manual and by-request creation is built (no rule engine, Q472). It reuses existing grants, no new module: read and edit need `read` / `comment` on `tracking` (project, item) or `list` (cutlist); a task with no target is free to make for yourself, giving it to someone else needs `tracking:comment`, and it is seen by its creator, assignee, manager and admin. Creator, assignee, manager and admin change status (and reopen); editing a `done` / `cancelled` task is `409 TASK_CLOSED`. The assignee must be able to read the target (`409 ASSIGNEE_CANNOT_READ_TARGET`). A soft-deleted item or cutlist hides its tasks (404). Not built yet: the web pages, the bell's derived task list (the plan is a derived `tasks_open`, like `orders_waiting`), tasks in search.
+
 ### Audits and CI — `08-audits-and-ci.md`
 - **Null-write and POST-body audits.** PATCH nulls fixed with `no_null`; POST bodies found clean.
 - **e2e repair and CI.** Whole suite verified on a fresh database; Playwright job in `ci.yml` (required check on `main` since PR #81).
 
 ### Still open
-PO approval: cost centres have no delete, no report across cost centres and no hard budget limit. See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; §21's wider Procurement flow; the rest of E3 (see above). E3's first slice (the item grid) is built; the rest of the pilot data is open.
+PO approval: cost centres have no delete, no report across cost centres and no hard budget limit. See `docs/sub-projects/06-orders-procurement.md`. Q480 SharePoint URL, Q547 drawing filename, Q550 Cars/OH&S tab, Q572 Scope tab; Task and Change comment threads (no entities); Q472 rule engine; the Tasks web, bell list and search (the API is built); §21's wider Procurement flow; the rest of E3 (see above). E3's first slice (the item grid) is built; the rest of the pilot data is open.
 
 ## 11. Reference docs
 

@@ -22,6 +22,7 @@ from .items.routes import router as items_router
 from .material_summaries.routes import router as material_summaries_router
 from .material_takes.routes import router as material_takes_router
 from .notifications.routes import router as notifications_router
+from .tasks.routes import router as tasks_router
 from .orders.attachments import router as order_attachments_router
 from .orders.routes import router as orders_router
 from .printing.routes import router as printing_router
@@ -104,6 +105,7 @@ app.include_router(estimating_router)
 app.include_router(qc_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
+app.include_router(tasks_router)
 
 
 @app.get("/health")

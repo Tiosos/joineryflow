@@ -238,7 +238,7 @@ FIELD_KIND = {
     "file_blob_id": "file_blob", "photo_file_blob_id": "file_blob",
     "sketch_file_blob_id": "file_blob",
     "customer_id": "customer", "cost_center_id": "cost_center", "cut_plan_id": "cut_plan",
-    "area_id": "area", "room_id": "room",
+    "area_id": "area", "room_id": "room", "cutlist_id": "cutlist", "assignee_id": "user",
     "board_material_id": "board_material", "material_id": "board_material",
     "target_material_id": "board_material", "source_id": "hardware_material",
     "item_hardware_line_id": "hardware_line", "catalog_id": "catalog_row",
@@ -266,6 +266,8 @@ def rows_of_a(db, wid: int) -> dict[str, int]:
                 " WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
         "room": "SELECT r.room_id FROM room r JOIN area a ON a.area_id = r.area_id"
                 " JOIN projects p ON p.project_id = a.project_id WHERE p.workspace_id = :w ORDER BY 1 LIMIT 1",
+        "cutlist": "SELECT c.cutlist_id FROM cutlist c JOIN projects p ON p.project_id = c.project_id"
+                   " WHERE p.workspace_id = :w AND NOT c.deleted ORDER BY 1 LIMIT 1",
         "board_material": "SELECT material_id FROM board_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "hardware_material": "SELECT material_id FROM hardware_materials WHERE workspace_id = :w ORDER BY 1 LIMIT 1",
         "hardware_line": "SELECT l.line_id FROM item_hardware_lines l JOIN items i ON i.item_id = l.item_id"
@@ -312,6 +314,8 @@ def rows_of_b(db, wid: int, uid: int) -> dict[str, int]:
         "cut_plan": one("INSERT INTO cut_plan(workspace_id, project_id, name) VALUES (:w, :p, 'B plan')"
                         " RETURNING id", p=project),
         "area": area,
+        "cutlist": one("INSERT INTO cutlist(project_id, cutlist_no) VALUES (:p, nextval('joinery_number_seq'))"
+                       " RETURNING cutlist_id", p=project),
         "room": one("INSERT INTO room(area_id, rm_no) VALUES (:a, 'B1') RETURNING room_id", a=area),
         "board_material": board,
         "hardware_material": one(
