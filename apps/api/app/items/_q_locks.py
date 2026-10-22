@@ -455,7 +455,7 @@ def decide_lock_request(
         # §L Q511/Q512: lock the row for the rest of this transaction, same
         # as `patch_item`'s own direct-apply path.
         current = _item_row(
-            db, item_id=item_id, workspace_id=workspace_id, for_update=True
+            db, item_id=item_id, workspace_id=workspace_id, for_update=True, lock_painting=True
         )
         if current is None:          # item deleted between request and decision
             return "NOT_FOUND"

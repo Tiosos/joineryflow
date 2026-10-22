@@ -124,6 +124,8 @@ def link_item_route(
     )
     if code == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="cutlist or item not found")
+    if code == "PAINT_ORDER_CONFLICT":
+        raise HTTPException(409, detail={"code": code, "message": "Different painting orders require separate cutlists"})
     if code == "RELATED_PART":
         raise HTTPException(
             status_code=409,

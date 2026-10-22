@@ -15,7 +15,7 @@ flagged rather than assigned today's rate.
 | Finding | Status |
 | --- | --- |
 | R01 — summary ordering | Implemented and tested |
-| R04 — incompatible painting orders | Pending |
+| R04 — incompatible painting orders | Implemented and tested |
 | R05 — completion versus undo | Pending |
 | R06 — historical labour costs | Pending |
 | R07 — sliding sessions | Pending |
@@ -35,3 +35,22 @@ Validation: both new PostgreSQL concurrency regressions failed before the fix.
 After the fix, material-summary and material-take suites passed **55 tests**;
 selected Ruff rules and whitespace checks passed. No schema or existing-data
 changes. Ordinary manually entered orders keep their existing behaviour.
+
+## R04 — Require compatible painting orders within a cutlist
+
+Links, direct painting edits, approved Controlled-Lock requests and restores
+reject `PAINT_ORDER_CONFLICT` when painted items would require opposite orders.
+A project-scoped transaction advisory lock is acquired before item locks, so
+concurrent changes to different items cannot jointly introduce a cycle.
+Unpainted items can still share a cutlist. Existing incompatible cutlists are
+preserved and flagged by `paint_order_conflict` on list/detail responses; unlink
+and separate-cutlist linking remain available for an explicit split.
+
+The tracking importer does not import painting flags (new items default to no
+painting), quote conversion creates separate cutlists, and duplication creates
+a new cutlist. None can introduce opposite painting orders through its current
+inputs. No production history is rewritten and no migration is required.
+
+Validation: six new regressions failed against the original source, then all
+**84 tests** across cutlists, shared production, soft deletion and item locks
+passed. Ruff and whitespace checks passed.

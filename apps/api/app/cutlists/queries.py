@@ -31,6 +31,7 @@ from ..concurrency import bump_field_versions, check_field_conflicts, conflict_s
 from ..edit_log import write_edit_log
 from ..orders.queries import sync_orders_for_item
 from ..row_types import live_joinery_items
+from .painting import incompatible, lock_project
 from .schemas import CreateCutlistIn, PatchCutlistIn
 
 _JOINERY_I = live_joinery_items("i")
@@ -46,6 +47,9 @@ _CUTLIST_COLS = """
     c.created_at,
     c.updated_at,
     c.field_versions,
+    (SELECT COUNT(DISTINCT COALESCE(pi.paint_after_assembly, false)) > 1
+     FROM items pi WHERE pi.cutlist_id=c.cutlist_id AND NOT pi.deleted
+       AND pi.row_type='joinery_item' AND pi.painting_req) AS paint_order_conflict,
     (
         SELECT COUNT(*) FROM items li
         WHERE li.cutlist_id = c.cutlist_id AND NOT li.deleted
@@ -374,10 +378,11 @@ def _item_for_link(db: Session, *, item_id: int, workspace_id: int) -> dict | No
     row = db.execute(
         text(
             """
-            SELECT i.item_id, i.num, i.project_id, i.row_type, i.cutlist_id
+            SELECT i.item_id, i.num, i.project_id, i.row_type, i.cutlist_id, i.painting_req, i.paint_after_assembly
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :iid AND p.workspace_id = :w AND NOT i.deleted
+            FOR UPDATE OF i
             """
         ),
         {"iid": item_id, "w": workspace_id},
@@ -401,6 +406,7 @@ def link_item(
     if cutlist is None:
         return "NOT_FOUND", None
 
+    lock_project(db, cutlist["project_id"])
     item = _item_for_link(db, item_id=item_id, workspace_id=workspace_id)
     if item is None:
         return "NOT_FOUND", None
@@ -420,6 +426,10 @@ def link_item(
             "cutlist_id": item["cutlist_id"],
             "cutlist_no": existing["cutlist_no"] if existing else None,
         }
+
+    if incompatible(db, item_id=item_id, cutlist_id=cutlist_id,
+                    painting_req=item["painting_req"], paint_after_assembly=item["paint_after_assembly"]):
+        return "PAINT_ORDER_CONFLICT", None
 
     db.execute(
         text("UPDATE items SET cutlist_id = :cid, updated_at = now() WHERE item_id = :iid"),
@@ -459,6 +469,7 @@ def unlink_item(
     cutlist = _cutlist_row(db, cutlist_id=cutlist_id, workspace_id=workspace_id)
     if cutlist is None:
         return "NOT_FOUND"
+    lock_project(db, cutlist["project_id"])
     item = _item_for_link(db, item_id=item_id, workspace_id=workspace_id)
     if item is None:
         return "NOT_FOUND"

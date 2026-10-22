@@ -24,6 +24,7 @@ class CutlistOut(BaseModel):
     project_id: int
     cutlist_no: int
     name: str | None
+    paint_order_conflict: bool = False
     item_count: int
     created_by: int | None
     created_by_name: str | None

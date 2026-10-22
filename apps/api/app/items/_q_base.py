@@ -5,6 +5,7 @@ Part of the items queries facade (see `queries.py`)."""
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 import json
+from ..cutlists.painting import incompatible, lock_project
 from ..concurrency import bump_field_versions
 from ..edit_log import write_edit_log_many
 from ..row_types import live_joinery_items
@@ -57,6 +58,7 @@ def _item_row(
     workspace_id: int,
     for_update: bool = False,
     include_deleted: bool = False,
+    lock_painting: bool = False,
 ) -> dict | None:
     """Fetch bare item columns for mutation helpers.  Returns None if 404.
 
@@ -76,6 +78,11 @@ def _item_row(
     A soft-deleted item answers None like a missing one; only `restore_item` passes
     `include_deleted=True`.
     """
+    if lock_painting:
+        project_id = db.execute(text(f"SELECT i.project_id FROM items i WHERE i.item_id=:iid AND {_WORKSPACE_FILTER}"),
+                                {"iid": item_id, "wid": workspace_id}).scalar()
+        if project_id is not None:
+            lock_project(db, project_id)
     row = db.execute(
         text(
             f"""
@@ -94,6 +101,8 @@ def _item_row(
                 i.zone,
                 i.estimator_notes,
                 i.painting_req,
+                i.paint_after_assembly,
+                i.cutlist_id,
                 i.solid_surface_req,
                 i.item_locked,
                 i.cutlist_owner_id,
@@ -288,6 +297,12 @@ def _apply_item_changes(
         if new_val != old_val:
             updates[col] = new_val
             changes.append((attr, None if old_val is None else str(old_val), str(new_val)))
+
+    if "painting_req" in updates and incompatible(
+        db, item_id=item_id, cutlist_id=current["cutlist_id"],
+        painting_req=updates["painting_req"], paint_after_assembly=current["paint_after_assembly"],
+    ):
+        return "PAINT_ORDER_CONFLICT"
 
     if changes:
         # §L Q511/Q512: bump the touched fields' versions in the SAME UPDATE

@@ -213,7 +213,7 @@ def patch_item_route(
             status_code=422,
             detail="contractor_id must reference a user in the same workspace",
         )
-    if result["outcome"] in ("BAD_AREA", "BAD_ROOM", "ROOM_WITHOUT_AREA"):
+    if result["outcome"] in ("BAD_AREA", "BAD_ROOM", "ROOM_WITHOUT_AREA", "PAINT_ORDER_CONFLICT"):
         # Q552: a room lives inside an area, enforced by the composite FK.
         # Refused here so the caller gets a named reason, not a 500.
         raise HTTPException(status_code=409, detail={"code": result["outcome"]})
@@ -292,6 +292,8 @@ def restore_item_route(
         raise HTTPException(
             status_code=409, detail={"code": "ITEM_NOT_DELETED", "message": "item is not deleted"}
         )
+    if result == "PAINT_ORDER_CONFLICT":
+        raise HTTPException(409, detail={"code": result, "message": "Different painting orders require separate cutlists"})
     if result == "PARENT_DELETED":
         raise HTTPException(
             status_code=409,
@@ -549,6 +551,8 @@ def _decide(
             status_code=403,
             detail="only the lock owner, a manager, or an admin can decide",
         )
+    if result == "PAINT_ORDER_CONFLICT":
+        raise HTTPException(409, detail={"code": result, "message": "Different painting orders require separate cutlists"})
     if result == "ALREADY_DECIDED":
         raise HTTPException(
             status_code=409, detail={"code": "ALREADY_DECIDED"}
