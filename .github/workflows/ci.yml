@@ -33,8 +33,23 @@ jobs:
       # `meili` run against it (MEILI_URL comes from .env.example). The
       # search-worker is deliberately NOT started — it would drain outbox rows
       # the tests count.
-      - name: Build & start db + meili + api
-        run: docker compose up -d --build db meili api
+      # The api image is built through buildx with the GitHub Actions layer cache, so a run whose
+      # Dockerfile / pyproject.toml did not change skips the apt and pip layers. The tags are the
+      # names compose gives its own builds (<project>-<service>), so `up` below finds the images and
+      # does not build them again; if a name ever stops matching, compose just builds as before.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/bake-action@v6
+        with:
+          files: docker-compose.yml
+          targets: api
+          load: true
+          set: |
+            api.tags=joineryflow-api
+            *.cache-from=type=gha,scope=api-image
+            *.cache-to=type=gha,scope=api-image,mode=max
+      - name: Start db + meili + api
+        run: docker compose up -d db meili api
 
       - name: Wait for Postgres
         run: |
@@ -140,8 +155,26 @@ jobs:
       # search-worker is started AFTER the seed on purpose: the seed's writes
       # land in search_outbox and the worker then drains them, which is what
       # makes the two search specs find their records.
-      - name: Build & start db + meili + api
-        run: docker compose up -d --build db meili api
+      # The api image is built through buildx with the GitHub Actions layer cache, so a run whose
+      # Dockerfile / pyproject.toml did not change skips the apt and pip layers. The tags are the
+      # names compose gives its own builds (<project>-<service>), so `up` below finds the images and
+      # does not build them again; if a name ever stops matching, compose just builds as before.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/bake-action@v6
+        with:
+          files: docker-compose.yml
+          targets: |
+            api
+            search-worker
+          load: true
+          set: |
+            api.tags=joineryflow-api
+            search-worker.tags=joineryflow-search-worker
+            *.cache-from=type=gha,scope=api-image
+            *.cache-to=type=gha,scope=api-image,mode=max
+      - name: Start db + meili + api
+        run: docker compose up -d db meili api
 
       - name: Wait for Postgres
         run: |
@@ -182,6 +215,16 @@ jobs:
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
 
+      # The browser download is cached per Playwright version (the lockfile
+      # pins it). System libraries are not part of the cache, so a hit still
+      # installs those; that runs beside the web build below, not after it.
+      - name: Cache Playwright browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+
       # A production build served with `next start`: no on-demand compilation,
       # so the first navigation of each route is not a cold compile (the cause
       # of several click-before-hydration races seen against `next dev`).
@@ -192,7 +235,14 @@ jobs:
         run: |
           set -a; . ../../.env; set +a
           export API_URL=http://localhost:8000
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm exec playwright install-deps chromium > /tmp/pw-deps.log 2>&1 &
+            deps_pid=$!
+          fi
           pnpm build
+          if [ -n "${deps_pid:-}" ]; then
+            wait "$deps_pid" || { echo "playwright install-deps failed"; cat /tmp/pw-deps.log; exit 1; }
+          fi
           nohup pnpm exec next start -p 3000 > /tmp/web.log 2>&1 &
           for i in $(seq 1 40); do
             if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login)" = "200" ]; then echo "web ready"; exit 0; fi
@@ -213,25 +263,10 @@ jobs:
           done
           echo "search index not ready — search specs may skip"; exit 0
 
-      # The browser download is cached per Playwright version (the lockfile
-      # pins it). System libraries are not part of the cache, so a hit still
-      # installs those.
-      - name: Cache Playwright browser
-        id: pw-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
-
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright system dependencies
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        working-directory: apps/web
-        run: pnpm exec playwright install-deps chromium
 
       # The second pass below is the re-runnability guard. It always runs, over the whole suite, on a
       # push to main and on a pull request that touches what can break every spec's re-runnability
