@@ -142,19 +142,18 @@ def _order_figures(db: Session, project_id: int) -> dict[str, tuple[Decimal, Dec
             for r in rows}
 
 
-def _line_skus(db: Session, lines: list[dict]) -> dict[tuple[str, int], str]:
-    """Catalog SKU (trimmed) of every material the lines point at."""
+def _line_materials(db: Session, lines: list[dict]) -> dict[tuple[str, int], tuple[str | None, int | None]]:
+    """(catalog SKU trimmed or None, default supplier id or None) of every material the lines point at."""
     by_type: dict[str, list[int]] = {}
     for l in lines:
         if l["material_id"] is not None and l["material_type"] in _CATALOG_LOOKUP:
             by_type.setdefault(l["material_type"], []).append(l["material_id"])
-    out: dict[tuple[str, int], str] = {}
+    out: dict[tuple[str, int], tuple[str | None, int | None]] = {}
     for mt, ids in by_type.items():
         table, id_col, _name, sku_col = _CATALOG_LOOKUP[mt]
-        for r in db.execute(text(f"SELECT {id_col} AS id, {sku_col} AS sku FROM {table} "
+        for r in db.execute(text(f"SELECT {id_col} AS id, {sku_col} AS sku, default_supplier_id FROM {table} "
                                  f"WHERE {id_col} = ANY(:ids)"), {"ids": ids}).mappings():
-            if r["sku"] and r["sku"].strip():
-                out[(mt, r["id"])] = r["sku"].strip()
+            out[(mt, r["id"])] = ((r["sku"] or "").strip() or None, r["default_supplier_id"])
     return out
 
 
@@ -177,7 +176,7 @@ def _detail(db: Session, s: dict) -> dict:
         by_line.setdefault(r["summary_line_id"], []).append(dict(r))
     nest = _nest_sheets(db, s["project_id"])
     orders = _order_figures(db, s["project_id"])
-    skus = _line_skus(db, lines)
+    materials = _line_materials(db, lines)
     for l in lines:
         src = by_line.get(l["line_id"], [])
         # Stale (Q500): a source item has since approved another version, or
@@ -189,7 +188,7 @@ def _detail(db: Session, s: dict) -> dict:
         l["nest_sheets"] = nest.get(l["material_id"]) if l["material_type"] == "BOARD" else None
         # Required is the PM's confirmed figure when set, else what the takes add up to.
         l["qty_required"] = l["qty_confirmed"] if l["qty_confirmed"] is not None else l["qty_consolidated"]
-        l["sku"] = skus.get((l["material_type"], l["material_id"]))
+        l["sku"], supplier_id = materials.get((l["material_type"], l["material_id"]), (None, None))
         sku = l["sku"].lower() if l["sku"] else None
         if sku is None:      # no catalog SKU to match orders on
             l["qty_on_order"] = l["qty_received"] = l["qty_outstanding"] = l["qty_to_order"] = None
@@ -197,6 +196,17 @@ def _detail(db: Session, s: dict) -> dict:
             l["qty_on_order"], l["qty_received"], raised = orders.get(sku, (Decimal(0),) * 3)
             l["qty_outstanding"] = max(l["qty_required"] - l["qty_received"], Decimal(0))
             l["qty_to_order"] = max(l["qty_required"] - raised, Decimal(0))
+        # Why "Order" is not offered, with the code `order_line` refuses with (None: it can be raised).
+        if (l["material_type"], l["material_id"]) not in materials:
+            l["order_block"] = "NO_CATALOG_MATERIAL"
+        elif sku is None:
+            l["order_block"] = "NO_SKU"
+        elif supplier_id is None:
+            l["order_block"] = "NO_SUPPLIER"
+        elif not l["qty_to_order"]:
+            l["order_block"] = "NOTHING_TO_ORDER"
+        else:
+            l["order_block"] = None
     return {**s, "lines": lines, "missing_takes": missing_takes(db, s["project_id"])}
 
 

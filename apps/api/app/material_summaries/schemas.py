@@ -31,6 +31,9 @@ class SummaryLineOut(BaseModel):
     qty_received: Decimal | None
     qty_outstanding: Decimal | None  # required - received, never below 0
     qty_to_order: Decimal | None     # required - every order already raised, never below 0
+    # Why an order cannot be raised from the line: NO_CATALOG_MATERIAL, NO_SKU, NO_SUPPLIER or
+    # NOTHING_TO_ORDER; None when it can.
+    order_block: str | None
     sources: list[SourceOut]
 
 

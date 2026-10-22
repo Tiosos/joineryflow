@@ -59,3 +59,35 @@ test("a summary line can raise an order for what it still needs, once", async ({
     await page.request.post(`/api/catalog/board-materials/${board.material_id}/archive`);
   }
 });
+
+test("a line that cannot be ordered says why and links to the Catalog", async ({ page }) => {
+  await login(page);
+  const stamp = Date.now();
+  const sku = `E2E-SUMB-${stamp}`;
+  const api = async (method: "get" | "post", path: string, data?: object) => {
+    const r = await page.request[method](`/api${path}`, data ? { data } : undefined);
+    expect(r.status(), `${method} ${path}`).toBeLessThan(300);
+    return r.status() === 204 ? null : r.json();
+  };
+  const description = `E2E blocked board ${stamp}`;
+  const board = await api("post", "/catalog/board-materials", { code: sku, sku, description });   // no supplier
+  try {
+    const pid = (await api("post", "/projects", { project_code: `SB-${stamp}`, name: `Summary blocked ${stamp}` })).id as number;
+    const item = await api("post", `/projects/${pid}/items`, { description: `Summary blocked item ${stamp}` });
+    const mod = await api("post", `/items/${item.id}/modules`, { module_no: "1" });
+    await api("post", `/modules/${mod.id}/parts`, { qty: 2, len_mm: 720, wid_mm: 560, board_material_id: board.material_id });
+    const take = await api("post", `/items/${item.id}/material-take/generate`);
+    await api("post", `/material-takes/${take.take_id}/approve`);
+    await api("post", `/projects/${pid}/material-summary`);
+
+    await page.goto(`/projects/${pid}/procurement?tab=summary`);
+    await expect(page.getByTestId("summary-order")).toHaveCount(0);
+    await expect(page.getByTestId("summary-order-block")).toContainText("No default supplier.");
+    await expect(page.getByTestId("summary-blocked")).toContainText("1 line can't be ordered yet (1 no supplier)");
+    await page.getByTestId("summary-order-block-link").click();
+    await expect(page).toHaveURL(/\/catalog\?tab=board/);
+    await expect(page.locator(`tbody input[value="${description}"]`)).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await page.request.post(`/api/catalog/board-materials/${board.material_id}/archive`);
+  }
+});
