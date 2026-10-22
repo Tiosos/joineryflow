@@ -2392,7 +2392,7 @@ Microsoft 365.
 **All four confirmed (2026-10-22):** shop drawing awaiting approval, iSample awaiting review, QC defect raised on an item, variation awaiting approval (once Q608's Draft state exists). Recipients per event are fixed in code (Q613). Who receives a defect alert is asked as Q618. Not built yet. Nothing alerts the person who has to act on a shop drawing revision waiting for approval, an iSample waiting for review, or a QC defect raised on their item; the approver finds out by opening the queue. Pick the events that should reach the bell first.
 
 ### Q618 — Who receives a QC defect alert? *(new — raised by the Q617 answer)*
-**Open.** An item has no owner column. `projects.tg_project_manager` is free text (`0001`), `items.cutlist_owner_id` is set only by the Controlled Lock and is sticky, and the QC grants are workspace-wide.
+**Option 1 confirmed (2026-10-22).** The cutlist owner when there is one, plus every manager and admin; no owner means managers and admins only. Not built yet. An item has no owner column. `projects.tg_project_manager` is free text (`0001`), `items.cutlist_owner_id` is set only by the Controlled Lock and is sticky, and the QC grants are workspace-wide.
 1. **Recommended.** The cutlist owner when there is one, plus every manager and admin; no owner means managers and admins only.
 2. Managers and admins only.
 3. Everyone with `qc:read`.
