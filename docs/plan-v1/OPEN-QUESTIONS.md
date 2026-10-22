@@ -2337,6 +2337,33 @@ Microsoft 365.
 2. A workspace user only.
 3. Free text only.
 
+### Q608 — Does a variation have an approval status? *(new — Plan V1 §17 vs `project_contract_variation`)*
+**Option 1 confirmed (2026-10-22).** `Draft` / `Approved` / `Rejected`; only `Approved` counts toward `current_value`; manager or admin decides, rejection needs a note; existing rows become `Approved`. Not built yet. A variation is `description` + `amount_delta` + who/when (`0038`). `POST /projects/{pid}/contract/variations` needs only `tracking:write` and counts toward `current_value` the moment it is saved; there is no Potential, Prepared, Approved or Rejected state, so a draft figure and a signed one look the same. Plan V1 §17 wants the flow Potential Change → PM Decision → Prepared → Cost Calculated → Client/Builder Approval → Approved/Rejected → Contract Value Updated.
+1. **Recommended.** Three states: `Draft`, `Approved`, `Rejected`. Only `Approved` counts toward `current_value`; a manager or admin approves or rejects (rejection needs a note); existing rows become `Approved`.
+2. The full Plan V1 flow.
+3. Keep as is: every saved variation counts.
+
+### Q609 — Is a variation linked to Joinery Items? *(new — Plan V1 §17: "linked to Joinery Items")*
+**Option 1 confirmed (2026-10-22).** Optional many-to-many link to the project's items; none means a project-level variation. Not built yet. Q548 and ALIGNMENT note a variation has no item link. Linking would let Tracking show which items a variation touches and would be the hook Q494 says is needed for design-change releases.
+1. **Recommended.** Optional many-to-many link to the project's items (none = a project-level variation).
+2. Required: at least one item.
+3. No link in v1.
+
+### Q610 — How is a wrong variation corrected? *(new — `project_contract_variation` is append-only)*
+**Option 1 confirmed (2026-10-22).** A manager/admin `Void` with a required reason keeps the row and audit but drops it from `current_value`. Not built yet. Q491 keeps the original value and the history. There is no edit, delete or void, so a mistyped amount stays and the fix is an offsetting variation, which clutters the history and the totals.
+1. **Recommended.** A `Void` action (manager/admin, reason required) keeps the row and its audit trail but drops it from `current_value`; nothing is deleted.
+2. Offsetting variation only, as today.
+3. Edit within a short window by the creator.
+
+### Q611 — Which variation fields are in v1? *(new — Plan V1 §17 lists many)*
+**All four confirmed (2026-10-22):** number, reason and requester/date; separate cost and selling-price impact; time impact; approval history (who, when, note). Discipline impacts, drawings/revisions and related tasks are not in v1. How today's single `amount_delta` maps is asked as Q612. Not built yet. Plan V1 lists variation number, reason, requester and date, cost and selling-price impact, time impact, discipline impacts, drawings/revisions, approval history and related tasks. Shipped: description, amount, who/when. Pick the first slice.
+
+### Q612 — Which of the two figures does today's `amount_delta` become? *(new — raised by the Q611 answer)*
+**Open.** `current_value` adds `amount_delta` to the original contract value, so every stored amount is a contract (selling) figure. Q611 adds a separate cost impact.
+1. **Recommended.** `amount_delta` becomes the selling-price impact unchanged (current value is still original + approved selling impacts); cost impact is a new nullable column, empty on old rows.
+2. Both figures required on new variations; old rows get a null cost.
+3. Rename and backfill both from `amount_delta`.
+
 ---
 
 ## Housekeeping
