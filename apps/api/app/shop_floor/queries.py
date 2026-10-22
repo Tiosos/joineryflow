@@ -539,11 +539,25 @@ def update_assignment(
     db.flush()
 
 
+def lock_cutlist(db: Session, *, cutlist_id: int, workspace_id: int) -> bool:
+    """Serialize stage transitions before assignment/item locks and fresh checks."""
+    return db.execute(text("""
+        SELECT c.cutlist_id FROM cutlist c
+        JOIN projects p ON p.project_id=c.project_id
+        WHERE c.cutlist_id=:c AND p.workspace_id=:w AND NOT c.deleted
+        FOR UPDATE OF c
+    """), {"c": cutlist_id, "w": workspace_id}).first() is not None
+
+
 def lock_assignment(
     db: Session, *, assignment_id: int, workspace_id: int
 ) -> dict | None:
     """SELECT … FOR UPDATE on the assignment + return its full row.
     Used by mark-done and undo to serialize concurrent attempts."""
+    current = get_assignment(db, assignment_id=assignment_id, workspace_id=workspace_id)
+    if current is None or not lock_cutlist(db, cutlist_id=current["cutlist_id"], workspace_id=workspace_id):
+        return None
+    # A separate statement after the cutlist wait sees committed assignment state.
     row = db.execute(
         text(
             """

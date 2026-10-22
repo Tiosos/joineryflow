@@ -684,3 +684,63 @@ def test_packing_before_made_is_out_of_order():
     r = c.post(f"/assignments/{a['assignment_id']}/complete", json={})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "STAGE_OUT_OF_ORDER"
+
+
+def _completion_race_fixture():
+    from app.auth.sessions import AuthUser
+    c, wid, uid, worker, pid, items = _bootstrap()
+    down = _assign(c, pid, items[0], "DOWN", worker)
+    assert c.post(f"/assignments/{down['assignment_id']}/start").status_code == 200
+    completed = c.post(f"/assignments/{down['assignment_id']}/complete", json={})
+    assert completed.status_code == 200, completed.text
+    cnc = _assign(c, pid, items[0], "CNC", worker)
+    assert c.post(f"/assignments/{cnc['assignment_id']}/start").status_code == 200
+    return AuthUser(uid, wid, "foreman@example.com", "Foreman", "editor"), down["cutlist_id"], completed.json()["log_id"], cnc["assignment_id"]
+
+
+def _route_result(operation):
+    from fastapi import HTTPException
+    try:
+        operation()
+        return "OK"
+    except HTTPException as exc:
+        return exc.detail["code"]
+
+
+def test_completion_rechecks_prerequisites_after_concurrent_undo():
+    from app.shop_floor import queries as q, routes
+    from app.shop_floor.schemas import CompleteIn
+    from .helpers_concurrency import finish_after_waiting
+    user, cid, log_id, aid = _completion_race_fixture()
+    with SessionLocal() as first:
+        first.execute(text("SELECT 1 FROM cutlist WHERE cutlist_id=:c FOR UPDATE"), {"c": cid})
+        q.mark_completion_undone(first, log_id=log_id, undone_by=user.id)
+        q.fan_in_stage_undone(first, cutlist_id=cid, stage_key="DOWN")
+        result = finish_after_waiting(first, lambda db: _route_result(
+            lambda: routes.complete_assignment_route(aid, CompleteIn(), user, db)))
+    assert result == "STAGE_OUT_OF_ORDER"
+
+
+def test_undo_rechecks_successors_after_concurrent_completion():
+    from app.shop_floor import queries as q, routes
+    from .helpers_concurrency import finish_after_waiting
+    user, cid, log_id, aid = _completion_race_fixture()
+    with SessionLocal() as first:
+        first.execute(text("SELECT 1 FROM cutlist WHERE cutlist_id=:c FOR UPDATE"), {"c": cid})
+        q.insert_completion_log(first, cutlist_id=cid, stage_key="CNC", assignment_id=aid, worker_id=user.id, note=None)
+        q.fan_out_stage_done(first, cutlist_id=cid, stage_key="CNC")
+        result = finish_after_waiting(first, lambda db: _route_result(
+            lambda: routes.undo_completion_route(log_id, user, db)))
+    assert result == "LATER_STAGE_DONE"
+
+
+def test_concurrent_undo_observes_already_undone_log():
+    from app.shop_floor import queries as q, routes
+    from .helpers_concurrency import finish_after_waiting
+    user, cid, log_id, _aid = _completion_race_fixture()
+    with SessionLocal() as first:
+        first.execute(text("SELECT 1 FROM cutlist WHERE cutlist_id=:c FOR UPDATE"), {"c": cid})
+        q.mark_completion_undone(first, log_id=log_id, undone_by=user.id)
+        result = finish_after_waiting(first, lambda db: _route_result(
+            lambda: routes.undo_completion_route(log_id, user, db)))
+    assert result == "ALREADY_UNDONE"

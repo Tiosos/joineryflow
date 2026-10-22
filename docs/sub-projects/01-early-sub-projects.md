@@ -1000,3 +1000,10 @@ surfaces:
 - **Out of scope (deferred):** linking a drawing to a Joinery Item; Tg's own
   status names as stored states; a dark theme; rendering the drawing itself with
   pdf.js (only the thumbnails use it).
+
+### Review follow-up: completion/undo serialization (2026-10-23)
+
+Both production completion and undo lock the cutlist before assignment/item
+mutations and refresh mutable state after waiting. This serializes prerequisite
+and successor checks across different stages, including concurrent double undo.
+See the review fix record for regression evidence.

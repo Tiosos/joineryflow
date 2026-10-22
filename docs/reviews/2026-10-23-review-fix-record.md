@@ -16,7 +16,7 @@ flagged rather than assigned today's rate.
 | --- | --- |
 | R01 — summary ordering | Implemented and tested |
 | R04 — incompatible painting orders | Implemented and tested |
-| R05 — completion versus undo | Pending |
+| R05 — completion versus undo | Implemented and tested |
 | R06 — historical labour costs | Pending |
 | R07 — sliding sessions | Pending |
 | R08 — task mutation validation | Pending |
@@ -54,3 +54,16 @@ inputs. No production history is rewritten and no migration is required.
 Validation: six new regressions failed against the original source, then all
 **84 tests** across cutlists, shared production, soft deletion and item locks
 passed. Ruff and whitespace checks passed.
+
+## R05 — Serialize completion and undo across a cutlist
+
+Completion and undo acquire the same workspace-scoped cutlist row lock before
+assignment/item mutations and lifecycle validation. Assignment and completion
+log state are refreshed after waiting. An undo cannot clear an earlier stage
+while a concurrent successor completes; the operation waiting second sees the
+new progress and receives the existing appropriate 409. Double undo sees
+`ALREADY_UNDONE` rather than reapplying a stale log.
+
+Validation: all three concurrency regressions failed before the fix. The
+shop-floor routes, shared-cutlist and lifecycle suites passed **52 tests**
+afterwards; Ruff and whitespace checks passed. No schema/data migration.
