@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { AllProjectsTracking } from "./_components/AllProjectsTracking";
 import { TrackingClient } from "./_components/TrackingClient";
 import type {
+  CardFilter,
   ProjectListOut,
   ProjectOut,
+  TrackingAllOut,
   TrackingGridOut,
 } from "@/lib/pm-types";
 import { fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
@@ -11,6 +14,11 @@ import { fetchMe, SESSION_COOKIE_NAME as COOKIE_NAME } from "@/lib/session";
 interface SearchParams {
   project_id?: string;
   deleted?: string;
+  /** `all`: Tracking's All projects scope (Q633). */
+  scope?: string;
+  filter?: string;
+  status?: string;
+  stage?: string;
 }
 
 async function apiGet<T>(path: string, cookieHeader: string): Promise<T | null> {
@@ -34,6 +42,18 @@ export default async function TrackingPage({
   const c = await cookies();
   const tok = c.get(COOKIE_NAME)?.value ?? "";
   const cookieHeader = `${COOKIE_NAME}=${tok}`;
+
+  // Q633: a dashboard card opens the items it counted, across projects.
+  if (sp.scope === "all") {
+    const filter = (["overdue", "in_optimisation", "awaiting_install"] as const).find((f) => f === sp.filter) ?? null;
+    const qs = new URLSearchParams();
+    if (filter) qs.set("filter", filter satisfies CardFilter);
+    if (sp.status) qs.set("status", sp.status);
+    if (sp.stage) qs.set("stage", sp.stage);
+    const all = await apiGet<TrackingAllOut>(`/tracking/items${qs.size ? `?${qs}` : ""}`, cookieHeader);
+    if (!all) return <div className="p-6 text-h-muted">Unable to load items.</div>;
+    return <AllProjectsTracking filter={filter} items={all.items} today={new Date().toISOString().slice(0, 10)} />;
+  }
 
   const [me, projectList] = await Promise.all([
     fetchMe(),

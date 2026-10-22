@@ -2,15 +2,19 @@
 
 Part of the items queries facade (see `queries.py`)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from datetime import timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ..auth.sessions import AuthUser
+from .card_filters import CARD_FILTERS, scope_clause
 from ._q_base import _JOINERY_I, _WORKSPACE_FILTER
 
 
 _ITEM_COLS = """
     i.item_id                                       AS id,
+    i.project_id,
+    pr.project_code,
     i.num                                           AS item_number,
     i.row_type,
     i.parent_item_id,
@@ -103,14 +107,22 @@ def list_items_for_project(
     db: Session,
     *,
     workspace_id: int,
-    project_id: int,
+    project_id: int | None,
     status: str | None = None,
     stage_key: str | None = None,
     q: str | None = None,
     availability: str | None = None,
     deleted: bool = False,
+    card: str | None = None,
+    scope_user: AuthUser | None = None,
+    today: date | None = None,
 ) -> list[dict]:
     """Return tracking grid rows for a project, scoped to the caller's workspace.
+
+    `project_id=None` is Tracking's **All projects** scope (Q633): Joinery Items only (a related
+    part rides with its parent inside one project), narrowed by `card` (a key of
+    `card_filters.CARD_FILTERS`, the dashboard card's own predicate) and by the dashboard's
+    `scope_clause(scope_user)`, so the rows are the ones the card counted.
 
     `deleted=True` lists the soft-deleted rows instead of the live ones (Tracking's
     Deleted chip); it is the only reader of them besides `restore_item`.
@@ -122,8 +134,18 @@ def list_items_for_project(
       availability - 'blocked' for items with ≥1 unallocated hardware line
                      (powers the TO BE ORDERED subtab); anything else ignored.
     """
+    if project_id is None and scope_user is None:
+        raise ValueError("the All projects scope needs the caller to scope it")
+    if card is not None and card not in CARD_FILTERS:
+        raise ValueError(f"unknown card filter: {card}")
+    # Fixed SQL fragments from card_filters, never a request value.
+    all_projects_sql = f"AND {_JOINERY_I}" if project_id is None else ""
+    card_sql = f"AND ({CARD_FILTERS[card]})" if card else ""
+    scope_sql = scope_clause(scope_user) if (project_id is None and scope_user) else ""
     params: dict = {
         "pid": project_id,
+        "uid": scope_user.id if scope_user else None,
+        "today": today or date.today(),
         "wid": workspace_id,
         "status": status,
         "stage_key": stage_key,
@@ -160,9 +182,13 @@ def list_items_for_project(
             ) obook ON true
             LEFT JOIN app_user c ON c.id = i.contractor_id
             LEFT JOIN factory f ON f.factory_id = i.factory_id
-            WHERE i.project_id = :pid
+            JOIN projects pr ON pr.project_id = i.project_id
+            WHERE (CAST(:pid AS bigint) IS NULL OR i.project_id = :pid)
               AND {_WORKSPACE_FILTER}
               AND i.deleted = :deleted
+              {all_projects_sql}
+              {card_sql}
+              {scope_sql}
               AND (CAST(:status AS text) IS NULL OR i.status = :status)
               AND (
                   CAST(:stage_key AS text) IS NULL
@@ -235,6 +261,8 @@ def list_items_for_project(
         results.append(
             {
                 "id": item_id,
+                "project_id": r["project_id"],
+                "project_code": r["project_code"],
                 "item_number": r["item_number"],
                 "status": r["status"],
                 "stage": r["stage"],

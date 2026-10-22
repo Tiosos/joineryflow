@@ -595,3 +595,27 @@ Not the issued-only `issued_order_no`. Client-side in `TrackingClient.tsx` (`qui
 ## Update Status To All (2026-10-20)
 
 The Status pop-up's second button, long a disabled placeholder, is built. Decided with the customer: it applies to **every live joinery item of the project** (related parts keep their own status), with a count confirm ("Set N items to STATUS?") and a required note. `POST /projects/{pid}/bulk-status` (`tracking:write`; another workspace's project is a 404) selects the project's live joinery items (`joinery_items_only` + `not_deleted`) and hands them to `bulk_patch_item_status`, so it is **one transaction with no 500-item cap**, locked items (Hard Lock, someone else's Controlled Lock) are skipped and listed, and each item gets the same status log, `item.status.bulk` audit row and edit-log row. The web shows the same banner as Apply status. Shown on Tracking only: the item editor's Actions tab opens the same pop-up without it. Tests: `tests/test_project_bulk_status.py`, `tests/e2e/status_update_all.spec.ts`.
+
+## Dashboard cards open the items they counted — Tracking's All projects scope (2026-10-22, Q633)
+
+Before this, the home dashboard's cards (Overdue, In Optimisation, Awaiting Install) counted across projects but linked to
+`/tracking?status=overdue` and the like, which the Tracking page ignored (it reads only `project_id` and `deleted`), so a click
+opened the first project unfiltered and the number did not match the rows. Now `/tracking?scope=all&filter=<card>` lists the
+items the card counted, across projects.
+
+- **One definition.** `items/card_filters.py` holds the three predicates (`CARD_FILTERS`) and the role scope (`scope_clause`: a
+  manager's own projects, a drafter's own cutlists, everyone else workspace-wide). `home/queries.py` counts with it and
+  `GET /tracking/items?filter=` lists with it, so count and rows cannot drift. Q591's Overdue / At Risk / Delayed will change
+  `CARD_FILTERS` and both follow.
+- **API.** `GET /tracking/items` (`tracking:read`; `filter` one of `overdue | in_optimisation | awaiting_install`, else 422;
+  `status` / `stage` / `q` keep their per-project meaning). It is `list_items_for_project(project_id=None, …)`: Joinery Items only
+  (a related part rides with its parent inside one project), live rows only, each row now carries `project_id` / `project_code`.
+- **Web.** `AllProjectsTracking` (read-only table: project, item, description, status, stage chips with overdue ones tinted;
+  project and item link to their own Tracking / item editor). The Deleted view and every edit stay per project.
+- **URL shape (settled while building).** The cards' filters are not record statuses or stage keys, so overloading `?status=` /
+  `?stage=` would break the terminology pins; the new `filter` param does not.
+- **Tests.** `test_tracking_all_projects.py` (card value == rows listed for each card; manager, drafter and workspace scope;
+  soft-deleted rows excluded; `status` / `stage` still mean what they did; unknown filter 422; fail without the change) and
+  `dashboard_cards.spec.ts` (each card's number equals the rows its link opens, read live so it changes no data).
+- **Not built.** The fourth card, Value in Progress (hard-coded 0), is Q634. The cards' definitions are still the old ones, not
+  Q591's.
