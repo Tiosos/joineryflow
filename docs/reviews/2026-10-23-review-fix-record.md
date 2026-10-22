@@ -165,3 +165,21 @@ Validation: the new downgrade-safety test failed before its safeguard was added.
 All **13 migration/deleted-row-guard tests** passed afterwards; Ruff and whitespace
 checks passed. The first full run's 12 failures were the expected-head and query
 filter guards, which these follow-ups address; the final full run follows below.
+
+## Final validation
+
+All eight outstanding findings have individual implementation/validation records
+and commits above. Cross-workflow integration corrections were recorded separately.
+
+- Full API suite: **2,051 passed**, 18 existing deprecation warnings; no failures
+  or skips (`pytest -q -n 4 --dist loadfile`).
+- Ruff 0.15.20 selected CI rules and `git diff --check`: passed.
+- Web TypeScript check and Next production build: passed.
+- Real browser against the production web server and API: cookie renewal through
+  the Next API proxy preserved HttpOnly and extended expiry; Financials displayed
+  the historical-cost warning; logout cleared the renewed session.
+- Seeded development environment rebuilt successfully with migration `0083`.
+
+GitHub CI results are linked from the follow-up PR. Existing historical rates
+remain unresolved by design, and existing mixed painting cutlists require an
+explicit split; no history was reassigned or inferred.
