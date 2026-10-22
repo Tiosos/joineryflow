@@ -9,7 +9,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..material_takes.queries import Conflict, NotFound
 from . import queries as q
-from .schemas import CurrentSummaryOut, PatchSummaryLineIn, SummaryListOut
+from .schemas import CurrentSummaryOut, OrderFromLineOut, PatchSummaryLineIn, SummaryListOut
 
 router = APIRouter(tags=["material_summaries"])
 
@@ -58,3 +58,11 @@ def post_confirm(sid: int, user: AuthUser = Depends(require_permission("list", "
                  db: Session = Depends(get_db)):
     _call(q.confirm, db, sid, user.workspace_id, user.id)
     db.commit()
+
+
+@router.post("/material-summaries/{sid}/lines/{lid}/order", status_code=201, response_model=OrderFromLineOut)
+def post_order_line(sid: int, lid: int, user: AuthUser = Depends(require_permission("orderbook", "write")),
+                    db: Session = Depends(get_db)):
+    order = _call(q.order_line, db, sid, lid, user.workspace_id, user.id)
+    db.commit()
+    return order

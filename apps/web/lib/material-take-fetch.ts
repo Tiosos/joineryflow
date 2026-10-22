@@ -48,6 +48,9 @@ export const summaryApi = {
     call<void>(`/material-summaries/${summaryId}/lines/${lineId}`, { method: "PATCH", ...json(changes) }),
   confirm: (summaryId: number) =>
     call<void>(`/material-summaries/${summaryId}/confirm`, { method: "POST" }),
+  orderLine: (summaryId: number, lineId: number) =>
+    call<{ po_id: number; po_number: string; quantity: string }>(
+      `/material-summaries/${summaryId}/lines/${lineId}/order`, { method: "POST" }),
 };
 
 export function errorText(e: unknown): string {

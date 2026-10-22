@@ -203,6 +203,81 @@ def test_a_material_without_a_sku_has_no_order_figures(proj):
     assert line["qty_required"] == line["qty_consolidated"]
 
 
+def _supplier(proj):
+    """A supplier set as the board's default."""
+    v = _sql("INSERT INTO vendors(name, category, workspace_id) VALUES ('Default Sup', 'Board', :w) RETURNING vendor_id",
+             w=proj["w"])
+    _sql("UPDATE board_materials SET default_supplier_id = :v WHERE material_id = :b", v=v, b=proj["a"]["board"])
+    return v
+
+
+def _line_and_sid(proj):
+    c = proj["c"]
+    sid = _build(c, proj["pid"])
+    return sid, _current(c, proj["pid"])["summary"]["lines"][0]
+
+
+def test_order_from_a_line_raises_a_pending_order_once(proj):
+    c = proj["c"]
+    sku = _board_line(proj)
+    sup = _supplier(proj)
+    sid, line = _line_and_sid(proj)
+    assert line["qty_to_order"] == line["qty_required"]
+    r = c.post(f"/material-summaries/{sid}/lines/{line['line_id']}/order")
+    assert r.status_code == 201, r.text
+    po = r.json()
+    assert float(po["quantity"]) == float(line["qty_required"])
+    row = _sql("SELECT status || '|' || product_code || '|' || vendor_id || '|' || project_id "
+               "FROM purchase_orders WHERE po_id = :p", p=po["po_id"])
+    assert row == f"Pending|{sku}|{sup}|{proj['pid']}"
+    again = _current(c, proj["pid"])["summary"]["lines"][0]
+    assert float(again["qty_to_order"]) == 0                       # raised, though not placed yet
+    r = c.post(f"/material-summaries/{sid}/lines/{line['line_id']}/order")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_TO_ORDER"
+
+
+def test_order_from_a_line_only_asks_for_what_is_not_yet_raised(proj):
+    c = proj["c"]
+    sku = _board_line(proj)
+    _supplier(proj)
+    sid, line = _line_and_sid(proj)
+    assert c.patch(f"/material-summaries/{sid}/lines/{line['line_id']}",
+                   json={"qty_confirmed": "10"}).status_code == 204
+    _order(proj, sku, 4, ordered=False)                       # already raised, not placed
+    _order(proj, sku, 9, status="Cancelled")                  # does not count
+    r = c.post(f"/material-summaries/{sid}/lines/{line['line_id']}/order")
+    assert r.status_code == 201, r.text
+    assert float(r.json()["quantity"]) == 6.0
+
+
+def test_order_from_a_line_needs_a_supplier_and_a_sku(proj):
+    c = proj["c"]
+    _board_line(proj)
+    sid, line = _line_and_sid(proj)
+    url = f"/material-summaries/{sid}/lines/{line['line_id']}/order"
+    r = c.post(url)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NO_SUPPLIER"
+    _supplier(proj)
+    _sql("UPDATE board_materials SET sku = NULL WHERE material_id = :b", b=proj["a"]["board"])
+    r = c.post(url)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NO_SKU"
+    assert _sql("SELECT count(*) FROM purchase_orders WHERE project_id = :p", p=proj["pid"]) == 0
+
+
+def test_order_from_a_line_is_for_the_current_summary_and_order_writers(proj):
+    c = proj["c"]
+    _board_line(proj)
+    _supplier(proj)
+    old, line = _line_and_sid(proj)
+    _build(c, proj["pid"])                                    # a newer summary supersedes it
+    r = c.post(f"/material-summaries/{old}/lines/{line['line_id']}/order")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "SUMMARY_SUPERSEDED"
+    viewer = _client(proj["w"], "viewer")
+    sid = _sql("SELECT max(summary_id) FROM material_summary WHERE project_id = :p", p=proj["pid"])
+    lid = _current(c, proj["pid"])["summary"]["lines"][0]["line_id"]
+    assert viewer.post(f"/material-summaries/{sid}/lines/{lid}/order").status_code == 403
+
+
 # --- C3 ---------------------------------------------------------------------
 
 def test_confirm_fills_unset_lines_and_freezes(proj):

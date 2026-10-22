@@ -29,6 +29,7 @@ class SummaryLineOut(BaseModel):
     qty_on_order: Decimal | None
     qty_received: Decimal | None
     qty_outstanding: Decimal | None  # required - received, never below 0
+    qty_to_order: Decimal | None     # required - every order already raised, never below 0
     sources: list[SourceOut]
 
 
@@ -67,3 +68,9 @@ class SummaryListOut(BaseModel):
 class PatchSummaryLineIn(BaseModel):
     qty_confirmed: Decimal | None = Field(default=None, ge=0)
     note: str | None = None
+
+
+class OrderFromLineOut(BaseModel):
+    po_id: int
+    po_number: str
+    quantity: Decimal

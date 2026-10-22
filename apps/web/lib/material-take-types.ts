@@ -68,6 +68,7 @@ export interface SummaryLine {
   qty_on_order: string | null;
   qty_received: string | null;
   qty_outstanding: string | null;
+  qty_to_order: string | null;
   sources: SummarySource[];
 }
 

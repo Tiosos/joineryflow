@@ -113,29 +113,33 @@ def _nest_sheets(db: Session, project_id: int) -> dict[int, int]:
          GROUP BY 1"""), {"p": project_id}) if r[0] is not None}
 
 
-def _order_figures(db: Session, project_id: int) -> dict[str, tuple[Decimal, Decimal]]:
-    """Ordered and received quantity per product code, from the project's Orderbook orders.
+def _order_figures(db: Session, project_id: int) -> dict[str, tuple[Decimal, Decimal, Decimal]]:
+    """Ordered, received and raised quantity per product code, from the project's Orderbook orders.
 
     An order counts as ordered once it is placed with the supplier (`date_ordered`
     set, as a PO does) or Delivered; Cancelled / Rejected never count. Received is
     the Delivery tab's log, and a Delivered order is received in full (the log is a
     record and never changes the status). Matched to a material by product code =
     catalog SKU, trimmed and case-insensitive, like the order pop-up's catalog block.
+    Raised is every order not Cancelled / Rejected, placed or not: what a new order
+    from the line must not repeat.
     """
     rows = db.execute(text("""
         SELECT lower(btrim(po.product_code)) AS code,
-               SUM(po.quantity) AS ordered,
+               SUM(po.quantity) FILTER (WHERE placed) AS ordered,
                SUM(CASE WHEN po.status = 'Delivered' THEN po.quantity
-                        ELSE COALESCE(d.got, 0) END) AS received
-          FROM purchase_orders po
+                        ELSE COALESCE(d.got, 0) END) FILTER (WHERE placed) AS received,
+               SUM(po.quantity) AS raised
+          FROM (SELECT po.*, (po.date_ordered IS NOT NULL OR po.status = 'Delivered') AS placed
+                  FROM purchase_orders po) po
           LEFT JOIN (SELECT po_id, SUM(qty) AS got FROM order_delivery GROUP BY po_id) d
                  ON d.po_id = po.po_id
          WHERE po.project_id = :p
            AND po.status NOT IN ('Cancelled', 'Rejected')
-           AND (po.date_ordered IS NOT NULL OR po.status = 'Delivered')
            AND btrim(COALESCE(po.product_code, '')) <> ''
          GROUP BY 1"""), {"p": project_id}).mappings().all()
-    return {r["code"]: (r["ordered"] or Decimal(0), r["received"] or Decimal(0)) for r in rows}
+    return {r["code"]: (r["ordered"] or Decimal(0), r["received"] or Decimal(0), r["raised"] or Decimal(0))
+            for r in rows}
 
 
 def _line_skus(db: Session, lines: list[dict]) -> dict[tuple[str, int], str]:
@@ -187,10 +191,11 @@ def _detail(db: Session, s: dict) -> dict:
         l["qty_required"] = l["qty_confirmed"] if l["qty_confirmed"] is not None else l["qty_consolidated"]
         sku = skus.get((l["material_type"], l["material_id"]))
         if sku is None:      # no catalog SKU to match orders on
-            l["qty_on_order"] = l["qty_received"] = l["qty_outstanding"] = None
+            l["qty_on_order"] = l["qty_received"] = l["qty_outstanding"] = l["qty_to_order"] = None
         else:
-            l["qty_on_order"], l["qty_received"] = orders.get(sku, (Decimal(0), Decimal(0)))
+            l["qty_on_order"], l["qty_received"], raised = orders.get(sku, (Decimal(0),) * 3)
             l["qty_outstanding"] = max(l["qty_required"] - l["qty_received"], Decimal(0))
+            l["qty_to_order"] = max(l["qty_required"] - raised, Decimal(0))
     return {**s, "lines": lines, "missing_takes": missing_takes(db, s["project_id"])}
 
 
@@ -253,3 +258,57 @@ def confirm(db: Session, summary_id: int, workspace_id: int, actor_id: int) -> N
                {"a": actor_id, "s": summary_id})
     write_audit(db, workspace_id=workspace_id, actor_id=actor_id, event="material_summary.confirm",
                 target=f"project:{s['project_id']}", payload={"summary_id": summary_id})
+
+
+# Order category per material type. Solid Timber has no category of its own.
+_ORDER_CATEGORY = {"BOARD": "Board", "HARDWARE": "Hardware", "CUSTOM": "Custom", "BENCHTOP": "Benchtop",
+                   "APPLIANCE": "Appliance", "HIRE": "Hire", "EDGING": "Edging", "GLASS": "Glass",
+                   "TIMBER": "Other"}
+
+
+def order_line(db: Session, summary_id: int, line_id: int, workspace_id: int, actor_id: int) -> dict:
+    """Raise a Pending order for what a summary line still needs (Q585, option 2).
+
+    Quantity is required less every order already raised for the SKU on the project,
+    so a second click does not double-order. The order is a normal one: the line's
+    catalog SKU as product code, the material's default supplier, no price (an order
+    line's price is typed in). Whether the line was confirmed is the summary's to
+    show; the order does not record it.
+    """
+    from ..orders.queries import create_order
+    from ..orders.schemas import CreateOrderIn
+
+    s = _summary(db, summary_id, workspace_id)
+    if db.execute(text("SELECT MAX(summary_id) FROM material_summary WHERE project_id = :p"),
+                  {"p": s["project_id"]}).scalar() != summary_id:
+        raise Conflict("SUMMARY_SUPERSEDED")
+    line = next((l for l in _detail(db, s)["lines"] if l["line_id"] == line_id), None)
+    if line is None:
+        raise NotFound()
+    if line["material_type"] not in _CATALOG_LOOKUP or line["material_id"] is None:
+        raise Conflict("NO_CATALOG_MATERIAL")
+    table, id_col, _name, sku_col = _CATALOG_LOOKUP[line["material_type"]]
+    m = db.execute(text(f"""SELECT {sku_col} AS sku, description, default_supplier_id, um,
+                                   archived_at IS NOT NULL AS archived
+                              FROM {table} WHERE {id_col} = :i AND workspace_id = :w"""),
+                   {"i": line["material_id"], "w": workspace_id}).mappings().first()
+    if m is None:
+        raise NotFound()
+    if not (m["sku"] or "").strip():
+        raise Conflict("NO_SKU")
+    if m["default_supplier_id"] is None:
+        raise Conflict("NO_SUPPLIER")
+    if not line["qty_to_order"]:
+        raise Conflict("NOTHING_TO_ORDER")
+    code, order = create_order(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        payload=CreateOrderIn(
+            vendor_id=m["default_supplier_id"], description=m["description"],
+            category=_ORDER_CATEGORY[line["material_type"]], project_id=s["project_id"],
+            product_code=m["sku"].strip(), quantity=line["qty_to_order"], unit_of_measure=m["um"]))
+    if code != "OK":     # the supplier no longer exists in this workspace; the others are fixed above
+        raise Conflict("NO_SUPPLIER")
+    write_audit(db, workspace_id=workspace_id, actor_id=actor_id, event="material_summary.order_line",
+                target=str(line_id), payload={"summary_id": summary_id, "po_id": order["po_id"],
+                                              "unconfirmed": line["qty_confirmed"] is None})
+    return order
