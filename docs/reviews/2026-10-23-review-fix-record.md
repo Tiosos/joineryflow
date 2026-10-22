@@ -18,7 +18,7 @@ flagged rather than assigned today's rate.
 | R04 — incompatible painting orders | Implemented and tested |
 | R05 — completion versus undo | Implemented and tested |
 | R06 — historical labour costs | Implemented and tested |
-| R07 — sliding sessions | Pending |
+| R07 — sliding sessions | Implemented and tested |
 | R08 — task mutation validation | Pending |
 | R09 — estimate numbering | Pending |
 | R10 — CV import replay | Pending |
@@ -83,3 +83,19 @@ application code. **49 API tests** across actual costs, contracts and production
 passed after the fix. Migration applied successfully; web typecheck and production
 build passed, along with Ruff and whitespace checks. Existing completions remain
 unresolved by design; this release does not guess rates or offer a backfill UI.
+
+## R07 — Persist read activity and renew browser sessions safely
+
+Authentication uses its own short database transaction, locking and validating
+the session before committing its activity timestamp. Business writes keep their
+own transaction and can roll back independently. Successful authenticated API
+responses renew the HttpOnly/SameSite cookie to the earlier of the sliding
+window and hard expiry. The existing Next API proxy forwards these Set-Cookie
+headers to the browser; server-component fetches alone cannot update browser
+cookies. Login applies the same configured lifetime bound. Invalid sessions
+are refused without renewal; logout still clears the cookie.
+
+Validation: three new regressions failed before the fix, covering read activity,
+cookie renewal capped at two hours and rollback isolation. All **16 authentication
+and session tests** passed, including revoked, inactive, sliding-expired and
+hard-expired cases; Ruff and whitespace checks passed. No schema migration.

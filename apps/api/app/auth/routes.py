@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -9,7 +11,7 @@ from .passwords import verify_password
 from .rbac import current_user
 from .rbac_engine import effective_permissions
 from .schemas import LoginIn, MeOut
-from .sessions import AuthUser, create_session, revoke_session
+from .sessions import AuthUser, create_session, revoke_session, set_session_cookie
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -40,15 +42,9 @@ def login(body: LoginIn, resp: Response, db: Session = Depends(get_db)):
         target=body.email,
     )
     db.commit()
-    resp.set_cookie(
-        settings.session_cookie_name,
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        path="/",
-        max_age=settings.session_sliding_days * 86400,
-    )
+    set_session_cookie(resp, token, datetime.now(timezone.utc) + timedelta(
+        days=min(settings.session_sliding_days, settings.session_hard_cap_days)
+    ))
     return {"ok": True}
 
 

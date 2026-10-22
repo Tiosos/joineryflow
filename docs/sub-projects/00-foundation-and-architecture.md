@@ -98,3 +98,12 @@ Tokens live **once** in `apps/web/app/globals.css` (`@theme inline` block) and a
 - Status taxonomy (`CLEAR / VOID / NOTE! / LIVE / APPROVED / HOLD`) is canonical — see `legacy/product_spec.md` §12.3 before adding a new state.
 - IA is fixed to **6 primary tabs** in this order: `Dashboard · Tracking · List · Shop Dwgs · iSample · Orderbook`, plus the admin-only IT Management at `/it`. Later sub-projects added a **secondary** strip after a divider — `Catalog · Shop Floor · Cut Floor · QC · Estimating · Customers` — which is where new top-level surfaces go; the primary six do not grow. Both live in `apps/web/components/chrome/TabStrip.tsx`. (**Plan V1 Q474 confirmed this rule stands**: Plan V1's `Cutlist` module **is** the existing `List` tab — which the RBAC module name already reflects, since `("list","read")` gates `cutlist.pdf`. No seventh primary tab.)
 
+
+### Review follow-up: sliding-session activity (2026-10-23)
+
+`current_user` owns a short authentication transaction so read-only activity
+persists independently of route commit/rollback. Session lookup locks the session
+row, validates revocation/inactivity and both expiry limits, then updates activity.
+Successful authenticated API responses renew the browser cookie, capped by
+`hard_expires_at`; the existing Next API proxy forwards Set-Cookie. Business
+transactions are never committed by authentication.

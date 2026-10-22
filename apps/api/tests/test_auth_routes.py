@@ -1,5 +1,7 @@
 import uuid
 
+import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -124,3 +126,80 @@ def test_me_includes_permissions_matching_the_matrix():
 def test_me_permissions_deny_it_management_for_non_admin():
     assert login("viewer")[0].get("/auth/me").json()["permissions"]["it_management"] == []
     assert "read" in login("admin")[0].get("/auth/me").json()["permissions"]["it_management"]
+
+
+def _aged_session():
+    from datetime import datetime, timedelta, timezone
+    from app.config import settings
+    slug, email = _seed()
+    c = TestClient(app)
+    assert c.post("/auth/login", json={"workspace_slug": slug, "email": email, "password": "pw"}).status_code == 200
+    old = datetime.now(timezone.utc) - timedelta(days=settings.session_sliding_days - 1)
+    with SessionLocal() as db:
+        db.execute(text("UPDATE session SET last_seen_at=:old"), {"old": old})
+        db.commit()
+    return c, old
+
+
+def test_read_only_activity_persists_session_renewal():
+    c, old = _aged_session()
+    assert c.get("/auth/me").status_code == 200
+    with SessionLocal() as db:
+        assert db.execute(text("SELECT last_seen_at FROM session")).scalar_one() > old
+
+
+def test_read_renews_browser_cookie_but_never_past_hard_expiry():
+    from datetime import datetime, timedelta, timezone
+    from http.cookies import SimpleCookie
+    from app.config import settings
+    c, _old = _aged_session()
+    with SessionLocal() as db:
+        db.execute(text("UPDATE session SET hard_expires_at=:hard"), {"hard": datetime.now(timezone.utc) + timedelta(hours=2)})
+        db.commit()
+    response = c.get("/auth/me")
+    assert response.status_code == 200
+    cookie = SimpleCookie()
+    cookie.load(response.headers.get("set-cookie", ""))
+    assert settings.session_cookie_name in cookie
+    renewed = cookie[settings.session_cookie_name]
+    assert 0 < int(renewed["max-age"]) <= 7200
+    assert renewed["httponly"]
+    assert renewed["samesite"].lower() == "lax"
+
+
+def test_session_activity_commits_without_committing_failed_business_write():
+    from fastapi import Depends, FastAPI, HTTPException
+    from sqlalchemy.orm import Session
+    from app.auth.rbac import current_user
+    from app.db import get_db
+    c, old = _aged_session()
+    probe = FastAPI()
+
+    @probe.post("/failing-write")
+    def failing_write(user=Depends(current_user), db: Session = Depends(get_db)):
+        db.execute(text("UPDATE workspace SET name='must roll back' WHERE id=:w"), {"w": user.workspace_id})
+        raise HTTPException(409, "business conflict")
+
+    probe_client = TestClient(probe)
+    probe_client.cookies.update(c.cookies)
+    failed = probe_client.post("/failing-write")
+    assert failed.status_code == 409
+    with SessionLocal() as db:
+        assert db.execute(text("SELECT name FROM workspace")).scalar_one() == "H"
+        assert db.execute(text("SELECT last_seen_at FROM session")).scalar_one() > old
+
+
+@pytest.mark.parametrize("invalidate", [
+    "UPDATE session SET revoked_at=now()",
+    "UPDATE session SET hard_expires_at=now()-interval '1 second'",
+    "UPDATE session SET last_seen_at=now()-interval '60 days'",
+    "UPDATE app_user SET is_active=false",
+])
+def test_invalid_session_is_not_renewed(invalidate):
+    c, _old = _aged_session()
+    with SessionLocal() as db:
+        db.execute(text(invalidate))
+        db.commit()
+    response = c.get("/auth/me")
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
