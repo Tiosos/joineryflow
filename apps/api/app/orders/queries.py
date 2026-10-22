@@ -191,6 +191,50 @@ def purchase_history(
     }
 
 
+# The order types that are catalog materials. The others (Delivery, Wages, Services, Maintenance, the
+# install / clad / contractor labour types, Extra, Other...) have no catalog row to match, so they are
+# never "unmatched". A judgement call (2026-10-22, user: go with the recommendation); change it here.
+MATERIAL_CATEGORIES = (
+    "Board", "Laminate", "Hardware", "Supplies", "Edging", "Glass", "Benchtop", "SolidSurface",
+    "Appliance", "Hire", "Equipment", "Custom", "Metal", "Acoustic",
+)
+
+
+def unmatched_order_ids(db: Session, *, workspace_id: int) -> list[int]:
+    """Orders of a material type whose product code is blank or is not the SKU of any catalog row.
+
+    Those orders drop out of everything matched on product code = SKU: a Material Summary line's
+    Ordered / Received figures, its Order button and a catalog row's purchase history. Same match as
+    the order pop-up's catalog block (all nine tables, trimmed, case-insensitive, an archived row
+    still matches; an Equipment Hire row matches only on the order's own project). Cancelled and
+    Rejected orders are left out, like the other order counts.
+    """
+    from ..catalog.queries import REGISTRY
+
+    exists = "\n".join(
+        f"AND NOT EXISTS (SELECT 1 FROM {table} c WHERE c.workspace_id = :w"
+        f" AND lower(btrim(c.sku)) = lower(btrim(po.product_code))"
+        f"{' AND c.project_id = po.project_id' if type_ == 'hire' else ''})"
+        for type_, (table, *_rest) in REGISTRY.items()
+    )
+    cats = ", ".join(f"'{c}'" for c in MATERIAL_CATEGORIES)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT po.po_id
+              FROM purchase_orders po
+             WHERE {_ORDER_WORKSPACE}
+               AND po.status NOT IN ('Cancelled', 'Rejected')
+               AND po.category IN ({cats})
+               {exists}
+             ORDER BY po.po_id DESC
+            """
+        ),
+        {"w": workspace_id},
+    ).scalars().all()
+    return list(rows)
+
+
 def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
     return db.execute(
         text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"

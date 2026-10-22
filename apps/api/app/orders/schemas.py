@@ -412,3 +412,9 @@ class ProjectBudgetOut(CostBreakdownOut):
 class CategoryOut(BaseModel):
     category_key: str
     label: str
+
+
+class UnmatchedOrdersOut(BaseModel):
+    """Orders of a material type with no catalog row behind their product code."""
+    count: int
+    po_ids: list[int]

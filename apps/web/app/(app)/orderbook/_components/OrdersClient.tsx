@@ -54,6 +54,9 @@ export function OrdersClient({ me }: { me: Me | null }) {
   const router = useRouter();
   const params = useSearchParams();
   const [rows, setRows] = useState<OrderRow[]>([]);
+  // Orders of a material type whose product code matches no catalog row: they drop out of the Material
+  // Summary's Ordered figures and a catalog row's purchase history. Re-read whenever the list changes.
+  const [unmatched, setUnmatched] = useState<Set<number> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -121,6 +124,15 @@ export function OrdersClient({ me }: { me: Me | null }) {
       .catch(() => setCategories([]));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/orders/unmatched", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then((b: { po_ids: number[] } | null) => { if (!cancelled) setUnmatched(b ? new Set(b.po_ids) : null); })
+      .catch(() => { if (!cancelled) setUnmatched(null); });
+    return () => { cancelled = true; };
+  }, [rows]);
+
   const shown = useMemo(() => rows.filter(r => {
     const open = !["Delivered", "Cancelled", "Rejected"].includes(r.status);
     if (costCentreFilter) {
@@ -133,6 +145,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
       if (projectFilter && String(r.project_id) !== projectFilter) return false;
       if (orderedOnly && !r.date_ordered && r.status !== "Delivered") return false;
     }
+    if (view === "unmatched") return unmatched?.has(r.po_id) ?? false;
     if (view === "rto") return r.status === "Approved" && !r.date_ordered;
     if (view === "tbo") return open && !r.date_ordered;
     if (view === "due") return open && !r.arrived_date && !!r.due_date && r.due_date >= today && r.due_date <= weekAhead;
@@ -140,7 +153,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
     if (view === "arrived") return !!r.arrived_date;
     if (view === "mine") return r.requester_id === me?.id;
     return true;
-  }), [rows, view, today, weekAhead, me, costCentreFilter, productCodeFilter, projectFilter, orderedOnly]);
+  }), [rows, view, today, weekAhead, me, costCentreFilter, productCodeFilter, projectFilter, orderedOnly, unmatched]);
 
   // Grouped under the order type, in the lookup's order; a type the lookup no longer lists goes last.
   const groups = useMemo(() => {
@@ -362,6 +375,18 @@ export function OrdersClient({ me }: { me: Me | null }) {
             {v.label}
           </button>
         ))}
+        {unmatched && (
+          <button type="button" data-testid="orders-view-unmatched" aria-pressed={view === "unmatched"}
+            title="Orders of a material type whose product code is blank or is not a catalog SKU: they are missed by the Material Summary and the catalog purchase history"
+            onClick={() => setParam("view", view === "unmatched" ? "" : "unmatched")}
+            className={`rounded border px-2.5 py-1 ${
+              view === "unmatched"
+                ? "border-h-accent bg-h-accent text-white"
+                : "border-h-line bg-h-bg text-h-ink hover:bg-h-surface"
+            }`}>
+            No catalog match ({unmatched.size})
+          </button>
+        )}
       </div>
 
       {canManageCostCentres && ccManage && (

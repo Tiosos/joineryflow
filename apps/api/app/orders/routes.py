@@ -30,6 +30,7 @@ from .schemas import (
     OrderDetailOut,
     OrderListOut,
     PatchOrderIn,
+    UnmatchedOrdersOut,
     PatchOrderLineIn,
     ProjectBudgetOut,
 )
@@ -83,6 +84,17 @@ def cost_breakdown_route(
     Declared before `/orders/{po_id}` for the same reason as `/orders` above."""
     groups = q.cost_breakdown(db, workspace_id=user.workspace_id)
     return {"groups": groups, "total": sum(g["total"] for g in groups)}
+
+
+@router.get("/orders/unmatched", response_model=UnmatchedOrdersOut)
+def unmatched_orders_route(
+    user: AuthUser = Depends(require_permission("orderbook", "read")),
+    db: Session = Depends(get_db),
+):
+    """The Orderbook's "No catalog match" button: orders of a material type whose product code is blank
+    or matches no catalog SKU. Declared before `/orders/{po_id}` like `/orders/cost-breakdown`."""
+    ids = q.unmatched_order_ids(db, workspace_id=user.workspace_id)
+    return {"count": len(ids), "po_ids": ids}
 
 
 @router.get("/projects/{pid}/budget", response_model=ProjectBudgetOut)
