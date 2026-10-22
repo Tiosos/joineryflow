@@ -88,6 +88,16 @@
   the quote's own total). The `project_contract` row is created in the same
   transaction as the project, `items`, `modules`, `parts` and
   `project_hardware_catalog` rows Convert already wrote in #9a.
+  **Cutlist, Area and Room (Q625, 2026-10-22).** Convert also gives every
+  item its own cutlist (named after the quote line, number from
+  `joinery_number_seq`, via the same `create_cutlist` / `link_item` Duplicate
+  item uses) and places all items in one default Area `General` / Room `1`
+  per project, created with `create_area` / `create_room`. Before this the
+  items had none of the three, so Shop Floor, the Cutlist tab and Tracking's
+  grouping could not place them. Test:
+  `test_estimating_handover.py::test_convert_gives_each_item_its_own_cutlist_and_places_it_in_an_area_and_room`
+  (fails against the old Convert). Not built: area/room from the quote's lines
+  (Q631) and the PM editing them in the review screen.
 - **Documentation error found and corrected while building this.**
   `docs/plan-v1/OPEN-QUESTIONS.md`'s Q489 claimed "Estimate lines currently
   do **not** become items on convert" — false from the day it was written:
