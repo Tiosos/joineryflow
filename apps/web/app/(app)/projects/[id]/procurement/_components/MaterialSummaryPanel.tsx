@@ -3,20 +3,30 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
-import { errorText, summaryApi } from "@/lib/material-take-fetch";
+import { ApiError, errorText, summaryApi } from "@/lib/material-take-fetch";
 import { UNIT_LABEL, type CurrentSummary, type SummaryLine } from "@/lib/material-take-types";
 
 // Project Material Summary (sub-project #12, Plan V1 §20). Confirmation is
 // advisory (Q499): Procurement may act on an unconfirmed summary.
-export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
+const ORDER_REFUSED: Record<string, string> = {
+  NO_SUPPLIER: "This material has no default supplier. Set one in the Catalog first.",
+  NO_SKU: "This material has no SKU, so orders cannot be matched to it. Add one in the Catalog first.",
+  NOTHING_TO_ORDER: "Everything this line needs is already on an order.",
+  NO_CATALOG_MATERIAL: "This line is not a catalog material, so it cannot be ordered from here.",
+  SUMMARY_SUPERSEDED: "A newer summary has been built. Reload to order from it.",
+};
+
+export function MaterialSummaryPanel({ projectId, canEdit, canConfirm, canOrder }: {
   projectId: number;
   canEdit: boolean;
   canConfirm: boolean;
+  canOrder: boolean;
 }) {
   const [data, setData] = useState<CurrentSummary | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [raised, setRaised] = useState<{ po_id: number; po_number: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +53,20 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
     }
   }
 
+  async function orderLine(summaryId: number, lineId: number) {
+    setBusy(true);
+    setRaised(null);
+    try {
+      setRaised(await summaryApi.orderLine(summaryId, lineId));
+      await load();
+    } catch (e) {
+      const code = e instanceof ApiError ? (e.detail as { code?: string } | undefined)?.code : undefined;
+      setError((code && ORDER_REFUSED[code]) || errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!data) return <p className="text-sm text-h-muted">{error ?? "Loading…"}</p>;
   const s = data.summary;
   const draft = s?.status === "draft";
@@ -51,6 +75,12 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
   return (
     <div className="grid gap-4">
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
+      {raised && (
+        <p data-testid="summary-order-raised" className="rounded border border-h-line bg-h-surface px-3 py-2 text-sm text-h-ink">
+          {`Order ${raised.po_number} raised (Pending). `}
+          <Link href={`/orderbook?order=${raised.po_id}`} className="text-h-accent">Open it</Link>
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold text-h-ink">Material Summary</h2>
@@ -112,6 +142,7 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
               <th className="px-3 py-1.5 text-right">Ordered</th>
               <th className="px-3 py-1.5 text-right">Received</th>
               <th className="px-3 py-1.5 text-right">Outstanding</th>
+              <th className="px-3 py-1.5"><span className="sr-only">Order</span></th>
               <th className="px-3 py-1.5">Note</th>
             </tr>
           </thead>
@@ -119,6 +150,7 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
             {s.lines.map((l) => (
               <Fragment key={l.line_id}>
                 <SummaryRow line={l} editable={draft && canEdit} expanded={open.has(l.line_id)}
+                  canOrder={canOrder && !busy} order={() => orderLine(s.summary_id, l.line_id)}
                   toggle={() => setOpen((o) => {
                     const n = new Set(o);
                     if (n.has(l.line_id)) n.delete(l.line_id);
@@ -135,7 +167,7 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
                       · take v{src.take_version}
                     </td>
                     <td className="h-mono px-3 py-1 text-right">{src.qty}</td>
-                    <td colSpan={7} />
+                    <td colSpan={8} />
                   </tr>
                 ))}
               </Fragment>
@@ -147,9 +179,11 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
   );
 }
 
-function SummaryRow({ line, editable, expanded, toggle, save }: {
+function SummaryRow({ line, editable, canOrder, order, expanded, toggle, save }: {
   line: SummaryLine;
   editable: boolean;
+  canOrder: boolean;
+  order: () => void;
   expanded: boolean;
   toggle: () => void;
   save: (changes: { qty_confirmed?: string | null; note?: string | null }) => void;
@@ -188,6 +222,18 @@ function SummaryRow({ line, editable, expanded, toggle, save }: {
       <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-ordered">{line.qty_on_order ?? "—"}</td>
       <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-received">{line.qty_received ?? "—"}</td>
       <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-outstanding">{line.qty_outstanding ?? "—"}</td>
+      <td className="px-3 py-1.5 text-right">
+        {canOrder && Number(line.qty_to_order ?? 0) > 0 && (
+          <button type="button" onClick={order} data-testid="summary-order"
+            aria-label={`Create order for ${line.description}`}
+            className="rounded border border-h-line px-2 py-0.5 text-xs text-h-ink">
+            Order {line.qty_to_order}
+          </button>
+        )}
+        {line.qty_confirmed === null && (
+          <span className="ml-1 rounded bg-h-bg px-1.5 text-xs text-h-muted">unconfirmed</span>
+        )}
+      </td>
       <td className="px-3 py-1.5">
         {editable ? (
           <input aria-label={`Note for ${line.description}`} value={note}

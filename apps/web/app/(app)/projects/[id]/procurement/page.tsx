@@ -38,6 +38,7 @@ export default async function ProjectProcurementPage({
   const canEditSummary =
     can(me, "list", "write") && ["drafter", "manager", "admin"].includes(me.auth_role);
   const canConfirmSummary = can(me, "list", "approve");
+  const canOrderSummary = can(me, "orderbook", "write");
   return (
     <div className="grid gap-4">
       <header className="flex items-baseline justify-between">
@@ -51,6 +52,7 @@ export default async function ProjectProcurementPage({
         canWriteCatalog={canWriteCatalog}
         canEditSummary={canEditSummary}
         canConfirmSummary={canConfirmSummary}
+        canOrderSummary={canOrderSummary}
         sp={sp as Record<string, string | undefined>}
       />
     </div>

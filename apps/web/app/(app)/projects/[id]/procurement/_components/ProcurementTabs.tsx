@@ -16,11 +16,12 @@ interface Props {
   canWriteCatalog: boolean;
   canEditSummary: boolean;
   canConfirmSummary: boolean;
+  canOrderSummary: boolean;
   sp: Record<string, string | undefined>;
 }
 
 export function ProcurementTabs({
-  projectId, tab, canWrite, canWriteCatalog, canEditSummary, canConfirmSummary, sp,
+  projectId, tab, canWrite, canWriteCatalog, canEditSummary, canConfirmSummary, canOrderSummary, sp,
 }: Props) {
   return (
     <>
@@ -48,7 +49,7 @@ export function ProcurementTabs({
         )}
         {tab === "summary" && (
           <MaterialSummaryPanel projectId={projectId} canEdit={canEditSummary}
-            canConfirm={canConfirmSummary} />
+            canConfirm={canConfirmSummary} canOrder={canOrderSummary} />
         )}
         {tab === "batches" && (
           <BatchesTable projectId={projectId} canWrite={canWrite} sp={sp} />

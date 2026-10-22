@@ -350,8 +350,8 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   0. A material with no catalog SKU shows no figures (`null`). Assumptions to
   watch: a mistyped or blank product code does not count, and the order's
   quantity is taken to be in the line's unit. **Confirmation is advisory** (Q499) and freezes the
-  summary (`409 SUMMARY_CONFIRMED`); rebuild to revise. No ordering from a
-  line yet (Q585).
+  summary (`409 SUMMARY_CONFIRMED`); rebuild to revise. Ordering from a line: see the next entry.
+- **Order from a summary line (2026-10-22, user decision; Q585 option 2, no migration).** `POST /material-summaries/{sid}/lines/{lid}/order` (`orderbook:write`; the current summary only, `409 SUMMARY_SUPERSEDED`) raises a normal `Pending` order through `orders.queries.create_order`: the line's catalog SKU as product code, the material's default supplier, the material's UM, the project, no price (an order line's price is typed in). Quantity = `qty_to_order` = required less **every** order already raised for that SKU on the project, placed or not (not Cancelled / Rejected), so a second click cannot double-order; nothing left is `409 NOTHING_TO_ORDER`. Refusals: `NO_CATALOG_MATERIAL`, `NO_SKU`, `NO_SUPPLIER` (set the default supplier in the Catalog). Category follows the material type (Solid Timber has none: `Other`). The "unconfirmed" flag (Q499) is a chip on the line (`qty_confirmed` unset); the order does not record it, only the audit row (`material_summary.order_line`, payload `unconfirmed`). Web: an `Order <qty>` button per line and a note linking the new order.
 - **RBAC — no matrix change.** Everything is `("list", …)`. Take edits and
   summary build / edits also need `require_drafter()` (drafter / manager /
   admin — §20's PM / Coordinator / Designer); approve and confirm need `list`

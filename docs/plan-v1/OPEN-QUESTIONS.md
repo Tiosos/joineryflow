@@ -1345,6 +1345,8 @@ Q499 lets Procurement "order against unconfirmed lines … flagged as such", whi
 1. **Recommended.** Not in v1: the summary shows each line's quantity already on order / received from the existing batch rollup (read-only). Create-order-from-line and its "unconfirmed" flag follow with §21's required / ordered / received / outstanding design.
 2. Yes — a "Create order" action per line that prefills the order form and records the line (and whether it was confirmed) on the order.
 
+**Decided 2026-10-22 (user): option 2, built as a button that raises a `Pending` order directly; the "unconfirmed" flag is shown on the summary line and kept in the audit row, not stored on the order.** `docs/sub-projects/02-cutlist-search-material-take.md`.
+
 ### Q586 — Per-item whole-sheet rounding overcounts at the summary *(new — raised building #12's B1)*
 **Option 1 confirmed (2026-09-24).** Fractional sheets per item (area ÷ sheet area, rounded **up** to 2 dp, plus wastage); the summary sums them and rounds up **once**. This **amends Q581**, whose `ceil(…)` was per item.
 Found by running generation against the seed: items share sheets, so rounding each item up and then adding inflates the order. ALF-001's six MDF items would sum to **6** whole sheets against **3** actually needed (Birch Ply: 5 against 1); across both demo projects, 10 against 4.
