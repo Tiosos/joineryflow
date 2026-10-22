@@ -7,7 +7,11 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 import json
+from ..areas.queries import create_area, create_room
+from ..areas.schemas import CreateAreaIn, CreateRoomIn
 from ..auth.audit import write_audit
+from ..cutlists.queries import create_cutlist, link_item
+from ..cutlists.schemas import CreateCutlistIn
 from ..edit_log import write_edit_log
 from ._q_catalog import STAGE_KEYS, _resolve_hardware_snapshot, _resolve_part_snapshot
 from ._q_core import get_revision, lock_revision_for_update
@@ -23,6 +27,11 @@ _PHC_TYPE_MAP = {
     "APPLIANCE": "APPLIANCE",
     "EDGING":    "EDGING",
 }
+
+# The one Area / Room a converted project starts with (Q625); the PM renames them.
+DEFAULT_AREA = "General"
+DEFAULT_ROOM_NO = "1"
+DEFAULT_ROOM_DESC = "General"
 
 
 def handover_preview(
@@ -241,6 +250,19 @@ def convert_to_project(
     parts_created = 0
     hw_lines_created = 0
 
+    # Q625: every converted item gets its own cutlist and a place in the project's Area / Room, as
+    # a seeded or imported item does (Shop Floor, the Cutlist tab and Tracking's grouping read
+    # them). The quote has no area or room of its own yet, so all items go to one default pair the
+    # PM renames; lines with none stay there when the quote's own groupings arrive (Q631).
+    _, default_area = create_area(
+        db, project_id=int(new_project_id), workspace_id=workspace_id,
+        payload=CreateAreaIn(name=DEFAULT_AREA), actor_id=actor_id,
+    )
+    _, default_room = create_room(
+        db, area_id=default_area["area_id"], workspace_id=workspace_id,
+        payload=CreateRoomIn(rm_no=DEFAULT_ROOM_NO, rm_desc=DEFAULT_ROOM_DESC), actor_id=actor_id,
+    )
+
     for line in detail["lines"]:
         # `num` comes from the shared `joinery_number_seq` (0027 / Q541).
         #
@@ -277,6 +299,19 @@ def convert_to_project(
                 ),
                 {"i": item_id, "s": sk},
             )
+
+        cutlist = create_cutlist(
+            db, project_id=int(new_project_id), workspace_id=workspace_id,
+            payload=CreateCutlistIn(name=line["description"]), actor_id=actor_id,
+        )
+        link_item(
+            db, cutlist_id=cutlist["cutlist_id"], item_id=int(item_id),
+            workspace_id=workspace_id, actor_id=actor_id,
+        )
+        db.execute(
+            text("UPDATE items SET area_id = :a, room_id = :r WHERE item_id = :i"),
+            {"a": default_area["area_id"], "r": default_room["room_id"], "i": item_id},
+        )
 
         write_edit_log(
             db, item_id=int(item_id), actor_id=actor_id,

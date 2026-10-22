@@ -60,6 +60,25 @@ def test_convert_defaults_to_all_lines_and_quote_total():
     assert contract["variations"] == []
 
 
+def test_convert_gives_each_item_its_own_cutlist_and_places_it_in_an_area_and_room():
+    """Q625: a converted item is not left without a cutlist, area or room (Shop Floor, the
+    Cutlist tab and Tracking's area/room grouping all read them)."""
+    c = _bootstrap()
+    won = _make_won_estimate_with_two_lines(c)
+    pid = c.post(f"/revisions/{won['revision_id']}/convert").json()["project_id"]
+
+    cutlists = c.get(f"/projects/{pid}/cutlists").json()["cutlists"]
+    assert sorted(cl["name"] for cl in cutlists) == ["Island", "Pantry"]
+    assert all(cl["item_count"] == 1 for cl in cutlists)
+    assert len({cl["cutlist_no"] for cl in cutlists}) == 2
+
+    areas = c.get(f"/projects/{pid}/areas").json()["areas"]
+    assert len(areas) == 1
+    assert areas[0]["item_count"] == 2
+    assert len(areas[0]["rooms"]) == 1
+    assert areas[0]["rooms"][0]["item_count"] == 2
+
+
 def test_convert_excludes_deselected_lines():
     c = _bootstrap()
     won = _make_won_estimate_with_two_lines(c)
