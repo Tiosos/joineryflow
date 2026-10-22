@@ -507,3 +507,16 @@
   Project Management, Procurement, Material, Production, Installation,
   Management); §4.3's management KPI dashboards; user-arranged widgets;
   export / scheduled reports (§31).
+
+
+## Quote mutation serialization (review R02/R03; no migration)
+
+Quote line, part, hardware, labour, reorder, markup and terms changes acquire the
+revision row lock before any mutation. Child reads are refreshed after obtaining
+the lock, so submission winning the race returns `REVISION_LOCKED`. Every edit
+holds that same parent lock through the total rollups and route commit, preventing
+parallel line edits from persisting an aggregate computed from stale line values.
+Read-only loaders retain their existing behaviour. Regression tests live in
+`test_estimating_revision_races.py`; the consolidated review is
+`docs/reviews/2026-10-23-main-code-review.md`. Its remaining findings are not covered
+by this change.

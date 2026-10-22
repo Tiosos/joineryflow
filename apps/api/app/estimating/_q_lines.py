@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import Any
 from ..auth.audit import write_audit
 from ._q_catalog import _resolve_hardware_snapshot, _resolve_part_snapshot
-from ._q_core import _recompute_line_totals, _recompute_revision_totals, get_revision, lock_revision_for_update
+from ._q_core import _recompute_line_totals, _recompute_revision_totals, lock_revision_for_update
 
 
 # ============================================================================
@@ -19,7 +19,7 @@ from ._q_core import _recompute_line_totals, _recompute_revision_totals, get_rev
 def _assert_unlocked(
     db: Session, *, revision_id: int, workspace_id: int
 ) -> dict:
-    cur = get_revision(
+    cur = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
     if cur is None:
@@ -30,8 +30,22 @@ def _assert_unlocked(
 
 
 def _line_in_workspace(
-    db: Session, *, line_id: int, workspace_id: int
+    db: Session, *, line_id: int, workspace_id: int, for_update: bool = False
 ) -> dict | None:
+    if for_update:
+        # Discover the parent without locking the child. Every quote mutation
+        # takes the revision lock first, including submission and rollups.
+        rid = db.execute(text("""
+            SELECT l.revision_id FROM estimate_line l
+            JOIN estimate_revision r ON r.revision_id = l.revision_id
+            JOIN estimate e ON e.estimate_id = r.estimate_id
+            WHERE l.line_id = :l AND e.workspace_id = :w
+        """), {"l": line_id, "w": workspace_id}).scalar()
+        if rid is None or lock_revision_for_update(
+            db, revision_id=rid, workspace_id=workspace_id
+        ) is None:
+            return None
+        # A separate statement refreshes the line and locked_at after any wait.
     row = db.execute(
         text(
             """
@@ -46,6 +60,22 @@ def _line_in_workspace(
         {"lid": line_id, "w": workspace_id},
     ).mappings().first()
     return dict(row) if row else None
+
+
+def _lock_component_revision(db: Session, *, kind: str, component_id: int, workspace_id: int) -> None:
+    table, key = {
+        "part": ("estimate_line_part", "part_id"),
+        "hardware": ("estimate_line_hardware", "hw_id"),
+    }[kind]
+    line_id = db.execute(text(f"""
+        SELECT c.line_id FROM {table} c
+        JOIN estimate_line l ON l.line_id = c.line_id
+        JOIN estimate_revision r ON r.revision_id = l.revision_id
+        JOIN estimate e ON e.estimate_id = r.estimate_id
+        WHERE c.{key} = :id AND e.workspace_id = :w
+    """), {"id": component_id, "w": workspace_id}).scalar()
+    if line_id is not None:
+        _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
 
 
 def create_line(
@@ -108,7 +138,7 @@ def patch_line(
     db: Session, *, line_id: int, workspace_id: int,
     actor_id: int, fields: dict[str, Any], clear_unit_sell_override: bool,
 ) -> dict | None:
-    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
+    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
     if line is None:
         return None
     if line["rev_locked_at"] is not None:
@@ -153,7 +183,7 @@ def patch_line(
 def delete_line(
     db: Session, *, line_id: int, workspace_id: int, actor_id: int
 ) -> bool:
-    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
+    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
     if line is None:
         return False
     if line["rev_locked_at"] is not None:
@@ -206,7 +236,7 @@ def reorder_lines(
 def add_part(
     db: Session, *, line_id: int, workspace_id: int, actor_id: int, payload: dict
 ) -> int:
-    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
+    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
     if line is None:
         raise ValueError("NOT_FOUND")
     if line["rev_locked_at"] is not None:
@@ -270,6 +300,7 @@ def add_part(
 def remove_part(
     db: Session, *, part_id: int, workspace_id: int, actor_id: int
 ) -> bool:
+    _lock_component_revision(db, kind="part", component_id=part_id, workspace_id=workspace_id)
     row = db.execute(
         text(
             """
@@ -306,6 +337,7 @@ def patch_part(
     db: Session, *, part_id: int, workspace_id: int, actor_id: int,
     fields: dict[str, Any],
 ) -> dict | None:
+    _lock_component_revision(db, kind="part", component_id=part_id, workspace_id=workspace_id)
     row = db.execute(
         text(
             """
@@ -358,6 +390,7 @@ def patch_hardware(
     db: Session, *, hw_id: int, workspace_id: int, actor_id: int,
     fields: dict[str, Any],
 ) -> dict | None:
+    _lock_component_revision(db, kind="hardware", component_id=hw_id, workspace_id=workspace_id)
     row = db.execute(
         text(
             """
@@ -406,7 +439,7 @@ def patch_hardware(
 def add_hardware(
     db: Session, *, line_id: int, workspace_id: int, actor_id: int, payload: dict
 ) -> int:
-    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
+    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
     if line is None:
         raise ValueError("NOT_FOUND")
     if line["rev_locked_at"] is not None:
@@ -466,6 +499,7 @@ def add_hardware(
 def remove_hardware(
     db: Session, *, hw_id: int, workspace_id: int, actor_id: int
 ) -> bool:
+    _lock_component_revision(db, kind="hardware", component_id=hw_id, workspace_id=workspace_id)
     row = db.execute(
         text(
             """
@@ -502,7 +536,7 @@ def upsert_labour(
     db: Session, *, line_id: int, workspace_id: int, actor_id: int,
     stage_key: str, hours: Decimal,
 ) -> int:
-    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id)
+    line = _line_in_workspace(db, line_id=line_id, workspace_id=workspace_id, for_update=True)
     if line is None:
         raise ValueError("NOT_FOUND")
     if line["rev_locked_at"] is not None:
