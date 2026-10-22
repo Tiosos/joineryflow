@@ -4,6 +4,7 @@ Part of the items queries facade (see `queries.py`)."""
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ..cutlists.painting import incompatible
 from ..auth.audit import write_audit
 from ..auth.sessions import AuthUser
 from ..concurrency import check_field_conflicts
@@ -110,7 +111,7 @@ def patch_item(
     # §L Q511/Q512: locks the row for this whole transaction, so a concurrent
     # PATCH on the same item serialises instead of racing on the
     # read-then-write field-version check below.
-    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True)
+    current = _item_row(db, item_id=item_id, workspace_id=workspace_id, for_update=True, lock_painting=True)
     if current is None:
         return None
 
@@ -270,7 +271,7 @@ def restore_item(
     Not stopped by a Hard Lock: it only undoes a delete."""
     current = _item_row(
         db, item_id=item_id, workspace_id=workspace_id,
-        for_update=True, include_deleted=True,
+        for_update=True, include_deleted=True, lock_painting=True,
     )
     if current is None:
         return "NOT_FOUND"
@@ -286,6 +287,10 @@ def restore_item(
         {"iid": item_id},
     ).scalar():
         return "PARENT_DELETED"
+
+    if incompatible(db, item_id=item_id, cutlist_id=current["cutlist_id"],
+                    painting_req=current["painting_req"], paint_after_assembly=current["paint_after_assembly"]):
+        return "PAINT_ORDER_CONFLICT"
 
     write_audit(
         db,

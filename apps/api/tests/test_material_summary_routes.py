@@ -359,3 +359,39 @@ def test_history_and_isolation(proj):
     assert outsider.get(f"/projects/{proj['pid']}/material-summary").status_code == 404
     assert outsider.post(f"/projects/{proj['pid']}/material-summary").status_code == 404
     assert outsider.post(f"/material-summaries/{s2}/confirm").status_code == 404
+
+
+def test_concurrent_summary_orders_buy_the_outstanding_quantity_once(proj):
+    from app.db import SessionLocal
+    from app.material_summaries import queries as q
+    from .helpers_concurrency import finish_after_waiting
+
+    _board_line(proj)
+    _supplier(proj)
+    sid, line = _line_and_sid(proj)
+    uid = _sql('SELECT id FROM app_user WHERE workspace_id=:w', w=proj['w'])
+    with SessionLocal() as first:
+        q.order_line(first, sid, line['line_id'], proj['w'], uid)
+        with pytest.raises(q.Conflict) as error:
+            finish_after_waiting(first, lambda second: q.order_line(
+                second, sid, line['line_id'], proj['w'], uid))
+    assert error.value.code == 'NOTHING_TO_ORDER'
+    assert _sql('SELECT sum(quantity) FROM purchase_orders WHERE project_id=:p', p=proj['pid']) == 1
+
+
+def test_rebuilding_summary_serializes_before_ordering_an_old_version(proj):
+    from app.db import SessionLocal
+    from app.material_summaries import queries as q
+    from .helpers_concurrency import finish_after_waiting
+
+    _board_line(proj)
+    _supplier(proj)
+    sid, line = _line_and_sid(proj)
+    uid = _sql('SELECT id FROM app_user WHERE workspace_id=:w', w=proj['w'])
+    with SessionLocal() as first:
+        q.build(first, proj['pid'], proj['w'], uid)
+        with pytest.raises(q.Conflict) as error:
+            finish_after_waiting(first, lambda second: q.order_line(
+                second, sid, line['line_id'], proj['w'], uid))
+    assert error.value.code == 'SUMMARY_SUPERSEDED'
+    assert _sql('SELECT count(*) FROM purchase_orders WHERE project_id=:p', p=proj['pid']) == 0

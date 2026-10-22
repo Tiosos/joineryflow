@@ -14,7 +14,7 @@ as #9's `/optimise` (Q501). Two sources, both already recorded elsewhere:
   project-level-only gap for the same reason).
 - **Labour**: each `stage_completion_log` row's duration
   (`completed_at - worker_assignment.started_at`) priced at
-  `workspace_labour_rate`. Completions belong to a **cutlist** (migration
+  the completion's `hourly_rate_snapshot`. Completions belong to a **cutlist** (migration
   `0030`), shared by every item on it, so a completion's cost is apportioned
   across the cutlist's items by each item's share of total part area (Q549) —
   falling back to an equal split when no item on the cutlist has any
@@ -24,10 +24,10 @@ as #9's `/optimise` (Q501). Two sources, both already recorded elsewhere:
   when an item is deleted**: the completions belong to the cutlist, which a
   delete keeps, and hours already worked are real cost.
 
-A completion with no `assignment_id` (nullable — pre-`0030` provenance rows,
-per `stage_completion_log`'s own comment) has no `started_at` to compute a
-duration from and is excluded, not zero-costed; there is nothing to derive
-it from.
+A completion without a captured rate or start time remains unresolved. Labour
+and total actuals, and affected per-item figures, are NULL rather than reporting
+a partial amount as a complete cost. No historical rate is inferred from today.
+
 """
 from decimal import Decimal
 
@@ -57,22 +57,20 @@ def _materials_actual(db: Session, *, project_id: int) -> Decimal:
     return Decimal(str(val or 0))
 
 
-def _labour_completions(db: Session, *, project_id: int, workspace_id: int) -> list[dict]:
+def _labour_completions(db: Session, *, project_id: int) -> list[dict]:
     rows = db.execute(
         text(
             """
             SELECT scl.log_id, scl.cutlist_id, scl.stage_key,
                    EXTRACT(EPOCH FROM (scl.completed_at - wa.started_at)) / 3600.0 AS hours,
-                   COALESCE(r.hourly_rate, 0) AS hourly_rate
+                   scl.hourly_rate_snapshot AS hourly_rate
               FROM stage_completion_log scl
-              JOIN worker_assignment wa ON wa.assignment_id = scl.assignment_id
+              LEFT JOIN worker_assignment wa ON wa.assignment_id = scl.assignment_id
               JOIN cutlist cl ON cl.cutlist_id = scl.cutlist_id
-              LEFT JOIN workspace_labour_rate r
-                ON r.workspace_id = :w AND r.stage_key = scl.stage_key
              WHERE cl.project_id = :p AND scl.undone_at IS NULL
             """
         ),
-        {"p": project_id, "w": workspace_id},
+        {"p": project_id},
     ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -107,13 +105,19 @@ def actual_costs_for_project(
         return None
 
     materials_actual = _materials_actual(db, project_id=project_id)
-    completions = _labour_completions(db, project_id=project_id, workspace_id=workspace_id)
+    completions = _labour_completions(db, project_id=project_id)
     cutlist_ids = {int(c["cutlist_id"]) for c in completions}
     areas = _item_areas_by_cutlist(db, cutlist_ids=cutlist_ids)
 
     labour_actual = Decimal("0")
     labour_by_item: dict[int, Decimal] = {}
+    unresolved = 0
+    unresolved_items: set[int] = set()
     for c in completions:
+        if c["hourly_rate"] is None or c["hours"] is None:
+            unresolved += 1
+            unresolved_items.update(areas.get(int(c["cutlist_id"]), {}))
+            continue
         hours = Decimal(str(c["hours"] or 0))
         cost = hours * Decimal(str(c["hourly_rate"] or 0))
         labour_actual += cost
@@ -130,9 +134,11 @@ def actual_costs_for_project(
     return {
         "project_id": project_id,
         "materials_actual": materials_actual.quantize(Decimal("0.01")),
-        "labour_actual": labour_actual,
-        "total_actual": (materials_actual + labour_actual).quantize(Decimal("0.01")),
+        "labour_actual": None if unresolved else labour_actual,
+        "unresolved_labour_completions": unresolved,
+        "total_actual": None if unresolved else (materials_actual + labour_actual).quantize(Decimal("0.01")),
         "labour_by_item": {
-            k: v.quantize(Decimal("0.01")) for k, v in labour_by_item.items()
+            k: None if k in unresolved_items else labour_by_item[k].quantize(Decimal("0.01"))
+            for k in labour_by_item.keys() | unresolved_items
         },
     }

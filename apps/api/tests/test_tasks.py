@@ -328,3 +328,57 @@ def test_a_projects_task_list_covers_its_items_and_cutlists_and_a_cutlists_is_it
     on_cutlist = mgr.get(f"/tasks?cutlist_id={ws['cid']}&limit=200").json()["items"]
     assert [t["title"] for t in on_cutlist] == ["on the cutlist"] and on_cutlist[0]["target_type"] == "cutlist"
     assert on_cutlist[0]["target_label"].endswith("Run 1")
+
+
+def _task_actor(ws, role):
+    from app.auth.sessions import AuthUser
+    return AuthUser(ws["uid"][role], ws["wid"], f"{role}@test", role, role)
+
+
+def test_patch_rechecks_closed_status_after_lock_wait(ws):
+    from app.db import SessionLocal
+    from app.tasks import queries as q
+    from app.tasks.schemas import PatchTaskIn
+    from .helpers_concurrency import finish_after_waiting
+    task = _make(client(ws, "manager"), project_id=ws["pid"])
+    actor = _task_actor(ws, "manager")
+    with SessionLocal() as first:
+        assert q.set_status(first, actor=actor, task_id=task["task_id"], status="done")[0] == "OK"
+        result = finish_after_waiting(first, lambda db: q.patch_task(
+            db, actor=actor, task_id=task["task_id"], payload=PatchTaskIn(title="Too late", expected_versions={"title": 0})))
+    assert result[0] == "TASK_CLOSED"
+    assert client(ws, "manager").get(f"/tasks/{task['task_id']}").json()["title"] == task["title"]
+
+
+@pytest.mark.parametrize("operation", ["patch", "status"])
+def test_task_rechecks_ownership_after_concurrent_reassignment(ws, operation):
+    from app.db import SessionLocal
+    from app.tasks import queries as q
+    from app.tasks.schemas import PatchTaskIn
+    from .helpers_concurrency import finish_after_waiting
+    task = _make(client(ws, "manager"), project_id=ws["pid"], assignee_id=ws["uid"]["editor"])
+    actor = _task_actor(ws, "editor")
+    with SessionLocal() as first:
+        assert q.patch_task(first, actor=_task_actor(ws, "manager"), task_id=task["task_id"],
+                            payload=PatchTaskIn(assignee_id=ws["uid"]["drafter"]))[0] == "OK"
+        def mutate(db):
+            if operation == "patch":
+                return q.patch_task(db, actor=actor, task_id=task["task_id"], payload=PatchTaskIn(title="Stale owner"))
+            return q.set_status(db, actor=actor, task_id=task["task_id"], status="done")
+        result = finish_after_waiting(first, mutate)
+    assert result[0] == "FORBIDDEN"
+
+
+def test_task_field_conflict_reports_value_after_lock_wait(ws):
+    from app.db import SessionLocal
+    from app.tasks import queries as q
+    from app.tasks.schemas import PatchTaskIn
+    from .helpers_concurrency import finish_after_waiting
+    task = _make(client(ws, "manager"))
+    actor = _task_actor(ws, "manager")
+    with SessionLocal() as first:
+        assert q.patch_task(first, actor=actor, task_id=task["task_id"], payload=PatchTaskIn(title="Concurrent title"))[0] == "OK"
+        code, conflicts = finish_after_waiting(first, lambda db: q.patch_task(
+            db, actor=actor, task_id=task["task_id"], payload=PatchTaskIn(title="Other", expected_versions={"title": 0})))
+    assert code == "FIELD_CONFLICT"
+    assert conflicts["title"]["current_value"] == "Concurrent title"

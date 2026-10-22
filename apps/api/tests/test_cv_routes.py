@@ -656,3 +656,38 @@ def test_manager_passes_someone_elses_controlled_lock_on_cv_commit():
     run = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
     assert c.post(f"/items/{iid}/cv-imports/{run}/commit",
                   json={"resolutions": []}).status_code == 200
+
+
+@pytest.mark.parametrize("replace", [False, True])
+def test_concurrent_commit_rechecks_preview_after_item_lock(replace):
+    from fastapi import HTTPException
+    from app.auth.sessions import AuthUser
+    from app.cv import queries as q, routes
+    from app.cv.parser import ParsedPart
+    from app.cv.schemas import CvCommitIn
+    from .helpers_concurrency import finish_after_waiting
+    c, wid, uid, pid, iid = _login("drafter")
+    _seed_board_with_mapping(wid, uid, code="18-PB", sku="18-PB", cv_code="18-PB")
+    run_id = c.post(f"/items/{iid}/cv-imports/preview", data={"body": _CSV}).json()["run_id"]
+    user = AuthUser(uid, wid, "drafter@example.com", "Drafter", "drafter")
+    with SessionLocal() as first:
+        first.execute(text("SELECT item_id FROM items WHERE item_id=:i FOR UPDATE"), {"i": iid})
+        snapshot = q.get_run(first, run_id=run_id, workspace_id=wid)["error_log"]
+        q.commit_import(first, workspace_id=wid, project_id=pid, item_id=iid, run_id=run_id,
+                        parsed_parts=[ParsedPart(**p) for p in snapshot["_parsed_parts"]],
+                        preview_resolutions=snapshot["_resolutions"], body_resolutions=[], actor_id=uid, replace=replace)
+        mid = first.execute(text("SELECT module_id FROM modules WHERE item_id=:i"), {"i": iid}).scalar_one()
+        comment = first.execute(text("INSERT INTO comment(workspace_id,module_id,author_id,body) VALUES(:w,:m,:u,'keep this') RETURNING comment_id"),
+                                {"w": wid, "m": mid, "u": uid}).scalar_one()
+        def attempt(db):
+            try:
+                routes.commit_cv_import_route(iid, run_id, CvCommitIn(resolutions=[], replace=replace),
+                                              "replace" if replace else "default", user, db)
+                return "OK"
+            except HTTPException as exc:
+                return exc.detail["code"]
+        assert finish_after_waiting(first, attempt) == "RUN_NOT_PENDING"
+    with SessionLocal() as db:
+        assert db.execute(text("SELECT count(*) FROM audit_log WHERE event='cv.import.commit' AND target=:r"), {"r": str(run_id)}).scalar_one() == 1
+        assert db.execute(text("SELECT count(*) FROM comment WHERE comment_id=:c"), {"c": comment}).scalar_one() == 1
+        assert db.execute(text("SELECT module_id FROM modules WHERE item_id=:i"), {"i": iid}).scalar_one() == mid

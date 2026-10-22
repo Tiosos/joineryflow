@@ -42,7 +42,7 @@ async function fetchActualCosts(id: number, cookieHeader: string): Promise<Actua
     cache: "no-store",
   }).catch(() => null);
   if (!r || !r.ok) {
-    return { project_id: id, materials_actual: "0", labour_actual: "0", total_actual: "0", labour_by_item: {} };
+    return { project_id: id, materials_actual: "0", labour_actual: null, total_actual: null, unresolved_labour_completions: 0, labour_by_item: {} };
   }
   return (await r.json()) as ActualCosts;
 }

@@ -299,6 +299,14 @@ def commit_cv_import_route(
     except ItemContentLocked as e:
         raise HTTPException(409, e.detail)
 
+    # The item lock serializes all commits for this item. Re-read the run
+    # after waiting so another commit cannot replay this preview with replace.
+    run = q.get_run(db, run_id=run_id, workspace_id=user.workspace_id)
+    if run is None or run["item_id"] != iid:
+        raise HTTPException(404, "run not found")
+    if run["status"] != "preview":
+        raise HTTPException(409, {"code": "RUN_NOT_PENDING", "status": run["status"]})
+
     error_log = run.get("error_log") or {}
     if not isinstance(error_log, dict):
         raise HTTPException(409, {"code": "PREVIEW_SNAPSHOT_MISSING"})

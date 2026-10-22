@@ -3,6 +3,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from starlette.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -47,8 +48,7 @@ def create_session(db: Session, user_id: int) -> str:
     return token
 
 
-def lookup_session(db: Session, token: str) -> AuthUser:
-    now = datetime.now(timezone.utc)
+def lookup_session_with_expiry(db: Session, token: str) -> tuple[AuthUser, datetime]:
     sliding = timedelta(days=settings.session_sliding_days)
     h = _h(token)
     row = db.execute(
@@ -59,10 +59,12 @@ def lookup_session(db: Session, token: str) -> AuthUser:
             FROM session s
             JOIN app_user u ON u.id = s.user_id
             WHERE s.token_hash = :h
+            FOR UPDATE OF s
             """
         ),
         {"h": h},
     ).mappings().first()
+    now = datetime.now(timezone.utc)
     if not row or row["revoked_at"] is not None or not row["is_active"]:
         raise SessionExpired()
     if row["hard_expires_at"] <= now:
@@ -81,6 +83,18 @@ def lookup_session(db: Session, token: str) -> AuthUser:
         full_name=row["full_name"],
         auth_role=row["auth_role"],
         jtbd_role=row["jtbd_role"],
+    ), min(now + sliding, row["hard_expires_at"])
+
+
+def lookup_session(db: Session, token: str) -> AuthUser:
+    return lookup_session_with_expiry(db, token)[0]
+
+
+def set_session_cookie(resp: Response, token: str, expires_at: datetime) -> None:
+    resp.set_cookie(
+        settings.session_cookie_name, token, httponly=True, samesite="lax",
+        secure=settings.cookie_secure, path="/", expires=expires_at.astimezone(timezone.utc),
+        max_age=max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds())),
     )
 
 

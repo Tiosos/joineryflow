@@ -22,8 +22,9 @@ from ..sql_columns import require_columns
 _JOINERY_I = live_joinery_items("i")
 
 
-def _project(db: Session, project_id: int, workspace_id: int) -> None:
-    if db.execute(text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
+def _project(db: Session, project_id: int, workspace_id: int, *, lock=False) -> None:
+    if db.execute(text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"
+                       + (" FOR UPDATE" if lock else "")),
                   {"p": project_id, "w": workspace_id}).scalar() is None:
         raise NotFound()
 
@@ -58,7 +59,7 @@ def missing_takes(db: Session, project_id: int) -> list[dict]:
 
 
 def build(db: Session, project_id: int, workspace_id: int, actor_id: int) -> int:
-    _project(db, project_id, workspace_id)
+    _project(db, project_id, workspace_id, lock=True)
     rows = db.execute(text(f"""
         SELECT l.*, t.version AS take_version
           FROM material_take t
@@ -290,6 +291,10 @@ def order_line(db: Session, summary_id: int, line_id: int, workspace_id: int, ac
     from ..orders.schemas import CreateOrderIn
 
     s = _summary(db, summary_id, workspace_id)
+    # One project lock covers competing orders and replacement summaries. Read
+    # the current version and quantities only after any wait has completed.
+    _project(db, s["project_id"], workspace_id, lock=True)
+    s = _summary(db, summary_id, workspace_id, lock=True)
     if db.execute(text("SELECT MAX(summary_id) FROM material_summary WHERE project_id = :p"),
                   {"p": s["project_id"]}).scalar() != summary_id:
         raise Conflict("SUMMARY_SUPERSEDED")

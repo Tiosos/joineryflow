@@ -371,3 +371,12 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   (left as a draft, so it is listed as missing), one built summary, then one
   item at v2 — so the summary opens with stale lines. Built through the same
   query functions the API uses, so audit / edit-log rows are real. Idempotent.
+
+### Review follow-up: painting compatibility (2026-10-23)
+
+User decision: painted items with opposite painting/assembly orders require
+separate cutlists. Links, painting edits (including held-request approval) and
+restores enforce this under a project-scoped advisory transaction lock acquired
+before item locks. Nonpainted items remain compatible. Existing conflicts are
+flagged as `paint_order_conflict` on cutlist list/detail; split them explicitly
+using unlink/new cutlist/link. No automatic reassignment or history rewriting.

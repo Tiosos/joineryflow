@@ -7,23 +7,29 @@ require_permission(module, action, project_param=None): factory returning a
 dep that runs current_user and then enforces the DB-backed permission engine
 (app.auth.rbac_engine), raising 403 on miss. See Q466-473.
 """
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from .rbac_engine import effective_actions
-from .sessions import AuthUser, SessionExpired, SessionHardCapped, lookup_session
+from .sessions import AuthUser, SessionExpired, SessionHardCapped, lookup_session_with_expiry, set_session_cookie
 
 
-def current_user(request: Request, db: Session = Depends(get_db)) -> AuthUser:
+def current_user(request: Request, response: Response) -> AuthUser:
     token = request.cookies.get(settings.session_cookie_name)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="no session"
         )
     try:
-        return lookup_session(db, token)
+        # Authentication owns a short transaction: read-only activity survives
+        # business rollback, without committing any application writes.
+        with SessionLocal() as auth_db:
+            user, expires_at = lookup_session_with_expiry(auth_db, token)
+            auth_db.commit()
+        set_session_cookie(response, token, expires_at)
+        return user
     except (SessionExpired, SessionHardCapped):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="session expired"

@@ -113,6 +113,11 @@ export function ProjectFinancialsCard({ projectId, contract, actualCosts, canEdi
           </div>
         </div>
       </div>
+      {actualCosts.unresolved_labour_completions > 0 && (
+        <p role="status" className="mt-2 text-xs text-amber-800">
+          {`${actualCosts.unresolved_labour_completions} production completion(s) have unresolved labour costs. Labour and total actuals remain unavailable until their historical rate and start time are known.`}
+        </p>
+      )}
       <p className="mt-2 text-xs italic text-h-muted">
         Actual costs are derived from received procurement and completed
         production stages (Q493) — nothing here is entered by hand.

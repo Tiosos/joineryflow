@@ -513,6 +513,12 @@ def undo_completion_route(
     )
     if log is None:
         raise HTTPException(404, "completion log not found")
+    if not q.lock_cutlist(db, cutlist_id=log["cutlist_id"], workspace_id=user.workspace_id):
+        raise HTTPException(404, "completion log not found")
+    # Refresh after the wait: both undo status and stage prerequisites may change.
+    log = q.get_completion_log(db, log_id=log_id, workspace_id=user.workspace_id)
+    if log is None:
+        raise HTTPException(404, "completion log not found")
     if log["undone_at"] is not None:
         raise HTTPException(409, {"code": "ALREADY_UNDONE"})
 
