@@ -2478,6 +2478,36 @@ Microsoft 365.
 2. Copy existing notes only.
 3. Drop from v1.
 
+### Q633 — What do the dashboard cards open? *(new — the links land on the wrong list)*
+**Option 1 confirmed (2026-10-22).** Tracking gets an **All projects** scope that honours `?status=` and `?stage=`, so a card opens the rows it counted; card counts use Q591's definitions. Not built yet. The home dashboard's cards count across projects (the whole workspace for an admin, the caller's projects for a manager) and link to `/tracking?status=overdue`, `?stage=in_optimisation`, `?stage=awaiting_install` and `?status=LIVE`. The Tracking page reads only `project_id` and `deleted` from the URL (`tracking/page.tsx`), shows one project at a time, and keeps "Overdue" as an in-page chip. So each click opens the first project, unfiltered, and the number on the card does not match the rows shown. The count also uses its own Overdue (any stage past due), a third definition beside Q591's.
+1. **Recommended.** Tracking gets an **All projects** scope that honours `?status=` and `?stage=`, so a card opens exactly the rows it counted; the card counts use the Q591 definitions.
+2. Tracking honours the params but stays one project; the card links to the project holding most of the rows.
+3. Cards stop linking; they only show numbers.
+
+### Q634 — What does "Value in Progress" show? *(new — the card is hard-coded to 0)*
+**Option 1 confirmed (2026-10-22).** For managers and admins, the sum of `current_value` of live (`Current`) projects' contracts; the card is left out (not zero) for other roles. Not built yet. `home/queries.py` sets `value_in_progress = 0.0` ("adds `items.value`" is the comment); no `items.value` column exists, and the card shows 0 for admins, managers and drafters alike. Money is gated elsewhere (budget figures are manager/admin only).
+1. **Recommended.** For managers and admins, the sum of `current_value` of live (`Current`) projects' contracts; the card is left out for other roles (not shown as zero).
+2. Remove the card.
+3. Wait for an item-level value (Q492 keeps item cost out of scope).
+
+### Q635 — Which dashboards exist in v1? *(new — Plan V1 §4.2 lists eight; shipped is one landing page)*
+**All four confirmed (2026-10-22):** a Management dashboard (carries the KPIs, manager/admin only), an Installation dashboard (from the Q605 Install data), a Material dashboard (stock below reorder point, takes outstanding, orders waiting on materials), and the existing screens (tender dashboard, `/qc`, Shop Floor, Cut Floor, Orderbook) count as the other department dashboards. Not built yet. The landing page is one payload shaped by `auth_role` (`ceo`, `pm`, `drafter`, `estimator`, `purchase_officer`, `editor`, `viewer`) with 4 cards and shared "my day", deliveries and activity lists, not by user group. Plan V1 wants Estimating, Project Management, Procurement, Material, Production, QC, Installation and Management dashboards, with IT assigning access by group (tabs, sections, widgets). Closest existing screens: the tender dashboard, `/qc`, Shop Floor, Cut Floor, the Orderbook and Tracking. Pick which to add.
+
+### Q636 — Which KPIs are in the first catalogue? *(new — Q527 fixed catalogue, none built)*
+**Three of four confirmed (2026-10-22):** on-time stage completion (Q591's definitions), open defects per live project, and spend vs budget (managers/admins only, like the budget). Tender win rate is **not** in the first catalogue. Not built yet. There is no KPI code in the tree (grep). Q527 = hard-coded catalogue, management chooses which to display, numbers only (no traffic lights). Pick the first set from data that exists.
+
+### Q637 — Are KPI targets stored, and at what level? *(new — Plan V1 §32: "may set project-specific targets")*
+**Option 1 confirmed (2026-10-22).** One optional workspace-wide target per KPI shown beside the value; no per-project targets. Not built yet. Nothing stores a target. A target without a band is only a reference number beside the KPI (§32: numbers only, reporting-only).
+1. **Recommended.** One workspace-wide target per KPI (a number, optional), shown beside the value; no per-project targets in v1.
+2. Per-project targets, falling back to the workspace one.
+3. No targets in v1.
+
+### Q638 — Who chooses which KPIs show, and for whom? *(new — Plan V1 §32: "Management selects displays")*
+**Option 1 confirmed (2026-10-22).** Managers and admins choose one workspace-wide set shown on the Management dashboard; stored per workspace; others see none. Not built yet. Dashboard content follows `auth_role` today; the RBAC `dashboard` module has grants but nothing branches on a group. A selection has to live somewhere.
+1. **Recommended.** Managers and admins choose one workspace-wide set shown on the Management dashboard; everyone else sees none. Stored per workspace.
+2. Each manager/admin picks their own set.
+3. Fixed set, no choice in v1.
+
 ---
 
 ## Housekeeping
