@@ -800,6 +800,8 @@ Price-source evidence is mandatory only above configurable thresholds. Multiple 
 
 Purchase Requisition is optional, requires no approval, belongs to one Project, can include multiple Joinery Items and can create multiple POs.
 
+> **Decided — Q601 = Option 1 (2026-10-22), a deliberate departure from this paragraph.** There is no requisition entity: a `Pending` order is the request, and a purchase officer, manager or admin decides it (`0056`). See `OPEN-QUESTIONS.md` Q601.
+
 Shared/bulk POs may be used for selected materials across projects/items/general stock. Allocations may be changed after order with full audit.
 
 Cost allocation is manually controlled by Procurement or PM using manual amount, quantity, percentage, item value, even split or custom rule. Only PM can create reusable allocation templates/rules. PM or Accounts can confirm final allocation before financial close.
