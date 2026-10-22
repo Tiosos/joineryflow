@@ -2433,6 +2433,51 @@ Microsoft 365.
 2. Store every generated PDF of any kind.
 3. Store nothing; the link serves a regeneration.
 
+### Q625 — Do converted items get a cutlist, area and room? *(new — the data contradicts Q540 / CLAUDE.md §4)*
+**Option 1 confirmed (2026-10-22).** Convert creates each item's own cutlist (number from `joinery_number_seq`) and places items in the Areas/Rooms of Q631; the PM edits them in the review screen (Q490). Fixes the gap with Q540 / `CLAUDE.md` §4. Not built yet. `convert_to_project` (`estimating/_q_convert.py`) inserts each item with only `num`, `project_id`, `description`, `qty` and `status`. The file contains no `INSERT INTO cutlist`, `area` or `room`, and sets no `cutlist_id`, `area_id` or `room_id`; cutlists are created only by `cutlists/queries.py` and the FileMaker importer. Q540 says every existing item gets its own cutlist, and the seed rule in `CLAUDE.md` §4 says every item-creating block must also create its cutlist, area and room, because Shop Floor, the Cutlist tab and Tracking's area/room grouping read them. So a won quote produces items those screens cannot place.
+1. **Recommended.** Convert creates, per item, its own cutlist (number from `joinery_number_seq`, as duplicate and the importer do) and puts every item in one default Area / Room the PM renames in the review step; the review screen (Q490) lets the PM edit area and room before confirming.
+2. Cutlist per item only; area and room stay empty until the PM sets them.
+3. Leave as is; the PM creates them item by item.
+
+### Q626 — What else carries across at handover? *(new — Plan V1 §6 lists 14 things)*
+**Confirmed (2026-10-22), three of four:** assumptions and exclusions (Q632), Areas / Rooms from the quote (Q631), and documents / drawings (the estimate's files attach to the project). Not carried: programme, supplier information, specifications. Not built yet. Convert carries the customer, the estimate revision link, the contract value, items, parts, hardware lines and the project hardware catalog. Plan V1 also lists drawings, specifications, areas/rooms, assumptions, exclusions, programme, supplier information, notes and documents. None of these has an insert in `_q_convert.py`, and the original tender stays untouched (§6), so nothing is lost, but a PM must re-enter whatever they need. Pick what carries.
+
+### Q627 — Do Complete and Archived exist as separate states? *(new — Plan V1 §28)*
+**Option 1 confirmed (2026-10-22).** Single Closed state; Archived is just Closed. The Q594 snapshot and the audit row are the completion record. Plan V1: Installation Complete → Defects/Rectification → Final QC → Client Handover → Financial Close → Project Complete → Archived. Shipped: one `status = 'Closed'` with `closed_at` / `closed_by`, set by `close_out_project`; reopening is a status PATCH that clears the stamp. Nothing separates "closed" from "archived".
+1. **Recommended.** Keep the single Closed state. "Archived" is just Closed; the Q594 snapshot and the audit row are the completion record.
+2. Add Archived after Closed (manager/admin moves it, e.g. after a retention period), and make Archived the read-only state.
+3. The full chain of stages from Plan V1.
+
+### Q628 — What can be changed on a closed project? *(new — Plan V1 §28: archived is "generally read-only")*
+**Option 1 confirmed (2026-10-22).** A closed project stays editable with a banner; every write to its items and orders is audited as `post_close`; no new refusals. Not built yet. Nothing checks `closed_at` outside the project row and QC (grep of `apps/api/app`): a closed project's items, parts, orders, drawings and tasks stay fully editable by anyone with the usual grants. Plan V1 allows limited post-completion additions (late documents, invoices/costs, photos, defects, warranty, rework, administrative corrections), all audited.
+1. **Recommended.** Closed stays editable but shows a banner, and every write to a closed project's items/orders is audited as `post_close`; no new refusals.
+2. Closed refuses edits except an allow-list (documents, photos, defects, rework, invoices, comments), each audited; manager/admin can reopen.
+3. Fully read-only until reopened.
+
+### Q629 — Who can reopen a closed project? *(new — reopening is a status PATCH)*
+**Option 1 confirmed (2026-10-22).** Reopening is manager/admin only and needs a reason kept in the audit row. Not built yet. `PATCH` of a project's status to `Current` or `Hold` clears `closed_at` / `closed_by` for anyone allowed to patch the project; there is no reason and no separate permission, though closing is manager/admin only.
+1. **Recommended.** Reopen is manager/admin only, with a required reason kept in the audit row, like close-out.
+2. As today.
+3. Reopen only through a dedicated action by admin.
+
+### Q630 — Is there a warranty record? *(new — Plan V1 §28 lists "warranty")*
+**Option 1 confirmed (2026-10-22).** A defect raised after close-out is tagged `warranty` (one flag on `qc_defect`), with a Warranty filter on the QC dashboard. No warranty entity. Not built yet. There is no warranty entity. Defects and rework (`qc`) are tied to items and a stage; a post-handover fault is a defect with no stage and may land on a closed project (Q628).
+1. **Recommended.** No warranty entity in v1: a defect raised after close-out is tagged `warranty` (one flag on `qc_defect`), shown in a "Warranty" filter on the QC dashboard.
+2. A warranty period (end date) on the project, with defects inside it flagged automatically.
+3. Not in v1.
+
+### Q631 — How does handover make Areas and Rooms, when quote lines have none? *(new — raised by the Q626 answer)*
+**Option 2 confirmed (2026-10-22).** Add optional area and room text to each quote line (`estimate_line`, which has neither, `0021`); Convert turns the distinct values into Areas and Rooms and places each item; lines with none go to the Q625 default. This grows the estimating scope: a migration, the quote editor and the quote PDF. Not built yet.
+1. Default area/room only; the PM edits at review.
+2. **Chosen.** Add area/room to quote lines.
+3. The PM groups lines at the review screen; nothing stored on the quote.
+
+### Q632 — Where do assumptions and exclusions live? *(new — raised by the Q626 answer)*
+**Option 1 confirmed (2026-10-22).** Two free-text fields on the revision (assumptions, exclusions, absent today: no migration through `0038` mentions either), shown on the quote PDF and copied into the project's notes at Convert. A new field changes the quote's rendered HTML, so cached PDFs re-render once (`quote_pdf_cache` keys on the HTML hash). Not built yet.
+1. **Chosen.** Add them to the quote, then copy.
+2. Copy existing notes only.
+3. Drop from v1.
+
 ---
 
 ## Housekeeping
