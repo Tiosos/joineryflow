@@ -2397,6 +2397,42 @@ Microsoft 365.
 2. Managers and admins only.
 3. Everyone with `qc:read`.
 
+### Q619 — What does the first external report contain? *(new — Plan V1 §31 names "external/daily reports" and never says what is in one)*
+**Option 2 confirmed (2026-10-22).** A fixed project progress report (project dates, items with stage strip and status, next due dates, open client-facing queries) with sections the PM ticks **and individual fields per item the PM picks**. As option 1 states, money, comments and staff names are never offered. Not built yet. The shipped renderers are all internal or supplier-facing: item cutlist / hardware / combined PDFs, the quote PDF, PO and authorisation PDFs (`printing/templates`, `estimating/pdf.py`). Nothing summarises a project for a client or builder. §31 lets the PM "choose which fields to share" and keeps internal costs, comments and staff information hideable, but names no fields.
+1. **Recommended.** A fixed **project progress report**: project name and dates, items with their stage strip and status, the next due dates, open client-facing queries; the PM ticks which sections to include. No money, comments or staff names ever.
+2. As 1, plus the PM picks individual fields per item.
+3. As 1, plus photos (defect and installation photos from Q604 / Q605).
+
+### Q620 — Snapshot, live, or both for a shared link? *(new — Q526 says "snapshot or live")*
+**Option 1 confirmed (2026-10-22).** Snapshot only: the report is generated, stored as a PDF, and the link serves that file. Live mode is not built. Narrows Q526. A live link shows whatever the project is now to someone with no account, so a later edit (a status, a due date, a removed section) reaches them unreviewed. The only route today that answers without a login is `/public/stats` (counts only); a live report link would be the first unauthenticated route that returns project data.
+1. **Recommended.** Snapshot only in v1: the PM generates a report, it is stored as a PDF, and the link serves that file. Live mode waits for a reason.
+2. Snapshot and live, as Q526 reads.
+3. Live only.
+
+### Q621 — Which link controls does v1 build? *(new — Q526 = 1 lists five)*
+**Option 1 confirmed (2026-10-22).** Hashed unguessable token, 14-day default expiry, revoke, view count with last-viewed time; no password, no per-visit log. Narrows Q526. Not built yet. Q526 confirmed unique link, password, expiry, revoke, view history. With no email in v1 (Q614) the PM copies the link into their own mail. Each control is real work: a password needs a hashing and lockout story for an unauthenticated route, and view history stores visitors' details.
+1. **Recommended.** Unique unguessable link (token stored hashed, like sessions), expiry (default 14 days), revoke, and a view count with last-viewed time; no password, no per-visit log. Narrows Q526.
+2. All five as specified (password and a per-view history).
+3. Link and expiry only.
+
+### Q622 — Are templates configurable, and by whom? *(new — Plan V1 §31: "IT can create external report master templates")*
+**Option 1 confirmed (2026-10-22).** Templates stay in code; the PM chooses sections and fields only. No template editor or versions. Printed documents are HTML templates in the code tree (`printing/templates/*.html`), changed by a developer. Plan V1 wants IT to create master templates and the PM to customise them, saved, duplicated, edited and retired, with old versions restorable.
+1. **Recommended.** Templates stay in code in v1; the PM chooses sections (Q619) and nothing else. No template editor or versions.
+2. A template record per workspace (title, sections on/off, header text, logo) that IT edits; versions later.
+3. Full template management as written (duplicate, retire, restore as new version).
+
+### Q623 — Scheduled management reports: in v1? *(new — Plan V1 §31; no scheduler exists)*
+**Option 1 confirmed (2026-10-22).** No scheduled reports in v1; reports are generated on demand. Plan V1 wants scheduled department and management reports, test sends, pause/resume, backfill, No Activity notices and delivery status. The stack has no job scheduler (only the search worker runs in the background) and no email transport (Q614), so "delivery" could only mean an in-app entry or a stored file.
+1. **Recommended.** Not in v1. Reports are generated on demand by a person.
+2. A saved report that a person re-runs with one click, stored in a "Reports" list in the app; no schedule.
+3. A real scheduler with in-app delivery and stored snapshots.
+
+### Q624 — Is every generated report stored as a snapshot? *(new — Plan V1 §31: "Every generated report is stored as a historical snapshot")*
+**Option 1 confirmed (2026-10-22).** Only the external progress report is stored: PDF in `file_blob` plus a `report_run` row (project, sections and fields, who and when, link, expiry, revoked). Internal PDFs render on demand. Not built yet. `file_blob` is deduped and never deleted, so storing is cheap. Today only the quote PDF is cached, keyed on the SHA-256 of the rendered HTML (`quote_pdf_cache`), and nothing records who generated what, from which filters, when.
+1. **Recommended.** Store the external progress report only (Q619): PDF in `file_blob` plus a `report_run` row (project, sections, generated by and at, link, expiry, revoked). Internal PDFs keep rendering on demand.
+2. Store every generated PDF of any kind.
+3. Store nothing; the link serves a regeneration.
+
 ---
 
 ## Housekeeping
