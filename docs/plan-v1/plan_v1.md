@@ -955,6 +955,8 @@ Secure sharing may include unique link, password, expiry, revoke, access trackin
 
 > **Decided — Q526 = Option 1 (2026-09-18).** Secure external links are built as specified: unique link, password, expiry, revoke, view history, and snapshot or live. See `OPEN-QUESTIONS.md` Q526.
 
+> **Later change — Q620 and Q621 (2026-10-22), narrowing Q526.** v1 shares a **snapshot** only (a stored PDF), with a hashed link, 14-day expiry, revoke and a view count; no password, no per-visit history, no live mode. Scheduled reports (Q623) and editable templates (Q622) are not in v1. See `OPEN-QUESTIONS.md` Q619–Q624.
+
 Management scheduled reports may combine dashboards. Department scheduled reports remain department-focused.
 
 Management can configure layout, filters, grouping, dates, projects, departments, outputs and recipients.
