@@ -2508,6 +2508,33 @@ Microsoft 365.
 2. Each manager/admin picks their own set.
 3. Fixed set, no choice in v1.
 
+### Q639 — Is it time to revisit the template and governance deferral (Q528)? *(new — Q528 = 2 said "after the joinery workflow is complete")*
+**Option 1 confirmed (2026-10-22).** Keep deferring §7–§8 and §35–§38; re-ask after the Q587–Q638 decisions are built. Q528 stands. Q528 deferred §7–§8 and §35–§38 (templates, versions, validation, simulation, issue register, initiatives, escalation) until the joinery workflow is complete, and Q529 / Q530 / Q531 deferred with it. Since then Convert-to-Project, Tasks, Locks, QC and the Orderbook shipped, and the 2026-10-22 round decided much of the rest of the workflow (Q587–Q638). Nothing has been built toward templates: no template entity exists, and Convert hard-codes the 10-stage list (`STAGE_KEYS`) and Area/Room defaults (Q625).
+1. **Recommended.** Keep the deferral, and re-ask after the Q587–Q638 decisions are built. Record that the only template-like input in v1 is the default Area/Room from Q625.
+2. Start a small slice now: a per-project-type default set (stages to skip, default Areas/Rooms), no versions, no inheritance.
+3. Drop §7–§8 and §35–§38 from the plan (Q528 option 3), and use an external tracker for the issue register (Q531).
+
+### Q640 — What happens to SharePoint while its inputs are missing? *(new — Q535 chose it as next; Q480 / Q484 / Q547 are unanswered)*
+**Option 1 confirmed (2026-10-22).** SharePoint waits for Q480 / Q484 / Q547; meanwhile each project gets one plain "Project folder" URL field on the project page and Tracking Info. Not built yet. Q535 picked Microsoft 365 / SharePoint, and Q481 / Q482 / Q483 settled how it would behave (app-only auth, poll, stale cache). The tenant, site and library (Q480), the drawings folder name (Q484) and the drawing filename rule (Q547) have never been supplied, and a grep of `apps/api/app` and the migrations finds no SharePoint code at all. Nothing can be built or tested without them.
+1. **Recommended.** Wait; meanwhile give each project one plain "Project folder" link (a URL field shown on the project page and Tracking Info) so the folder is one click away without an integration.
+2. Wait with nothing interim.
+3. Build against a stub (configurable base URL, fake listing) and wire the real tenant later.
+
+### Q641 — Accounting (Xero / MYOB): any link in v1? *(new — Plan V1 §33 and Q493)*
+**Option 1 confirmed (2026-10-22).** No accounting link in v1; invoices stay on the PO and its Excel export. Costs come from received orders and labour rates (Q493 option 1); PO invoices exist in the Invoice Details table (`po_invoice`) and the PO has PDF and Excel export. Payroll (TGPAY) is not integrated (Q571). Nothing leaves the system for an accounting package.
+1. **Recommended.** None in v1; invoices stay readable on the PO and in its Excel export.
+2. A CSV export of invoices (supplier, PO, ex GST, GST, inc, dates) in the shape the accounts person asks for.
+3. A live Xero or MYOB connection.
+
+### Q642 — Which Excel imports and exports become product features? *(new — they are command-line only today)*
+**Confirmed (2026-10-22), after a clarifying answer:** build an import screen for the Tracking grid and one for the Orders grid (dry run, then commit, as the command-line importers do) and an Excel export of the Tracking and Orders lists; the command-line importers stay for developers. Not built yet. Real importers exist (`tracking_grid`, `orders_grid`, `catalog_from_orders`), but they run as `python -m app.importers…` by a developer; the screens import CSV only (catalog bulk import, Cabinet Vision paste) and export Excel only for a PO. Plan V1 §33 lists Excel. Pick what a user should get in the app.
+
+### Q643 — Does anything outside the app call the API? *(new — Plan V1 §33: "modular/API-friendly")*
+**Option 1 confirmed (2026-10-22).** Nothing outside the app calls the API in v1; add tokens when a first outside system is named. Auth is the httpOnly session cookie only and the browser never calls FastAPI directly (§6); no API token, key or webhook exists, and Q602 deferred a native client, so there is no consumer. Supplier systems, CNC and CRM would need one.
+1. **Recommended.** Not in v1; add it when a first outside system is named.
+2. Read-only API tokens per user (hashed, revocable, audited), scoped to existing `read` grants.
+3. Tokens plus outbound webhooks for a few events (order approved, project closed).
+
 ---
 
 ## Housekeeping
