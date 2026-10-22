@@ -607,6 +607,8 @@ Offline sync is automatic with conflict detection and authorised conflict resolu
 
 > **Decided — Q532 = Option 3 (2026-09-18).** Mobile is a native app for site use, rather than responsive web only or a PWA. See `OPEN-QUESTIONS.md` Q532.
 
+> **Later change — Q602 = Option 1 (2026-10-22), departs from Q532.** Site use ships as responsive web first, installable later; native waits for a capability that needs it (push, background upload). See `OPEN-QUESTIONS.md` Q602.
+
 > **Decided — Q533 = Option 2 (2026-09-18).** Offline is nice to have: build online-first and queue writes later if it proves painful. See `OPEN-QUESTIONS.md` Q533.
 
 ---
@@ -799,6 +801,8 @@ Track supplier quote validity. Expired project-specific pricing must be explicit
 Price-source evidence is mandatory only above configurable thresholds. Multiple supplier quotes are not mandatory.
 
 Purchase Requisition is optional, requires no approval, belongs to one Project, can include multiple Joinery Items and can create multiple POs.
+
+> **Decided — Q601 = Option 1 (2026-10-22), a deliberate departure from this paragraph.** There is no requisition entity: a `Pending` order is the request, and a purchase officer, manager or admin decides it (`0056`). See `OPEN-QUESTIONS.md` Q601.
 
 Shared/bulk POs may be used for selected materials across projects/items/general stock. Allocations may be changed after order with full audit.
 

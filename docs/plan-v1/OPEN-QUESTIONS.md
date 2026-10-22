@@ -2218,52 +2218,151 @@ Microsoft 365.
 > the option I would pick.
 
 ### Q587 — Which supplier statuses? *(new — two sources disagree)*
-**Open.** Plan V1 §21 says **Approved / Conditional / Trial / Suspended / Blocked**. The shipped `vendors.status` CHECK (`0002`), `suppliers/schemas.py` and `SUPPLIER_STATUSES` in `apps/web/lib/orders-types.ts` say **Active / Inactive / Under Review / Blacklisted**. Q506 and Q556 chose the table but never the list, and the two lists do not map one to one (Under Review has no Plan V1 twin; Trial and Conditional have no shipped twin).
+**Option 1 confirmed (2026-10-22).** Keep the shipped four statuses; the Plan V1 five wait for supplier performance (§21). Plan V1 §21 says **Approved / Conditional / Trial / Suspended / Blocked**. The shipped `vendors.status` CHECK (`0002`), `suppliers/schemas.py` and `SUPPLIER_STATUSES` in `apps/web/lib/orders-types.ts` say **Active / Inactive / Under Review / Blacklisted**. Q506 and Q556 chose the table but never the list, and the two lists do not map one to one (Under Review has no Plan V1 twin; Trial and Conditional have no shipped twin).
 1. **Recommended.** Keep the shipped four for now, decide the Plan V1 list when supplier performance is built (§21 pairs the statuses with comparison and performance, which are absent).
 2. Migrate to the Plan V1 five. Needs a mapping the customer must confirm (`Active→Approved`, `Inactive→Suspended`, `Blacklisted→Blocked`, `Under Review→Conditional`?), with existing rows preserved (Q435).
 3. Keep both: a status (shipped) plus an approval level (Plan V1).
 
 ### Q588 — Does a Blocked / Blacklisted supplier stop ordering? *(new — Plan V1 §21: "Blocked prevents normal ordering unless authorised override with audit")*
-**Open.** Nothing reads `vendors.status` when an order is created, edited or put on a PO: `Blacklisted` is a label only (grep of `apps/api/app` finds it in the schema literal and nothing else). Generate Orders from a won quote and PO documents also pick suppliers without looking at it.
+**Option 1 confirmed (2026-10-22).** A Blacklisted supplier cannot take a new or moved order (`409 SUPPLIER_BLOCKED`); `orderbook:approve` holders override with a reason in `audit_log`. Not built yet. Nothing reads `vendors.status` when an order is created, edited or put on a PO: `Blacklisted` is a label only (grep of `apps/api/app` finds it in the schema literal and nothing else). Generate Orders from a won quote and PO documents also pick suppliers without looking at it.
 1. **Recommended.** Block adding or moving an order to a Blacklisted supplier (`409 SUPPLIER_BLOCKED`), overridable by `orderbook:approve` holders with a reason kept in `audit_log`. Existing orders stay as they are.
 2. Warn only (a banner on the order), never refuse. Matches the "information, not control" stance of the budget.
 3. Leave it a label.
 
 ### Q589 — What is a Production Pack, and is it stored? *(new — Q494 presupposes it, nothing defines it)*
-**Open.** Plan V1 §24 wants a controlled, versioned pack, one current, older ones superseded and hidden from Production. Today `GET /items/{id}/combined.pdf` (`printing/routes.py`) renders from live data on every call, so "which revision is Production building from" cannot be answered, and Q494 decided how variations affect a pack that does not exist.
+**Option 1 confirmed (2026-10-22).** A drafter's Release stores the combined PDF (`file_blob`) with a release number; the latest is current, earlier ones superseded; advisory. Not built yet. Plan V1 §24 wants a controlled, versioned pack, one current, older ones superseded and hidden from Production. Today `GET /items/{id}/combined.pdf` (`printing/routes.py`) renders from live data on every call, so "which revision is Production building from" cannot be answered, and Q494 decided how variations affect a pack that does not exist.
 1. **Recommended.** A drafter's explicit **Release** stores the rendered combined PDF (via `file_blob`) with a release number, who and when; the latest is current, earlier ones are marked superseded. A later edit does not change a released pack; releasing again makes the next one. Nothing blocks work in between (advisory, like Q499).
 2. Stamp the item with a release number and timestamp only, keeping no files; Production prints live.
 3. Not in v1.
 
 ### Q590 — Can a worker Block or put a Shop Floor assignment On Hold? *(new — Plan V1 §25)*
-**Open.** `work_assignment.status` (`0020`) is `assigned / in_progress / done / cancelled`; Plan V1 §25 wants workers to Start, Complete, **Block** or place **On Hold**. A `Blocked` stage is also named by Q364–Q378 (conflict resolution), which is not built either.
+**Option 1 confirmed (2026-10-22).** Add `blocked` (reason required) with chips on Shop Floor and Tracking; no On Hold. Not built yet. `work_assignment.status` (`0020`) is `assigned / in_progress / done / cancelled`; Plan V1 §25 wants workers to Start, Complete, **Block** or place **On Hold**. A `Blocked` stage is also named by Q364–Q378 (conflict resolution), which is not built either.
 1. **Recommended.** Add `blocked` with a required reason and a "Blocked" chip on the Shop Floor card and in Tracking; unblocking returns it to `in_progress`. No On Hold in v1 (a cancel and reassign does the same job).
 2. Both Block and On Hold, as Plan V1 words it.
 3. Not in v1.
 
 ### Q591 — What do "Overdue", "At Risk" and "Delayed" mean, and who computes them? *(new — Plan V1 §25 delay engine vs shipped Tracking)*
-**Open.** `ALIGNMENT.md` says nothing evaluates `due_date`; yet `TrackingMetrics.tsx` already counts an item **Overdue** in the browser (`s.due_date < today`, any stage), and the Orderbook and dashboard have their own Overdue (`procurement_v1/queue`). Three definitions already exist, none shared, and At Risk / Delayed have none.
+**Option 1 confirmed (2026-10-22).** One server-side definition per stage (Overdue, At Risk within N days, Delayed); N a workspace setting; no notifications yet. Not built yet. `ALIGNMENT.md` says nothing evaluates `due_date`; yet `TrackingMetrics.tsx` already counts an item **Overdue** in the browser (`s.due_date < today`, any stage), and the Orderbook and dashboard have their own Overdue (`procurement_v1/queue`). Three definitions already exist, none shared, and At Risk / Delayed have none.
 1. **Recommended.** One server-side definition, per stage on `item_stages`: Overdue = past `due_date` and not done; At Risk = due within N days with an earlier stage not done (N a workspace setting); Delayed = done later than due. Tracking, the dashboard and any later notification read it. No notifications yet.
 2. Keep Overdue as the only state; drop At Risk and Delayed from v1.
 3. Full engine with notification and escalation (Q520/Q521 channels).
 
 ### Q592 — Can a manager correct a completion date? *(new — Plan V1 §25: "authorised managers can correct it while preserving the original and reason")*
-**Open.** Shop Floor completion is stamped automatically; the only way to change it is undo (a worker within 5 minutes, a supervisor any time), which erases the stamp. `item_stages.done_date` is also written by the importer and by the fan-out, so a corrected value and an imported one look alike.
+**Option 1 confirmed (2026-10-22).** Manager/admin edits a stage's `done_date` with a required reason; original and reason go to `audit_log` and `item_edit_log`; Tracking shows a "corrected" mark. Not built yet. Shop Floor completion is stamped automatically; the only way to change it is undo (a worker within 5 minutes, a supervisor any time), which erases the stamp. `item_stages.done_date` is also written by the importer and by the fan-out, so a corrected value and an imported one look alike.
 1. **Recommended.** Manager/admin `PATCH` of a stage's `done_date` with a required reason; the original and the reason go to `audit_log` and `item_edit_log`; the Tracking cell shows a small "corrected" mark.
 2. Allow only on imported stages.
 3. Not in v1; undo and complete again.
 
 ### Q593 — Does the catalog keep a price history? *(new — Plan V1 §21 "price history")*
-**Open.** A catalog row holds one `unit_cost`, overwritten by PATCH (audited, not queryable). Purchase history (what was paid, from the Orderbook, 2026-10-22) answers "what did we pay"; it does not answer "what was the list price in March", and it is empty for a SKU never ordered.
+**Option 1 confirmed (2026-10-22).** Purchase history is the v1 answer; price history and quote validity are not built. A catalog row holds one `unit_cost`, overwritten by PATCH (audited, not queryable). Purchase history (what was paid, from the Orderbook, 2026-10-22) answers "what did we pay"; it does not answer "what was the list price in March", and it is empty for a SKU never ordered.
 1. **Recommended.** Treat purchase history as the v1 answer; mark price history and quote validity as not built.
 2. A `catalog_price_history` row written on every `unit_cost` change (all nine tables), shown beside purchase history.
 3. As 2, plus a validity date per price (quote validity, §21).
 
 ### Q594 — Is there a Financial Close at all, given the close-out is advisory? *(new — Plan V1 §16 and §28 vs the 2026-10-22 decision)*
-**Open.** Plan V1 wants a mandatory Financial Close Snapshot and Final QC, Handover and Financial Close before Complete. On 2026-10-22 close-out was decided **advisory** (`POST /projects/{id}/close-out` lists open items and asks for a reason; nothing blocks). Those two sit badly together: a mandatory snapshot is a block.
+**Option 1 confirmed (2026-10-22).** Close-out takes a snapshot of the project figures that exist and never refuses. Not built yet. Plan V1 wants a mandatory Financial Close Snapshot and Final QC, Handover and Financial Close before Complete. On 2026-10-22 close-out was decided **advisory** (`POST /projects/{id}/close-out` lists open items and asks for a reason; nothing blocks). Those two sit badly together: a mandatory snapshot is a block.
 1. **Recommended.** Close-out takes a snapshot of the project figures that exist (contract value, actual cost, budget) and stores it with the close row; it never refuses. Named manual snapshots and comparison wait.
 2. No snapshot; the audit row is the record.
 3. Make the snapshot mandatory (a block), overriding the 2026-10-22 decision.
+
+### Q595 — Who reserves stock, and against what? *(new — Q501 and Q544 decided "an explicit action"; none exists)*
+**Option 1 confirmed (2026-10-22).** A `stock_reservation` (project, optional item) made from an approved Material Take or Summary line; `qty_reserved` is the sum; over-reserving is a 409; boards only. Not built yet. `0029` ported `board_inventory.qty_reserved` (CHECK `<= qty_on_hand`), but its own comment says "nothing writes it yet", and a grep of `apps/api/app` and `apps/web` finds no reader or writer: the column is not even in the API schemas. Plan V1 §18 wants stock reserved to a Project or Joinery Item, with a manager override that flags affected work At Risk. (`0029` also cites "Q541's explicit reservation action"; Q541 is the number-space question, so the intended reference is Q501. Worth correcting in the migration note.)
+1. **Recommended.** A reservation row (`stock_reservation`: inventory row, project, optional item, qty, who, when) made by an explicit button on an approved Material Take or Material Summary line; `qty_reserved` becomes the sum; over-reserving is a 409 (like allocations). Boards only, as stock is.
+2. Reserve against the project only, no item.
+3. Not in v1; keep the column unused.
+
+### Q596 — Does receiving an order add stock? *(new — stock and orders are not connected)*
+**Option 1 confirmed (2026-10-22).** Stock stays manual; delivery posts nothing. Show open and delivered order quantities beside the count on the Stock panel. Not built yet. `board_inventory` is edited by hand on the Catalog Stock panel. Delivering an order never touches it (grep: no write outside `cut_floor/inventory_queries.py`). The order's `stock_tracked` flag only feeds the pop-up's Stock tab (orders of one product code). Stock also exists for board sheets only: hardware, edging, glass and the other six tables have no quantity on hand at all, though Plan V1 §18 says depth varies "by material/project".
+1. **Recommended.** Keep stock manual in v1 (a count a person sets and audits); show the open and delivered order quantities beside it on the Stock panel so the gap is visible. Nothing posts automatically.
+2. Marking a `stock_tracked` board order Delivered adds its sheets to `board_inventory` (size from the catalog row), with a reverse on cancel/reopen.
+3. As 2, plus a stock table for the other catalog types.
+
+### Q597 — Does using material take stock off? *(new — consumption is nobody's job)*
+**Option 1 confirmed (2026-10-22).** Marking a cut schedule `done` offers a "take these sheets off stock" step, one audited adjustment per size. Not built yet. Q501 kept `/optimise` pure. Nothing else decrements either: finishing a `cut_schedule` leaves `qty_on_hand` unchanged, so after a sheet is cut the Stock panel and the next nest's stock read are wrong until someone edits the count.
+1. **Recommended.** Marking a cut schedule `done` offers (not forces) a "take these sheets off stock" step, using the sheets the plan used, one audited adjustment per size.
+2. Fully automatic on `done`.
+3. Never: stock is counted by hand at stocktake (Q598).
+
+### Q598 — Locations, transfers and stocktake *(new — Plan V1 §18)*
+**Option 1 confirmed (2026-10-22).** Keep today's single free-text location; no stock_location entity, transfers or stocktake sessions. Adjustments stay audited (`board_inventory.upsert`). `board_inventory.location` is a free-text label on a row, unique per (material, size) only: the same sheet in two places cannot be two rows. Plan V1 wants warehouse / Production / offcut rack / site / external / supplier-held locations, direct audited transfers, stocktake and cycle counts, and a variance investigation above a threshold.
+1. **Recommended.** Not in v1 beyond today's single label. Stock adjustments are already audited (`board_inventory.upsert`); a stocktake is a person editing counts.
+2. A `stock_location` entity, one inventory row per (material, size, location), a Transfer action.
+3. Option 2 plus stocktake sessions with variance approval.
+
+### Q599 — Where does a reorder alert go? *(new — `reorder_point` / `reorder_qty` are stored and unread)*
+**Option 1 confirmed (2026-10-22).** Show `reorder_point` / `reorder_qty` on the Stock panel and a derived "below reorder point" list in the bell for purchase officers (like `orders_waiting`); no email, no auto-order. Not built yet. Both columns came from the legacy table (`0029`) and neither the API nor the UI shows or evaluates them. Plan V1 §18 wants minimum stock and reorder alerts. `GET /notifications` already carries derived, no-read-state lists (`orders_waiting`, `tasks_open`), which is the pattern a "below reorder point" list could follow.
+1. **Recommended.** Expose both columns on the Stock panel and show "below reorder point" as a derived list in the bell for purchase officers (like `orders_waiting`); no email, no auto-order.
+2. Show on the panel only; no alert.
+3. Drop the columns unused.
+
+### Q600 — Material substitution: what is it, and who decides? *(new — Plan V1 §18, nothing built)*
+**Option 2 confirmed (2026-10-22).** Substitution is an audited edit of the take line; no request record, no impact tick-list. A deliberate narrowing of Plan V1 §18 (approval by the drafter is whoever may edit the take). Plan V1: Procurement proposes a substitute; the Designer/Draftsperson approves design-related ones, with impact (cost, design, drawings, hardware, Production, CNC, QC, Installation, client approval). No entity, route or screen mentions substitution (grep of the API and web is empty). Related edges already exist: a take line and a part name a catalog material, `cv_material_mapping` maps codes, and an approved take is immutable (new version = n+1).
+1. **Recommended.** A small `material_substitution` request (old material, new material, scope: item / project, reason, impact tick-list, proposer, decider); approving it does not rewrite anything, it **opens a new take version** for the affected items with the new material, which the normal take flow then approves. Decider: drafter, manager or admin.
+2. Substitution is just editing the take line (audited); no request record.
+3. Not in v1.
+
+### Q601 — Is a Pending order already the requisition? *(new — Plan V1 §21 vs Q585 as built)*
+**Option 1 confirmed (2026-10-22).** A Pending order is the request; no requisition entity. A deliberate departure from Plan V1 §21 (see the note there). Plan V1: a Purchase Requisition is optional, needs no approval, belongs to one project, may cover several items and may create several POs. As built, a Material Summary line raises a **Pending** order directly (Q585, 2026-10-22), a purchase officer / manager / admin then Approves or Rejects it by hand (`0056`), and POs group approved orders of one supplier (`0059`). That already has a "request" step, but it is per order, with a decision; the requisition in Plan V1 has none.
+1. **Recommended.** No separate requisition entity: a Pending order is the request. Mark the departure in `plan_v1.md` §21, as with Q499.
+2. A `requisition` header grouping several Pending orders of one project (a list a PM submits at once), with no decision step.
+3. Full Plan V1 requisition, creating orders on submit.
+
+### Q602 — Is the site app still native, given how the system is built? *(new — Q532 vs the code)*
+**Option 1 confirmed (2026-10-22).** Site use ships as responsive web first, installable later; native waits for a capability that needs it. A departure from Q532 (see the note in `plan_v1.md` §14). Q532 = 3 decided "a native app for site use". Nothing in the tree supports one: auth is an httpOnly `jf_session` cookie only (no bearer token in `apps/api/app/auth`), the browser never calls FastAPI directly (everything goes through the Next.js proxy, §6), and Packing's scan step, the one site-facing feature built, runs in the browser with `jsQR`. `ALIGNMENT.md` already records Packing as "no native app (Q532)".
+1. **Recommended.** Site use ships as responsive web first (installable later); revisit native when a concrete capability needs it (push, background upload). Departure from Q532, recorded in `plan_v1.md` §14.
+2. Keep native: add token auth and expose the API to the app (a new surface, its own security review).
+3. Responsive web plus an installable PWA now.
+
+### Q603 — Which site capture comes first? *(new — Plan V1 §14 lists nine)*
+**All four confirmed (2026-10-22), built in this order:** defect photos (Q604), installation progress (Q605), measurements and notes, then signatures and drawing markup. Not built yet. Plan V1 §14: photos, measurements, drawing markup, defects, scanning, task/status updates, notes, installation progress, signatures. Built: Packing scan, task status, comments. Not built: the rest. Pick the first slice.
+
+### Q604 — Do QC defects carry photos? *(new — `qc` has no file link)*
+**Option 1 confirmed (2026-10-22).** Several photos per defect through `file_blob` (a `qc_defect_photo` table), added when raising or later, read-only once resolved. Not built yet. `qc_defect` has no attachment or photo column (the `qc` package never mentions `file_blob`), though `file_blob` already accepts PNG/JPEG and defects are the first thing a site worker would photograph.
+1. **Recommended.** Up to a few photos per defect through `file_blob` (a `qc_defect_photo` table), added when raising or later; read-only once the defect is resolved.
+2. One photo per defect.
+3. No photos; notes only.
+
+### Q605 — Who records installation, and how is it confirmed? *(new — Plan V1 §14 and §27, Q413–Q415)*
+**Custom answer (2026-10-22).** A phone-friendly Install list per project (items delivered, not installed); marking an item installed records the installer's name and allows installation photos. **No signature** in v1. What "installer name" means (staff member or typed text) is asked as Q607. Not built yet. Installation is per Joinery Item (Q413) and the Site Installation Manager records completion (Q415). Today `INST` is set only through `PATCH /items/{id}/lifecycle/{stage_key}` from the desktop item editor; Shop Floor cannot hold `INST` (Q561). Plan V1 §14 adds client sign-off by signature.
+1. **Recommended.** A phone-friendly "Install" list per project (items delivered, not installed) with one tap to mark installed and an optional photo; no signature in v1.
+2. As 1, plus a drawn signature stored with the item's install record.
+3. Keep it on the item editor.
+
+### Q606 — Which screens must work on a tablet or phone? *(new — Plan V1 §14; `REFINEMENT_BACKLOG.md` §8)*
+**Confirmed (2026-10-22).** First: the new Install list and item view, QC defects, and the Shop Floor kiosk (checked against the same pass). Tracking is not in the first pass. Not built yet. 33 files use responsive classes, but no screen is declared mobile-ready; the backlog still lists the pass as open. Pick the screens that must work first.
+
+### Q607 — What is the "installer name"? *(new — raised by the Q605 answer)*
+**Option 1 confirmed (2026-10-22).** It defaults to the signed-in user and can be edited to free text for a subcontractor; both the user and the typed name are kept. Not built yet.
+1. **Recommended.** Logged-in user, editable text.
+2. A workspace user only.
+3. Free text only.
+
+### Q608 — Does a variation have an approval status? *(new — Plan V1 §17 vs `project_contract_variation`)*
+**Option 1 confirmed (2026-10-22).** `Draft` / `Approved` / `Rejected`; only `Approved` counts toward `current_value`; manager or admin decides, rejection needs a note; existing rows become `Approved`. Not built yet. A variation is `description` + `amount_delta` + who/when (`0038`). `POST /projects/{pid}/contract/variations` needs only `tracking:write` and counts toward `current_value` the moment it is saved; there is no Potential, Prepared, Approved or Rejected state, so a draft figure and a signed one look the same. Plan V1 §17 wants the flow Potential Change → PM Decision → Prepared → Cost Calculated → Client/Builder Approval → Approved/Rejected → Contract Value Updated.
+1. **Recommended.** Three states: `Draft`, `Approved`, `Rejected`. Only `Approved` counts toward `current_value`; a manager or admin approves or rejects (rejection needs a note); existing rows become `Approved`.
+2. The full Plan V1 flow.
+3. Keep as is: every saved variation counts.
+
+### Q609 — Is a variation linked to Joinery Items? *(new — Plan V1 §17: "linked to Joinery Items")*
+**Option 1 confirmed (2026-10-22).** Optional many-to-many link to the project's items; none means a project-level variation. Not built yet. Q548 and ALIGNMENT note a variation has no item link. Linking would let Tracking show which items a variation touches and would be the hook Q494 says is needed for design-change releases.
+1. **Recommended.** Optional many-to-many link to the project's items (none = a project-level variation).
+2. Required: at least one item.
+3. No link in v1.
+
+### Q610 — How is a wrong variation corrected? *(new — `project_contract_variation` is append-only)*
+**Option 1 confirmed (2026-10-22).** A manager/admin `Void` with a required reason keeps the row and audit but drops it from `current_value`. Not built yet. Q491 keeps the original value and the history. There is no edit, delete or void, so a mistyped amount stays and the fix is an offsetting variation, which clutters the history and the totals.
+1. **Recommended.** A `Void` action (manager/admin, reason required) keeps the row and its audit trail but drops it from `current_value`; nothing is deleted.
+2. Offsetting variation only, as today.
+3. Edit within a short window by the creator.
+
+### Q611 — Which variation fields are in v1? *(new — Plan V1 §17 lists many)*
+**All four confirmed (2026-10-22):** number, reason and requester/date; separate cost and selling-price impact; time impact; approval history (who, when, note). Discipline impacts, drawings/revisions and related tasks are not in v1. How today's single `amount_delta` maps is asked as Q612. Not built yet. Plan V1 lists variation number, reason, requester and date, cost and selling-price impact, time impact, discipline impacts, drawings/revisions, approval history and related tasks. Shipped: description, amount, who/when. Pick the first slice.
+
+### Q612 — Which of the two figures does today's `amount_delta` become? *(new — raised by the Q611 answer)*
+**Option 1 confirmed (2026-10-22).** `amount_delta` becomes the selling-price impact unchanged; cost impact is a new nullable column, empty on old rows. Not built yet. `current_value` adds `amount_delta` to the original contract value, so every stored amount is a contract (selling) figure. Q611 adds a separate cost impact.
+1. **Recommended.** `amount_delta` becomes the selling-price impact unchanged (current value is still original + approved selling impacts); cost impact is a new nullable column, empty on old rows.
+2. Both figures required on new variations; old rows get a null cost.
+3. Rename and backfill both from `amount_delta`.
 
 ---
 
