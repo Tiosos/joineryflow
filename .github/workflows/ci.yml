@@ -142,10 +142,18 @@ jobs:
   # changed specs on a PR that only changes specs). A REQUIRED check
   # on main: renaming this job needs the branch-protection rule (and ci-docs-only.yml) updated.
   # The database is always created, migrated and seeded in this job, which a fresh runner gives us.
+  #
+  # The job runs as 2 shards (user decision 2026-10-22), each on its own runner with its own
+  # database, so shards cannot collide on shared rows. Both keep the job name `E2E (Playwright)`:
+  # the required check passes only when every run under that name does.
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -311,7 +319,7 @@ jobs:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
           PW_JSON_REPORT: playwright-pass-1.json
-        run: pnpm exec playwright test
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
 
       # The same suite again on the same database, without re-seeding: a spec that
       # consumes or changes seeded data (a notification, an estimate, a take, a
@@ -326,10 +334,11 @@ jobs:
           MODE: ${{ steps.second-pass.outputs.mode }}
           SPECS: ${{ steps.second-pass.outputs.specs }}
         run: |
+          # A shard may get none of the changed specs: that is not an error.
           if [ "$MODE" = "changed" ]; then
-            pnpm exec playwright test $SPECS
+            pnpm exec playwright test --shard=${{ matrix.shard }}/2 --pass-with-no-tests $SPECS
           else
-            pnpm exec playwright test
+            pnpm exec playwright test --shard=${{ matrix.shard }}/2
           fi
 
       # Where the time goes: the slowest tests and spec files of each pass.
@@ -342,7 +351,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-timing
+          name: playwright-timing-shard-${{ matrix.shard }}
           path: apps/web/playwright-pass-*.json
           retention-days: 14
           if-no-files-found: ignore
@@ -351,7 +360,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results
+          name: playwright-test-results-shard-${{ matrix.shard }}
           path: apps/web/test-results
           retention-days: 7
           if-no-files-found: ignore
