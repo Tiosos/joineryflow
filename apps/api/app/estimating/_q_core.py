@@ -419,7 +419,7 @@ def patch_revision(
     db: Session, *, revision_id: int, workspace_id: int,
     actor_id: int, fields: dict[str, Any],
 ) -> dict | None:
-    cur = get_revision(
+    cur = lock_revision_for_update(
         db, revision_id=revision_id, workspace_id=workspace_id
     )
     if cur is None:
