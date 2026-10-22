@@ -2210,6 +2210,63 @@ Microsoft 365.
 
 ---
 
+## §Q — Raised by the 2026-10-22 features and design check *(Plan V1 §18, §21, §24–§25, §28)*
+
+> Found by reading the shipped code against Plan V1 and `ALIGNMENT.md` after the
+> Orderbook, Material Summary and Catalog rounds. None is answered yet; per Rule
+> Zero nothing below has been built or assumed. Each cites the evidence and names
+> the option I would pick.
+
+### Q587 — Which supplier statuses? *(new — two sources disagree)*
+**Open.** Plan V1 §21 says **Approved / Conditional / Trial / Suspended / Blocked**. The shipped `vendors.status` CHECK (`0002`), `suppliers/schemas.py` and `SUPPLIER_STATUSES` in `apps/web/lib/orders-types.ts` say **Active / Inactive / Under Review / Blacklisted**. Q506 and Q556 chose the table but never the list, and the two lists do not map one to one (Under Review has no Plan V1 twin; Trial and Conditional have no shipped twin).
+1. **Recommended.** Keep the shipped four for now, decide the Plan V1 list when supplier performance is built (§21 pairs the statuses with comparison and performance, which are absent).
+2. Migrate to the Plan V1 five. Needs a mapping the customer must confirm (`Active→Approved`, `Inactive→Suspended`, `Blacklisted→Blocked`, `Under Review→Conditional`?), with existing rows preserved (Q435).
+3. Keep both: a status (shipped) plus an approval level (Plan V1).
+
+### Q588 — Does a Blocked / Blacklisted supplier stop ordering? *(new — Plan V1 §21: "Blocked prevents normal ordering unless authorised override with audit")*
+**Open.** Nothing reads `vendors.status` when an order is created, edited or put on a PO: `Blacklisted` is a label only (grep of `apps/api/app` finds it in the schema literal and nothing else). Generate Orders from a won quote and PO documents also pick suppliers without looking at it.
+1. **Recommended.** Block adding or moving an order to a Blacklisted supplier (`409 SUPPLIER_BLOCKED`), overridable by `orderbook:approve` holders with a reason kept in `audit_log`. Existing orders stay as they are.
+2. Warn only (a banner on the order), never refuse. Matches the "information, not control" stance of the budget.
+3. Leave it a label.
+
+### Q589 — What is a Production Pack, and is it stored? *(new — Q494 presupposes it, nothing defines it)*
+**Open.** Plan V1 §24 wants a controlled, versioned pack, one current, older ones superseded and hidden from Production. Today `GET /items/{id}/combined.pdf` (`printing/routes.py`) renders from live data on every call, so "which revision is Production building from" cannot be answered, and Q494 decided how variations affect a pack that does not exist.
+1. **Recommended.** A drafter's explicit **Release** stores the rendered combined PDF (via `file_blob`) with a release number, who and when; the latest is current, earlier ones are marked superseded. A later edit does not change a released pack; releasing again makes the next one. Nothing blocks work in between (advisory, like Q499).
+2. Stamp the item with a release number and timestamp only, keeping no files; Production prints live.
+3. Not in v1.
+
+### Q590 — Can a worker Block or put a Shop Floor assignment On Hold? *(new — Plan V1 §25)*
+**Open.** `work_assignment.status` (`0020`) is `assigned / in_progress / done / cancelled`; Plan V1 §25 wants workers to Start, Complete, **Block** or place **On Hold**. A `Blocked` stage is also named by Q364–Q378 (conflict resolution), which is not built either.
+1. **Recommended.** Add `blocked` with a required reason and a "Blocked" chip on the Shop Floor card and in Tracking; unblocking returns it to `in_progress`. No On Hold in v1 (a cancel and reassign does the same job).
+2. Both Block and On Hold, as Plan V1 words it.
+3. Not in v1.
+
+### Q591 — What do "Overdue", "At Risk" and "Delayed" mean, and who computes them? *(new — Plan V1 §25 delay engine vs shipped Tracking)*
+**Open.** `ALIGNMENT.md` says nothing evaluates `due_date`; yet `TrackingMetrics.tsx` already counts an item **Overdue** in the browser (`s.due_date < today`, any stage), and the Orderbook and dashboard have their own Overdue (`procurement_v1/queue`). Three definitions already exist, none shared, and At Risk / Delayed have none.
+1. **Recommended.** One server-side definition, per stage on `item_stages`: Overdue = past `due_date` and not done; At Risk = due within N days with an earlier stage not done (N a workspace setting); Delayed = done later than due. Tracking, the dashboard and any later notification read it. No notifications yet.
+2. Keep Overdue as the only state; drop At Risk and Delayed from v1.
+3. Full engine with notification and escalation (Q520/Q521 channels).
+
+### Q592 — Can a manager correct a completion date? *(new — Plan V1 §25: "authorised managers can correct it while preserving the original and reason")*
+**Open.** Shop Floor completion is stamped automatically; the only way to change it is undo (a worker within 5 minutes, a supervisor any time), which erases the stamp. `item_stages.done_date` is also written by the importer and by the fan-out, so a corrected value and an imported one look alike.
+1. **Recommended.** Manager/admin `PATCH` of a stage's `done_date` with a required reason; the original and the reason go to `audit_log` and `item_edit_log`; the Tracking cell shows a small "corrected" mark.
+2. Allow only on imported stages.
+3. Not in v1; undo and complete again.
+
+### Q593 — Does the catalog keep a price history? *(new — Plan V1 §21 "price history")*
+**Open.** A catalog row holds one `unit_cost`, overwritten by PATCH (audited, not queryable). Purchase history (what was paid, from the Orderbook, 2026-10-22) answers "what did we pay"; it does not answer "what was the list price in March", and it is empty for a SKU never ordered.
+1. **Recommended.** Treat purchase history as the v1 answer; mark price history and quote validity as not built.
+2. A `catalog_price_history` row written on every `unit_cost` change (all nine tables), shown beside purchase history.
+3. As 2, plus a validity date per price (quote validity, §21).
+
+### Q594 — Is there a Financial Close at all, given the close-out is advisory? *(new — Plan V1 §16 and §28 vs the 2026-10-22 decision)*
+**Open.** Plan V1 wants a mandatory Financial Close Snapshot and Final QC, Handover and Financial Close before Complete. On 2026-10-22 close-out was decided **advisory** (`POST /projects/{id}/close-out` lists open items and asks for a reason; nothing blocks). Those two sit badly together: a mandatory snapshot is a block.
+1. **Recommended.** Close-out takes a snapshot of the project figures that exist (contract value, actual cost, budget) and stores it with the close row; it never refuses. Named manual snapshots and comparison wait.
+2. No snapshot; the audit row is the record.
+3. Make the snapshot mandatory (a block), overriding the 2026-10-22 decision.
+
+---
+
 ## Housekeeping
 
 ### Q551 — What to do next
