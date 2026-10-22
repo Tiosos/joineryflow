@@ -151,3 +151,17 @@ except for the explicit restore path.
 Validation: the new interleaving test first failed with PostgreSQL
 `DeadlockDetected`, then passed after the lock-mode change. **99 focused cutlist,
 item-lock, deletion and duplication tests** passed. Ruff/whitespace checks passed.
+
+## R06 integration follow-up — Verify migration preservation and downgrade safety
+
+The migration suite now expects head `0083`. A new scratch-database regression
+verifies that a pre-existing completion stays null despite a current rate,
+that recorded rates survive a refused downgrade, and that an all-unknown
+snapshot column can round-trip safely. Migration `0083` refuses downgrade if
+any recorded rate would be lost. The rate lookup also filters deleted cutlists,
+as required by the repository's soft-deletion SQL guard.
+
+Validation: the new downgrade-safety test failed before its safeguard was added.
+All **13 migration/deleted-row-guard tests** passed afterwards; Ruff and whitespace
+checks passed. The first full run's 12 failures were the expected-head and query
+filter guards, which these follow-ups address; the final full run follows below.

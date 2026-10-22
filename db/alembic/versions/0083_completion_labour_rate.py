@@ -23,4 +23,11 @@ def upgrade():
 
 
 def downgrade():
-    op.execute("ALTER TABLE stage_completion_log DROP COLUMN hourly_rate_snapshot")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM stage_completion_log WHERE hourly_rate_snapshot IS NOT NULL) THEN
+                RAISE EXCEPTION '0083 downgrade refused: completion labour rate snapshots exist';
+            END IF;
+        END $$;
+        ALTER TABLE stage_completion_log DROP COLUMN hourly_rate_snapshot;
+    """)

@@ -752,7 +752,7 @@ def insert_completion_log(
                 (SELECT r.hourly_rate FROM cutlist c
                  JOIN projects p ON p.project_id=c.project_id
                  JOIN workspace_labour_rate r ON r.workspace_id=p.workspace_id AND r.stage_key=CAST(:sk AS varchar(16))
-                 WHERE c.cutlist_id=:cid))
+                 WHERE c.cutlist_id=:cid AND NOT c.deleted))
             RETURNING log_id
             """
         ),

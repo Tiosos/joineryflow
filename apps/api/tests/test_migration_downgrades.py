@@ -15,8 +15,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (it is "0082", comments on a task).
-HEAD = "0082"
+# The current head revision: bump it with each new migration (0083, completion rate snapshots).
+HEAD = "0083"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -316,3 +316,32 @@ def test_0082_downgrade_drops_task_threads_and_keeps_the_others_then_upgrade_res
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM information_schema.columns"
                               " WHERE table_name = 'comment' AND column_name = 'task_id'")).scalar() == 1
+
+
+def test_0083_keeps_existing_rates_unknown_and_refuses_to_drop_recorded_rates(scratch):
+    eng, alembic = scratch
+    assert alembic("downgrade", "0082").returncode == 0
+    w = _workspace(eng)
+    with eng.begin() as c:
+        uid = c.execute(text("INSERT INTO app_user(workspace_id,email,full_name,password_hash,auth_role) VALUES(:w,'rate@test','Rate','unused','admin') RETURNING id"), {"w": w}).scalar_one()
+        pid = c.execute(text("INSERT INTO projects(project_code,name,workspace_id) VALUES('RATE','Rate',:w) RETURNING project_id"), {"w": w}).scalar_one()
+        cid = c.execute(text("INSERT INTO cutlist(project_id,cutlist_no) VALUES(:p,900001) RETURNING cutlist_id"), {"p": pid}).scalar_one()
+        c.execute(text("INSERT INTO stages(stage_key,label,sort_order) VALUES('DOWN','Down',1)"))
+        c.execute(text("INSERT INTO workspace_labour_rate(workspace_id,stage_key,hourly_rate) VALUES(:w,'DOWN',999.00)"), {"w": w})
+        log = c.execute(text("INSERT INTO stage_completion_log(cutlist_id,stage_key,worker_id) VALUES(:c,'DOWN',:u) RETURNING log_id"), {"c": cid, "u": uid}).scalar_one()
+    assert alembic("upgrade", "head").returncode == 0
+    with eng.begin() as c:
+        # Existing current rates are deliberately not historical evidence.
+        assert c.execute(text("SELECT hourly_rate_snapshot FROM stage_completion_log WHERE log_id=:l"), {"l": log}).scalar_one() is None
+        c.execute(text("UPDATE stage_completion_log SET hourly_rate_snapshot=123.45 WHERE log_id=:l"), {"l": log})
+    refused = alembic("downgrade", "0082")
+    assert refused.returncode != 0
+    assert "0083 downgrade refused" in refused.stderr
+    assert _version(eng) == HEAD
+    with eng.begin() as c:
+        assert str(c.execute(text("SELECT hourly_rate_snapshot FROM stage_completion_log WHERE log_id=:l"), {"l": log}).scalar_one()) == "123.45"
+        c.execute(text("UPDATE stage_completion_log SET hourly_rate_snapshot=NULL WHERE log_id=:l"), {"l": log})
+    assert alembic("downgrade", "0082").returncode == 0
+    assert alembic("upgrade", "head").returncode == 0
+    with eng.connect() as c:
+        assert c.execute(text("SELECT hourly_rate_snapshot FROM stage_completion_log WHERE log_id=:l"), {"l": log}).scalar_one() is None
