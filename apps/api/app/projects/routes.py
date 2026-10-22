@@ -6,6 +6,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from .queries import (
     add_favourite,
+    close_out_checks,
     close_out_project,
     create_project,
     get_project,
@@ -13,7 +14,7 @@ from .queries import (
     patch_project,
     remove_favourite,
 )
-from .schemas import CloseOutOut, CreateProjectIn, PatchProjectIn, ProjectListOut, ProjectOut
+from .schemas import CloseOutChecksOut, CloseOutIn, CloseOutOut, CreateProjectIn, PatchProjectIn, ProjectListOut, ProjectOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -111,13 +112,31 @@ def patch_project_route(
     return row
 
 
-@router.post("/{pid}/close-out", response_model=CloseOutOut)
-def close_out_route(
+@router.get("/{pid}/close-out-checks", response_model=CloseOutChecksOut)
+def close_out_checks_route(
     pid: int,
     user: AuthUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Close out a project.  Admin/manager only.  409 if already closed."""
+    """What is still open before a close-out (open QC defects and rework, items not installed,
+    open orders). Admin/manager only, like the close-out itself. Advisory: never blocks it."""
+    if user.auth_role not in ("manager", "admin"):
+        raise HTTPException(status_code=403, detail="manager or admin required")
+    checks = close_out_checks(db, project_id=pid, workspace_id=user.workspace_id)
+    if checks is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return checks
+
+
+@router.post("/{pid}/close-out", response_model=CloseOutOut)
+def close_out_route(
+    pid: int,
+    payload: CloseOutIn | None = None,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Close out a project.  Admin/manager only.  409 if already closed.  `reason` (optional) is
+    why it is closed with things still open; it goes in the audit row with what was open."""
     if user.auth_role not in ("manager", "admin"):
         raise HTTPException(status_code=403, detail="manager or admin required")
 
@@ -126,6 +145,7 @@ def close_out_route(
         project_id=pid,
         workspace_id=user.workspace_id,
         actor_id=user.id,
+        reason=(payload.reason or "").strip() or None if payload else None,
     )
     if result == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="project not found")

@@ -1,6 +1,6 @@
 import type {
   HomeDashboardOut, ItemOut, TrackingGridOut, ProjectListOut,
-  ProjectOut, HardwareCatalogOut, AvailabilityOut, CloseOutOut,
+  ProjectOut, HardwareCatalogOut, AvailabilityOut, CloseOutChecksOut, CloseOutOut,
   CreateProjectIn, PatchProjectIn,
   CreateItemIn, PatchItemIn, LockTransferIn,
   PatchItemStatusIn, PatchLifecycleIn,
@@ -74,8 +74,12 @@ export const PM = {
     call<ProjectOut>(`/api/projects`, { ...jsonInit("POST", body), cache: "no-store" }),
   patchProject: (pid: number, body: PatchProjectIn) =>
     call<ProjectOut>(`/api/projects/${pid}`, { ...jsonInit("PATCH", body), cache: "no-store" }),
-  closeOutProject: (pid: number) =>
-    call<CloseOutOut>(`/api/projects/${pid}/close-out`, { method: "POST", cache: "no-store" }),
+  closeOutChecks: (pid: number) =>
+    call<CloseOutChecksOut>(`/api/projects/${pid}/close-out-checks`, { cache: "no-store" }),
+  closeOutProject: (pid: number, reason?: string) =>
+    call<CloseOutOut>(`/api/projects/${pid}/close-out`, {
+      ...jsonInit("POST", reason ? { reason } : undefined), cache: "no-store",
+    }),
 
   // ===== Favourites =====
   addFavourite: (pid: number) =>

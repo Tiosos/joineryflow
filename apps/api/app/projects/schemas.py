@@ -117,6 +117,17 @@ class ProjectListOut(BaseModel):
 
 # ── Close-out ────────────────────────────────────────────────────────────────
 
+class CloseOutIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class CloseOutChecksOut(BaseModel):
+    open_defects: int
+    open_rework: int
+    items_not_installed: int
+    open_orders: int
+
+
 class CloseOutOut(BaseModel):
     project_id: int
     closed_at: datetime

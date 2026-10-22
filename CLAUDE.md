@@ -279,7 +279,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 
 ### Tracking and item detail — `03-tracking-and-item-detail.md`
 - **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items).
-- **Item & Project Detail 2.0 (`0036`).** `/projects/[id]` page, contacts, lift access, item queries, Document Register, close-out (the only way to close; PATCH to Current/Hold reopens).
+- **Item & Project Detail 2.0 (`0036`).** `/projects/[id]` page, contacts, lift access, item queries, Document Register, close-out (the only way to close; PATCH to Current/Hold reopens; advisory checks first: `GET /projects/{id}/close-out-checks` lists open QC defects / rework, items not installed and open orders, the dialog asks for a reason kept in the audit row, nothing blocks).
 - **Tracking modal, Document Register UI.** Modal shows register, five slots and reference fields read-only; editing stays on the item editor.
 - **Duplicate item (`0050`).** Same-project copy with its own new cutlist, status reset to `CLEAR`, QC checklist unticked; links to source via `duplicated_from_item_id`. Deleting an item is a soft delete (next entry).
 - **Item soft delete + Deleted chip (`0052`).** Delete flags item, related parts and (when empty) cutlist; manager/admin restore; Tracking's Deleted chip lists them read-only with Restore; a Delete button joins the selection group and the item editor's header. Rule in §7; production history, QC and orders are untouched.
