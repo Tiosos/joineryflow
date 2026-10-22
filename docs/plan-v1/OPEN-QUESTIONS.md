@@ -2265,6 +2265,48 @@ Microsoft 365.
 2. No snapshot; the audit row is the record.
 3. Make the snapshot mandatory (a block), overriding the 2026-10-22 decision.
 
+### Q595 — Who reserves stock, and against what? *(new — Q501 and Q544 decided "an explicit action"; none exists)*
+**Open.** `0029` ported `board_inventory.qty_reserved` (CHECK `<= qty_on_hand`), but its own comment says "nothing writes it yet", and a grep of `apps/api/app` and `apps/web` finds no reader or writer: the column is not even in the API schemas. Plan V1 §18 wants stock reserved to a Project or Joinery Item, with a manager override that flags affected work At Risk. (`0029` also cites "Q541's explicit reservation action"; Q541 is the number-space question, so the intended reference is Q501. Worth correcting in the migration note.)
+1. **Recommended.** A reservation row (`stock_reservation`: inventory row, project, optional item, qty, who, when) made by an explicit button on an approved Material Take or Material Summary line; `qty_reserved` becomes the sum; over-reserving is a 409 (like allocations). Boards only, as stock is.
+2. Reserve against the project only, no item.
+3. Not in v1; keep the column unused.
+
+### Q596 — Does receiving an order add stock? *(new — stock and orders are not connected)*
+**Open.** `board_inventory` is edited by hand on the Catalog Stock panel. Delivering an order never touches it (grep: no write outside `cut_floor/inventory_queries.py`). The order's `stock_tracked` flag only feeds the pop-up's Stock tab (orders of one product code). Stock also exists for board sheets only: hardware, edging, glass and the other six tables have no quantity on hand at all, though Plan V1 §18 says depth varies "by material/project".
+1. **Recommended.** Keep stock manual in v1 (a count a person sets and audits); show the open and delivered order quantities beside it on the Stock panel so the gap is visible. Nothing posts automatically.
+2. Marking a `stock_tracked` board order Delivered adds its sheets to `board_inventory` (size from the catalog row), with a reverse on cancel/reopen.
+3. As 2, plus a stock table for the other catalog types.
+
+### Q597 — Does using material take stock off? *(new — consumption is nobody's job)*
+**Open.** Q501 kept `/optimise` pure. Nothing else decrements either: finishing a `cut_schedule` leaves `qty_on_hand` unchanged, so after a sheet is cut the Stock panel and the next nest's stock read are wrong until someone edits the count.
+1. **Recommended.** Marking a cut schedule `done` offers (not forces) a "take these sheets off stock" step, using the sheets the plan used, one audited adjustment per size.
+2. Fully automatic on `done`.
+3. Never: stock is counted by hand at stocktake (Q598).
+
+### Q598 — Locations, transfers and stocktake *(new — Plan V1 §18)*
+**Open.** `board_inventory.location` is a free-text label on a row, unique per (material, size) only: the same sheet in two places cannot be two rows. Plan V1 wants warehouse / Production / offcut rack / site / external / supplier-held locations, direct audited transfers, stocktake and cycle counts, and a variance investigation above a threshold.
+1. **Recommended.** Not in v1 beyond today's single label. Stock adjustments are already audited (`board_inventory.upsert`); a stocktake is a person editing counts.
+2. A `stock_location` entity, one inventory row per (material, size, location), a Transfer action.
+3. Option 2 plus stocktake sessions with variance approval.
+
+### Q599 — Where does a reorder alert go? *(new — `reorder_point` / `reorder_qty` are stored and unread)*
+**Open.** Both columns came from the legacy table (`0029`) and neither the API nor the UI shows or evaluates them. Plan V1 §18 wants minimum stock and reorder alerts. `GET /notifications` already carries derived, no-read-state lists (`orders_waiting`, `tasks_open`), which is the pattern a "below reorder point" list could follow.
+1. **Recommended.** Expose both columns on the Stock panel and show "below reorder point" as a derived list in the bell for purchase officers (like `orders_waiting`); no email, no auto-order.
+2. Show on the panel only; no alert.
+3. Drop the columns unused.
+
+### Q600 — Material substitution: what is it, and who decides? *(new — Plan V1 §18, nothing built)*
+**Open.** Plan V1: Procurement proposes a substitute; the Designer/Draftsperson approves design-related ones, with impact (cost, design, drawings, hardware, Production, CNC, QC, Installation, client approval). No entity, route or screen mentions substitution (grep of the API and web is empty). Related edges already exist: a take line and a part name a catalog material, `cv_material_mapping` maps codes, and an approved take is immutable (new version = n+1).
+1. **Recommended.** A small `material_substitution` request (old material, new material, scope: item / project, reason, impact tick-list, proposer, decider); approving it does not rewrite anything, it **opens a new take version** for the affected items with the new material, which the normal take flow then approves. Decider: drafter, manager or admin.
+2. Substitution is just editing the take line (audited); no request record.
+3. Not in v1.
+
+### Q601 — Is a Pending order already the requisition? *(new — Plan V1 §21 vs Q585 as built)*
+**Open.** Plan V1: a Purchase Requisition is optional, needs no approval, belongs to one project, may cover several items and may create several POs. As built, a Material Summary line raises a **Pending** order directly (Q585, 2026-10-22), a purchase officer / manager / admin then Approves or Rejects it by hand (`0056`), and POs group approved orders of one supplier (`0059`). That already has a "request" step, but it is per order, with a decision; the requisition in Plan V1 has none.
+1. **Recommended.** No separate requisition entity: a Pending order is the request. Mark the departure in `plan_v1.md` §21, as with Q499.
+2. A `requisition` header grouping several Pending orders of one project (a list a PM submits at once), with no decision step.
+3. Full Plan V1 requisition, creating orders on submit.
+
 ---
 
 ## Housekeeping
