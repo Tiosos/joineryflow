@@ -67,19 +67,21 @@ def _item_row(
     It returns `row_type` so each caller can decide — see `patch_lifecycle`
     and `claim_or_release_lock`, which refuse related parts.
 
-    `for_update=True` (§L Q511/Q512) locks the row for the rest of the
+    `for_update=True` (§L Q511/Q512) locks non-key fields for the rest of the
     caller's transaction, so a concurrent PATCH on the same item serialises
     instead of racing on the read-then-write field-version check — the same
     shape `_lock_order_for_update` / `lock_revision_for_update` already use
     elsewhere in this codebase. Only the write paths (`patch_item`,
     `decide_lock_request`'s approval) pass it; plain reads leave it False so
-    a GET never takes a row lock.
+    a GET never takes a row lock. NO KEY UPDATE keeps FK key-share locks
+    compatible (e.g. duplication) while still serializing competing mutations.
 
     A soft-deleted item answers None like a missing one; only `restore_item` passes
     `include_deleted=True`.
     """
     if lock_painting:
-        project_id = db.execute(text(f"SELECT i.project_id FROM items i WHERE i.item_id=:iid AND {_WORKSPACE_FILTER}"),
+        project_id = db.execute(text(f"SELECT i.project_id FROM items i WHERE i.item_id=:iid AND {_WORKSPACE_FILTER}"
+                                    f"{'' if include_deleted else ' AND ' + not_deleted('i')}"),
                                 {"iid": item_id, "wid": workspace_id}).scalar()
         if project_id is not None:
             lock_project(db, project_id)
@@ -125,7 +127,7 @@ def _item_row(
             WHERE i.item_id = :iid
               AND {_WORKSPACE_FILTER}
               {"" if include_deleted else "AND " + not_deleted("i")}
-            {"FOR UPDATE OF i" if for_update else ""}
+            {"FOR NO KEY UPDATE OF i" if for_update else ""}
             """
         ),
         {"iid": item_id, "wid": workspace_id},

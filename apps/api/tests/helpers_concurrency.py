@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.db import SessionLocal
 
 
-def finish_after_waiting(first, operation):
+def finish_after_waiting(first, operation, *, before_commit=None):
     started = Queue()
 
     def run():
@@ -28,6 +28,8 @@ def finish_after_waiting(first, operation):
                         break
                     assert time.monotonic() < deadline, 'worker neither blocked nor completed'
                     time.sleep(.01)
+            if before_commit is not None:
+                before_commit()
         finally:
             first.commit()
         return future.result(timeout=12)

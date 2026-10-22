@@ -138,3 +138,16 @@ Validation: both new concurrent first-import/replace regressions failed before
 the fix. All **37 CV-route tests** passed afterwards; the regression also checks
 one commit audit and preservation of the first import's module and comment.
 Ruff and whitespace checks passed. No schema/data migration.
+
+## R04 integration follow-up — Preserve foreign-key lock compatibility
+
+Integration review reproduced a deadlock between a painting edit and duplication:
+a copy holds a key-share FK lock on its source before linking its new cutlist,
+while the edit holds the painting advisory lock. Item mutation/link reads now
+use `FOR NO KEY UPDATE`, preserving edit serialization without blocking FK
+key-share locks. The painting lock's item lookup also respects soft deletion
+except for the explicit restore path.
+
+Validation: the new interleaving test first failed with PostgreSQL
+`DeadlockDetected`, then passed after the lock-mode change. **99 focused cutlist,
+item-lock, deletion and duplication tests** passed. Ruff/whitespace checks passed.

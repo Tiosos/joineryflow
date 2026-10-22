@@ -382,7 +382,7 @@ def _item_for_link(db: Session, *, item_id: int, workspace_id: int) -> dict | No
             FROM items i
             JOIN projects p ON p.project_id = i.project_id
             WHERE i.item_id = :iid AND p.workspace_id = :w AND NOT i.deleted
-            FOR UPDATE OF i
+            FOR NO KEY UPDATE OF i
             """
         ),
         {"iid": item_id, "w": workspace_id},

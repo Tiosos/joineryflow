@@ -579,3 +579,25 @@ def test_concurrent_painting_edits_do_not_create_a_cycle(ctx):
         result = finish_after_waiting(db, lambda second: patch_item(
             second, item_id=ctx["item_b"], workspace_id=wid, actor_id=ctx["uid"], payload=PatchItemIn(painting_required=True)))
         assert result["outcome"] == "PAINT_ORDER_CONFLICT"
+
+
+def test_painting_edit_does_not_deadlock_a_copy_linking_its_new_cutlist(ctx):
+    from app.cutlists import queries as cutlists
+    from app.items.queries import patch_item
+    from app.items.schemas import PatchItemIn
+    from .helpers_concurrency import finish_after_waiting
+    cid = _create(ctx)["cutlist_id"]
+    with SessionLocal() as first:
+        # Duplication inserts this source FK before linking the new cutlist.
+        # Its key-share lock must coexist with an edit of non-key source fields.
+        copy = first.execute(text("""
+            INSERT INTO items(num, project_id, description, duplicated_from_item_id)
+            VALUES(nextval('joinery_number_seq'), :p, 'Copy', :source) RETURNING item_id
+        """), {"p": ctx["pid"], "source": ctx["item_a"]}).scalar_one()
+        wid = first.execute(text("SELECT workspace_id FROM projects WHERE project_id=:p"), {"p": ctx["pid"]}).scalar_one()
+        def link_copy():
+            assert cutlists.link_item(first, cutlist_id=cid, item_id=copy, workspace_id=wid, actor_id=ctx["uid"])[0] == "OK"
+        result = finish_after_waiting(first, lambda db: patch_item(
+            db, item_id=ctx["item_a"], workspace_id=wid, actor_id=ctx["uid"], payload=PatchItemIn(painting_required=True)),
+            before_commit=link_copy)
+    assert result["outcome"] == "applied"
