@@ -606,7 +606,8 @@ export interface MetricCard {
   key: string;
   label: string;
   value: number; // int | float both map to number
-  href: string;
+  href: string | null; // null: the card is a number, not a link
+  unit?: "money" | null; // how the value is written
 }
 
 export interface MyDayItem {

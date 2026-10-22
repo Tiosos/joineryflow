@@ -26,3 +26,17 @@ for (const { label, filter } of CARDS) {
     await expect(page.locator('[data-testid^="tracking-all-row-"]')).toHaveCount(counted);
   });
 }
+
+// Q634: Value in Progress is money, so a manager sees it (as a dollar figure, not a link) and a drafter
+// does not see the card at all.
+test("Value in Progress is a dollar figure for a manager and absent for a drafter", async ({ page }) => {
+  await login(page);
+  const card = page.locator('[data-testid="metric-card"]', { hasText: "Value in Progress" });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(/\$[\d,]+\.\d\d/);
+  expect(await card.getAttribute("href")).toBeNull();
+
+  await login(page, "noa.lindqvist@hartwood.test");
+  await expect(page.locator('[data-testid="metric-card"]', { hasText: "Overdue Items" })).toBeVisible();
+  await expect(page.locator('[data-testid="metric-card"]', { hasText: "Value in Progress" })).toHaveCount(0);
+});

@@ -2485,7 +2485,7 @@ Microsoft 365.
 3. Cards stop linking; they only show numbers.
 
 ### Q634 — What does "Value in Progress" show? *(new — the card is hard-coded to 0)*
-**Option 1 confirmed (2026-10-22).** For managers and admins, the sum of `current_value` of live (`Current`) projects' contracts; the card is left out (not zero) for other roles. Not built yet. `home/queries.py` sets `value_in_progress = 0.0` ("adds `items.value`" is the comment); no `items.value` column exists, and the card shows 0 for admins, managers and drafters alike. Money is gated elsewhere (budget figures are manager/admin only).
+**Option 1 confirmed (2026-10-22).** For managers and admins, the sum of `current_value` of live (`Current`) projects' contracts; the card is left out (not zero) for other roles. **Built (2026-10-22):** a manager's figure is their own projects' (asked while building, to match their other three cards), an admin's every live project's; the card has no link (nothing lists projects by contract value) and is written as a dollar figure. `home/queries.py` sets `value_in_progress = 0.0` ("adds `items.value`" is the comment); no `items.value` column exists, and the card shows 0 for admins, managers and drafters alike. Money is gated elsewhere (budget figures are manager/admin only).
 1. **Recommended.** For managers and admins, the sum of `current_value` of live (`Current`) projects' contracts; the card is left out for other roles (not shown as zero).
 2. Remove the card.
 3. Wait for an item-level value (Q492 keeps item cost out of scope).
