@@ -144,10 +144,10 @@ jobs:
   # The database is always created, migrated and seeded in this job, which a fresh runner gives us.
   #
   # The job runs as 2 shards (user decision 2026-10-22), each on its own runner with its own
-  # database, so shards cannot collide on shared rows. Both keep the job name `E2E (Playwright)`:
-  # the required check passes only when every run under that name does.
+  # database, so shards cannot collide on shared rows. GitHub appends the matrix value to a matrix
+  # job's name, so the required name `E2E (Playwright)` belongs to the `e2e-result` job below.
   e2e:
-    name: E2E (Playwright)
+    name: E2E shard
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -370,3 +370,18 @@ jobs:
         run: |
           docker compose logs --no-color
           echo "----- web -----"; cat /tmp/web.log || true
+
+  # The required check. One job under the old name that passes only when every shard passed
+  # (also when a shard was cancelled or skipped), so branch protection is unchanged.
+  e2e-result:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: always()
+    steps:
+      - name: Every E2E shard passed
+        env:
+          RESULT: ${{ needs.e2e.result }}
+        run: |
+          echo "E2E shards: $RESULT"
+          [ "$RESULT" = "success" ]
