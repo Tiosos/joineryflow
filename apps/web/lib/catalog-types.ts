@@ -142,3 +142,24 @@ export interface ByTypeResp {
   product_type: string | null;
   groups: { type: "board" | "hardware" | "custom_made" | "benchtop" | "appliance" | "hire"; rows: CatalogRow[] }[];
 }
+
+/** `GET /catalog/{slug}/{mid}/purchase-history`: Decimal fields arrive as strings. */
+export interface PurchaseHistoryOrder {
+  po_id: number;
+  po_number: string;
+  order_number: string | null;
+  status: string;
+  currency: string | null;
+  ordered_on: string | null;
+  quantity: string | null;
+  vendor_name: string | null;
+  project_id: number | null;
+  project_name: string | null;
+  unit_price: string | null;
+}
+
+export interface PurchaseHistory {
+  orders: PurchaseHistoryOrder[];
+  latest_price: string | null;
+  average_price: string | null;
+}

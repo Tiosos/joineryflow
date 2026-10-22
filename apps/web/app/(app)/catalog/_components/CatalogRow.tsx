@@ -6,6 +6,7 @@ import { archiveRow, patchRow } from "@/lib/catalog-fetch";
 import type { CatalogRow as Row, CatalogSlug, SupplierOption } from "@/lib/catalog-types";
 
 import BoardImageCell from "./BoardImageCell";
+import PurchaseHistoryPanel from "./PurchaseHistoryPanel";
 import { BOARD_NUMBER_FIELDS, BOARD_TEXT_FIELDS } from "./boardFields";
 import { EDGING_NUMBER_FIELDS, EDGING_TEXT_FIELDS } from "./edgingFields";
 import { BENCHTOP_NUMBER_FIELDS, BENCHTOP_TEXT_FIELDS } from "./benchtopFields";
@@ -27,6 +28,8 @@ interface Props {
   /** null while loading or when the list could not be read (picker is then disabled). */
   suppliers: SupplierOption[] | null;
   onChanged: () => void;
+  /** The grid's column count: the purchase history row spans it. */
+  colCount: number;
 }
 
 const LEGACY_COL_KEY: Record<MaterialTab, keyof Row | null> = {
@@ -125,7 +128,7 @@ function SupplierLink({
   );
 }
 
-export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChanged }: Props) {
+export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChanged, colCount }: Props) {
   const { confirm } = useConfirm();
   const { defer, notify } = useUndo();
   const mid = row.material_id ?? row.hire_id;
@@ -137,6 +140,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
   const legacyKey = LEGACY_COL_KEY[tab];
   const legacyVal = legacyKey ? (row[legacyKey] as string | null | undefined) ?? "" : "—";
   const [busy, setBusy] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const save = async (patch: Record<string, unknown>) => {
     setBusy(true);
@@ -161,6 +165,7 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
   };
 
   return (
+    <>
     <tr className="border-t border-h-line">
       <td className="px-3 py-1">
         <Cell value={row.description} canWrite={canWrite}
@@ -323,7 +328,12 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
       <td className="px-3 py-1 text-xs text-h-muted">
         {row.archived_at ? "Archived" : "Active"}
       </td>
-      <td className="px-3 py-1">
+      <td className="whitespace-nowrap px-3 py-1">
+        <button type="button" data-testid="catalog-row-history" aria-expanded={historyOpen}
+                onClick={() => setHistoryOpen((o) => !o)}
+                className="mr-3 text-xs text-h-accent hover:underline">
+          History
+        </button>
         {canWrite && !row.archived_at && (
           <button type="button" data-testid="catalog-row-archive" onClick={onArchive} disabled={busy}
                   className="text-xs text-rose-700 hover:underline disabled:opacity-50">
@@ -332,5 +342,11 @@ export default function CatalogRow({ tab, slug, row, canWrite, suppliers, onChan
         )}
       </td>
     </tr>
+    {historyOpen && (
+      <tr className="bg-h-bg">
+        <td colSpan={colCount}><PurchaseHistoryPanel slug={slug} mid={mid} /></td>
+      </tr>
+    )}
+    </>
   );
 }
