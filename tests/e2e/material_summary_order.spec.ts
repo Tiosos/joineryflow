@@ -12,7 +12,7 @@ test("a summary line can raise an order for what it still needs, once", async ({
   await login(page);
   const stamp = Date.now();
   const sku = `E2E-SUM-${stamp}`;
-  const api = async (method: "get" | "post", path: string, data?: object) => {
+  const api = async (method: "get" | "post" | "patch", path: string, data?: object) => {
     const r = await page.request[method](`/api${path}`, data ? { data } : undefined);
     expect(r.status(), `${method} ${path}`).toBeLessThan(300);
     return r.status() === 204 ? null : r.json();
@@ -47,6 +47,14 @@ test("a summary line can raise an order for what it still needs, once", async ({
     const id = Number(new URL(po!, "http://x").searchParams.get("order"));
     const raised = await api("get", `/orders/${id}`);
     expect(raised).toMatchObject({ status: "Pending", product_code: sku, project_id: pid, vendor_id: supplier!.vendor_id });
+
+    // Placed with the supplier, the order counts as ordered, and the figure links to it.
+    await api("patch", `/orders/${id}`, { date_ordered: new Date().toISOString().slice(0, 10) });
+    await page.goto(`/projects/${pid}/procurement?tab=summary`);
+    await page.getByTestId("summary-ordered-link").click();
+    await expect(page.getByTestId("product-code-filter")).toContainText(sku);
+    await expect(page.getByText("1 order", { exact: true })).toBeVisible();
+    await expect(page.getByText(raised.po_number)).toBeVisible();
   } finally {
     await page.request.post(`/api/catalog/board-materials/${board.material_id}/archive`);
   }

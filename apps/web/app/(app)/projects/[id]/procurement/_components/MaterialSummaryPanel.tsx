@@ -149,7 +149,7 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm, canOrder 
           <tbody>
             {s.lines.map((l) => (
               <Fragment key={l.line_id}>
-                <SummaryRow line={l} editable={draft && canEdit} expanded={open.has(l.line_id)}
+                <SummaryRow projectId={projectId} line={l} editable={draft && canEdit} expanded={open.has(l.line_id)}
                   canOrder={canOrder && !busy} order={() => orderLine(s.summary_id, l.line_id)}
                   toggle={() => setOpen((o) => {
                     const n = new Set(o);
@@ -179,7 +179,8 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm, canOrder 
   );
 }
 
-function SummaryRow({ line, editable, canOrder, order, expanded, toggle, save }: {
+function SummaryRow({ projectId, line, editable, canOrder, order, expanded, toggle, save }: {
+  projectId: number;
   line: SummaryLine;
   editable: boolean;
   canOrder: boolean;
@@ -219,7 +220,14 @@ function SummaryRow({ line, editable, canOrder, order, expanded, toggle, save }:
         )}
       </td>
       <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-required">{line.qty_required}</td>
-      <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-ordered">{line.qty_on_order ?? "—"}</td>
+      <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-ordered">
+        {line.sku && line.qty_on_order !== null && Number(line.qty_on_order) > 0 ? (
+          <Link data-testid="summary-ordered-link" className="text-h-accent hover:underline"
+            href={`/orderbook?${new URLSearchParams({ project_id: String(projectId), product_code: line.sku, ordered: "1" })}`}>
+            {line.qty_on_order}
+          </Link>
+        ) : (line.qty_on_order ?? "—")}
+      </td>
       <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-received">{line.qty_received ?? "—"}</td>
       <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-outstanding">{line.qty_outstanding ?? "—"}</td>
       <td className="px-3 py-1.5 text-right">

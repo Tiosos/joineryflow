@@ -165,6 +165,7 @@ def test_required_ordered_received_outstanding_come_from_orderbook_orders(proj):
     _build(c, proj["pid"])
     line = _current(c, proj["pid"])["summary"]["lines"][0]
     assert (line["qty_on_order"], line["qty_received"]) == ("0", "0")      # nothing ordered yet
+    assert line["sku"] == sku                                              # what the orders are matched on
     assert line["qty_required"] == line["qty_consolidated"] == line["qty_outstanding"]
 
     a = _order(proj, f" {sku.upper()} ", 5)                        # trimmed, case-insensitive

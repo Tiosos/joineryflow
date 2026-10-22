@@ -143,7 +143,7 @@ def _order_figures(db: Session, project_id: int) -> dict[str, tuple[Decimal, Dec
 
 
 def _line_skus(db: Session, lines: list[dict]) -> dict[tuple[str, int], str]:
-    """Lower-cased catalog SKU of every material the lines point at."""
+    """Catalog SKU (trimmed) of every material the lines point at."""
     by_type: dict[str, list[int]] = {}
     for l in lines:
         if l["material_id"] is not None and l["material_type"] in _CATALOG_LOOKUP:
@@ -154,7 +154,7 @@ def _line_skus(db: Session, lines: list[dict]) -> dict[tuple[str, int], str]:
         for r in db.execute(text(f"SELECT {id_col} AS id, {sku_col} AS sku FROM {table} "
                                  f"WHERE {id_col} = ANY(:ids)"), {"ids": ids}).mappings():
             if r["sku"] and r["sku"].strip():
-                out[(mt, r["id"])] = r["sku"].strip().lower()
+                out[(mt, r["id"])] = r["sku"].strip()
     return out
 
 
@@ -189,7 +189,8 @@ def _detail(db: Session, s: dict) -> dict:
         l["nest_sheets"] = nest.get(l["material_id"]) if l["material_type"] == "BOARD" else None
         # Required is the PM's confirmed figure when set, else what the takes add up to.
         l["qty_required"] = l["qty_confirmed"] if l["qty_confirmed"] is not None else l["qty_consolidated"]
-        sku = skus.get((l["material_type"], l["material_id"]))
+        l["sku"] = skus.get((l["material_type"], l["material_id"]))
+        sku = l["sku"].lower() if l["sku"] else None
         if sku is None:      # no catalog SKU to match orders on
             l["qty_on_order"] = l["qty_received"] = l["qty_outstanding"] = l["qty_to_order"] = None
         else:

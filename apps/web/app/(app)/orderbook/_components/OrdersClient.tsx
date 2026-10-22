@@ -65,6 +65,12 @@ export function OrdersClient({ me }: { me: Me | null }) {
   // The budget report's links: one cost centre's orders (`<id>`) or those with none (`none`), not
   // counting Cancelled or Rejected, so the number the report gave is the number of rows shown.
   const costCentreFilter = params.get("cost_center") ?? "";
+  // The Material Summary's link from a line's Ordered figure: the project's placed orders for one
+  // product code (trimmed, case-insensitive), not Cancelled or Rejected, so the figure is the sum of
+  // the rows shown.
+  const productCodeFilter = (params.get("product_code") ?? "").trim().toLowerCase();
+  const projectFilter = params.get("project_id") ?? "";
+  const orderedOnly = params.get("ordered") === "1";
   const poParam = params.get("po") ?? "";
   const poId = /^[1-9]\d*$/.test(poParam) ? Number(poParam) : null;
   const [ticked, setTicked] = useState<Set<number>>(new Set());
@@ -121,6 +127,12 @@ export function OrdersClient({ me }: { me: Me | null }) {
       if (["Cancelled", "Rejected"].includes(r.status)) return false;
       if (costCentreFilter === "none" ? r.cost_center_id != null : String(r.cost_center_id) !== costCentreFilter) return false;
     }
+    if (productCodeFilter) {
+      if (["Cancelled", "Rejected"].includes(r.status)) return false;
+      if ((r.product_code ?? "").trim().toLowerCase() !== productCodeFilter) return false;
+      if (projectFilter && String(r.project_id) !== projectFilter) return false;
+      if (orderedOnly && !r.date_ordered && r.status !== "Delivered") return false;
+    }
     if (view === "rto") return r.status === "Approved" && !r.date_ordered;
     if (view === "tbo") return open && !r.date_ordered;
     if (view === "due") return open && !r.arrived_date && !!r.due_date && r.due_date >= today && r.due_date <= weekAhead;
@@ -128,7 +140,7 @@ export function OrdersClient({ me }: { me: Me | null }) {
     if (view === "arrived") return !!r.arrived_date;
     if (view === "mine") return r.requester_id === me?.id;
     return true;
-  }), [rows, view, today, weekAhead, me, costCentreFilter]);
+  }), [rows, view, today, weekAhead, me, costCentreFilter, productCodeFilter, projectFilter, orderedOnly]);
 
   // Grouped under the order type, in the lookup's order; a type the lookup no longer lists goes last.
   const groups = useMemo(() => {
@@ -241,6 +253,14 @@ export function OrdersClient({ me }: { me: Me | null }) {
         <span className="text-xs text-h-muted">
           {loading ? "Loading…" : `${shown.length} order${shown.length === 1 ? "" : "s"}`}
         </span>
+        {productCodeFilter && (
+          <span data-testid="product-code-filter" className="flex items-center gap-1.5 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink">
+            {`Product ${params.get("product_code")}`}
+            <button type="button" aria-label="Clear the product filter"
+              onClick={() => setParams({ product_code: "", project_id: "", ordered: "" })}
+              className="text-h-muted hover:text-h-ink">×</button>
+          </span>
+        )}
         {costCentreFilter && (
           <span data-testid="cost-centre-filter" className="flex items-center gap-1.5 rounded border border-h-line bg-h-bg px-2 py-1 text-xs text-h-ink">
             {costCentreFilter === "none"

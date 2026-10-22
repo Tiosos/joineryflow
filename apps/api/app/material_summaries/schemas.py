@@ -25,6 +25,7 @@ class SummaryLineOut(BaseModel):
     nest_sheets: int | None       # boards only: sheets in the latest CutPlan (Q582)
     # Read-only, from the project's Orderbook orders matched on product code = SKU (Q585).
     # None when the material has no catalog SKU to match on.
+    sku: str | None               # the material's catalog SKU: what orders are matched on
     qty_required: Decimal         # qty_confirmed when set, else qty_consolidated
     qty_on_order: Decimal | None
     qty_received: Decimal | None
