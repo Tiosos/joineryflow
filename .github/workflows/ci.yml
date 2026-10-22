@@ -243,17 +243,31 @@ jobs:
         run: |
           set -a; . ../../.env; set +a
           export API_URL=http://localhost:8000
+          # Playwright's system packages: `install-deps` runs apt-get update, which took about 90 s on a
+          # slow runner. The runner image usually has them all, so only install what dpkg says is missing.
           if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-            pnpm exec playwright install-deps chromium > /tmp/pw-deps.log 2>&1 &
-            deps_pid=$!
+            pkgs=$(pnpm exec playwright install-deps --dry-run chromium | grep -o 'install -y --no-install-recommends .*' | sed 's/install -y --no-install-recommends //; s/"$//')
+            missing=""
+            [ -n "$pkgs" ] || missing=" (package list unreadable)"
+            for p in $pkgs; do dpkg -s "$p" > /dev/null 2>&1 || missing="$missing $p"; done
+            if [ -n "$missing" ]; then
+              echo "Playwright system packages missing:$missing"
+              pnpm exec playwright install-deps chromium > /tmp/pw-deps.log 2>&1 &
+              deps_pid=$!
+            else
+              echo "Playwright system packages: all $(echo $pkgs | wc -w) already installed"
+            fi
           fi
+          echo "$(date +%T) build start"
           pnpm build
+          echo "$(date +%T) build done"
           if [ -n "${deps_pid:-}" ]; then
             wait "$deps_pid" || { echo "playwright install-deps failed"; cat /tmp/pw-deps.log; exit 1; }
+            echo "$(date +%T) install-deps done"
           fi
           nohup pnpm exec next start -p 3000 > /tmp/web.log 2>&1 &
           for i in $(seq 1 40); do
-            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login)" = "200" ]; then echo "web ready"; exit 0; fi
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login)" = "200" ]; then echo "$(date +%T) web ready"; exit 0; fi
             sleep 2
           done
           echo "web did not become ready"; cat /tmp/web.log; exit 1
