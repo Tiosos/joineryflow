@@ -122,8 +122,9 @@ jobs:
         working-directory: apps/web
         run: pnpm build
 
-  # Whole Playwright suite against a real stack, run twice on the same database (the second
-  # pass guards that no spec only passes on a fresh one: see CLAUDE.md §3). A REQUIRED check
+  # Whole Playwright suite against a real stack, then run again on the same database (the second
+  # pass guards that no spec only passes on a fresh one: see CLAUDE.md §3; it is limited to the
+  # changed specs on a PR that only changes specs). A REQUIRED check
   # on main: renaming this job needs the branch-protection rule (and ci-docs-only.yml) updated.
   # The database is always created, migrated and seeded in this job, which a fresh runner gives us.
   e2e:
@@ -232,9 +233,11 @@ jobs:
         working-directory: apps/web
         run: pnpm exec playwright install-deps chromium
 
-      # The second pass below is the re-runnability guard. It always runs on a
-      # push to main; on a pull request only when the PR touches what can break
-      # re-runnability (specs, seed, migrations, Playwright config, this file).
+      # The second pass below is the re-runnability guard. It always runs, over the whole suite, on a
+      # push to main and on a pull request that touches what can break every spec's re-runnability
+      # (seed, migrations, Playwright config, this file, or a shared e2e file such as helpers.ts).
+      # A pull request that only adds or changes whole spec files re-runs just those files
+      # (user decision 2026-10-22: the guard is for the spec that changed; docs/sub-projects/10-e2e-speedup.md).
       - name: Decide whether the second pass runs
         id: second-pass
         env:
@@ -242,14 +245,30 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename')
-          if echo "$files" | grep -qE '^(tests/e2e/|seed/|db/|apps/web/playwright\.config\.ts$|\.github/workflows/ci\.yml$)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          mode=none
+          specs=""
+          if [ "$EVENT" != "pull_request" ]; then
+            mode=full
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Second Playwright pass skipped: no e2e, seed, migration or config change in this PR."
+            list=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[] | "\(.status) \(.filename)"')
+            if echo "$list" | grep -qE ' (seed/|db/|apps/web/playwright\.config\.ts$|\.github/workflows/ci\.yml$)'; then
+              mode=full
+            elif echo "$list" | grep -qE ' tests/e2e/'; then
+              if echo "$list" | grep -E ' tests/e2e/' | grep -vE '^removed ' | grep -qvE ' tests/e2e/[^/]+\.spec\.ts$'; then
+                mode=full   # a shared e2e file (helpers, fixtures) can break any spec
+              else
+                specs=$(echo "$list" | grep -E ' tests/e2e/[^/]+\.spec\.ts$' | grep -vE '^removed ' | cut -d' ' -f2 | tr '\n' ' ' || true)
+                if [ -n "$specs" ]; then mode=changed; fi
+              fi
+            fi
           fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "specs=$specs" >> "$GITHUB_OUTPUT"
+          case "$mode" in
+            full) echo "Second Playwright pass: the whole suite." ;;
+            changed) echo "Second Playwright pass: only the changed specs: $specs" ;;
+            *) echo "Second Playwright pass skipped: no e2e, seed, migration or config change in this PR." ;;
+          esac
 
       - name: Run Playwright
         working-directory: apps/web
@@ -263,13 +282,20 @@ jobs:
       # consumes or changes seeded data (a notification, an estimate, a take, a
       # question) passes the first time and fails here. See CLAUDE.md §3.
       - name: Run Playwright again (same database)
-        if: steps.second-pass.outputs.run == 'true'
+        if: steps.second-pass.outputs.mode != 'none'
         working-directory: apps/web
         env:
           CI: "true"
           PW_BASE_URL: http://localhost:3000
           PW_JSON_REPORT: playwright-pass-2.json
-        run: pnpm exec playwright test
+          MODE: ${{ steps.second-pass.outputs.mode }}
+          SPECS: ${{ steps.second-pass.outputs.specs }}
+        run: |
+          if [ "$MODE" = "changed" ]; then
+            pnpm exec playwright test $SPECS
+          else
+            pnpm exec playwright test
+          fi
 
       # Where the time goes: the slowest tests and spec files of each pass.
       - name: Slowest Playwright tests
