@@ -4,7 +4,7 @@
 
 **Consolidated:** 23 October 2026.
 
-**Status:** R02 and R03 are addressed in this PR; the other eight findings remain open. Original review evidence is retained below.
+**Status:** R02/R03 merged in PR #163. Follow-up implementation and validation are tracked in the [change record](2026-10-23-review-fix-record.md). Original review evidence is retained below.
 
 This document combines `code-review.md`, `additional-code-review.md`, and
 `imports-production-review.md` into one review with ten distinct findings:
