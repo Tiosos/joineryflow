@@ -21,7 +21,7 @@ flagged rather than assigned today's rate.
 | R07 — sliding sessions | Implemented and tested |
 | R08 — task mutation validation | Implemented and tested |
 | R09 — estimate numbering | Implemented and tested |
-| R10 — CV import replay | Pending |
+| R10 — CV import replay | Implemented and tested |
 
 ## R01 — Serialize automatic summary orders and summary replacement
 
@@ -125,3 +125,16 @@ Validation: all three corrected regressions failed against unfixed application
 code (concurrent creation, 9999/10000 boundary and custom nonnumeric values).
 The numbering and estimating-route suites passed **45 tests** afterwards;
 Ruff and whitespace checks passed.
+
+## R10 — Revalidate a CV preview after the item lock
+
+The commit route reloads its workspace-scoped run after acquiring the item lock
+and checks that it is still a preview before processing resolutions or replacing
+content. A second request waiting behind a successful commit receives
+`RUN_NOT_PENDING`; it cannot wipe/reimport the modules just created by the first.
+Initial lookup/lock-error behaviour remains available to existing callers.
+
+Validation: both new concurrent first-import/replace regressions failed before
+the fix. All **37 CV-route tests** passed afterwards; the regression also checks
+one commit audit and preservation of the first import's module and comment.
+Ruff and whitespace checks passed. No schema/data migration.

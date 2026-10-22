@@ -1007,3 +1007,9 @@ Both production completion and undo lock the cutlist before assignment/item
 mutations and refresh mutable state after waiting. This serializes prerequisite
 and successor checks across different stages, including concurrent double undo.
 See the review fix record for regression evidence.
+
+### Review follow-up: CV preview replay (2026-10-23)
+
+CV commit reloads the run after waiting for the item's mutation lock and requires
+`status=preview` before any resolution or replacement writes. Concurrent replay
+of one run receives `RUN_NOT_PENDING` and preserves the first commit's content.
