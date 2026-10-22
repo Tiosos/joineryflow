@@ -2364,6 +2364,39 @@ Microsoft 365.
 2. Both figures required on new variations; old rows get a null cost.
 3. Rename and backfill both from `amount_delta`.
 
+### Q613 — How do new "waiting for you" lists get into the bell? *(new — the bell is four mechanisms behind one route)*
+**Option 1 confirmed (2026-10-22).** One merged list of typed, derived attention items; a person gets every list they qualify for; comment notifications stay stored; no rule table. Not built yet. `GET /notifications` serves stored comment notifications (`mention` / `reply`, read state) plus three derived lists added one by one: `tasks_open` (everyone), `orders_waiting` (purchase officer only), `lock_requests_waiting` (drafter/manager/admin). Each has its own reply model and an early `return`, so they are mutually exclusive: a purchase officer never gets lock requests, a manager never gets orders waiting, and a role that qualifies for two gets only the first. Decisions already taken add four more candidates: below-reorder-point stock (Q599), variations awaiting approval (Q608), blocked Shop Floor stages (Q590) and Overdue / At Risk stages (Q591). Plan V1 §30 describes the general shape: `Event → Recipient → Channel → Priority`.
+1. **Recommended.** One list of typed "attention items" (`kind`, title, url, count, recipients rule in code), all derived like `orders_waiting`, merged in one reply so a person gets every list they qualify for; comment notifications stay stored. No rule table yet (Q472).
+2. Keep adding a branch and reply model per list.
+3. A stored `notification` row for every event type, with read state.
+
+### Q614 — Is email still out of v1, and if not, which events send it? *(new — Q521 / Q522 revisited)*
+**Option 1 confirmed (2026-10-22).** Still no email in v1 (Q521 / Q522 stand). Q521 = in-app only; Q522 = SMTP when email arrives. Today no code sends mail (`mailto:` links only; no SMTP setting in the tree). The bell is only seen by someone already logged in, so a mention or an order waiting for decision can sit unseen. `app_user.email` exists and is unique per workspace.
+1. **Recommended.** Still none in v1; revisit when a first event proves it is missed.
+2. Email for mentions and orders waiting for a decision only, over SMTP, one message per event.
+3. As 2, plus a once-a-day digest of everything still waiting.
+
+### Q615 — Preferences and mandatory notifications *(new — Plan V1 §30)*
+**Option 1 confirmed (2026-10-22).** No preferences in v1; every notification is mandatory. Plan V1: users configure preferences where allowed; IT/management define mandatory ones. Today nothing is configurable: every recipient gets every mention, reply and list. This only matters once there is a second channel (Q614) or enough lists to be noisy (Q613).
+1. **Recommended.** None in v1: everything is mandatory, because the bell is the only channel.
+2. A per-user mute for comment notifications (mentions stay on).
+3. Per-kind, per-channel preferences with an admin list of mandatory kinds.
+
+### Q616 — Acknowledgement and escalation of waiting items *(new — Plan V1 §30; depends on Q591)*
+**Option 1 confirmed (2026-10-22).** No acknowledgement or escalation in v1; items leave when decided. Escalation waits for Q591. A derived list has no read or acknowledge state, so an order waiting for a decision or a lock request is nagged identically forever and can never be snoozed; nothing escalates when it waits too long. Plan V1 §30 wants acknowledgement and escalation.
+1. **Recommended.** Neither in v1. Items leave the list when the underlying thing is decided. Escalation waits for the Overdue / At Risk definition (Q591).
+2. Show how long each item has waited and tint it past a workspace-set number of days; no escalation.
+3. Escalate to managers after N days (an extra recipient), with acknowledgement.
+
+### Q617 — Which workflow events should reach the bell next? *(new — events with an owner who cannot see them today)*
+**All four confirmed (2026-10-22):** shop drawing awaiting approval, iSample awaiting review, QC defect raised on an item, variation awaiting approval (once Q608's Draft state exists). Recipients per event are fixed in code (Q613). Who receives a defect alert is asked as Q618. Not built yet. Nothing alerts the person who has to act on a shop drawing revision waiting for approval, an iSample waiting for review, or a QC defect raised on their item; the approver finds out by opening the queue. Pick the events that should reach the bell first.
+
+### Q618 — Who receives a QC defect alert? *(new — raised by the Q617 answer)*
+**Open.** An item has no owner column. `projects.tg_project_manager` is free text (`0001`), `items.cutlist_owner_id` is set only by the Controlled Lock and is sticky, and the QC grants are workspace-wide.
+1. **Recommended.** The cutlist owner when there is one, plus every manager and admin; no owner means managers and admins only.
+2. Managers and admins only.
+3. Everyone with `qc:read`.
+
 ---
 
 ## Housekeeping
