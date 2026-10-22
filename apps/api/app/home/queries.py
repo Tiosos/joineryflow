@@ -3,8 +3,8 @@
 Schema drift notes verified against live DB:
   - procurement_batches has NO workspace_id column. Workspace scoping goes via
     project_id -> projects.workspace_id (direct FK, added in migration 0014).
-  - items has NO 'value' column. value_in_progress metric always returns 0.0.
-    TODO: add items.value column in a future migration when cost tracking lands.
+  - items has NO 'value' column. Value in Progress is the live projects' contract value
+    (project_contracts.queries.live_contract_value), managers and admins only (Q634).
   - purchase_orders.status valid values: Draft, Pending, Approved, Rejected,
     Delivered, Cancelled, Hold, Quote, Next. 'open' = NOT IN (Delivered, Cancelled, Rejected).
   - purchase_orders has no workspace_id column; it reaches one through purchase_orders.project_id -> projects.workspace_id,
@@ -24,6 +24,7 @@ from ..auth.sessions import AuthUser
 from ..items.card_filters import CARD_FILTERS, scope_clause
 from ..orders.queries import open_orders_sql
 from ..procurement_v1.queue.queries import eta_filter_sql
+from ..project_contracts.queries import live_contract_value
 from ..row_types import live_joinery_items
 from .schemas import (
     DeliveryToday,
@@ -93,8 +94,8 @@ def _role_view(user: AuthUser) -> str:
 # ── Metrics ────────────────────────────────────────────────────────────────────
 
 def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[MetricCard]:
-    """4 production/cutlist metric cards for ceo / pm / drafter / editor /
-    viewer roles. (estimator and purchase_officer get their own card sets.)
+    """3 production/cutlist metric cards (4 with Value in Progress, ceo / pm only) for ceo / pm /
+    drafter / editor / viewer roles. (estimator and purchase_officer get their own card sets.)
 
     Scoping:
       - ceo (admin): workspace-wide
@@ -130,12 +131,7 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
     in_opt_count = _count("in_optimisation")
     await_install_count = _count("awaiting_install")
 
-    # metric 4: value_in_progress
-    # TODO: items table has no 'value' column. Returns 0.0 until a future migration
-    # adds items.value (numeric) as a cost-tracking field.
-    value_in_progress = 0.0
-
-    return [
+    cards = [
         MetricCard(
             key="overdue",
             label="Overdue Items",
@@ -154,13 +150,16 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             value=await_install_count,
             href="/tracking?scope=all&filter=awaiting_install",
         ),
-        MetricCard(
-            key="value_in_progress",
-            label="Value in Progress",
-            value=value_in_progress,
-            href="/tracking?status=LIVE",
-        ),
     ]
+    # Q634: contract value in progress is money, so managers and admins only (as the project budget);
+    # for everyone else the card is left out, not shown as zero. A manager's is their own projects'.
+    if user.auth_role in ("admin", "manager"):
+        value = live_contract_value(
+            db, workspace_id=wid, pm_id=uid if user.auth_role == "manager" else None,
+        )
+        cards.append(MetricCard(key="value_in_progress", label="Value in Progress",
+                                value=float(value), unit="money"))
+    return cards
 
 
 def _metrics_estimator(db: Session, *, user: AuthUser, today: date) -> list[MetricCard]:

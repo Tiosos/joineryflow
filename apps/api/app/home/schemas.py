@@ -9,7 +9,8 @@ class MetricCard(BaseModel):
     key: str
     label: str
     value: int | float
-    href: str
+    href: str | None = None            # None: the card is a number, not a link
+    unit: Literal["money"] | None = None   # how the web writes the value
 
 
 class MyDayItem(BaseModel):
