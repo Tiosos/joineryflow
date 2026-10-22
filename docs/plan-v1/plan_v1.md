@@ -607,6 +607,8 @@ Offline sync is automatic with conflict detection and authorised conflict resolu
 
 > **Decided — Q532 = Option 3 (2026-09-18).** Mobile is a native app for site use, rather than responsive web only or a PWA. See `OPEN-QUESTIONS.md` Q532.
 
+> **Later change — Q602 = Option 1 (2026-10-22), departs from Q532.** Site use ships as responsive web first, installable later; native waits for a capability that needs it (push, background upload). See `OPEN-QUESTIONS.md` Q602.
+
 > **Decided — Q533 = Option 2 (2026-09-18).** Offline is nice to have: build online-first and queue writes later if it proves painful. See `OPEN-QUESTIONS.md` Q533.
 
 ---

@@ -2284,19 +2284,19 @@ Microsoft 365.
 3. Never: stock is counted by hand at stocktake (Q598).
 
 ### Q598 — Locations, transfers and stocktake *(new — Plan V1 §18)*
-**Open.** `board_inventory.location` is a free-text label on a row, unique per (material, size) only: the same sheet in two places cannot be two rows. Plan V1 wants warehouse / Production / offcut rack / site / external / supplier-held locations, direct audited transfers, stocktake and cycle counts, and a variance investigation above a threshold.
+**Option 1 confirmed (2026-10-22).** Keep today's single free-text location; no stock_location entity, transfers or stocktake sessions. Adjustments stay audited (`board_inventory.upsert`). `board_inventory.location` is a free-text label on a row, unique per (material, size) only: the same sheet in two places cannot be two rows. Plan V1 wants warehouse / Production / offcut rack / site / external / supplier-held locations, direct audited transfers, stocktake and cycle counts, and a variance investigation above a threshold.
 1. **Recommended.** Not in v1 beyond today's single label. Stock adjustments are already audited (`board_inventory.upsert`); a stocktake is a person editing counts.
 2. A `stock_location` entity, one inventory row per (material, size, location), a Transfer action.
 3. Option 2 plus stocktake sessions with variance approval.
 
 ### Q599 — Where does a reorder alert go? *(new — `reorder_point` / `reorder_qty` are stored and unread)*
-**Open.** Both columns came from the legacy table (`0029`) and neither the API nor the UI shows or evaluates them. Plan V1 §18 wants minimum stock and reorder alerts. `GET /notifications` already carries derived, no-read-state lists (`orders_waiting`, `tasks_open`), which is the pattern a "below reorder point" list could follow.
+**Option 1 confirmed (2026-10-22).** Show `reorder_point` / `reorder_qty` on the Stock panel and a derived "below reorder point" list in the bell for purchase officers (like `orders_waiting`); no email, no auto-order. Not built yet. Both columns came from the legacy table (`0029`) and neither the API nor the UI shows or evaluates them. Plan V1 §18 wants minimum stock and reorder alerts. `GET /notifications` already carries derived, no-read-state lists (`orders_waiting`, `tasks_open`), which is the pattern a "below reorder point" list could follow.
 1. **Recommended.** Expose both columns on the Stock panel and show "below reorder point" as a derived list in the bell for purchase officers (like `orders_waiting`); no email, no auto-order.
 2. Show on the panel only; no alert.
 3. Drop the columns unused.
 
 ### Q600 — Material substitution: what is it, and who decides? *(new — Plan V1 §18, nothing built)*
-**Open.** Plan V1: Procurement proposes a substitute; the Designer/Draftsperson approves design-related ones, with impact (cost, design, drawings, hardware, Production, CNC, QC, Installation, client approval). No entity, route or screen mentions substitution (grep of the API and web is empty). Related edges already exist: a take line and a part name a catalog material, `cv_material_mapping` maps codes, and an approved take is immutable (new version = n+1).
+**Option 2 confirmed (2026-10-22).** Substitution is an audited edit of the take line; no request record, no impact tick-list. A deliberate narrowing of Plan V1 §18 (approval by the drafter is whoever may edit the take). Plan V1: Procurement proposes a substitute; the Designer/Draftsperson approves design-related ones, with impact (cost, design, drawings, hardware, Production, CNC, QC, Installation, client approval). No entity, route or screen mentions substitution (grep of the API and web is empty). Related edges already exist: a take line and a part name a catalog material, `cv_material_mapping` maps codes, and an approved take is immutable (new version = n+1).
 1. **Recommended.** A small `material_substitution` request (old material, new material, scope: item / project, reason, impact tick-list, proposer, decider); approving it does not rewrite anything, it **opens a new take version** for the affected items with the new material, which the normal take flow then approves. Decider: drafter, manager or admin.
 2. Substitution is just editing the take line (audited); no request record.
 3. Not in v1.
@@ -2306,6 +2306,36 @@ Microsoft 365.
 1. **Recommended.** No separate requisition entity: a Pending order is the request. Mark the departure in `plan_v1.md` §21, as with Q499.
 2. A `requisition` header grouping several Pending orders of one project (a list a PM submits at once), with no decision step.
 3. Full Plan V1 requisition, creating orders on submit.
+
+### Q602 — Is the site app still native, given how the system is built? *(new — Q532 vs the code)*
+**Option 1 confirmed (2026-10-22).** Site use ships as responsive web first, installable later; native waits for a capability that needs it. A departure from Q532 (see the note in `plan_v1.md` §14). Q532 = 3 decided "a native app for site use". Nothing in the tree supports one: auth is an httpOnly `jf_session` cookie only (no bearer token in `apps/api/app/auth`), the browser never calls FastAPI directly (everything goes through the Next.js proxy, §6), and Packing's scan step, the one site-facing feature built, runs in the browser with `jsQR`. `ALIGNMENT.md` already records Packing as "no native app (Q532)".
+1. **Recommended.** Site use ships as responsive web first (installable later); revisit native when a concrete capability needs it (push, background upload). Departure from Q532, recorded in `plan_v1.md` §14.
+2. Keep native: add token auth and expose the API to the app (a new surface, its own security review).
+3. Responsive web plus an installable PWA now.
+
+### Q603 — Which site capture comes first? *(new — Plan V1 §14 lists nine)*
+**All four confirmed (2026-10-22), built in this order:** defect photos (Q604), installation progress (Q605), measurements and notes, then signatures and drawing markup. Not built yet. Plan V1 §14: photos, measurements, drawing markup, defects, scanning, task/status updates, notes, installation progress, signatures. Built: Packing scan, task status, comments. Not built: the rest. Pick the first slice.
+
+### Q604 — Do QC defects carry photos? *(new — `qc` has no file link)*
+**Option 1 confirmed (2026-10-22).** Several photos per defect through `file_blob` (a `qc_defect_photo` table), added when raising or later, read-only once resolved. Not built yet. `qc_defect` has no attachment or photo column (the `qc` package never mentions `file_blob`), though `file_blob` already accepts PNG/JPEG and defects are the first thing a site worker would photograph.
+1. **Recommended.** Up to a few photos per defect through `file_blob` (a `qc_defect_photo` table), added when raising or later; read-only once the defect is resolved.
+2. One photo per defect.
+3. No photos; notes only.
+
+### Q605 — Who records installation, and how is it confirmed? *(new — Plan V1 §14 and §27, Q413–Q415)*
+**Custom answer (2026-10-22).** A phone-friendly Install list per project (items delivered, not installed); marking an item installed records the installer's name and allows installation photos. **No signature** in v1. What "installer name" means (staff member or typed text) is asked as Q607. Not built yet. Installation is per Joinery Item (Q413) and the Site Installation Manager records completion (Q415). Today `INST` is set only through `PATCH /items/{id}/lifecycle/{stage_key}` from the desktop item editor; Shop Floor cannot hold `INST` (Q561). Plan V1 §14 adds client sign-off by signature.
+1. **Recommended.** A phone-friendly "Install" list per project (items delivered, not installed) with one tap to mark installed and an optional photo; no signature in v1.
+2. As 1, plus a drawn signature stored with the item's install record.
+3. Keep it on the item editor.
+
+### Q606 — Which screens must work on a tablet or phone? *(new — Plan V1 §14; `REFINEMENT_BACKLOG.md` §8)*
+**Confirmed (2026-10-22).** First: the new Install list and item view, QC defects, and the Shop Floor kiosk (checked against the same pass). Tracking is not in the first pass. Not built yet. 33 files use responsive classes, but no screen is declared mobile-ready; the backlog still lists the pass as open. Pick the screens that must work first.
+
+### Q607 — What is the "installer name"? *(new — raised by the Q605 answer)*
+**Option 1 confirmed (2026-10-22).** It defaults to the signed-in user and can be edited to free text for a subcontractor; both the user and the typed name are kept. Not built yet.
+1. **Recommended.** Logged-in user, editable text.
+2. A workspace user only.
+3. Free text only.
 
 ---
 
