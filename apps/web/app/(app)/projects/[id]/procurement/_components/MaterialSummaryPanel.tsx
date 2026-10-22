@@ -8,6 +8,19 @@ import { UNIT_LABEL, type CurrentSummary, type SummaryLine } from "@/lib/materia
 
 // Project Material Summary (sub-project #12, Plan V1 §20). Confirmation is
 // advisory (Q499): Procurement may act on an unconfirmed summary.
+// The Catalog tab a material type lives on (its rows are found there by description).
+const CATALOG_TAB: Record<string, string> = {
+  BOARD: "board", HARDWARE: "hardware", CUSTOM: "custom_made", BENCHTOP: "benchtop", APPLIANCE: "appliance",
+  HIRE: "hire", EDGING: "edging", GLASS: "glass", TIMBER: "timber",
+};
+
+const WHY_NOT: Record<string, string> = {
+  NO_SKU: "No SKU on this material.",
+  NO_SUPPLIER: "No default supplier.",
+  NOTHING_TO_ORDER: "Already on an order.",
+  NO_CATALOG_MATERIAL: "Not a catalog material.",
+};
+
 const ORDER_REFUSED: Record<string, string> = {
   NO_SUPPLIER: "This material has no default supplier. Set one in the Catalog first.",
   NO_SKU: "This material has no SKU, so orders cannot be matched to it. Add one in the Catalog first.",
@@ -71,6 +84,8 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm, canOrder 
   const s = data.summary;
   const draft = s?.status === "draft";
   const staleCount = s?.lines.filter((l) => l.stale).length ?? 0;
+  const noSku = s?.lines.filter((l) => l.order_block === "NO_SKU").length ?? 0;
+  const noSupplier = s?.lines.filter((l) => l.order_block === "NO_SUPPLIER").length ?? 0;
 
   return (
     <div className="grid gap-4">
@@ -108,6 +123,14 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm, canOrder 
       {staleCount > 0 && (
         <p className="rounded border border-h-line bg-h-surface px-3 py-2 text-sm text-h-ink">
           {`${staleCount} ${staleCount === 1 ? "line" : "lines"} may be outdated — an item's take has changed since this summary was built. Rebuild to refresh.`}
+        </p>
+      )}
+
+      {(noSku > 0 || noSupplier > 0) && (
+        <p data-testid="summary-blocked" className="rounded border border-h-line bg-h-surface px-3 py-2 text-sm text-h-ink">
+          {`${noSku + noSupplier} ${noSku + noSupplier === 1 ? "line" : "lines"} can't be ordered yet (${
+            [noSupplier > 0 && `${noSupplier} no supplier`, noSku > 0 && `${noSku} no SKU`].filter(Boolean).join(", ")
+          }). Fix them in the Catalog.`}
         </p>
       )}
 
@@ -231,6 +254,19 @@ function SummaryRow({ projectId, line, editable, canOrder, order, expanded, togg
       <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-received">{line.qty_received ?? "—"}</td>
       <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-outstanding">{line.qty_outstanding ?? "—"}</td>
       <td className="px-3 py-1.5 text-right">
+        {line.order_block && (
+          <span data-testid="summary-order-block" className="text-xs text-h-muted">
+            {WHY_NOT[line.order_block]}
+            {(line.order_block === "NO_SKU" || line.order_block === "NO_SUPPLIER") && CATALOG_TAB[line.material_type] && (
+              <>{" "}
+                <Link data-testid="summary-order-block-link" className="text-h-accent hover:underline"
+                  href={`/catalog?${new URLSearchParams({ tab: CATALOG_TAB[line.material_type], q: line.description })}`}>
+                  Fix in the Catalog
+                </Link>
+              </>
+            )}
+          </span>
+        )}
         {canOrder && Number(line.qty_to_order ?? 0) > 0 && (
           <button type="button" onClick={order} data-testid="summary-order"
             aria-label={`Create order for ${line.description}`}

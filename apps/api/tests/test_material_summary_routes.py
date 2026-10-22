@@ -279,6 +279,37 @@ def test_order_from_a_line_is_for_the_current_summary_and_order_writers(proj):
     assert viewer.post(f"/material-summaries/{sid}/lines/{lid}/order").status_code == 403
 
 
+def test_each_line_says_why_it_cannot_be_ordered(proj):
+    c = proj["c"]
+    sku = _board_line(proj)
+    sid = _build(c, proj["pid"])
+
+    def block():
+        return {l["description"]: l["order_block"] for l in _current(c, proj["pid"])["summary"]["lines"]}
+
+    [(desc, why)] = block().items()
+    assert why == "NO_SUPPLIER"                                  # a material with no default supplier
+    _supplier(proj)
+    assert block()[desc] is None                                  # ready to order
+    _sql("UPDATE board_materials SET sku = NULL WHERE material_id = :b", b=proj["a"]["board"])
+    assert block()[desc] == "NO_SKU"
+    _sql("UPDATE board_materials SET sku = :s WHERE material_id = :b", s=sku, b=proj["a"]["board"])
+    lid = _current(c, proj["pid"])["summary"]["lines"][0]["line_id"]
+    assert c.post(f"/material-summaries/{sid}/lines/{lid}/order").status_code == 201
+    assert block()[desc] == "NOTHING_TO_ORDER"                    # already on an order
+
+
+def test_a_manual_line_with_no_catalog_material_says_so(proj):
+    c = proj["c"]
+    tid = c.post(f"/items/{proj['a']['item']}/material-take/generate").json()["take_id"]
+    r = c.post(f"/material-takes/{tid}/lines", json={"description": "Site-made filler", "unit": "each", "qty": "2"})
+    assert r.status_code == 201, r.text
+    assert c.post(f"/material-takes/{tid}/approve").status_code == 204
+    _build(c, proj["pid"])
+    lines = {l["description"]: l for l in _current(c, proj["pid"])["summary"]["lines"]}
+    assert lines["Site-made filler"]["order_block"] == "NO_CATALOG_MATERIAL"
+
+
 # --- C3 ---------------------------------------------------------------------
 
 def test_confirm_fills_unset_lines_and_freezes(proj):

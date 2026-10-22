@@ -70,6 +70,7 @@ export interface SummaryLine {
   qty_received: string | null;
   qty_outstanding: string | null;
   qty_to_order: string | null;
+  order_block: "NO_CATALOG_MATERIAL" | "NO_SKU" | "NO_SUPPLIER" | "NOTHING_TO_ORDER" | null;
   sources: SummarySource[];
 }
 
