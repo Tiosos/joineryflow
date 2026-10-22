@@ -1,7 +1,9 @@
+import re
 from datetime import date, datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from ..schema_guards import no_null
 
 
@@ -67,6 +69,22 @@ class PatchProjectIn(BaseModel):
     carell_pid: str | None = None
     total_value: float | None = None
     total_line_items: int | None = None
+    # Q640: one link to the project's folder; an empty box or null clears it.
+    project_folder_url: str | None = None
+
+    @field_validator("project_folder_url")
+    @classmethod
+    def folder_is_a_web_link(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        parts = urlsplit(v)
+        if (len(v) > 2048 or re.search(r"\s", v)
+                or parts.scheme.lower() not in ("http", "https") or not parts.netloc):
+            raise ValueError("project_folder_url must be an http(s) link")
+        return v
 
     @model_validator(mode="after")
     def pm_id_not_null_if_set(self) -> "PatchProjectIn":
@@ -103,6 +121,7 @@ class ProjectOut(BaseModel):
     tg_project_manager: str | None = None
     tg_coordinator: str | None = None
     carell_pid: str | None = None
+    project_folder_url: str | None = None   # Q640
     closed_at: datetime | None = None
     closed_by: int | None = None
     closed_by_name: str | None = None

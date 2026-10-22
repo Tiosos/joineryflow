@@ -154,6 +154,21 @@ export function ProjectDetailModal({ project, onClose, canSeeBudget }: Props) {
               <Field label="TG Solid">
                 {project.tg_solid == null ? "—" : project.tg_solid ? "✓" : "—"}
               </Field>
+              <Field label="Project folder">
+                {project.project_folder_url ? (
+                  <a
+                    href={project.project_folder_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="project-folder-link"
+                    className="text-h-accent hover:underline"
+                  >
+                    Open ↗
+                  </a>
+                ) : (
+                  "—"
+                )}
+              </Field>
               <Field label="Total line items">
                 <span className="font-mono tabular-nums">
                   {project.total_line_items ?? "—"}
