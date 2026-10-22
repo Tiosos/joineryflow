@@ -118,6 +118,7 @@ export default function CatalogGrid(p: Props) {
                 canWrite={p.canWrite}
                 suppliers={p.suppliers}
                 onChanged={p.onChanged}
+                colCount={colCount}
               />
             );
           })}

@@ -2,6 +2,7 @@ import type {
   BulkImportResp,
   ByTypeResp,
   ProductTypesResp,
+  PurchaseHistory,
   CatalogListResp,
   CatalogRow,
   CatalogSlug,
@@ -124,5 +125,13 @@ export async function listByType(args: {
   if (args.archived) sp.set("archived", "true");
   const res = await fetch(`/api/catalog/by-type?${sp.toString()}`, { credentials: "include" });
   if (!res.ok) throw new Error(`listByType: ${res.status}`);
+  return res.json();
+}
+
+/** What the workspace has paid for the row's SKU (needs catalog and orderbook read). */
+export async function getPurchaseHistory(slug: CatalogSlug, mid: number): Promise<PurchaseHistory> {
+  const res = await fetch(`/api/catalog/${slug}/${mid}/purchase-history`, { credentials: "include", cache: "no-store" });
+  if (res.status === 403) throw new Error("forbidden");
+  if (!res.ok) throw new Error(`purchaseHistory: ${res.status}`);
   return res.json();
 }

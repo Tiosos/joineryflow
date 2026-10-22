@@ -23,11 +23,13 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..files import uploads
 from ..files.store import FileStore, get_default_store
+from ..orders.queries import purchase_history
 from . import queries as q
 from .schemas import (
     BulkImportIn,
     BulkImportOut,
     BulkRowError,
+    PurchaseHistoryOut,
     BulkUnlinkedRow,
     CreateApplianceIn,
     CreateBenchtopIn,
@@ -384,6 +386,24 @@ def bulk_import_route(
     )
     db.commit()
     return BulkImportOut(created=created, errors=[], linked=linked, unlinked=unlinked)
+
+
+@router.get("/catalog/{slug}/{mid}/purchase-history", response_model=PurchaseHistoryOut,
+            dependencies=[Depends(require_permission("orderbook", "read"))])
+def get_purchase_history(
+    slug: str, mid: int,
+    user: AuthUser = Depends(require_permission("catalog", "read")),
+    db: Session = Depends(get_db),
+):
+    """What this workspace has paid for the row's SKU (orders matched on product code). Prices come
+    from the Orderbook, so this needs `orderbook:read` as well as `catalog:read`. Read-only: it
+    never changes the row's `unit_cost`."""
+    type_ = _resolve_type(slug)
+    row = q.get_catalog_row(db, type_=type_, mid=mid, workspace_id=user.workspace_id)
+    if row is None:
+        raise HTTPException(404, "Catalog row not found")
+    return purchase_history(db, workspace_id=user.workspace_id, sku=row.get("sku"),
+                            project_id=row.get("project_id") if type_ == "hire" else None)
 
 
 @router.get("/catalog/{slug}/{mid}")

@@ -1,5 +1,5 @@
 """Pydantic v2 schemas for the catalog module."""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -344,3 +344,23 @@ class CvMappingOut(BaseModel):
 class CvMappingListOut(BaseModel):
     rows: list[CvMappingOut]
     total: int
+
+
+class PurchaseHistoryRowOut(BaseModel):
+    po_id: int
+    po_number: str
+    order_number: str | None
+    status: str
+    currency: str | None
+    ordered_on: date | None
+    quantity: Decimal | None
+    vendor_name: str | None
+    project_id: int | None
+    project_name: str | None
+    unit_price: Decimal | None
+
+
+class PurchaseHistoryOut(BaseModel):
+    orders: list[PurchaseHistoryRowOut]
+    latest_price: Decimal | None
+    average_price: Decimal | None

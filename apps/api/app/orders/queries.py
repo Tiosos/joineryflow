@@ -149,6 +149,48 @@ def open_orders_sql(alias: str) -> str:
     return f"{alias}.status NOT IN ('Delivered', 'Cancelled', 'Rejected')"
 
 
+def purchase_history(
+    db: Session, *, workspace_id: int, sku: str, project_id: int | None = None, limit: int = 50,
+) -> dict:
+    """What this workspace has paid for a catalog SKU: the latest `limit` orders for it, newest first.
+
+    Orders are matched on product code = SKU (trimmed, case-insensitive, as the order pop-up's
+    catalog block does) and count once they are placed (`date_ordered`) or Delivered; Cancelled
+    and Rejected never do. `project_id` narrows to one project (an Equipment Hire row belongs to
+    one). The unit price is the order's own `unit_cost`, else its total over its quantity, as
+    entered: an order that includes GST in its price is not converted. Latest is the newest
+    priced order; average is the plain mean of the priced ones in the rows returned.
+    """
+    sku = (sku or "").strip()
+    if not sku:
+        return {"orders": [], "latest_price": None, "average_price": None}
+    rows = [dict(r) for r in db.execute(
+        text(
+            f"""
+            SELECT po.po_id, po.po_number, po.order_number, po.status, po.currency,
+                   COALESCE(po.date_ordered, po.arrived_date, po.created_at::date) AS ordered_on,
+                   po.quantity, v.name AS vendor_name, po.project_id, po.project_name,
+                   COALESCE(po.unit_cost, po.total_amount / NULLIF(po.quantity, 0)) AS unit_price
+            {_ORDER_FROM}
+            WHERE {_ORDER_WORKSPACE}
+              AND lower(btrim(po.product_code)) = lower(:sku)
+              AND po.status NOT IN ('Cancelled', 'Rejected')
+              AND (po.date_ordered IS NOT NULL OR po.status = 'Delivered')
+              AND (CAST(:p AS bigint) IS NULL OR po.project_id = CAST(:p AS bigint))
+            ORDER BY ordered_on DESC, po.po_id DESC
+            LIMIT :n
+            """
+        ),
+        {"w": workspace_id, "sku": sku, "p": project_id, "n": limit},
+    ).mappings()]
+    priced = [r["unit_price"] for r in rows if r["unit_price"] not in (None, 0)]
+    return {
+        "orders": rows,
+        "latest_price": priced[0] if priced else None,
+        "average_price": (sum(priced, Decimal(0)) / len(priced)).quantize(Decimal("0.0001")) if priced else None,
+    }
+
+
 def cost_centre_usable(db: Session, *, cost_center_id: int, workspace_id: int) -> bool:
     return db.execute(
         text("SELECT 1 FROM cost_centers WHERE cost_center_id = :c AND workspace_id = :w"
