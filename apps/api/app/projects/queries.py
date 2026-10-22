@@ -15,8 +15,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..orders.queries import open_orders_sql
 from ..row_types import live_joinery_items
 from .schemas import CreateProjectIn, PatchProjectIn
+
+_JOINERY_I = live_joinery_items("i")
 
 
 def _assert_user_in_workspace(db: Session, *, user_id: int, workspace_id: int) -> None:
@@ -180,14 +183,53 @@ def get_project(
     return out
 
 
+def close_out_checks(db: Session, *, project_id: int, workspace_id: int) -> dict | None:
+    """What is still open on a project, for the close-out dialog. None when the project is not
+    this workspace's. Advisory only (user decision 2026-10-22): nothing here blocks a close-out.
+
+    Items are live Joinery Items that are not VOID; "not installed" means no INST done date.
+    Defects and rework are the open QC records on those items. Orders are the project's open
+    orders (not Delivered, Cancelled or Rejected), the number the Orders list's `?status=open`
+    shows for it.
+    """
+    if db.execute(
+        text("SELECT 1 FROM projects WHERE project_id = :p AND workspace_id = :w"),
+        {"p": project_id, "w": workspace_id},
+    ).first() is None:
+        return None
+    return dict(db.execute(
+        text(
+            f"""
+            SELECT
+              (SELECT count(*) FROM qc_defect d JOIN items i ON i.item_id = d.item_id
+                WHERE i.project_id = :p AND {_JOINERY_I} AND d.status = 'open')   AS open_defects,
+              (SELECT count(*) FROM rework r JOIN items i ON i.item_id = r.item_id
+                WHERE i.project_id = :p AND {_JOINERY_I} AND r.status = 'open')   AS open_rework,
+              (SELECT count(*) FROM items i
+                WHERE i.project_id = :p AND {_JOINERY_I} AND i.status IS DISTINCT FROM 'VOID'
+                  AND NOT EXISTS (SELECT 1 FROM item_stages s WHERE s.item_id = i.item_id
+                                   AND s.stage_key = 'INST' AND s.done_date IS NOT NULL))
+                                                                            AS items_not_installed,
+              (SELECT count(*) FROM purchase_orders po
+                WHERE po.project_id = :p AND {open_orders_sql("po")})       AS open_orders
+            """
+        ),
+        {"p": project_id},
+    ).mappings().one())
+
+
 def close_out_project(
     db: Session,
     *,
     project_id: int,
     workspace_id: int,
     actor_id: int,
+    reason: str | None = None,
 ) -> str:
     """Set closed_at + closed_by + status='Closed'.
+
+    The audit row keeps what was still open at that moment and the reason given for closing
+    anyway (close-out checks are advisory).
 
     Returns 'OK', 'NOT_FOUND', or 'ALREADY_CLOSED'.
     """
@@ -220,7 +262,10 @@ def close_out_project(
         actor_id=actor_id,
         event="project.close_out",
         target=str(project_id),
-        payload={},
+        payload={
+            "open": close_out_checks(db, project_id=project_id, workspace_id=workspace_id),
+            "reason": reason,
+        },
     )
     db.flush()
     return "OK"

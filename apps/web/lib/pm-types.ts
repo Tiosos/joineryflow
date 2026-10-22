@@ -138,6 +138,13 @@ export interface PatchProjectIn {
 // Source: apps/api/app/projects/schemas.py
 // =============================================================================
 
+export interface CloseOutChecksOut {
+  open_defects: number;
+  open_rework: number;
+  items_not_installed: number;
+  open_orders: number;
+}
+
 export interface CloseOutOut {
   project_id: number;
   closed_at: string; // datetime → ISO 8601 timestamp

@@ -82,7 +82,7 @@
   `409 ALREADY_CLOSED`) — **the only way to close** (user, 2026-09-25):
   `PATCH {status: "Closed"}` is 422, so `closed_at` / `closed_by` are always
   stamped, and PATCHing `status` to `Current` / `Hold` **re-opens**, clearing
-  both (the design doc's §9 rule, which the merged code had not implemented); `project_contacts/` (POST/GET/PATCH/DELETE,
+  both (the design doc's §9 rule, which the merged code had not implemented); **Close-out checks (2026-10-22, user decision: warn and confirm; no migration):** `GET /projects/{id}/close-out-checks` (manager / admin, like the close-out; another workspace's project a 404) counts what is still open: open QC defects and open rework on live Joinery Items, items not installed (live, not `VOID`, no `INST` done date) and open orders (`orders.queries.open_orders_sql`, the Orders list's `?status=open`). **Advisory: nothing blocks the close-out.** The dialog lists them and asks for a reason (`POST …/close-out` takes an optional `{reason}`); the `project.close_out` audit row keeps `open` (the counts at that moment) and `reason`. A project with nothing open closes on the plain confirm. Not checked: final QC, handover, financial close (no such states yet). `project_contacts/` (POST/GET/PATCH/DELETE,
   `tracking:{read,write}`); `project_lift_access/` (GET/PUT/DELETE, one row
   per project); `item_queries/` (ask on `list:read`, answer/edit-answer on
   `list:write`, second answer without `allow_overwrite` returns 409). **The

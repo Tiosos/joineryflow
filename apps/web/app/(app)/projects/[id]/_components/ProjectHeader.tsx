@@ -2,13 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ProjectOut } from "@/lib/pm-types";
+import type { CloseOutChecksOut, ProjectOut } from "@/lib/pm-types";
 import { PM, ApiError } from "@/lib/pm-fetch";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
 
 interface Props {
   project: ProjectOut;
   canCloseOut: boolean;
+}
+
+function openLines(c: CloseOutChecksOut): string[] {
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [
+    c.open_defects > 0 && plural(c.open_defects, "open QC defect", "open QC defects"),
+    c.open_rework > 0 && plural(c.open_rework, "open rework", "open rework records"),
+    c.items_not_installed > 0 && plural(c.items_not_installed, "item not installed", "items not installed"),
+    c.open_orders > 0 && plural(c.open_orders, "open order", "open orders"),
+  ].filter((l): l is string => l !== false);
 }
 
 function money(v: number | null): string {
@@ -21,20 +31,43 @@ function money(v: number | null): string {
 }
 
 export function ProjectHeader({ project, canCloseOut }: Props) {
-  const { confirm } = useConfirm();
+  const { confirm, askReason } = useConfirm();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const closed = project.closed_at != null;
 
   async function closeOut() {
-    if (!(await confirm({ title: `Close out ${project.project_code}?`, message: "Closing out is the only way to close a project.", confirmLabel: "Close out" }))) {
-      return;
+    // Close-out checks are advisory (user decision 2026-10-22): what is still open is listed and a
+    // reason is asked for, but nothing stops the close-out. If the list cannot be read, plain confirm.
+    const checks = await PM.closeOutChecks(project.id).catch(() => null);
+    const open = checks ? openLines(checks) : [];
+    const title = `Close out ${project.project_code}?`;
+    let reason: string | undefined;
+    if (open.length === 0) {
+      if (!(await confirm({ title, message: "Closing out is the only way to close a project.", confirmLabel: "Close out" }))) return;
+    } else {
+      const given = await askReason({
+        title,
+        message: (
+          <div>
+            <p>Still open on this project:</p>
+            <ul className="mt-1 list-disc pl-5" data-testid="close-out-open">
+              {open.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+            <p className="mt-2">You can close it anyway. The reason is kept in the audit log.</p>
+          </div>
+        ),
+        reasonLabel: "Reason for closing with these open",
+        confirmLabel: "Close out anyway",
+      });
+      if (given === null) return;
+      reason = given;
     }
     setBusy(true);
     setError(null);
     try {
-      await PM.closeOutProject(project.id);
+      await PM.closeOutProject(project.id, reason);
       router.refresh();
     } catch (e) {
       setError(
