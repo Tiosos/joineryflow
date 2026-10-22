@@ -24,7 +24,8 @@ export interface ProjectContract {
 export interface ActualCosts {
   project_id: number;
   materials_actual: string;
-  labour_actual: string;
-  total_actual: string;
-  labour_by_item: Record<string, string>;
+  labour_actual: string | null;
+  total_actual: string | null;
+  unresolved_labour_completions: number;
+  labour_by_item: Record<string, string | null>;
 }

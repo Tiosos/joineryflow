@@ -115,8 +115,8 @@ def _login():
             text(
                 """
                 INSERT INTO stage_completion_log(
-                    cutlist_id, stage_key, assignment_id, worker_id, completed_at
-                ) VALUES (:cl, 'CNC', :a, :u, :now)
+                    cutlist_id, stage_key, assignment_id, worker_id, completed_at, hourly_rate_snapshot
+                ) VALUES (:cl, 'CNC', :a, :u, :now, 100.00)
                 """
             ),
             {"cl": cutlist_id, "a": assignment_id, "u": uid, "now": datetime.now(timezone.utc)},
@@ -217,3 +217,45 @@ def test_restoring_the_item_restores_its_share():
     assert c.post(f"/items/{ids['item_big']}/restore").status_code == 204
     split = c.get(f"/projects/{ids['pid']}/actual-costs").json()["labour_by_item"]
     assert split[str(ids["item_big"])] == "133.33" and split[str(ids["item_small"])] == "66.67"
+
+
+def test_completed_labour_keeps_its_rate_when_workspace_rate_changes():
+    c, ids = _login()
+    with SessionLocal() as db:
+        db.execute(text("UPDATE workspace_labour_rate SET hourly_rate=300 WHERE workspace_id=:w"), {"w": ids["wid"]})
+        db.commit()
+    assert c.get(f"/projects/{ids['pid']}/actual-costs").json()["labour_actual"] == "200.00"
+
+
+def test_missing_historical_rate_is_unresolved_instead_of_costed_at_today_rate():
+    c, ids = _login()
+    with SessionLocal() as db:
+        db.execute(text("UPDATE stage_completion_log SET hourly_rate_snapshot=NULL WHERE cutlist_id=:c"), {"c": ids["cutlist_id"]})
+        db.commit()
+    body = c.get(f"/projects/{ids['pid']}/actual-costs").json()
+    assert body["labour_actual"] is None
+    assert body["total_actual"] is None
+    assert body["unresolved_labour_completions"] == 1
+    assert body["labour_by_item"] == {str(ids["item_big"]): None, str(ids["item_small"]): None}
+
+
+def test_recorded_zero_rate_is_a_known_zero_cost():
+    c, ids = _login()
+    with SessionLocal() as db:
+        db.execute(text("UPDATE stage_completion_log SET hourly_rate_snapshot=0 WHERE cutlist_id=:c"), {"c": ids["cutlist_id"]})
+        db.commit()
+    body = c.get(f"/projects/{ids['pid']}/actual-costs").json()
+    assert body["labour_actual"] == "0.00"
+    assert body["unresolved_labour_completions"] == 0
+
+
+def test_completion_captures_rate_and_leaves_missing_rate_unknown():
+    from app.shop_floor.queries import insert_completion_log
+    _c, ids = _login()
+    with SessionLocal() as db:
+        aid, uid = db.execute(text("SELECT assignment_id, worker_id FROM worker_assignment WHERE cutlist_id=:c"), {"c": ids["cutlist_id"]}).one()
+        known = insert_completion_log(db, cutlist_id=ids["cutlist_id"], stage_key="CNC", assignment_id=aid, worker_id=uid, note=None)
+        unknown = insert_completion_log(db, cutlist_id=ids["cutlist_id"], stage_key="DOWN", assignment_id=aid, worker_id=uid, note=None)
+        rows = dict(db.execute(text("SELECT log_id, hourly_rate_snapshot FROM stage_completion_log WHERE log_id=ANY(:ids)"), {"ids": [known, unknown]}).all())
+        assert rows[known] == 100
+        assert rows[unknown] is None

@@ -17,7 +17,7 @@ flagged rather than assigned today's rate.
 | R01 — summary ordering | Implemented and tested |
 | R04 — incompatible painting orders | Implemented and tested |
 | R05 — completion versus undo | Implemented and tested |
-| R06 — historical labour costs | Pending |
+| R06 — historical labour costs | Implemented and tested |
 | R07 — sliding sessions | Pending |
 | R08 — task mutation validation | Pending |
 | R09 — estimate numbering | Pending |
@@ -67,3 +67,19 @@ new progress and receives the existing appropriate 409. Double undo sees
 Validation: all three concurrency regressions failed before the fix. The
 shop-floor routes, shared-cutlist and lifecycle suites passed **52 tests**
 afterwards; Ruff and whitespace checks passed. No schema/data migration.
+
+## R06 — Capture completion rates; flag unresolved historical costs
+
+Migration `0083` adds nullable `hourly_rate_snapshot` with no default or backfill.
+New completion inserts capture the workspace/stage rate atomically in the same
+SQL statement; a missing rate remains null, while an explicit zero is valid.
+Actual costs use only recorded rates. Unresolved rates or start times make
+labour/total actuals and affected item amounts null, with a completion count;
+the Financials card explains the unavailable amounts. Materials remain visible.
+Existing test fixtures with known costs now supply their known snapshot explicitly.
+
+Validation: four new regressions failed with the schema present but unfixed
+application code. **49 API tests** across actual costs, contracts and production
+passed after the fix. Migration applied successfully; web typecheck and production
+build passed, along with Ruff and whitespace checks. Existing completions remain
+unresolved by design; this release does not guess rates or offer a backfill UI.

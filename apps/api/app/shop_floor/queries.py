@@ -746,9 +746,13 @@ def insert_completion_log(
         text(
             """
             INSERT INTO stage_completion_log(
-                cutlist_id, stage_key, assignment_id, worker_id, note
+                cutlist_id, stage_key, assignment_id, worker_id, note, hourly_rate_snapshot
             )
-            VALUES (:cid, :sk, :aid, :wid, :note)
+            VALUES (:cid, CAST(:sk AS varchar(16)), :aid, :wid, :note,
+                (SELECT r.hourly_rate FROM cutlist c
+                 JOIN projects p ON p.project_id=c.project_id
+                 JOIN workspace_labour_rate r ON r.workspace_id=p.workspace_id AND r.stage_key=CAST(:sk AS varchar(16))
+                 WHERE c.cutlist_id=:cid))
             RETURNING log_id
             """
         ),

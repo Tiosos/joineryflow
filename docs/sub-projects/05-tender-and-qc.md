@@ -117,14 +117,16 @@
     Summary already lives with for the same reason).
   - **Labour** — each `stage_completion_log` row's duration
     (`completed_at - worker_assignment.started_at`) priced at
-    `workspace_labour_rate`. A completion belongs to a **cutlist**
+    `stage_completion_log.hourly_rate_snapshot` (captured at completion,
+    migration `0083`). A completion belongs to a **cutlist**
     (migration `0030`), shared by every item on it, so its cost is
     **apportioned across the cutlist's items by each item's share of total
     part area** (`len_mm * wid_mm * qty`, summed per item) — falling back
     to an equal split when no item on the cutlist has any measurable part
-    area yet. A completion with no `assignment_id` (nullable — pre-`0030`
-    provenance rows) is excluded, not zero-costed: there is no `started_at`
-    to derive a duration from.
+    area yet. A completion without a captured rate or usable start time remains unresolved.
+    Labour/total actuals and affected per-item amounts return null;
+    `unresolved_labour_completions` reports the count and the Financials card
+    explains it. Existing rows are deliberately not backfilled from current rates.
   - `GET /projects/{pid}/actual-costs` returns `materials_actual`,
     `labour_actual`, `total_actual` and a `labour_by_item` breakdown map.
 - **Backend module `apps/api/app/project_contracts/`** (`schemas.py`,

@@ -31,6 +31,7 @@ class CreateVariationIn(BaseModel):
 class ActualCostsOut(BaseModel):
     project_id: int
     materials_actual: Decimal
-    labour_actual: Decimal
-    total_actual: Decimal
-    labour_by_item: dict[int, Decimal] = {}
+    labour_actual: Decimal | None
+    total_actual: Decimal | None
+    unresolved_labour_completions: int = 0
+    labour_by_item: dict[int, Decimal | None] = {}
