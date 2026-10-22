@@ -275,7 +275,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 ### Cutlist, search, material take — `02-cutlist-search-material-take.md`
 - **Cutlist + related parts + Orderbook (#10, `0026`–`0032`).** Area/Room entities, first-class Cutlist, related-part rows, orders on `purchase_orders`, one shared number sequence. Related parts never carry a cutlist number.
 - **Global Search (#11, `0033`).** Meilisearch fed by a trigger-written outbox and a worker. `GET /search` is `current_user` only and drops unreadable types silently; 503 on outage.
-- **Material Take → Summary (#12, `0034`).** Per-item takes (draft → approved → superseded) generated from parts/hardware, then owned by a person; project summary computed on read; confirmation is advisory.
+- **Material Take → Summary (#12, `0034`).** Per-item takes (draft → approved → superseded) generated from parts/hardware, then owned by a person; project summary computed on read, with required / ordered / received / outstanding per line from the Orderbook (matched on product code = catalog SKU, `docs/sub-projects/02-cutlist-search-material-take.md`); confirmation is advisory.
 
 ### Tracking and item detail — `03-tracking-and-item-detail.md`
 - **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items).
