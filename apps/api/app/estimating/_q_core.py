@@ -153,25 +153,19 @@ def archive_customer(
 def _next_estimate_no(db: Session, *, workspace_id: int) -> str:
     year = datetime.now(timezone.utc).year
     prefix = f"EST-{year}-"
-    row = db.execute(
-        text(
-            """
-            SELECT estimate_no
-              FROM estimate
-             WHERE workspace_id = :w
-               AND estimate_no LIKE :pfx
-             ORDER BY estimate_no DESC
-             LIMIT 1
-            """
-        ),
-        {"w": workspace_id, "pfx": prefix + "%"},
-    ).scalar()
-    next_n = 1
-    if row is not None:
-        try:
-            next_n = int(str(row).split("-")[-1]) + 1
-        except (ValueError, IndexError):
-            next_n = 1
+    # Bootstrap from existing numeric suffixes, then serialize reservations
+    # through the existing workspace counter. The counter remains ahead even
+    # when the latest estimate is deleted or a concurrent insert is not visible.
+    next_n = db.execute(text("""
+        INSERT INTO workspace_counter(workspace_id, name, next_value)
+        SELECT :w, :counter,
+               COALESCE(MAX(CAST(substring(estimate_no FROM :pattern) AS bigint)), 0) + 2
+          FROM estimate WHERE workspace_id=:w
+        ON CONFLICT (workspace_id, name) DO UPDATE
+          SET next_value=GREATEST(workspace_counter.next_value + 1, EXCLUDED.next_value)
+        RETURNING next_value - 1
+    """), {"w": workspace_id, "counter": f"estimate:{year}",
+           "pattern": f"^{prefix}([0-9]+)$"}).scalar_one()
     return f"{prefix}{next_n:04d}"
 
 

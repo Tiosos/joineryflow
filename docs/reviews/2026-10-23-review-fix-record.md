@@ -20,7 +20,7 @@ flagged rather than assigned today's rate.
 | R06 — historical labour costs | Implemented and tested |
 | R07 — sliding sessions | Implemented and tested |
 | R08 — task mutation validation | Implemented and tested |
-| R09 — estimate numbering | Pending |
+| R09 — estimate numbering | Implemented and tested |
 | R10 — CV import replay | Pending |
 
 ## R01 — Serialize automatic summary orders and summary replacement
@@ -111,3 +111,17 @@ Validation: four concurrency regressions failed before the fix (close versus
 edit, reassignment versus edit/status, and stale conflict display). All **44 task
 and task-comment tests** passed afterwards; Ruff and whitespace checks passed.
 No schema/data migration.
+
+## R09 — Allocate estimate numbers atomically in numeric order
+
+Automatic numbering uses the existing `workspace_counter` under a workspace/year
+key. A single UPSERT bootstraps/advances from the greater of the counter and
+existing numeric suffixes. Concurrent creators reserve distinct values; suffixes
+remain numeric beyond 9999. Custom nonnumeric numbers are preserved and ignored
+by automatic numbering. Existing estimates keep their numbers; no migration is
+needed. Explicit duplicate custom numbers still receive the existing conflict.
+
+Validation: all three corrected regressions failed against unfixed application
+code (concurrent creation, 9999/10000 boundary and custom nonnumeric values).
+The numbering and estimating-route suites passed **45 tests** afterwards;
+Ruff and whitespace checks passed.

@@ -522,3 +522,10 @@ Read-only loaders retain their existing behaviour. Regression tests live in
 `test_estimating_revision_races.py`; the consolidated review is
 `docs/reviews/2026-10-23-main-code-review.md`. Its remaining findings are not covered
 by this change.
+
+### Review follow-up: estimate numbering (2026-10-23)
+
+Automatic estimate numbers use `workspace_counter` key `estimate:{year}` with an
+atomic UPSERT seeded from existing numeric suffixes. The counter and current
+numeric maximum both bound the next reservation, preserving existing/custom
+numbers and allowing sequence values above 9999 without lexical-order collisions.
