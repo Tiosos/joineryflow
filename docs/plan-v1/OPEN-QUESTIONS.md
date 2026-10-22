@@ -2359,7 +2359,7 @@ Microsoft 365.
 **All four confirmed (2026-10-22):** number, reason and requester/date; separate cost and selling-price impact; time impact; approval history (who, when, note). Discipline impacts, drawings/revisions and related tasks are not in v1. How today's single `amount_delta` maps is asked as Q612. Not built yet. Plan V1 lists variation number, reason, requester and date, cost and selling-price impact, time impact, discipline impacts, drawings/revisions, approval history and related tasks. Shipped: description, amount, who/when. Pick the first slice.
 
 ### Q612 — Which of the two figures does today's `amount_delta` become? *(new — raised by the Q611 answer)*
-**Open.** `current_value` adds `amount_delta` to the original contract value, so every stored amount is a contract (selling) figure. Q611 adds a separate cost impact.
+**Option 1 confirmed (2026-10-22).** `amount_delta` becomes the selling-price impact unchanged; cost impact is a new nullable column, empty on old rows. Not built yet. `current_value` adds `amount_delta` to the original contract value, so every stored amount is a contract (selling) figure. Q611 adds a separate cost impact.
 1. **Recommended.** `amount_delta` becomes the selling-price impact unchanged (current value is still original + approved selling impacts); cost impact is a new nullable column, empty on old rows.
 2. Both figures required on new variations; old rows get a null cost.
 3. Rename and backfill both from `amount_delta`.
