@@ -31,8 +31,14 @@ HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
 VarBoq = Literal["BOQ", "VAR"]
 
 
+# The dashboard cards' item filters (keys of `card_filters.CARD_FILTERS`).
+CardFilter = Literal["overdue", "in_optimisation", "awaiting_install"]
+
+
 class TrackingItemRow(BaseModel):
     id: int
+    project_id: int | None = None      # which project the row is in (the All projects scope shows it)
+    project_code: str | None = None
     item_number: int | None
     status: str | None
     stage: str | None          # site location (items.stage), not lifecycle stage
@@ -100,6 +106,12 @@ class TrackingItemRow(BaseModel):
 
 class TrackingGridOut(BaseModel):
     project_id: int
+    items: list[TrackingItemRow]
+
+
+class TrackingAllOut(BaseModel):
+    """Tracking's All projects scope (Q633): the Joinery Items a dashboard card counted."""
+    filter: CardFilter | None
     items: list[TrackingItemRow]
 
 

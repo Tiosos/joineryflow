@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -38,10 +40,42 @@ from .schemas import (
     PatchItemStatusIn,
     PatchLifecycleIn,
     ProjectBulkStatusIn,
+    CardFilter,
+    TrackingAllOut,
     TrackingGridOut,
 )
 
 router = APIRouter(prefix="", tags=["items"])
+
+
+@router.get("/tracking/items", response_model=TrackingAllOut)
+def get_all_projects_items(
+    filter: CardFilter | None = None,
+    status: str | None = None,
+    stage: str | None = None,
+    q: str | None = None,
+    user: AuthUser = Depends(require_permission("tracking", "read")),
+    db: Session = Depends(get_db),
+):
+    """Tracking's All projects scope (Q633): Joinery Items across the caller's projects.
+
+    `filter` is a dashboard card (overdue, in_optimisation, awaiting_install) and, with the same
+    scope the dashboard counts in (a manager's projects, a drafter's cutlists, everyone else the
+    workspace), returns exactly the items that card counted. `status` and `stage` keep the meaning
+    they have on the per-project list (a record state; items at a lifecycle stage).
+    """
+    items = list_items_for_project(
+        db,
+        workspace_id=user.workspace_id,
+        project_id=None,
+        status=status,
+        stage_key=stage,
+        q=q,
+        card=filter,
+        scope_user=user,
+        today=date.today(),
+    )
+    return {"filter": filter, "items": items}
 
 
 @router.get("/projects/{pid}/items", response_model=TrackingGridOut)

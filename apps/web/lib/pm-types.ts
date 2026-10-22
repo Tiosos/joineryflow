@@ -171,6 +171,8 @@ export type VarBoq = "BOQ" | "VAR";
 
 export interface TrackingItemRow {
   id: number;
+  project_id?: number; // which project the row is in
+  project_code?: string | null;
   factory_code?: string | null; // where the work is made (`0053`); null = not assigned yet
   tg_solid?: boolean; // the per-item Tg Solid tag (`0053`)
   item_number: number | null;
@@ -237,6 +239,15 @@ export interface TrackingItemRow {
 
 export interface TrackingGridOut {
   project_id: number;
+  items: TrackingItemRow[];
+}
+
+/** The dashboard cards' item filters (Q633); keys of the API's `card_filters.CARD_FILTERS`. */
+export type CardFilter = "overdue" | "in_optimisation" | "awaiting_install";
+
+/** `GET /tracking/items`: Tracking's All projects scope. */
+export interface TrackingAllOut {
+  filter: CardFilter | null;
   items: TrackingItemRow[];
 }
 

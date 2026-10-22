@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.sessions import AuthUser
+from ..items.card_filters import CARD_FILTERS, scope_clause
 from ..orders.queries import open_orders_sql
 from ..procurement_v1.queue.queries import eta_filter_sql
 from ..row_types import live_joinery_items
@@ -104,82 +105,30 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
     """
     wid = user.workspace_id
     uid = user.id
-    role = _role_view(user)
 
-    if role == "pm":
-        scope_clause = "AND i.project_id IN (SELECT project_id FROM projects WHERE pm_id = :uid)"
-    elif role == "drafter":
-        scope_clause = "AND i.cutlist_owner_id = :uid"
-    else:
-        scope_clause = ""
+    # Overdue / in optimisation / awaiting install: the predicates and the scope are the ones
+    # `GET /tracking/items` lists with (items/card_filters.py), so a card opens the rows it counted.
+    scope = scope_clause(user)
 
-    # metric 1: overdue items with at least one item_stages row where
-    # due_date < today AND done_date IS NULL
-    overdue_row = db.execute(
-        text(
-            f"""
-            SELECT COUNT(DISTINCT i.item_id) AS cnt
-            FROM items i
-            WHERE {_ITEM_WORKSPACE_EXISTS}
-              AND {_JOINERY_ITEM}
-              {scope_clause}
-              AND EXISTS (
-                  SELECT 1 FROM item_stages s
-                  WHERE s.item_id = i.item_id
-                    AND s.due_date < :today
-                    AND s.done_date IS NULL
-              )
-            """
-        ),
-        {"wid": wid, "uid": uid, "today": today},
-    ).mappings().first()
-    overdue_count = int(overdue_row["cnt"]) if overdue_row else 0
+    def _count(filter_key: str) -> int:
+        row = db.execute(
+            text(
+                f"""
+                SELECT COUNT(DISTINCT i.item_id) AS cnt
+                FROM items i
+                WHERE {_ITEM_WORKSPACE_EXISTS}
+                  AND {_JOINERY_ITEM}
+                  {scope}
+                  AND ({CARD_FILTERS[filter_key]})
+                """
+            ),
+            {"wid": wid, "uid": uid, "today": today},
+        ).mappings().first()
+        return int(row["cnt"]) if row else 0
 
-    # metric 2: in_optimisation — DOWN done_date IS NOT NULL AND CNC done_date IS NULL
-    in_opt_row = db.execute(
-        text(
-            f"""
-            SELECT COUNT(DISTINCT i.item_id) AS cnt
-            FROM items i
-            WHERE {_ITEM_WORKSPACE_EXISTS}
-              AND {_JOINERY_ITEM}
-              {scope_clause}
-              AND EXISTS (
-                  SELECT 1 FROM item_stages s
-                  WHERE s.item_id = i.item_id AND s.stage_key = 'DOWN' AND s.done_date IS NOT NULL
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM item_stages s
-                  WHERE s.item_id = i.item_id AND s.stage_key = 'CNC' AND s.done_date IS NOT NULL
-              )
-            """
-        ),
-        {"wid": wid, "uid": uid},
-    ).mappings().first()
-    in_opt_count = int(in_opt_row["cnt"]) if in_opt_row else 0
-
-    # metric 3: awaiting_install — DEL done_date IS NOT NULL AND INST done_date IS NULL
-    await_install_row = db.execute(
-        text(
-            f"""
-            SELECT COUNT(DISTINCT i.item_id) AS cnt
-            FROM items i
-            WHERE {_ITEM_WORKSPACE_EXISTS}
-              AND {_JOINERY_ITEM}
-              {scope_clause}
-              AND EXISTS (
-                  SELECT 1 FROM item_stages s
-                  WHERE s.item_id = i.item_id AND s.stage_key = 'DEL' AND s.done_date IS NOT NULL
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM item_stages s
-                  WHERE s.item_id = i.item_id AND s.stage_key = 'INST' AND s.done_date IS NOT NULL
-              )
-            """
-        ),
-        {"wid": wid, "uid": uid},
-    ).mappings().first()
-    await_install_count = int(await_install_row["cnt"]) if await_install_row else 0
+    overdue_count = _count("overdue")
+    in_opt_count = _count("in_optimisation")
+    await_install_count = _count("awaiting_install")
 
     # metric 4: value_in_progress
     # TODO: items table has no 'value' column. Returns 0.0 until a future migration
@@ -191,19 +140,19 @@ def _metrics_general(db: Session, *, user: AuthUser, today: date) -> list[Metric
             key="overdue",
             label="Overdue Items",
             value=overdue_count,
-            href="/tracking?status=overdue",
+            href="/tracking?scope=all&filter=overdue",
         ),
         MetricCard(
             key="in_optimisation",
             label="In Optimisation",
             value=in_opt_count,
-            href="/tracking?stage=in_optimisation",
+            href="/tracking?scope=all&filter=in_optimisation",
         ),
         MetricCard(
             key="awaiting_install",
             label="Awaiting Install",
             value=await_install_count,
-            href="/tracking?stage=awaiting_install",
+            href="/tracking?scope=all&filter=awaiting_install",
         ),
         MetricCard(
             key="value_in_progress",
