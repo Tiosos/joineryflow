@@ -19,7 +19,7 @@ flagged rather than assigned today's rate.
 | R05 — completion versus undo | Implemented and tested |
 | R06 — historical labour costs | Implemented and tested |
 | R07 — sliding sessions | Implemented and tested |
-| R08 — task mutation validation | Pending |
+| R08 — task mutation validation | Implemented and tested |
 | R09 — estimate numbering | Pending |
 | R10 — CV import replay | Pending |
 
@@ -99,3 +99,15 @@ Validation: three new regressions failed before the fix, covering read activity,
 cookie renewal capped at two hours and rollback isolation. All **16 authentication
 and session tests** passed, including revoked, inactive, sliding-expired and
 hard-expired cases; Ruff and whitespace checks passed. No schema migration.
+
+## R08 — Validate tasks after acquiring their lock
+
+Task edits and status changes first lock the workspace-scoped task, then reload
+its visible state in a separate statement. Closed-state, ownership, assignment,
+target and field-version checks all use that refreshed state; conflict payloads
+also report the current value. Ordinary reads remain unlocked.
+
+Validation: four concurrency regressions failed before the fix (close versus
+edit, reassignment versus edit/status, and stale conflict display). All **44 task
+and task-comment tests** passed afterwards; Ruff and whitespace checks passed.
+No schema/data migration.

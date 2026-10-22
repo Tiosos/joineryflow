@@ -176,7 +176,14 @@ def _with_can_comment(db: Session, actor: AuthUser, rows: list[dict]) -> list[di
     return rows
 
 
-def get_task(db: Session, *, actor: AuthUser, task_id: int) -> dict | None:
+def get_task(db: Session, *, actor: AuthUser, task_id: int, for_update: bool = False) -> dict | None:
+    if for_update:
+        locked = db.execute(text("SELECT task_id FROM task WHERE task_id=:t AND workspace_id=:w FOR UPDATE"),
+                            {"t": task_id, "w": actor.workspace_id}).first()
+        if locked is None:
+            return None
+        # Read visibility and all mutable business fields in a NEW statement
+        # after waiting; a version-only refresh leaves ownership/status stale.
     r = db.execute(text(_SELECT + " AND t.task_id = :t"),
                    {**scope(db, actor), "t": task_id}).mappings().first()
     return _with_can_comment(db, actor, [dict(r)])[0] if r else None
@@ -253,7 +260,7 @@ def create_task(db: Session, *, actor: AuthUser, payload: CreateTaskIn) -> tuple
 def patch_task(db: Session, *, actor: AuthUser, task_id: int,
                payload: PatchTaskIn) -> tuple[str, object]:
     ws = actor.workspace_id
-    current = get_task(db, actor=actor, task_id=task_id)
+    current = get_task(db, actor=actor, task_id=task_id, for_update=True)
     if current is None:
         return "NOT_FOUND", None
     if not (_is_privileged(actor) or actor.id in (current["created_by"], current["assignee_id"])):
@@ -291,9 +298,7 @@ def patch_task(db: Session, *, actor: AuthUser, task_id: int,
         if code != "OK":
             return code, None
 
-    locked = db.execute(
-        text("SELECT field_versions FROM task WHERE task_id = :t FOR UPDATE"), {"t": task_id}
-    ).scalar_one()
+    locked = current["field_versions"]
     conflicts = check_field_conflicts(locked, payload.expected_versions)
     if conflicts:
         for field, info in conflicts.items():
@@ -320,16 +325,14 @@ def patch_task(db: Session, *, actor: AuthUser, task_id: int,
 
 def set_status(db: Session, *, actor: AuthUser, task_id: int, status: str) -> tuple[str, dict | None]:
     ws = actor.workspace_id
-    current = get_task(db, actor=actor, task_id=task_id)
+    current = get_task(db, actor=actor, task_id=task_id, for_update=True)
     if current is None:
         return "NOT_FOUND", None
     if not (_is_privileged(actor) or actor.id in (current["created_by"], current["assignee_id"])):
         return "FORBIDDEN", None
     if current["status"] == status:
         return "OK", current
-    locked = db.execute(
-        text("SELECT field_versions FROM task WHERE task_id = :t FOR UPDATE"), {"t": task_id}
-    ).scalar_one()
+    locked = current["field_versions"]
     db.execute(
         text("""
             UPDATE task SET status = CAST(:s AS varchar),
