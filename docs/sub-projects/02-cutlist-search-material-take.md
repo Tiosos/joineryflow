@@ -338,8 +338,18 @@ without; supplier `Corian Stoneworks`; and one purchase order. Idempotent.
   approved version, or a source vanished), **nest sheets** from the latest
   CutPlan (Q582 — `cut_sheet.material_sku` resolves through the catalog SKU
   **or** `cv_material_mapping`, because the seed's nest is labelled by CV code
-  `18-PB`), and read-only **on order / received** from the existing
-  `procurement_v1` rollup. **Confirmation is advisory** (Q499) and freezes the
+  `18-PB`), and read-only **required / ordered / received / outstanding**
+  (changed 2026-10-22, user decision: from the Orderbook, no longer the
+  `procurement_v1` batch rollup). Per line: *required* = `qty_confirmed` when
+  set, else `qty_consolidated`; *ordered* / *received* sum the project's
+  `purchase_orders` whose `product_code` equals the material's catalog SKU
+  (trimmed, case-insensitive, like the order pop-up's catalog block); *ordered*
+  = placed (`date_ordered` set) or Delivered, never Cancelled / Rejected;
+  *received* = the Delivery tab log, and a Delivered order counts in full (the
+  log never changes the status); *outstanding* = required - received, floored at
+  0. A material with no catalog SKU shows no figures (`null`). Assumptions to
+  watch: a mistyped or blank product code does not count, and the order's
+  quantity is taken to be in the line's unit. **Confirmation is advisory** (Q499) and freezes the
   summary (`409 SUMMARY_CONFIRMED`); rebuild to revise. No ordering from a
   line yet (Q585).
 - **RBAC — no matrix change.** Everything is `("list", …)`. Take edits and

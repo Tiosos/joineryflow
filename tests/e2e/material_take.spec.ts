@@ -43,6 +43,10 @@ test("a drafted take can be adjusted and approved, then summarised", async ({ pa
   await page.goto(`/projects/${pid}/procurement?tab=summary`);
   await expect(page.getByRole("heading", { name: "Material Summary" })).toBeVisible();
   await expect(page.getByText(/may be outdated/)).toBeVisible();
+  for (const name of ["Required", "Ordered", "Received", "Outstanding"]) {
+    await expect(page.getByRole("columnheader", { name })).toBeVisible();
+  }
+  await expect(page.getByTestId("summary-outstanding").first()).toBeVisible();
   await page.getByText(/without an approved take/).click();
   const draftLink = page.locator(`details a[href^="/items/${itemB}"]`);
   await draftLink.click();

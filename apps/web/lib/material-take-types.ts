@@ -64,8 +64,10 @@ export interface SummaryLine {
   note: string | null;
   stale: boolean;
   nest_sheets: number | null;
+  qty_required: string;
   qty_on_order: string | null;
   qty_received: string | null;
+  qty_outstanding: string | null;
   sources: SummarySource[];
 }
 

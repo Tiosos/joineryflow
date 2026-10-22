@@ -23,8 +23,12 @@ class SummaryLineOut(BaseModel):
     note: str | None
     stale: bool
     nest_sheets: int | None       # boards only: sheets in the latest CutPlan (Q582)
-    qty_on_order: Decimal | None  # read-only, from the batch rollup (Q585)
+    # Read-only, from the project's Orderbook orders matched on product code = SKU (Q585).
+    # None when the material has no catalog SKU to match on.
+    qty_required: Decimal         # qty_confirmed when set, else qty_consolidated
+    qty_on_order: Decimal | None
     qty_received: Decimal | None
+    qty_outstanding: Decimal | None  # required - received, never below 0
     sources: list[SourceOut]
 
 

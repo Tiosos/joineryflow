@@ -2,8 +2,8 @@
 
 Built from each Joinery Item's *current approved* take. Board lines are
 fractional sheets per item and round up **once** here (Q586). `stale`,
-`nest_sheets` and the on-order / received columns are computed on read and
-never stored, so they cannot drift from what they describe.
+`nest_sheets` and the required / on-order / received / outstanding columns are
+computed on read and never stored, so they cannot drift from what they describe.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ..auth.audit import write_audit
 from ..material_takes.generation import summary_sheets
 from ..material_takes.queries import Conflict, NotFound
-from ..procurement_v1.materials.queries import project_material_rollup
+from ..procurement_v1.materials.queries import _CATALOG_LOOKUP
 from ..row_types import live_joinery_items
 from ..sql_columns import require_columns
 
@@ -113,6 +113,47 @@ def _nest_sheets(db: Session, project_id: int) -> dict[int, int]:
          GROUP BY 1"""), {"p": project_id}) if r[0] is not None}
 
 
+def _order_figures(db: Session, project_id: int) -> dict[str, tuple[Decimal, Decimal]]:
+    """Ordered and received quantity per product code, from the project's Orderbook orders.
+
+    An order counts as ordered once it is placed with the supplier (`date_ordered`
+    set, as a PO does) or Delivered; Cancelled / Rejected never count. Received is
+    the Delivery tab's log, and a Delivered order is received in full (the log is a
+    record and never changes the status). Matched to a material by product code =
+    catalog SKU, trimmed and case-insensitive, like the order pop-up's catalog block.
+    """
+    rows = db.execute(text("""
+        SELECT lower(btrim(po.product_code)) AS code,
+               SUM(po.quantity) AS ordered,
+               SUM(CASE WHEN po.status = 'Delivered' THEN po.quantity
+                        ELSE COALESCE(d.got, 0) END) AS received
+          FROM purchase_orders po
+          LEFT JOIN (SELECT po_id, SUM(qty) AS got FROM order_delivery GROUP BY po_id) d
+                 ON d.po_id = po.po_id
+         WHERE po.project_id = :p
+           AND po.status NOT IN ('Cancelled', 'Rejected')
+           AND (po.date_ordered IS NOT NULL OR po.status = 'Delivered')
+           AND btrim(COALESCE(po.product_code, '')) <> ''
+         GROUP BY 1"""), {"p": project_id}).mappings().all()
+    return {r["code"]: (r["ordered"] or Decimal(0), r["received"] or Decimal(0)) for r in rows}
+
+
+def _line_skus(db: Session, lines: list[dict]) -> dict[tuple[str, int], str]:
+    """Lower-cased catalog SKU of every material the lines point at."""
+    by_type: dict[str, list[int]] = {}
+    for l in lines:
+        if l["material_id"] is not None and l["material_type"] in _CATALOG_LOOKUP:
+            by_type.setdefault(l["material_type"], []).append(l["material_id"])
+    out: dict[tuple[str, int], str] = {}
+    for mt, ids in by_type.items():
+        table, id_col, _name, sku_col = _CATALOG_LOOKUP[mt]
+        for r in db.execute(text(f"SELECT {id_col} AS id, {sku_col} AS sku FROM {table} "
+                                 f"WHERE {id_col} = ANY(:ids)"), {"ids": ids}).mappings():
+            if r["sku"] and r["sku"].strip():
+                out[(mt, r["id"])] = r["sku"].strip().lower()
+    return out
+
+
 def _detail(db: Session, s: dict) -> dict:
     lines = [dict(r) for r in db.execute(text("""
         SELECT l.* FROM material_summary_line l
@@ -131,8 +172,8 @@ def _detail(db: Session, s: dict) -> dict:
     for r in sources:
         by_line.setdefault(r["summary_line_id"], []).append(dict(r))
     nest = _nest_sheets(db, s["project_id"])
-    orders = {(r["material_type"], r["material_id"]): r
-              for r in project_material_rollup(db, s["project_id"])}
+    orders = _order_figures(db, s["project_id"])
+    skus = _line_skus(db, lines)
     for l in lines:
         src = by_line.get(l["line_id"], [])
         # Stale (Q500): a source item has since approved another version, or
@@ -142,9 +183,14 @@ def _detail(db: Session, s: dict) -> dict:
         l["sources"] = [{"item_id": r["item_id"], "num": r["num"], "description": r["description"],
                          "take_version": r["take_version"], "qty": r["qty"]} for r in src]
         l["nest_sheets"] = nest.get(l["material_id"]) if l["material_type"] == "BOARD" else None
-        o = orders.get((l["material_type"], l["material_id"]))
-        l["qty_on_order"] = o["qty_on_order"] if o else None
-        l["qty_received"] = o["qty_received"] if o else None
+        # Required is the PM's confirmed figure when set, else what the takes add up to.
+        l["qty_required"] = l["qty_confirmed"] if l["qty_confirmed"] is not None else l["qty_consolidated"]
+        sku = skus.get((l["material_type"], l["material_id"]))
+        if sku is None:      # no catalog SKU to match orders on
+            l["qty_on_order"] = l["qty_received"] = l["qty_outstanding"] = None
+        else:
+            l["qty_on_order"], l["qty_received"] = orders.get(sku, (Decimal(0), Decimal(0)))
+            l["qty_outstanding"] = max(l["qty_required"] - l["qty_received"], Decimal(0))
     return {**s, "lines": lines, "missing_takes": missing_takes(db, s["project_id"])}
 
 

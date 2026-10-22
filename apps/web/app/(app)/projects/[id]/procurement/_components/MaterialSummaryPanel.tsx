@@ -108,8 +108,10 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
               <th className="px-3 py-1.5 text-right">Consolidated</th>
               <th className="px-3 py-1.5 text-right">Nest</th>
               <th className="px-3 py-1.5 text-right">Confirmed</th>
-              <th className="px-3 py-1.5 text-right">On order</th>
+              <th className="px-3 py-1.5 text-right">Required</th>
+              <th className="px-3 py-1.5 text-right">Ordered</th>
               <th className="px-3 py-1.5 text-right">Received</th>
+              <th className="px-3 py-1.5 text-right">Outstanding</th>
               <th className="px-3 py-1.5">Note</th>
             </tr>
           </thead>
@@ -133,7 +135,7 @@ export function MaterialSummaryPanel({ projectId, canEdit, canConfirm }: {
                       · take v{src.take_version}
                     </td>
                     <td className="h-mono px-3 py-1 text-right">{src.qty}</td>
-                    <td colSpan={5} />
+                    <td colSpan={7} />
                   </tr>
                 ))}
               </Fragment>
@@ -182,8 +184,10 @@ function SummaryRow({ line, editable, expanded, toggle, save }: {
           <span className="h-mono text-h-ink">{line.qty_confirmed ?? "—"}</span>
         )}
       </td>
-      <td className="h-mono px-3 py-1.5 text-right text-h-muted">{line.qty_on_order ?? "—"}</td>
-      <td className="h-mono px-3 py-1.5 text-right text-h-muted">{line.qty_received ?? "—"}</td>
+      <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-required">{line.qty_required}</td>
+      <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-ordered">{line.qty_on_order ?? "—"}</td>
+      <td className="h-mono px-3 py-1.5 text-right text-h-muted" data-testid="summary-received">{line.qty_received ?? "—"}</td>
+      <td className="h-mono px-3 py-1.5 text-right text-h-ink" data-testid="summary-outstanding">{line.qty_outstanding ?? "—"}</td>
       <td className="px-3 py-1.5">
         {editable ? (
           <input aria-label={`Note for ${line.description}`} value={note}

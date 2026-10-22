@@ -139,15 +139,68 @@ def test_nest_sku_may_be_a_cv_code(proj):
     assert _current(c, proj["pid"])["summary"]["lines"][0]["nest_sheets"] == 2
 
 
-def test_on_order_comes_from_the_batch_rollup(proj):
+def _order(proj, sku, qty, *, status="Approved", ordered=True, project=True):
+    """An Orderbook order for `sku` on the project (or on none)."""
+    vendor = _sql("SELECT vendor_id FROM vendors WHERE workspace_id = :w AND name = 'Sup'", w=proj["w"]) or \
+        _sql("INSERT INTO vendors(name, category, workspace_id) VALUES ('Sup', 'Board', :w) RETURNING vendor_id",
+             w=proj["w"])
+    return _sql("""INSERT INTO purchase_orders(po_number, vendor_id, requester_id, project_id,
+                                               category, description, product_code, quantity, status, date_ordered)
+                   VALUES ('PO-T-' || nextval('po_number_seq'), :v,
+                           (SELECT id FROM app_user WHERE workspace_id = :w LIMIT 1), :p, 'Board', 'x', :c, :q, :s, CASE WHEN :o THEN CURRENT_DATE END)
+                   RETURNING po_id""",
+                v=vendor, w=proj["w"], p=proj["pid"] if project else None, c=sku, q=qty, s=status, o=ordered)
+
+
+def _board_line(proj):
     c = proj["c"]
     _approve(c, proj["a"]["item"])
-    _sql("""INSERT INTO procurement_batches(project_id, material_type, material_id, supplier,
-                                            qty_ordered, qty_received)
-            VALUES (:p, 'BOARD', :b, 'Laminex', 5, 0)""", p=proj["pid"], b=proj["a"]["board"])
+    sku = _sql("SELECT sku FROM board_materials WHERE material_id = :b", b=proj["a"]["board"])
+    return sku
+
+
+def test_required_ordered_received_outstanding_come_from_orderbook_orders(proj):
+    c = proj["c"]
+    sku = _board_line(proj)
     _build(c, proj["pid"])
     line = _current(c, proj["pid"])["summary"]["lines"][0]
-    assert (line["qty_on_order"], line["qty_received"]) == ("5.00", "0.00")  # numeric(…,2)
+    assert (line["qty_on_order"], line["qty_received"]) == ("0", "0")      # nothing ordered yet
+    assert line["qty_required"] == line["qty_consolidated"] == line["qty_outstanding"]
+
+    a = _order(proj, f" {sku.upper()} ", 5)                        # trimmed, case-insensitive
+    _order(proj, sku, 3, status="Delivered")                       # delivered in full, no log
+    _order(proj, sku, 9, status="Cancelled")
+    _order(proj, sku, 9, status="Rejected")
+    _order(proj, sku, 9, status="Approved", ordered=False)         # approved, not yet placed
+    _order(proj, sku, 9, project=False)                            # another (no) project
+    _sql("INSERT INTO order_delivery(po_id, qty, date_received) VALUES (:o, 2, CURRENT_DATE)", o=a)
+    line = _current(c, proj["pid"])["summary"]["lines"][0]
+    assert (line["qty_on_order"], line["qty_received"]) == ("8.000", "5.000")   # 5+3 ordered; 2+3 in
+    assert line["qty_required"] == "1"                                           # 1 sheet needed
+    assert line["qty_outstanding"] == "0"                                        # floored at 0
+
+
+def test_outstanding_is_required_less_received_and_follows_the_confirmed_figure(proj):
+    c = proj["c"]
+    sku = _board_line(proj)
+    sid = _build(c, proj["pid"])
+    lid = _current(c, proj["pid"])["summary"]["lines"][0]["line_id"]
+    assert c.patch(f"/material-summaries/{sid}/lines/{lid}", json={"qty_confirmed": "10"}).status_code == 204
+    po = _order(proj, sku, 10)
+    _sql("INSERT INTO order_delivery(po_id, qty, date_received) VALUES (:o, 4, CURRENT_DATE)", o=po)
+    line = _current(c, proj["pid"])["summary"]["lines"][0]
+    assert line["qty_required"] == "10"
+    assert (line["qty_on_order"], line["qty_received"], line["qty_outstanding"]) == ("10.000", "4.000", "6.000")
+
+
+def test_a_material_without_a_sku_has_no_order_figures(proj):
+    c = proj["c"]
+    _board_line(proj)
+    _sql("UPDATE board_materials SET sku = NULL WHERE material_id = :b", b=proj["a"]["board"])
+    _build(c, proj["pid"])
+    line = _current(c, proj["pid"])["summary"]["lines"][0]
+    assert line["qty_on_order"] is None and line["qty_received"] is None and line["qty_outstanding"] is None
+    assert line["qty_required"] == line["qty_consolidated"]
 
 
 # --- C3 ---------------------------------------------------------------------
