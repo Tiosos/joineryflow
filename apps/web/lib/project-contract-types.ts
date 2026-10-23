@@ -18,10 +18,14 @@ export interface ContractVariation {
   created_at: string;
   created_by: number | null;
   /** Q608: only Approved counts toward `current_value`. */
-  status: "Draft" | "Approved" | "Rejected";
+  status: "Draft" | "Approved" | "Rejected" | "Voided";
   decided_by: number | null;
   decided_at: string | null;
   decision_note: string | null;
+  /** Q610: a voided variation keeps its approval but no longer counts. */
+  voided_by: number | null;
+  voided_at: string | null;
+  void_reason: string | null;
   /** Empty = a project-level variation. */
   items: VariationItem[];
 }

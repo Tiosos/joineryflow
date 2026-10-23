@@ -85,3 +85,32 @@ test("a variation is linked to items when added and its draft links can be chang
   await expect(row.getByTestId("variation-items")).toContainText(`Wardrobe ${stamp}`);
   await expect(row.getByTestId("variation-items")).not.toContainText(`Vanity ${stamp}`);
 });
+
+// Q610: a manager voids an Approved variation with a reason; it stays listed but stops counting.
+test("a manager voids an approved variation and the contract value drops it", async ({ page }) => {
+  const pid = await convertedProject(page);
+  const current = page.getByText("Contract Value (current)").locator("xpath=following-sibling::div");
+
+  await login(page);
+  await page.goto(`/projects/${pid}`);
+  await page.getByRole("button", { name: "+ Add variation" }).click();
+  await page.getByPlaceholder("Description *").fill("Added twice");
+  await page.getByPlaceholder("Amount (+/-) *").fill("300");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const row = page.getByTestId("variation-row").filter({ hasText: "Added twice" });
+  await expect(row.getByTestId("variation-status")).toHaveText("Approved");   // a manager's own is Approved at once
+  await expect(current).toHaveText("$1,300.00");
+
+  await row.getByRole("button", { name: "Void" }).click();
+  await page.getByTestId("confirm-dialog").locator("textarea").fill("Entered twice");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(row.getByTestId("variation-status")).toHaveText("Voided");
+  await expect(row).toContainText("Entered twice");
+  await expect(row.getByRole("button", { name: "Void" })).toHaveCount(0);      // final
+  await expect(current).toHaveText("$1,000.00");
+
+  await login(page, "noa.lindqvist@hartwood.test");                           // a drafter has no Void button
+  await page.goto(`/projects/${pid}`);
+  await expect(page.getByTestId("variation-row").filter({ hasText: "Added twice" })
+    .getByRole("button", { name: "Void" })).toHaveCount(0);
+});

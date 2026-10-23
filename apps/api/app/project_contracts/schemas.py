@@ -22,10 +22,14 @@ class VariationOut(BaseModel):
     created_at: datetime
     created_by: int | None = None
     # Q608: a Draft is not in the contract value; a manager or admin approves or rejects it.
-    status: Literal["Draft", "Approved", "Rejected"]
+    status: Literal["Draft", "Approved", "Rejected", "Voided"]
     decided_by: int | None = None
     decided_at: datetime | None = None
     decision_note: str | None = None
+    # Q610: a voided variation keeps its row and approval but stops counting.
+    voided_by: int | None = None
+    voided_at: datetime | None = None
+    void_reason: str | None = None
     # Q609: the Joinery Items it touches; empty = a project-level variation.
     items: list[VariationItemOut] = []
 
@@ -51,6 +55,10 @@ class PatchVariationIn(BaseModel):
     description: str | None = Field(default=None, min_length=1)
     amount_delta: Decimal | None = None
     item_ids: list[int] | None = None       # replaces the links; [] unlinks all; omitted leaves them
+
+
+class VoidVariationIn(BaseModel):
+    reason: str | None = None
 
 
 class DecideVariationIn(BaseModel):

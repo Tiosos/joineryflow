@@ -13,7 +13,7 @@ from ..auth.sessions import AuthUser
 from ..db import get_db
 from . import queries as q
 from .actual_costs import actual_costs_for_project
-from .schemas import ActualCostsOut, ContractOut, CreateVariationIn, DecideVariationIn, PatchVariationIn
+from .schemas import ActualCostsOut, ContractOut, CreateVariationIn, DecideVariationIn, PatchVariationIn, VoidVariationIn
 
 router = APIRouter(tags=["project_contracts"])
 
@@ -82,6 +82,24 @@ def decide_variation_route(
     row = q.decide_variation(
         db, project_id=pid, variation_id=vid, workspace_id=user.workspace_id,
         actor_id=user.id, decision=body.decision, note=body.note,
+    )
+    db.commit()
+    return row
+
+
+@router.post("/projects/{pid}/contract/variations/{vid}/void", response_model=ContractOut)
+def void_variation_route(
+    pid: int,
+    vid: int,
+    body: VoidVariationIn,
+    user: AuthUser = Depends(require_permission("tracking", "write", project_param="pid")),
+    db: Session = Depends(get_db),
+):
+    if not _is_manager(user):
+        raise HTTPException(status_code=403, detail={"code": "DECISION_FORBIDDEN"})
+    row = q.void_variation(
+        db, project_id=pid, variation_id=vid, workspace_id=user.workspace_id,
+        actor_id=user.id, reason=body.reason,
     )
     db.commit()
     return row

@@ -40,7 +40,8 @@ def get_contract(db: Session, *, project_id: int, workspace_id: int) -> dict | N
         text(
             """
             SELECT variation_id, project_id, description, amount_delta,
-                   created_at, created_by, status, decided_by, decided_at, decision_note
+                   created_at, created_by, status, decided_by, decided_at, decision_note,
+                   voided_by, voided_at, void_reason
               FROM project_contract_variation
              WHERE project_id = :p
              ORDER BY created_at, variation_id
@@ -239,6 +240,36 @@ def decide_variation(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="project.contract.variation_decide", target=str(project_id),
         payload={"variation_id": variation_id, "status": status, "note": note},
+    )
+    db.flush()
+    return get_contract(db, project_id=project_id, workspace_id=workspace_id)
+
+
+def void_variation(
+    db: Session, *, project_id: int, variation_id: int, workspace_id: int, actor_id: int, reason: str | None,
+) -> dict:
+    """Void an Approved variation (the caller has checked the role): it stays listed with its approval but
+    no longer counts. Final, and only an Approved one can be voided (Q610)."""
+    row = _locked_variation(db, project_id=project_id, variation_id=variation_id, workspace_id=workspace_id)
+    reason = (reason or "").strip() or None
+    if reason is None:
+        raise HTTPException(status_code=409, detail={"code": "VOID_REASON_REQUIRED"})
+    if row["status"] != "Approved":
+        raise HTTPException(status_code=409, detail={"code": "VARIATION_NOT_APPROVED"})
+    db.execute(
+        text(
+            """
+            UPDATE project_contract_variation
+               SET status = 'Voided', voided_by = :a, voided_at = now(), void_reason = :r
+             WHERE variation_id = :v
+            """
+        ),
+        {"a": actor_id, "r": reason, "v": variation_id},
+    )
+    write_audit(
+        db, workspace_id=workspace_id, actor_id=actor_id,
+        event="project.contract.variation_void", target=str(project_id),
+        payload={"variation_id": variation_id, "reason": reason},
     )
     db.flush()
     return get_contract(db, project_id=project_id, workspace_id=workspace_id)
