@@ -2,16 +2,32 @@ import type { ProjectContract, VariationItem } from "./project-contract-types";
 import type { TrackingGridOut } from "./pm-types";
 import { apiCall, jsonInit } from "./api";
 
+/** `amount_delta` is the selling-price impact; empty optional fields are omitted. */
+export interface NewVariation {
+  description: string;
+  amount_delta: string;
+  reason: string;
+  requester?: string;
+  requested_on?: string;
+  cost_impact?: string;
+  time_impact_days?: number;
+  item_ids?: number[];
+}
+
 export const projectContractApi = {
-  addVariation: (projectId: number, description: string, amountDelta: string, itemIds: number[] = []) =>
-    apiCall<ProjectContract>(
-      `/api/projects/${projectId}/contract/variations`,
-      jsonInit("POST", { description, amount_delta: amountDelta, item_ids: itemIds }),
-    ),
+  addVariation: (projectId: number, body: NewVariation) =>
+    apiCall<ProjectContract>(`/api/projects/${projectId}/contract/variations`, jsonInit("POST", body)),
   editVariation: (
     projectId: number,
     variationId: number,
-    changes: { description?: string; amount_delta?: string; item_ids?: number[] },
+    changes: Partial<
+      Omit<NewVariation, "requester" | "requested_on" | "cost_impact" | "time_impact_days"> & {
+        requester: string | null;
+        requested_on: string | null;
+        cost_impact: string | null;
+        time_impact_days: number | null;
+      }
+    >,
   ) =>
     apiCall<ProjectContract>(
       `/api/projects/${projectId}/contract/variations/${variationId}`,

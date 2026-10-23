@@ -249,11 +249,13 @@ def _contract(db, *, pid: int, original: str, variations: tuple[str, ...] = (), 
     db.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, :v)"),
                {"p": pid, "v": original})
     for delta in variations:
-        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta,"
-                        " status, decided_at) VALUES (:p, 'v', :d, 'Approved', now())"), {"p": pid, "d": delta})
+        db.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta,"
+                        " status, decided_at) VALUES (:p, (SELECT COALESCE(MAX(number), 0) + 1"
+                        " FROM project_contract_variation WHERE project_id = :p), 'v', :d, 'Approved', now())"), {"p": pid, "d": delta})
     for st, delta in undecided:
-        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta,"
-                        " status, decided_at, decision_note) VALUES (:p, 'v', :d, :s,"
+        db.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta,"
+                        " status, decided_at, decision_note) VALUES (:p, (SELECT COALESCE(MAX(number), 0) + 1"
+                        " FROM project_contract_variation WHERE project_id = :p), 'v', :d, :s,"
                         " CASE WHEN :s = 'Draft' THEN NULL ELSE now() END,"
                         " CASE WHEN :s = 'Rejected' THEN 'no' END)"), {"p": pid, "d": delta, "s": st})
     db.commit()

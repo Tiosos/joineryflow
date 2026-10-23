@@ -30,7 +30,8 @@ test("a drafter's variation waits for a manager, who approves one and rejects an
   await expect(page.getByText("Added as a draft until a manager approves it")).toBeVisible();
   for (const [name, amount] of [["Extra shelf", "250"], ["Wrong colour", "90"]]) {
     await page.getByPlaceholder("Description *").fill(name);
-    await page.getByPlaceholder("Amount (+/-) *").fill(amount);
+    await page.getByPlaceholder("Selling price impact (+/-) *").fill(amount);
+    await page.getByPlaceholder("Reason *").fill("E2E reason");
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByTestId("variation-row").filter({ hasText: name })).toBeVisible();
     if (name === "Extra shelf") await page.getByRole("button", { name: "+ Add variation" }).click();
@@ -71,7 +72,8 @@ test("a variation is linked to items when added and its draft links can be chang
   await page.goto(`/projects/${pid}`);
   await page.getByRole("button", { name: "+ Add variation" }).click();
   await page.getByPlaceholder("Description *").fill("Linked change");
-  await page.getByPlaceholder("Amount (+/-) *").fill("40");
+  await page.getByPlaceholder("Selling price impact (+/-) *").fill("40");
+  await page.getByPlaceholder("Reason *").fill("E2E reason");
   await page.getByTestId("variation-item-picker").getByLabel(new RegExp(`Vanity ${stamp}`)).check();
   await page.getByRole("button", { name: "Add", exact: true }).click();
 
@@ -95,7 +97,8 @@ test("a manager voids an approved variation and the contract value drops it", as
   await page.goto(`/projects/${pid}`);
   await page.getByRole("button", { name: "+ Add variation" }).click();
   await page.getByPlaceholder("Description *").fill("Added twice");
-  await page.getByPlaceholder("Amount (+/-) *").fill("300");
+  await page.getByPlaceholder("Selling price impact (+/-) *").fill("300");
+  await page.getByPlaceholder("Reason *").fill("E2E reason");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   const row = page.getByTestId("variation-row").filter({ hasText: "Added twice" });
   await expect(row.getByTestId("variation-status")).toHaveText("Approved");   // a manager's own is Approved at once
@@ -113,4 +116,46 @@ test("a manager voids an approved variation and the contract value drops it", as
   await page.goto(`/projects/${pid}`);
   await expect(page.getByTestId("variation-row").filter({ hasText: "Added twice" })
     .getByRole("button", { name: "Void" })).toHaveCount(0);
+});
+
+// Q611: number, reason, who asked and when, cost and time impact, and the decision history.
+test("a variation shows its number, reason, requester, impacts and history", async ({ page }) => {
+  const pid = await convertedProject(page);
+  const current = page.getByText("Contract Value (current)").locator("xpath=following-sibling::div");
+
+  await login(page, "noa.lindqvist@hartwood.test");
+  await page.goto(`/projects/${pid}`);
+  await page.getByRole("button", { name: "+ Add variation" }).click();
+  await page.getByPlaceholder("Description *").fill("Pantry shelves");
+  await page.getByPlaceholder("Selling price impact (+/-) *").fill("500");
+  await page.getByPlaceholder("Reason *").fill("Builder asked for two more");
+  await page.getByPlaceholder("Requested by").fill("Builder: J. Smith");
+  await page.getByLabel("Requested on").fill("2026-10-01");
+  await page.getByPlaceholder("Cost impact (+/-)").fill("320");
+  await page.getByPlaceholder("Time impact (days)").fill("-2");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  const row = page.getByTestId("variation-row").filter({ hasText: "Pantry shelves" });
+  await expect(row).toContainText("VAR-001");
+  await expect(row.getByTestId("variation-details")).toContainText(
+    "Reason: Builder asked for two more · Requested by Builder: J. Smith on 2026-10-01 · Cost impact $320.00 · Time impact -2 d",
+  );
+  await expect(row.getByTestId("variation-history")).toContainText("Added by");
+  await expect(current).toHaveText("$1,000.00");                       // a Draft counts nothing, cost or price
+
+  await login(page);
+  await page.goto(`/projects/${pid}`);
+  const mrow = page.getByTestId("variation-row").filter({ hasText: "Pantry shelves" });
+  await mrow.getByRole("button", { name: "Approve" }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(mrow.getByTestId("variation-history")).toContainText("Approved by");
+  await expect(current).toHaveText("$1,500.00");                       // the selling-price impact only
+
+  await page.getByRole("button", { name: "+ Add variation" }).click();   // numbers run on within the project
+  await page.getByPlaceholder("Description *").fill("Second");
+  await page.getByPlaceholder("Selling price impact (+/-) *").fill("10");
+  await expect(page.getByRole("button", { name: "Add", exact: true })).toBeDisabled();   // a reason is required
+  await page.getByPlaceholder("Reason *").fill("Because");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByTestId("variation-row").filter({ hasText: "Second" })).toContainText("VAR-002");
 });

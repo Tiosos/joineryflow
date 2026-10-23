@@ -1939,9 +1939,12 @@ def main() -> None:
                 text(
                     """
                     INSERT INTO project_contract_variation(
-                        project_id, description, amount_delta, created_by, status, decided_by, decided_at
+                        project_id, number, description, amount_delta, reason, requester, requested_on,
+                        cost_impact, time_impact_days, created_by, status, decided_by, decided_at
                     )
-                    VALUES (:p, 'Client-requested benchtop upgrade', 4250.00, :a, 'Approved', :m, now())
+                    VALUES (:p, 1, 'Client-requested benchtop upgrade', 4250.00,
+                            'Client upgraded the kitchen benchtop to stone', 'Client: M. Alford',
+                            CURRENT_DATE - 14, 2900.00, 3, :a, 'Approved', :m, now())
                     """
                 ),
                 {"p": _contract_pid, "a": _estimator_id, "m": _manager_id},
@@ -1951,9 +1954,12 @@ def main() -> None:
                 text(
                     """
                     INSERT INTO project_contract_variation(
-                        project_id, description, amount_delta, created_by, status
+                        project_id, number, description, amount_delta, reason, requester, requested_on,
+                        cost_impact, time_impact_days, created_by, status
                     )
-                    VALUES (:p, 'Extra pantry shelving (awaiting approval)', 1800.00, :a, 'Draft')
+                    VALUES (:p, 2, 'Extra pantry shelving (awaiting approval)', 1800.00,
+                            'Builder asked for two more pantry shelves', 'Builder: J. Smith',
+                            CURRENT_DATE - 2, 1100.00, 1, :a, 'Draft')
                     """
                 ),
                 {"p": _contract_pid, "a": _drafter_id},

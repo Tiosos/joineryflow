@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (0088, Variation void).
-HEAD = "0088"
+# The current head revision: bump it with each new migration (0089, Variation fields).
+HEAD = "0089"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -407,14 +407,14 @@ def test_0086_old_variations_become_approved_and_a_downgrade_is_refused_while_a_
                                     " FROM project_contract_variation")).one()
     assert (st, by, at) == ("Approved", True, True)
     with pytest.raises(IntegrityError), eng.begin() as c:       # no default: a writer must say which
-        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta)"
-                       " VALUES (:p, 'x', 1)"), {"p": pid})
+        c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta)"
+                       " VALUES (:p, 90, 'x', 1)"), {"p": pid})
     with pytest.raises(IntegrityError), eng.begin() as c:       # a rejection needs its note
-        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
-                       " decided_at) VALUES (:p, 'x', 1, 'Rejected', now())"), {"p": pid})
+        c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta, status,"
+                       " decided_at) VALUES (:p, 91, 'x', 1, 'Rejected', now())"), {"p": pid})
     with eng.begin() as c:
-        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status)"
-                       " VALUES (:p, 'draft', 1, 'Draft')"), {"p": pid})
+        c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta, status)"
+                       " VALUES (:p, 92, 'draft', 1, 'Draft')"), {"p": pid})
     assert alembic("downgrade", "0085").returncode != 0 and _version(eng) == HEAD
     with eng.begin() as c:
         c.execute(text("DELETE FROM project_contract_variation WHERE status = 'Draft'"))
@@ -430,8 +430,9 @@ def test_0087_variation_links_cascade_with_the_variation_or_item_and_a_downgrade
         pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES ('M-1', 'M', :w)"
                              " RETURNING project_id"), {"w": w}).scalar()
         c.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, 100)"), {"p": pid})
-        vid = c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
-                             " decided_at) VALUES (:p, 'v', 5, 'Approved', now()) RETURNING variation_id"),
+        vid = c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta,"
+                             " status, decided_at) VALUES (:p, 1, 'v', 5, 'Approved', now())"
+                             " RETURNING variation_id"),
                         {"p": pid}).scalar()
         iids = [c.execute(text("INSERT INTO items(num, project_id) VALUES (nextval('joinery_number_seq'), :p)"
                                " RETURNING item_id"), {"p": pid}).scalar() for _ in range(2)]
@@ -460,8 +461,9 @@ def test_0088_a_void_needs_its_reason_and_a_downgrade_is_refused_while_a_voided_
         pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES ('M-1', 'M', :w)"
                              " RETURNING project_id"), {"w": w}).scalar()
         c.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, 100)"), {"p": pid})
-        vid = c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
-                             " decided_at) VALUES (:p, 'v', 5, 'Approved', now()) RETURNING variation_id"),
+        vid = c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta,"
+                             " status, decided_at) VALUES (:p, 1, 'v', 5, 'Approved', now())"
+                             " RETURNING variation_id"),
                         {"p": pid}).scalar()
     with pytest.raises(IntegrityError), eng.begin() as c:       # Voided needs a reason
         c.execute(text("UPDATE project_contract_variation SET status = 'Voided', voided_at = now() WHERE variation_id = :v"),
@@ -478,4 +480,40 @@ def test_0088_a_void_needs_its_reason_and_a_downgrade_is_refused_while_a_voided_
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name ="
                               " 'project_contract_variation' AND column_name = 'void_reason'")).scalar() == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+
+
+def test_0089_old_variations_are_numbered_per_project_by_creation_order_and_a_downgrade_drops_the_columns(scratch):
+    eng, alembic = scratch
+    w = _workspace(eng)
+    assert alembic("downgrade", "0088").returncode == 0
+    with eng.begin() as c:
+        pids = []
+        for code in ("M-1", "M-2"):
+            pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES (:c, :c, :w)"
+                                 " RETURNING project_id"), {"c": code, "w": w}).scalar()
+            c.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, 100)"), {"p": pid})
+            pids.append(pid)
+        ids = []
+        for pid, ts in ((pids[0], "2026-01-02"), (pids[1], "2026-01-01"), (pids[0], "2026-01-01"), (pids[0], "2026-01-03")):
+            ids.append(c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta,"
+                                      " status, decided_at, created_at) VALUES (:p, 'v', 5, 'Approved', now(), :t)"
+                                      " RETURNING variation_id"), {"p": pid, "t": ts}).scalar())
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+    with eng.connect() as c:
+        got = dict(c.execute(text("SELECT variation_id, number FROM project_contract_variation")).all())
+        row = c.execute(text("SELECT reason, requester, requested_on, cost_impact, time_impact_days"
+                             " FROM project_contract_variation LIMIT 1")).one()
+    assert [got[i] for i in ids] == [2, 1, 1, 3]                    # per project, oldest first
+    assert row == (None, None, None, None, None)                    # nothing was recorded for old rows
+    with pytest.raises(IntegrityError), eng.begin() as c:           # a number is never repeated in a project
+        c.execute(text("INSERT INTO project_contract_variation(project_id, number, description, amount_delta,"
+                       " status, decided_at) VALUES (:p, 1, 'dup', 1, 'Approved', now())"), {"p": pids[0]})
+    with pytest.raises(IntegrityError), eng.begin() as c:           # and has no default
+        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
+                       " decided_at) VALUES (:p, 'x', 1, 'Approved', now())"), {"p": pids[0]})
+    assert alembic("downgrade", "0088").returncode == 0
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name ="
+                              " 'project_contract_variation' AND column_name IN ('number', 'reason')")).scalar() == 0
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD

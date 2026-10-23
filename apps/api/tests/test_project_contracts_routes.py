@@ -1,6 +1,8 @@
 """Tests for project_contract + variations (Q491) and the actual-costs
 rollup (Q493/Q549)."""
 
+from datetime import date
+
 import pytest
 from sqlalchemy import text
 
@@ -68,7 +70,7 @@ def test_create_variation_updates_current_value():
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "100000.00")
     r = c.post(f"/projects/{pid}/contract/variations",
-               json={"description": "Extra bench", "amount_delta": "2500.00"})
+               json={"description": "Extra bench", "amount_delta": "2500.00", "reason": "Client request"})
     assert r.status_code == 201, r.text
     body = r.json()
     assert float(body["current_value"]) == 102500.00
@@ -81,7 +83,7 @@ def test_negative_variation_reduces_current_value():
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "100000.00")
     c.post(f"/projects/{pid}/contract/variations",
-           json={"description": "Descope tiling", "amount_delta": "-3000.00"})
+           json={"description": "Descope tiling", "amount_delta": "-3000.00", "reason": "Client request"})
     r = c.get(f"/projects/{pid}/contract")
     assert float(r.json()["current_value"]) == 97000.00
 
@@ -93,7 +95,7 @@ def test_contract_workspace_isolation():
     c2, *_ = login()
     assert c2.get(f"/projects/{pid}/contract").status_code == 404
     r = c2.post(f"/projects/{pid}/contract/variations",
-                json={"description": "x", "amount_delta": "1"})
+                json={"description": "x", "amount_delta": "1", "reason": "r"})
     assert r.status_code == 404
 
 
@@ -103,7 +105,7 @@ def test_drafter_cannot_write_but_can_read():
     _make_contract(pid, uid, "10000.00")
     assert c.get(f"/projects/{pid}/contract").status_code == 200
     r = c.post(f"/projects/{pid}/contract/variations",
-               json={"description": "x", "amount_delta": "1"})
+               json={"description": "x", "amount_delta": "1", "reason": "r"})
     assert r.status_code == 201  # drafter has tracking:write too
 
 
@@ -112,14 +114,14 @@ def test_viewer_cannot_write():
     pid = _make_project(wid, uid, "P1")
     _make_contract(pid, uid, "10000.00")
     r = c.post(f"/projects/{pid}/contract/variations",
-               json={"description": "x", "amount_delta": "1"})
+               json={"description": "x", "amount_delta": "1", "reason": "r"})
     assert r.status_code == 403
 
 
 # --- Variation approval states (Q608) --------------------------------------
 
 def _add(c, pid: int, desc: str = "Extra", amount: str = "100.00") -> dict:
-    r = c.post(f"/projects/{pid}/contract/variations", json={"description": desc, "amount_delta": amount})
+    r = c.post(f"/projects/{pid}/contract/variations", json={"description": desc, "amount_delta": amount, "reason": "Client request"})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -270,7 +272,7 @@ def _item(pid: int, desc: str = "Vanity", **cols) -> int:
 
 def _post(c, pid: int, item_ids, desc="Linked", amount="10.00"):
     return c.post(f"/projects/{pid}/contract/variations",
-                  json={"description": desc, "amount_delta": amount, "item_ids": item_ids})
+                  json={"description": desc, "amount_delta": amount, "reason": "r", "item_ids": item_ids})
 
 
 def test_a_variation_has_no_items_unless_it_is_linked_to_some():
@@ -313,7 +315,7 @@ def test_a_draft_s_links_are_replaced_on_edit_and_frozen_once_decided():
     cd, _ = login_same_workspace(wid, "drafter")
     a, b = _item(pid, "A"), _item(pid, "B")
     vid = cd.post(f"/projects/{pid}/contract/variations",
-                  json={"description": "d", "amount_delta": "5", "item_ids": [a]}).json()["variations"][0]["variation_id"]
+                  json={"description": "d", "amount_delta": "5", "reason": "r", "item_ids": [a]}).json()["variations"][0]["variation_id"]
     r = cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": [b]})
     assert r.status_code == 200 and [i["item_id"] for i in r.json()["variations"][0]["items"]] == [b]
     r = cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"description": "renamed"})
@@ -437,6 +439,109 @@ def test_a_void_is_audited_and_leaves_the_value_in_progress_card_without_it():
         assert float(live_contract_value(db, workspace_id=wid)) == 1000.0     # not 1500
     finally:
         db.close()
+
+
+# --- Variation fields (Q611) --------------------------------------------------
+
+
+def _post_full(c, pid: int, **fields):
+    body = {"description": "Extra", "amount_delta": "100.00", "reason": "Client asked", **fields}
+    return c.post(f"/projects/{pid}/contract/variations", json=body)
+
+
+def test_variations_are_numbered_per_project_in_the_order_they_are_added():
+    c, wid, uid, pid = _setup()
+    other = _make_project(wid, uid, "V2")
+    _make_contract(other, uid, "10.00")
+    nums = [_add(c, pid, f"v{i}")["variations"][-1]["number"] for i in range(3)]
+    assert nums == [1, 2, 3]
+    assert _add(c, other)["variations"][0]["number"] == 1                    # each project starts at 1
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "draft")["variations"][-1]["variation_id"]
+    _decide(c, pid, vid, "rejected", "no")
+    assert _add(c, pid, "after")["variations"][-1]["number"] == 5            # a rejected one keeps its number
+    assert [v["number"] for v in c.get(f"/projects/{pid}/contract").json()["variations"]] == [1, 2, 3, 4, 5]
+
+
+def test_a_new_variation_needs_a_reason():
+    c, wid, uid, pid = _setup()
+    for bad in ({}, {"reason": None}, {"reason": ""}):
+        body = {"description": "x", "amount_delta": "1", **bad}
+        assert c.post(f"/projects/{pid}/contract/variations", json=body).status_code == 422, bad
+    r = _post_full(c, pid, reason="   ")
+    assert r.status_code == 422                                              # blank is not a reason
+    assert _post_full(c, pid, reason="  Client asked  ").json()["variations"][0]["reason"] == "Client asked"
+
+
+def test_a_variation_records_who_asked_when_and_its_cost_and_time_impact():
+    c, wid, uid, pid = _setup()
+    v = _post_full(c, pid, requester="Builder: J. Smith", requested_on="2026-10-01",
+                   cost_impact="180.50", time_impact_days=-3).json()["variations"][0]
+    assert v["requester"] == "Builder: J. Smith" and v["requested_on"] == "2026-10-01"
+    assert float(v["cost_impact"]) == 180.5 and v["time_impact_days"] == -3
+    assert float(v["amount_delta"]) == 100.0                                 # the selling-price impact, unchanged
+    assert v["created_by_name"] and v["decided_by_name"] == v["created_by_name"]
+    plain = _post_full(c, pid).json()["variations"][1]
+    assert plain["requested_on"] == date.today().isoformat()                 # defaults to today
+    assert plain["requester"] is None and plain["cost_impact"] is None and plain["time_impact_days"] is None
+
+
+def test_cost_and_time_impact_never_change_the_contract_value():
+    c, wid, uid, pid = _setup()
+    body = _post_full(c, pid, amount_delta="250.00", cost_impact="9999.00", time_impact_days=40).json()
+    assert float(body["current_value"]) == 1250.0
+
+
+def test_impact_values_are_range_checked():
+    c, wid, uid, pid = _setup()
+    for bad in ({"time_impact_days": 100000}, {"time_impact_days": 1.5}, {"cost_impact": "12345678901234.00"},
+                {"requested_on": "not-a-date"}, {"requester": "x" * 300}):
+        assert _post_full(c, pid, **bad).status_code == 422, bad
+
+
+def test_a_drafts_new_fields_are_edited_and_cleared_until_it_is_decided():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _post_full(d, pid, requester="A", cost_impact="1.00", time_impact_days=2).json()["variations"][0]["variation_id"]
+    url = f"/projects/{pid}/contract/variations/{vid}"
+    r = d.patch(url, json={"reason": "New reason", "requester": "B", "requested_on": "2026-09-30",
+                           "cost_impact": "7.25", "time_impact_days": 5})
+    v = r.json()["variations"][0]
+    assert (v["reason"], v["requester"], v["requested_on"], v["time_impact_days"]) == ("New reason", "B", "2026-09-30", 5)
+    assert float(v["cost_impact"]) == 7.25
+    v = d.patch(url, json={"requester": None, "cost_impact": None, "time_impact_days": None,
+                           "requested_on": None}).json()["variations"][0]
+    assert v["requester"] is None and v["cost_impact"] is None and v["time_impact_days"] is None
+    assert v["requested_on"] is None and v["reason"] == "New reason"
+    assert d.patch(url, json={"reason": None}).status_code == 422             # a reason cannot be removed
+    assert d.patch(url, json={"reason": "  "}).status_code == 422
+    assert _decide(c, pid, vid, "approved").status_code == 200
+    r = d.patch(url, json={"time_impact_days": 1})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_NOT_DRAFT"
+
+
+def test_the_decision_history_names_who_decided_and_voided():
+    c, wid, uid, pid = _setup()
+    d, did = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "Bench")["variations"][0]["variation_id"]
+    _decide(c, pid, vid, "approved", "Signed by client")
+    _void(c, pid, vid, "Entered twice")
+    v = c.get(f"/projects/{pid}/contract").json()["variations"][0]
+    assert v["created_by"] == did and v["created_by_name"] and v["decided_by_name"] and v["voided_by_name"]
+    assert v["created_by_name"] != v["decided_by_name"] and v["decision_note"] == "Signed by client"
+
+
+def test_the_new_fields_are_audited():
+    c, wid, uid, pid = _setup()
+    _post_full(c, pid, requester="R", cost_impact="5.00", time_impact_days=2)
+    s = SessionLocal()
+    try:
+        payload = s.execute(text("SELECT payload FROM audit_log WHERE event = 'project.contract.variation_add'"
+                                 " AND workspace_id = :w"), {"w": wid}).scalar()
+    finally:
+        s.close()
+    assert payload["reason"] == "Client asked" and payload["requester"] == "R"
+    assert payload["cost_impact"] == "5.00" and payload["time_impact_days"] == 2 and payload["number"] == 1
 
 
 # --- Actual costs (Q493/Q549) ---------------------------------------------

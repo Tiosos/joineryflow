@@ -6,6 +6,7 @@ and never overwritten (§17). `current_value` is computed on read as
 (Q608) — never stored, so there is nowhere for it to drift out of sync with its
 own history. A Draft or Rejected variation is listed but never counted.
 """
+from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -39,12 +40,17 @@ def get_contract(db: Session, *, project_id: int, workspace_id: int) -> dict | N
     variations = db.execute(
         text(
             """
-            SELECT variation_id, project_id, description, amount_delta,
-                   created_at, created_by, status, decided_by, decided_at, decision_note,
-                   voided_by, voided_at, void_reason
-              FROM project_contract_variation
-             WHERE project_id = :p
-             ORDER BY created_at, variation_id
+            SELECT v.variation_id, v.project_id, v.description, v.amount_delta,
+                   v.created_at, v.created_by, cu.full_name AS created_by_name,
+                   v.status, v.decided_by, du.full_name AS decided_by_name, v.decided_at, v.decision_note,
+                   v.voided_by, vu.full_name AS voided_by_name, v.voided_at, v.void_reason,
+                   v.number, v.reason, v.requester, v.requested_on, v.cost_impact, v.time_impact_days
+              FROM project_contract_variation v
+              LEFT JOIN app_user cu ON cu.id = v.created_by
+              LEFT JOIN app_user du ON du.id = v.decided_by
+              LEFT JOIN app_user vu ON vu.id = v.voided_by
+             WHERE v.project_id = :p
+             ORDER BY v.created_at, v.variation_id
             """
         ),
         {"p": project_id},
@@ -129,6 +135,8 @@ def _set_links(db: Session, *, variation_id: int, item_ids: list[int]) -> None:
 def create_variation(
     db: Session, *, project_id: int, workspace_id: int,
     description: str, amount_delta: Decimal, actor_id: int, auto_approve: bool,
+    reason: str, requester: str | None = None, requested_on: date | None = None,
+    cost_impact: Decimal | None = None, time_impact_days: int | None = None,
     item_ids: list[int] = (),
 ) -> dict | None:
     """A manager's or admin's variation is decided by adding it (`auto_approve`, Approved at once);
@@ -138,26 +146,37 @@ def create_variation(
         return None
     ids = _checked_item_ids(db, project_id=project_id, item_ids=list(item_ids))
     status = "Approved" if auto_approve else "Draft"
-    variation_id = db.execute(
+    # The contract row is the parent whose lock makes MAX(number) + 1 safe against a concurrent add.
+    db.execute(text("SELECT 1 FROM project_contract WHERE project_id = :p FOR UPDATE"), {"p": project_id})
+    row = db.execute(
         text(
             """
             INSERT INTO project_contract_variation(
-                project_id, description, amount_delta, created_by, status, decided_by, decided_at
+                project_id, number, description, amount_delta, reason, requester, requested_on,
+                cost_impact, time_impact_days, created_by, status, decided_by, decided_at
             )
-            VALUES (:p, :d, :a, :cb, :s,
+            VALUES (:p,
+                    (SELECT COALESCE(MAX(number), 0) + 1 FROM project_contract_variation WHERE project_id = :p),
+                    :d, :a, :reason, :requester, COALESCE(CAST(:requested_on AS date), CURRENT_DATE),
+                    :cost, :days, :cb, :s,
                     CASE WHEN :s = 'Approved' THEN CAST(:cb AS bigint) END,
                     CASE WHEN :s = 'Approved' THEN now() END)
-            RETURNING variation_id
+            RETURNING variation_id, number
             """
         ),
-        {"p": project_id, "d": description, "a": amount_delta, "cb": actor_id, "s": status},
-    ).scalar()
-    _set_links(db, variation_id=variation_id, item_ids=ids)
+        {"p": project_id, "d": description, "a": amount_delta, "cb": actor_id, "s": status,
+         "reason": reason, "requester": requester, "requested_on": requested_on,
+         "cost": cost_impact, "days": time_impact_days},
+    ).mappings().one()
+    _set_links(db, variation_id=row["variation_id"], item_ids=ids)
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="project.contract.variation_add", target=str(project_id),
-        payload={"description": description, "amount_delta": str(amount_delta), "status": status,
-                 "item_ids": ids},
+        payload={"number": row["number"], "description": description, "amount_delta": str(amount_delta),
+                 "reason": reason, "requester": requester,
+                 "requested_on": None if requested_on is None else str(requested_on),
+                 "cost_impact": None if cost_impact is None else str(cost_impact),
+                 "time_impact_days": time_impact_days, "status": status, "item_ids": ids},
     )
     db.flush()
     return get_contract(db, project_id=project_id, workspace_id=workspace_id)
@@ -191,7 +210,8 @@ def patch_variation(
         raise HTTPException(status_code=403, detail={"code": "NOT_YOUR_VARIATION"})
     if row["status"] != "Draft":
         raise HTTPException(status_code=409, detail={"code": "VARIATION_NOT_DRAFT"})
-    allowed = {"description", "amount_delta"}
+    allowed = {"description", "amount_delta", "reason", "requester", "requested_on", "cost_impact",
+               "time_impact_days"}
     item_ids = changes.get("item_ids")
     ids = None if item_ids is None else _checked_item_ids(db, project_id=project_id, item_ids=item_ids)
     changes = {k: v for k, v in changes.items() if k in allowed}
@@ -207,7 +227,8 @@ def patch_variation(
         write_audit(
             db, workspace_id=workspace_id, actor_id=actor_id,
             event="project.contract.variation_edit", target=str(project_id),
-            payload={"variation_id": variation_id, **{k: str(v) for k, v in changes.items()},
+            payload={"variation_id": variation_id,
+                     **{k: None if v is None else str(v) for k, v in changes.items()},
                      **({"item_ids": ids} if ids is not None else {})},
         )
     db.flush()
