@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.db import SessionLocal
 
-from .helpers import login
+from .helpers import login, login_same_workspace
 
 
 
@@ -114,6 +114,139 @@ def test_viewer_cannot_write():
     r = c.post(f"/projects/{pid}/contract/variations",
                json={"description": "x", "amount_delta": "1"})
     assert r.status_code == 403
+
+
+# --- Variation approval states (Q608) --------------------------------------
+
+def _add(c, pid: int, desc: str = "Extra", amount: str = "100.00") -> dict:
+    r = c.post(f"/projects/{pid}/contract/variations", json={"description": desc, "amount_delta": amount})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _decide(c, pid: int, vid: int, decision: str, note: str | None = None):
+    return c.post(f"/projects/{pid}/contract/variations/{vid}/decision", json={"decision": decision, "note": note})
+
+
+def _setup(role: str = "manager"):
+    c, wid, uid = login(role=role)
+    pid = _make_project(wid, uid, "V1")
+    _make_contract(pid, uid, "1000.00")
+    return c, wid, uid, pid
+
+
+def test_a_managers_variation_is_approved_at_once_and_counts():
+    c, wid, uid, pid = _setup()
+    body = _add(c, pid, "Benchtop upgrade", "250.00")
+    v = body["variations"][0]
+    assert v["status"] == "Approved" and v["decided_by"] == uid and v["decided_at"] is not None
+    assert float(body["current_value"]) == 1250.0
+
+
+def test_anyone_elses_variation_is_a_draft_and_does_not_count():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    body = _add(d, pid, "Maybe a bench", "400.00")
+    v = body["variations"][0]
+    assert v["status"] == "Draft" and v["decided_by"] is None and v["decided_at"] is None
+    assert float(body["current_value"]) == 1000.0                   # a Draft is not in the contract value yet
+
+
+def test_a_manager_approves_a_draft_and_it_counts_from_then_on():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "Bench", "400.00")["variations"][0]["variation_id"]
+    r = _decide(c, pid, vid, "approved", "Client signed")
+    assert r.status_code == 200, r.text
+    v = r.json()["variations"][0]
+    assert (v["status"], v["decided_by"], v["decision_note"]) == ("Approved", uid, "Client signed")
+    assert float(r.json()["current_value"]) == 1400.0
+    assert float(c.get(f"/projects/{pid}/contract").json()["current_value"]) == 1400.0
+
+
+def test_rejecting_needs_a_note_and_a_rejected_variation_never_counts():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "Bench", "400.00")["variations"][0]["variation_id"]
+    for note in (None, "", "   "):
+        r = _decide(c, pid, vid, "rejected", note)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "REJECTION_NOTE_REQUIRED", note
+    r = _decide(c, pid, vid, "rejected", "Not in the contract")
+    assert r.status_code == 200, r.text
+    v = r.json()["variations"][0]
+    assert (v["status"], v["decision_note"], v["decided_by"]) == ("Rejected", "Not in the contract", uid)
+    assert float(r.json()["current_value"]) == 1000.0
+
+
+@pytest.mark.parametrize("role", ["drafter", "editor"])
+def test_only_a_manager_or_admin_decides(role):
+    c, wid, uid, pid = _setup()
+    other, _ = login_same_workspace(wid, role)
+    vid = _add(other, pid, "Bench", "400.00")["variations"][0]["variation_id"]
+    r = _decide(other, pid, vid, "approved")                      # not even the one who added it
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "DECISION_FORBIDDEN"
+    assert c.get(f"/projects/{pid}/contract").json()["variations"][0]["status"] == "Draft"
+
+
+def test_a_decision_is_final():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "Bench", "400.00")["variations"][0]["variation_id"]
+    assert _decide(c, pid, vid, "approved").status_code == 200
+    for decision, note in (("approved", None), ("rejected", "changed my mind")):
+        r = _decide(c, pid, vid, decision, note)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_ALREADY_DECIDED"
+    assert float(c.get(f"/projects/{pid}/contract").json()["current_value"]) == 1400.0
+
+
+def test_a_draft_is_edited_by_its_creator_or_a_manager_and_nobody_else():
+    c, wid, uid, pid = _setup()
+    d1, _ = login_same_workspace(wid, "drafter", "D1")
+    d2, _ = login_same_workspace(wid, "drafter", "D2")
+    vid = _add(d1, pid, "Bnch", "400.00")["variations"][0]["variation_id"]
+    url = f"/projects/{pid}/contract/variations/{vid}"
+    r = d1.patch(url, json={"description": "Bench"})
+    assert r.status_code == 200 and r.json()["variations"][0]["description"] == "Bench"
+    r = d2.patch(url, json={"amount_delta": "999"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "NOT_YOUR_VARIATION"
+    r = c.patch(url, json={"amount_delta": "450.00"})              # a manager may
+    assert r.status_code == 200 and float(r.json()["variations"][0]["amount_delta"]) == 450.0
+    assert float(r.json()["current_value"]) == 1000.0              # still a Draft
+    for bad in ({"description": None}, {"amount_delta": None}, {"description": ""}):
+        assert c.patch(url, json=bad).status_code == 422, bad
+    assert _decide(c, pid, vid, "approved").status_code == 200
+    r = c.patch(url, json={"description": "late edit"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_NOT_DRAFT"
+
+
+def test_an_unknown_variation_or_another_workspaces_is_a_404():
+    c, wid, uid, pid = _setup()
+    vid = _add(c, pid)["variations"][0]["variation_id"]
+    other_pid = _make_project(wid, uid, "V2")
+    _make_contract(other_pid, uid, "10.00")
+    assert _decide(c, pid, vid + 999, "approved").status_code == 404
+    assert _decide(c, other_pid, vid, "approved").status_code == 404           # right id, wrong project
+    assert c.patch(f"/projects/{other_pid}/contract/variations/{vid}", json={"description": "x"}).status_code == 404
+    foreign, *_ = login()
+    assert _decide(foreign, pid, vid, "approved").status_code == 404
+    assert foreign.patch(f"/projects/{pid}/contract/variations/{vid}", json={"description": "x"}).status_code == 404
+
+
+def test_edits_and_decisions_are_audited():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    vid = _add(d, pid, "Bench", "400.00")["variations"][0]["variation_id"]
+    d.patch(f"/projects/{pid}/contract/variations/{vid}", json={"amount_delta": "410"})
+    _decide(c, pid, vid, "approved")
+    s = SessionLocal()
+    try:
+        events = {e for (e,) in s.execute(
+            text("SELECT event FROM audit_log WHERE workspace_id = :w AND event LIKE 'project.contract.variation_%'"),
+            {"w": wid})}
+    finally:
+        s.close()
+    assert {"project.contract.variation_add", "project.contract.variation_edit",
+            "project.contract.variation_decide"} <= events
 
 
 # --- Actual costs (Q493/Q549) ---------------------------------------------

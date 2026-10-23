@@ -241,14 +241,21 @@ def test_dashboard_drafter_scope_filters_to_own_items():
     assert overdue_card["value"] == 1
 
 
-def _contract(db, *, pid: int, original: str, variations: tuple[str, ...] = (), status: str = "Current") -> None:
-    """A project's contract (`original` ex the variations) and its variations; sets the project status."""
+def _contract(db, *, pid: int, original: str, variations: tuple[str, ...] = (), status: str = "Current",
+              undecided: tuple[tuple[str, str], ...] = ()) -> None:
+    """A project's contract (`original` ex the variations) and its Approved variations; sets the project
+    status. `undecided` is (status, delta) pairs of Draft / Rejected ones, which never count (Q608)."""
     db.execute(text("UPDATE projects SET status = :s WHERE project_id = :p"), {"s": status, "p": pid})
     db.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, :v)"),
                {"p": pid, "v": original})
     for delta in variations:
-        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta)"
-                        " VALUES (:p, 'v', :d)"), {"p": pid, "d": delta})
+        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta,"
+                        " status, decided_at) VALUES (:p, 'v', :d, 'Approved', now())"), {"p": pid, "d": delta})
+    for st, delta in undecided:
+        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta,"
+                        " status, decided_at, decision_note) VALUES (:p, 'v', :d, :s,"
+                        " CASE WHEN :s = 'Draft' THEN NULL ELSE now() END,"
+                        " CASE WHEN :s = 'Rejected' THEN 'no' END)"), {"p": pid, "d": delta, "s": st})
     db.commit()
 
 
@@ -266,7 +273,8 @@ def test_value_in_progress_adds_up_the_current_value_of_live_projects_for_an_adm
         held = _create_project(db, wid=wid, uid=uid, code="VP-H")
         closed = _create_project(db, wid=wid, uid=uid, code="VP-C")
         no_contract = _create_project(db, wid=wid, uid=uid, code="VP-N")  # never converted: no contract
-        _contract(db, pid=live_a, original="1000.50", variations=("200.25", "-50.00"))
+        _contract(db, pid=live_a, original="1000.50", variations=("200.25", "-50.00"),
+                  undecided=(("Draft", "777.00"), ("Rejected", "888.00")))   # Q608: neither counts
         _contract(db, pid=live_b, original="3000.00")
         _contract(db, pid=held, original="9999.00", status="Hold")
         _contract(db, pid=closed, original="9999.00", status="Closed")

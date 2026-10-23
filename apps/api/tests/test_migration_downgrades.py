@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (0085, At risk window).
-HEAD = "0085"
+# The current head revision: bump it with each new migration (0086, Variation states).
+HEAD = "0086"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -386,4 +386,37 @@ def test_0085_the_at_risk_window_defaults_to_three_days_within_zero_to_ninety_an
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name = 'workspace'"
                               " AND column_name = 'at_risk_days'")).scalar() == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+
+
+def test_0086_old_variations_become_approved_and_a_downgrade_is_refused_while_a_draft_or_rejected_one_exists(scratch):
+    eng, alembic = scratch
+    w = _workspace(eng)
+    assert alembic("downgrade", "0085").returncode == 0
+    with eng.begin() as c:
+        uid = c.execute(text("INSERT INTO app_user(workspace_id, email, full_name, password_hash, auth_role)"
+                             " VALUES (:w, 'v@m.test', 'V', 'x', 'manager') RETURNING id"), {"w": w}).scalar()
+        pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES ('M-1', 'M', :w)"
+                             " RETURNING project_id"), {"w": w}).scalar()
+        c.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, 100)"), {"p": pid})
+        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, created_by)"
+                       " VALUES (:p, 'old', 5, :u)"), {"p": pid, "u": uid})
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+    with eng.connect() as c:
+        st, by, at = c.execute(text("SELECT status, decided_by = created_by, decided_at = created_at"
+                                    " FROM project_contract_variation")).one()
+    assert (st, by, at) == ("Approved", True, True)
+    with pytest.raises(IntegrityError), eng.begin() as c:       # no default: a writer must say which
+        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta)"
+                       " VALUES (:p, 'x', 1)"), {"p": pid})
+    with pytest.raises(IntegrityError), eng.begin() as c:       # a rejection needs its note
+        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
+                       " decided_at) VALUES (:p, 'x', 1, 'Rejected', now())"), {"p": pid})
+    with eng.begin() as c:
+        c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status)"
+                       " VALUES (:p, 'draft', 1, 'Draft')"), {"p": pid})
+    assert alembic("downgrade", "0085").returncode != 0 and _version(eng) == HEAD
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM project_contract_variation WHERE status = 'Draft'"))
+    assert alembic("downgrade", "0085").returncode == 0
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD

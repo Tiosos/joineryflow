@@ -1939,15 +1939,27 @@ def main() -> None:
                 text(
                     """
                     INSERT INTO project_contract_variation(
-                        project_id, description, amount_delta, created_by
+                        project_id, description, amount_delta, created_by, status, decided_by, decided_at
                     )
-                    VALUES (:p, 'Client-requested benchtop upgrade', 4250.00, :a)
+                    VALUES (:p, 'Client-requested benchtop upgrade', 4250.00, :a, 'Approved', :m, now())
                     """
                 ),
-                {"p": _contract_pid, "a": _estimator_id},
+                {"p": _contract_pid, "a": _estimator_id, "m": _manager_id},
+            )
+            # A Draft beside it so the approval step has something to show; it is not in the contract value.
+            s.execute(
+                text(
+                    """
+                    INSERT INTO project_contract_variation(
+                        project_id, description, amount_delta, created_by, status
+                    )
+                    VALUES (:p, 'Extra pantry shelving (awaiting approval)', 1800.00, :a, 'Draft')
+                    """
+                ),
+                {"p": _contract_pid, "a": _drafter_id},
             )
             s.commit()
-            print("seeded project_contract on ALF-001: $185,000.00 + 1 variation")
+            print("seeded project_contract on ALF-001: $185,000.00 + 1 approved variation + 1 draft")
 
         # ==================================================================
         # === Legacy mocks import =========================================

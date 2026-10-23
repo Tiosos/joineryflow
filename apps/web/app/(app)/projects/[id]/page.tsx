@@ -100,6 +100,8 @@ export default async function ProjectDetailPage({
         contract={contract}
         actualCosts={actualCosts}
         canEdit={canEditTracking}
+        canDecide={canEditDetails}
+        meId={me?.id ?? null}
       />
 
       <ProjectLabourHoursCard hours={project.labour_hours} />
