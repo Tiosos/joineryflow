@@ -637,3 +637,21 @@ have a contract**, from `project_contracts.queries.live_contract_value`, the sam
   no card).
 - **Not built.** Q608's Draft / Approved variation states (when built, only `Approved` variations count here, in
   `live_contract_value` and `get_contract` together).
+
+## Project folder link (2026-10-22, Q640, `0084`)
+
+SharePoint (Q535) waits for its tenant, site, library and folder names (Q480 / Q484 / Q547), so each project got one plain link
+to its folder instead: `projects.project_folder_url` (nullable `text`, `CHECK` an `http(s)://` link of at most 2048 characters).
+
+- **API.** `project_folder_url` on `PATCH /projects/{id}` (manager / admin only, as the rest of Details) and on `ProjectOut`
+  (get and list). The PATCH model trims it, treats an empty box as `null` (clears it) and refuses anything that is not an
+  `http`/`https` link with a host (`422`): a `javascript:`, `ftp:` or `file:` link, a UNC path (`\\server\share`), a link with a
+  space, or one over 2048 characters. Audited with the other PATCH fields.
+- **Web.** A "Project folder (link)" box in the project page's Details panel (saves on blur, `Save failed` on a refusal) with an
+  "Open project folder" link beside it once set, and a "Project folder" tile in Tracking's Info pop-up (`Open ↗`, or `—`).
+  Links open in a new tab (`rel="noopener noreferrer"`).
+- **Limit.** A shop that keeps jobs on a network share (`\\fileserver\jobs\ALF-001`) cannot use it: a browser will not open one
+  from a web page anyway. Not indexed in Search. Not built: the SharePoint integration itself.
+- **Tests.** `test_project_enrichment.py` (round trip and clear, trimmed, list carries it, eight refused values, drafter 403;
+  fail without the change) and `project_folder.spec.ts` (a bad link is refused, a good one shows as a link on the project page
+  and in the Info pop-up).

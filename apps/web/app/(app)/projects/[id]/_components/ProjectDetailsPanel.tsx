@@ -19,6 +19,7 @@ const TEXT_FIELDS: { key: keyof PatchProjectIn; label: string }[] = [
   { key: "site_state", label: "State" },
   { key: "tg_project_manager", label: "TG Project Manager" },
   { key: "tg_coordinator", label: "TG Coordinator" },
+  { key: "project_folder_url", label: "Project folder (link)" },
 ];
 
 export function ProjectDetailsPanel({ project, canEdit }: Props) {
@@ -51,6 +52,17 @@ export function ProjectDetailsPanel({ project, canEdit }: Props) {
             onBlurSave={(v) => patchField(f.key, v === "" ? null : v)}
           />
         ))}
+        {project.project_folder_url ? (
+          <a
+            href={project.project_folder_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="project-folder-link"
+            className="text-sm text-h-accent hover:underline"
+          >
+            Open project folder ↗
+          </a>
+        ) : null}
         <label className="flex items-center gap-2 text-sm text-h-ink">
           <input
             type="checkbox"

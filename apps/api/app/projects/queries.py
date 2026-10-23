@@ -66,6 +66,7 @@ _SELECT_COLS = """
     p.tg_coordinator,
     p.tg_solid,
     p.carell_pid,
+    p.project_folder_url,
     p.total_line_items,
     p.closed_at,
     p.closed_by,
@@ -327,6 +328,7 @@ _PATCH_COL_MAP = {
     "tg_coordinator": "tg_coordinator",
     "tg_solid": "tg_solid",
     "carell_pid": "carell_pid",
+    "project_folder_url": "project_folder_url",
     "total_value": "total_value",
     "total_line_items": "total_line_items",
 }

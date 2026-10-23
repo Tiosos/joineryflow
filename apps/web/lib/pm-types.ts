@@ -93,6 +93,7 @@ export interface ProjectOut {
   tg_project_manager: string | null;
   tg_coordinator: string | null;
   carell_pid: string | null;
+  project_folder_url: string | null; // Q640: an http(s) link to the project's folder
   closed_at: string | null; // datetime → ISO 8601 timestamp
   closed_by: number | null;
   closed_by_name: string | null;
@@ -129,6 +130,7 @@ export interface PatchProjectIn {
   tg_coordinator?: string | null;
   tg_solid?: boolean | null;
   carell_pid?: string | null;
+  project_folder_url?: string | null; // an http(s) link; null or empty clears it
   total_value?: number | null;
   total_line_items?: number | null;
 }

@@ -62,6 +62,40 @@ def test_enrichment_fields_round_trip(ws):
     assert {k: c.get(f"/projects/{ws['pid']}").json()[k] for k in body} == body
 
 
+def test_project_folder_round_trips_and_clears(ws):
+    """Q640: one plain link to the project's folder; PATCH null clears it."""
+    c = _client(ws)
+    url = "https://hartwood.sharepoint.com/sites/jobs/Shared%20Documents/ALF-001"
+    r = c.patch(f"/projects/{ws['pid']}", json={"project_folder_url": f"  {url}  "})
+    assert r.status_code == 200, r.text
+    assert r.json()["project_folder_url"] == url                      # trimmed
+    assert c.get(f"/projects/{ws['pid']}").json()["project_folder_url"] == url
+    listed = next(p for p in c.get("/projects").json()["projects"] if p["id"] == ws["pid"])
+    assert listed["project_folder_url"] == url
+    r = c.patch(f"/projects/{ws['pid']}", json={"project_folder_url": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["project_folder_url"] is None
+    # an empty box clears it too
+    c.patch(f"/projects/{ws['pid']}", json={"project_folder_url": url})
+    assert c.patch(f"/projects/{ws['pid']}", json={"project_folder_url": "  "}).json()["project_folder_url"] is None
+
+
+@pytest.mark.parametrize("bad", ["javascript:alert(1)", "ftp://host/x", "file:///c:/jobs", r"\\server\jobs\ALF-001",
+                                 "not a link", "https://", "https:///nohost", "https://a b",
+                                 pytest.param("https://x.com/" + "x" * 2040, id="too-long")])
+def test_project_folder_must_be_a_web_link(ws, bad):
+    """Only http(s) with a host: the page turns it into a link, so no other scheme gets in."""
+    c = _client(ws)
+    r = c.patch(f"/projects/{ws['pid']}", json={"project_folder_url": bad})
+    assert r.status_code == 422, (bad, r.text)
+    assert c.get(f"/projects/{ws['pid']}").json()["project_folder_url"] is None
+
+
+def test_project_folder_is_edited_by_managers_and_admins_only(ws):
+    r = _client(ws, "drafter").patch(f"/projects/{ws['pid']}", json={"project_folder_url": "https://example.com/a"})
+    assert r.status_code == 403
+
+
 def test_detail_hydrates_contacts_lift_access_and_labour_hours(ws):
     c = _client(ws)
     got = c.get(f"/projects/{ws['pid']}").json()

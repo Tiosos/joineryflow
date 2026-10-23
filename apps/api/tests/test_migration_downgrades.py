@@ -11,12 +11,13 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (0083, completion rate snapshots).
-HEAD = "0083"
+# The current head revision: bump it with each new migration (0084, project folder link).
+HEAD = "0084"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -345,3 +346,27 @@ def test_0083_keeps_existing_rates_unknown_and_refuses_to_drop_recorded_rates(sc
     assert alembic("upgrade", "head").returncode == 0
     with eng.connect() as c:
         assert c.execute(text("SELECT hourly_rate_snapshot FROM stage_completion_log WHERE log_id=:l"), {"l": log}).scalar_one() is None
+
+
+def test_0084_only_a_web_link_is_stored_and_a_downgrade_refuses_to_drop_recorded_links(scratch):
+    eng, alembic = scratch
+    w = _workspace(eng)
+    with eng.begin() as c:
+        pid = c.execute(text("INSERT INTO projects(project_code,name,workspace_id,project_folder_url)"
+                             " VALUES('PF84','PF',:w,'https://example.com/jobs/PF84') RETURNING project_id"), {"w": w}).scalar_one()
+    for bad in ("javascript:alert(1)", "ftp://host/x", "https://", "x" * 2049):
+        with pytest.raises(IntegrityError), eng.begin() as c:    # the column states what the API accepts
+            c.execute(text("UPDATE projects SET project_folder_url = :u WHERE project_id = :p"), {"u": bad, "p": pid})
+    refused = alembic("downgrade", "0083")
+    assert refused.returncode != 0
+    assert "0084 downgrade refused" in refused.stderr
+    assert _version(eng) == HEAD
+    with eng.begin() as c:
+        assert c.execute(text("SELECT project_folder_url FROM projects WHERE project_id = :p"), {"p": pid}).scalar_one() \
+            == "https://example.com/jobs/PF84"
+        c.execute(text("UPDATE projects SET project_folder_url = NULL WHERE project_id = :p"), {"p": pid})
+    assert alembic("downgrade", "0083").returncode == 0
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name = 'projects'"
+                              " AND column_name = 'project_folder_url'")).scalar() == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD

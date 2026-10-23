@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0083` (head `0083_completion_labour_rate`) |
+| `db/` | Alembic migrations `0001`→`0084` (head `0084_project_folder_url`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
