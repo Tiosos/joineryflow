@@ -72,6 +72,11 @@ BODY_REAL_ID_QUERIES = {
     ("/comments/{cid}", "cid"):
         "SELECT c.comment_id FROM comment c JOIN app_user u ON u.id = c.author_id"
         " WHERE u.auth_role = 'admin' AND c.deleted_at IS NULL ORDER BY 1 LIMIT 1",
+    # A variation's links can only be edited while it is a Draft (the seeded one, on ALF-001).
+    ("/projects/{pid}/contract/variations/{vid}", "pid"):
+        "SELECT project_id FROM project_contract_variation WHERE status = 'Draft' ORDER BY variation_id LIMIT 1",
+    ("/projects/{pid}/contract/variations/{vid}", "vid"):
+        "SELECT variation_id FROM project_contract_variation WHERE status = 'Draft' ORDER BY variation_id LIMIT 1",
     ("/material-takes/{tid}/lines", "tid"):
         "SELECT take_id FROM material_take WHERE status = 'draft' ORDER BY 1 LIMIT 1",
     ("/material-takes/{tid}/lines/{lid}", "tid"):

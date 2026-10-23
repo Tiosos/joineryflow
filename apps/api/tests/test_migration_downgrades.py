@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (0086, Variation states).
-HEAD = "0086"
+# The current head revision: bump it with each new migration (0087, Variation item links).
+HEAD = "0087"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -419,4 +419,35 @@ def test_0086_old_variations_become_approved_and_a_downgrade_is_refused_while_a_
     with eng.begin() as c:
         c.execute(text("DELETE FROM project_contract_variation WHERE status = 'Draft'"))
     assert alembic("downgrade", "0085").returncode == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+
+
+def test_0087_variation_links_cascade_with_the_variation_or_item_and_a_downgrade_drops_the_table(scratch):
+    eng, alembic = scratch
+    w = _workspace(eng)
+    with eng.begin() as c:
+        c.execute(text("INSERT INTO status_options(status_key, sort_order) VALUES ('CLEAR', 1) ON CONFLICT DO NOTHING"))
+        pid = c.execute(text("INSERT INTO projects(project_code, name, workspace_id) VALUES ('M-1', 'M', :w)"
+                             " RETURNING project_id"), {"w": w}).scalar()
+        c.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, 100)"), {"p": pid})
+        vid = c.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta, status,"
+                             " decided_at) VALUES (:p, 'v', 5, 'Approved', now()) RETURNING variation_id"),
+                        {"p": pid}).scalar()
+        iids = [c.execute(text("INSERT INTO items(num, project_id) VALUES (nextval('joinery_number_seq'), :p)"
+                               " RETURNING item_id"), {"p": pid}).scalar() for _ in range(2)]
+        for i in iids:
+            c.execute(text("INSERT INTO project_contract_variation_item VALUES (:v, :i)"), {"v": vid, "i": i})
+    with pytest.raises(IntegrityError), eng.begin() as c:       # one link per pair
+        c.execute(text("INSERT INTO project_contract_variation_item VALUES (:v, :i)"), {"v": vid, "i": iids[0]})
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM items WHERE item_id = :i"), {"i": iids[0]})
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM project_contract_variation_item")).scalar() == 1
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM project_contract_variation WHERE variation_id = :v"), {"v": vid})
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM project_contract_variation_item")).scalar() == 0
+    assert alembic("downgrade", "0086").returncode == 0
+    with eng.connect() as c:
+        assert c.execute(text("SELECT to_regclass('project_contract_variation_item')")).scalar() is None
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD

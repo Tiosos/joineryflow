@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth.audit import write_audit
+from ..row_types import live_joinery_items
 
 
 def _project_in_workspace(db: Session, *, project_id: int, workspace_id: int) -> bool:
@@ -47,6 +48,22 @@ def get_contract(db: Session, *, project_id: int, workspace_id: int) -> dict | N
         ),
         {"p": project_id},
     ).mappings().all()
+    linked: dict[int, list[dict]] = {}
+    for r in db.execute(
+        text(
+            f"""
+            SELECT l.variation_id, i.item_id, i.num, i.description
+              FROM project_contract_variation_item l
+              JOIN items i ON i.item_id = l.item_id
+             WHERE l.variation_id = ANY(:v) AND {live_joinery_items("i")}
+             ORDER BY i.num, i.item_id
+            """
+        ),
+        {"v": [v["variation_id"] for v in variations]},
+    ).mappings():
+        linked.setdefault(r["variation_id"], []).append(
+            {"item_id": r["item_id"], "num": r["num"], "description": r["description"]}
+        )
     current_value = Decimal(str(header["original_value"])) + sum(
         (Decimal(str(v["amount_delta"])) for v in variations if v["status"] == "Approved"),
         Decimal("0"),
@@ -54,7 +71,7 @@ def get_contract(db: Session, *, project_id: int, workspace_id: int) -> dict | N
     return {
         **dict(header),
         "current_value": current_value,
-        "variations": [dict(v) for v in variations],
+        "variations": [{**dict(v), "items": linked.get(v["variation_id"], [])} for v in variations],
     }
 
 
@@ -81,17 +98,46 @@ def live_contract_value(db: Session, *, workspace_id: int, pm_id: int | None = N
     ).scalar()
 
 
+def _checked_item_ids(db: Session, *, project_id: int, item_ids: list[int]) -> list[int]:
+    """The ids, deduplicated, once each is a live Joinery Item of this project. A missing id, another
+    project's or workspace's, a related part and a deleted item all answer `404 ITEM_NOT_FOUND`."""
+    ids = sorted(set(item_ids))
+    if ids:
+        found = db.execute(
+            text(
+                f"SELECT item_id FROM items i WHERE i.project_id = :p AND i.item_id = ANY(:ids)"
+                f" AND {live_joinery_items('i')}"
+            ),
+            {"p": project_id, "ids": ids},
+        ).scalars().all()
+        if len(found) != len(ids):
+            raise HTTPException(status_code=404, detail={"code": "ITEM_NOT_FOUND"})
+    return ids
+
+
+def _set_links(db: Session, *, variation_id: int, item_ids: list[int]) -> None:
+    db.execute(text("DELETE FROM project_contract_variation_item WHERE variation_id = :v"), {"v": variation_id})
+    if item_ids:
+        db.execute(
+            text("INSERT INTO project_contract_variation_item(variation_id, item_id)"
+                 " SELECT :v, unnest(CAST(:ids AS bigint[]))"),
+            {"v": variation_id, "ids": item_ids},
+        )
+
+
 def create_variation(
     db: Session, *, project_id: int, workspace_id: int,
     description: str, amount_delta: Decimal, actor_id: int, auto_approve: bool,
+    item_ids: list[int] = (),
 ) -> dict | None:
     """A manager's or admin's variation is decided by adding it (`auto_approve`, Approved at once);
     anyone else's is a Draft until a manager or admin decides it (Q608)."""
     contract = get_contract(db, project_id=project_id, workspace_id=workspace_id)
     if contract is None:
         return None
+    ids = _checked_item_ids(db, project_id=project_id, item_ids=list(item_ids))
     status = "Approved" if auto_approve else "Draft"
-    db.execute(
+    variation_id = db.execute(
         text(
             """
             INSERT INTO project_contract_variation(
@@ -100,14 +146,17 @@ def create_variation(
             VALUES (:p, :d, :a, :cb, :s,
                     CASE WHEN :s = 'Approved' THEN CAST(:cb AS bigint) END,
                     CASE WHEN :s = 'Approved' THEN now() END)
+            RETURNING variation_id
             """
         ),
         {"p": project_id, "d": description, "a": amount_delta, "cb": actor_id, "s": status},
-    )
+    ).scalar()
+    _set_links(db, variation_id=variation_id, item_ids=ids)
     write_audit(
         db, workspace_id=workspace_id, actor_id=actor_id,
         event="project.contract.variation_add", target=str(project_id),
-        payload={"description": description, "amount_delta": str(amount_delta), "status": status},
+        payload={"description": description, "amount_delta": str(amount_delta), "status": status,
+                 "item_ids": ids},
     )
     db.flush()
     return get_contract(db, project_id=project_id, workspace_id=workspace_id)
@@ -142,17 +191,23 @@ def patch_variation(
     if row["status"] != "Draft":
         raise HTTPException(status_code=409, detail={"code": "VARIATION_NOT_DRAFT"})
     allowed = {"description", "amount_delta"}
+    item_ids = changes.get("item_ids")
+    ids = None if item_ids is None else _checked_item_ids(db, project_id=project_id, item_ids=item_ids)
     changes = {k: v for k, v in changes.items() if k in allowed}
-    if changes:
-        sets = ", ".join(f"{k} = :{k}" for k in changes)  # names come from the fixed set above
-        db.execute(
-            text(f"UPDATE project_contract_variation SET {sets} WHERE variation_id = :v"),
-            {**changes, "v": variation_id},
-        )
+    if ids is not None:
+        _set_links(db, variation_id=variation_id, item_ids=ids)
+    if changes or ids is not None:
+        if changes:
+            sets = ", ".join(f"{k} = :{k}" for k in changes)  # names come from the fixed set above
+            db.execute(
+                text(f"UPDATE project_contract_variation SET {sets} WHERE variation_id = :v"),
+                {**changes, "v": variation_id},
+            )
         write_audit(
             db, workspace_id=workspace_id, actor_id=actor_id,
             event="project.contract.variation_edit", target=str(project_id),
-            payload={"variation_id": variation_id, **{k: str(v) for k, v in changes.items()}},
+            payload={"variation_id": variation_id, **{k: str(v) for k, v in changes.items()},
+                     **({"item_ids": ids} if ids is not None else {})},
         )
     db.flush()
     return get_contract(db, project_id=project_id, workspace_id=workspace_id)
