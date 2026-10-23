@@ -149,6 +149,12 @@
     `VARIATION_NOT_DRAFT`, `NOT_YOUR_VARIATION`. The Financials card shows
     a status badge, Approve / Reject / Edit on a Draft, and the
     `live_contract_value` (Value in Progress) sum counts Approved only.
+  - Variation Void (Q610, `0088`): `POST …/variations/{id}/void`
+    (`{reason}`, manager/admin only, `403 DECISION_FORBIDDEN`) turns an
+    **Approved** variation into `Voided` (`voided_by/at`, `void_reason`; the
+    approval is kept). It stays listed and stops counting in `current_value`
+    and Value in Progress. Codes: `VOID_REASON_REQUIRED`,
+    `VARIATION_NOT_APPROVED`. Final.
   - Variation item links (Q609, `0087`): `project_contract_variation_item`;
     `item_ids` on create and on a Draft's PATCH (replace); each variation
     carries `items` (`item_id`, `num`, `description`; live Joinery Items

@@ -140,6 +140,7 @@ const STATUS_STYLE: Record<ContractVariation["status"], string> = {
   Draft: "bg-amber-100 text-amber-800",
   Approved: "bg-emerald-100 text-emerald-800",
   Rejected: "bg-rose-100 text-rose-800",
+  Voided: "bg-slate-200 text-slate-700",
 };
 
 function VariationRow({
@@ -193,6 +194,17 @@ function VariationRow({
     await run(() => projectContractApi.decideVariation(projectId, v.variation_id, "rejected", note));
   }
 
+  async function voidIt() {
+    const reason = await askReason({
+      title: "Void variation",
+      message: `Void "${v.description}" (${fmtMoney(v.amount_delta)})? It stays in the list but stops counting toward the contract value. This cannot be undone.`,
+      reasonLabel: "Reason",
+      confirmLabel: "Void",
+    });
+    if (!reason) return;
+    await run(() => projectContractApi.voidVariation(projectId, v.variation_id, reason));
+  }
+
   async function edit() {
     const r = await askFields({
       title: "Edit variation",
@@ -215,7 +227,7 @@ function VariationRow({
   return (
     <li data-testid="variation-row" className="grid gap-0.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className={v.status === "Rejected" ? "line-through" : undefined}>
+        <span className={v.status === "Rejected" || v.status === "Voided" ? "line-through" : undefined}>
           {v.description}{" "}
           <span
             data-testid="variation-status"
@@ -227,6 +239,14 @@ function VariationRow({
         <span className={`font-mono ${v.status === "Approved" ? "" : "opacity-60"}`}>{fmtMoney(v.amount_delta)}</span>
       </div>
       {v.decision_note && <div className="italic">{v.decision_note}</div>}
+      {v.void_reason && <div className="italic">{`Voided: ${v.void_reason}`}</div>}
+      {v.status === "Approved" && canDecideThis && (
+        <div className="flex gap-3">
+          <button type="button" onClick={voidIt} className="text-rose-700 hover:underline">
+            Void
+          </button>
+        </div>
+      )}
       {v.items.length > 0 && (
         <div data-testid="variation-items" className="flex flex-wrap gap-1">
           {v.items.map((i) => (

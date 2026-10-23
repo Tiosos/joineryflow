@@ -350,6 +350,95 @@ def test_linking_is_audited():
     assert payload["item_ids"] == [a]
 
 
+# --- Void (Q610) -------------------------------------------------------------
+
+
+def _void(c, pid: int, vid: int, reason: str | None = "Entered twice"):
+    return c.post(f"/projects/{pid}/contract/variations/{vid}/void", json={"reason": reason})
+
+
+def test_a_manager_voids_an_approved_variation_which_stays_listed_but_stops_counting():
+    c, wid, uid, pid = _setup()
+    a = _add(c, pid, "Benchtop upgrade", "250.00")["variations"][0]["variation_id"]
+    _add(c, pid, "Keep", "50.00")
+    assert float(c.get(f"/projects/{pid}/contract").json()["current_value"]) == 1300.0
+    r = _void(c, pid, a)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert float(body["current_value"]) == 1050.0
+    v = next(x for x in body["variations"] if x["variation_id"] == a)
+    assert v["status"] == "Voided" and v["void_reason"] == "Entered twice"
+    assert v["voided_by"] == uid and v["voided_at"] is not None
+    assert v["decided_by"] == uid and v["decided_at"] is not None          # the approval is kept
+    assert float(v["amount_delta"]) == 250.0                               # the row is untouched
+    assert len(body["variations"]) == 2
+
+
+def test_voiding_needs_a_reason_and_a_manager_or_admin():
+    c, wid, uid, pid = _setup()
+    vid = _add(c, pid)["variations"][0]["variation_id"]
+    for blank in (None, "", "   "):
+        r = _void(c, pid, vid, blank)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VOID_REASON_REQUIRED", blank
+    for role in ("drafter", "editor"):
+        other, _ = login_same_workspace(wid, role)
+        r = _void(other, pid, vid)
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "DECISION_FORBIDDEN"
+    assert c.get(f"/projects/{pid}/contract").json()["variations"][0]["status"] == "Approved"
+
+
+def test_only_an_approved_variation_can_be_voided_and_a_void_is_final():
+    c, wid, uid, pid = _setup()
+    d, _ = login_same_workspace(wid, "drafter")
+    draft = _add(d, pid, "Draft")["variations"][0]["variation_id"]
+    rejected = _add(d, pid, "Rejected")["variations"][1]["variation_id"]
+    assert _decide(c, pid, rejected, "rejected", "no").status_code == 200
+    approved = _add(c, pid, "Approved", "70.00")["variations"][2]["variation_id"]
+    for vid in (draft, rejected):
+        r = _void(c, pid, vid)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_NOT_APPROVED", vid
+    assert _void(c, pid, approved).status_code == 200
+    r = _void(c, pid, approved)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_NOT_APPROVED"
+    for call in (lambda: _decide(c, pid, approved, "approved"),
+                 lambda: c.patch(f"/projects/{pid}/contract/variations/{approved}", json={"description": "x"})):
+        assert call().status_code == 409                                  # a voided one is not reopened or edited
+    assert float(c.get(f"/projects/{pid}/contract").json()["current_value"]) == 1000.0
+
+
+def test_an_unknown_variation_or_another_workspaces_cannot_be_voided():
+    c, wid, uid, pid = _setup()
+    vid = _add(c, pid)["variations"][0]["variation_id"]
+    other = _make_project(wid, uid, "V9")
+    _make_contract(other, uid, "10.00")
+    assert _void(c, pid, 987654321).status_code == 404
+    assert _void(c, other, vid).status_code == 404                         # right id, wrong project
+    c2, _, _ = login(role="admin")
+    assert _void(c2, pid, vid).status_code == 404                          # another workspace's admin
+    assert c.get(f"/projects/{pid}/contract").json()["variations"][0]["status"] == "Approved"
+
+
+def test_a_void_is_audited_and_leaves_the_value_in_progress_card_without_it():
+    c, wid, uid, pid = _setup()
+    vid = _add(c, pid, "Gone", "500.00")["variations"][0]["variation_id"]
+    _void(c, pid, vid, "Client withdrew")
+    s = SessionLocal()
+    try:
+        payload = s.execute(text("SELECT payload FROM audit_log WHERE event = 'project.contract.variation_void'"
+                                 " AND workspace_id = :w"), {"w": wid}).scalar()
+        live = s.execute(text("SELECT status FROM projects WHERE project_id = :p"), {"p": pid}).scalar()
+    finally:
+        s.close()
+    assert payload["variation_id"] == vid and payload["reason"] == "Client withdrew"
+    from app.project_contracts.queries import live_contract_value
+    db = SessionLocal()
+    try:
+        assert live == "Current"
+        assert float(live_contract_value(db, workspace_id=wid)) == 1000.0     # not 1500
+    finally:
+        db.close()
+
+
 # --- Actual costs (Q493/Q549) ---------------------------------------------
 
 def test_actual_costs_zero_for_untouched_project():

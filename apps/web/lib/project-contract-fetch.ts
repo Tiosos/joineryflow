@@ -22,6 +22,11 @@ export const projectContractApi = {
       `/api/projects/${projectId}/contract/variations/${variationId}/decision`,
       jsonInit("POST", { decision, note: note ?? null }),
     ),
+  voidVariation: (projectId: number, variationId: number, reason: string) =>
+    apiCall<ProjectContract>(
+      `/api/projects/${projectId}/contract/variations/${variationId}/void`,
+      jsonInit("POST", { reason }),
+    ),
   /** The project's Joinery Items a variation can be linked to (related parts cannot). */
   linkableItems: async (projectId: number): Promise<VariationItem[]> => {
     const grid = await apiCall<TrackingGridOut>(`/api/projects/${projectId}/items`);
