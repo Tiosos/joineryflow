@@ -20,6 +20,9 @@ from pydantic import BaseModel, Field, StringConstraints
 class StageDates(BaseModel):
     due_date: date | None
     done_date: date | None
+    # Q591: set on the Tracking lists, from items/card_filters.py. One of done, delayed, open,
+    # overdue, at_risk; absent where a stage is only shown with its dates.
+    state: Literal["done", "delayed", "open", "overdue", "at_risk"] | None = None
 
 
 class AvailabilityRollup(BaseModel):
@@ -32,7 +35,7 @@ VarBoq = Literal["BOQ", "VAR"]
 
 
 # The dashboard cards' item filters (keys of `card_filters.CARD_FILTERS`).
-CardFilter = Literal["overdue", "in_optimisation", "awaiting_install"]
+CardFilter = Literal["overdue", "at_risk", "delayed", "in_optimisation", "awaiting_install"]
 
 
 class TrackingItemRow(BaseModel):
@@ -54,6 +57,10 @@ class TrackingItemRow(BaseModel):
     item_locked: bool
     hard_locked: bool = False  # §L Q508 — derived from hard_locked_at IS NOT NULL
     stages: dict[str, StageDates]   # keyed by stage_key (REQ..INST)
+    # Q591: whether any stage is Overdue / At risk, and (until installed) Delayed; see items/card_filters.py
+    is_overdue: bool = False
+    is_at_risk: bool = False
+    is_delayed: bool = False
     availability: AvailabilityRollup
     # Plan V1 Q420/Q422: related parts come back in the SAME list, directly
     # beneath their parent, collapsed by default.  The web nests on these two.

@@ -45,14 +45,14 @@ export default async function TrackingPage({
 
   // Q633: a dashboard card opens the items it counted, across projects.
   if (sp.scope === "all") {
-    const filter = (["overdue", "in_optimisation", "awaiting_install"] as const).find((f) => f === sp.filter) ?? null;
+    const filter = (["overdue", "at_risk", "delayed", "in_optimisation", "awaiting_install"] as const).find((f) => f === sp.filter) ?? null;
     const qs = new URLSearchParams();
     if (filter) qs.set("filter", filter satisfies CardFilter);
     if (sp.status) qs.set("status", sp.status);
     if (sp.stage) qs.set("stage", sp.stage);
     const all = await apiGet<TrackingAllOut>(`/tracking/items${qs.size ? `?${qs}` : ""}`, cookieHeader);
     if (!all) return <div className="p-6 text-h-muted">Unable to load items.</div>;
-    return <AllProjectsTracking filter={filter} items={all.items} today={new Date().toISOString().slice(0, 10)} />;
+    return <AllProjectsTracking filter={filter} items={all.items} />;
   }
 
   const [me, projectList] = await Promise.all([

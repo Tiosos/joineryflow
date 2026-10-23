@@ -655,3 +655,33 @@ to its folder instead: `projects.project_folder_url` (nullable `text`, `CHECK` a
 - **Tests.** `test_project_enrichment.py` (round trip and clear, trimmed, list carries it, eight refused values, drafter 403;
   fail without the change) and `project_folder.spec.ts` (a bad link is refused, a good one shows as a link on the project page
   and in the Info pop-up).
+
+## Overdue / At risk / Delayed (2026-10-22, Q591, `0085`)
+
+Three definitions of "overdue" existed (the dashboard card, Tracking's chip and metric in the browser, the Orderbook's own) and
+At risk / Delayed had none. Now one server-side definition per stage lives in `items/card_filters.py` (`STAGE_STATE_SQL`),
+which the dashboard counts, `GET /tracking/items`, the Tracking list and its cells all read.
+
+- **A stage is**, in this order: `delayed` (done after its due date); `done`; `open` (no due date, or not done and not close);
+  `overdue` (not done, due before today); `at_risk` (not done, due today or within `workspace.at_risk_days`, and an earlier stage
+  of the item is not done). Overdue is exactly what the dashboard card counted before; the item list for it is unchanged.
+- **"Earlier" is the item's own order**: REQ, SM, LISTED, Shop Floor's order for that item (`shop_floor.lifecycle`: paint before
+  or after assembly), then DEL, INST. The SQL rank is generated from Shop Floor's own tuples, so the two cannot drift. A PAINTED
+  row of an item that does not need painting (`painting_req` false, the default) is not an earlier stage. A stage with no row is
+  not either: only rows that exist and are not done hold a later stage back.
+- **Item level** (`is_overdue`, `is_at_risk`, `is_delayed` on every Tracking row; also the `filter` values on
+  `GET /tracking/items`): any stage in that state. **Delayed lasts only until the item is installed** (INST done): the stage keeps
+  its `delayed` state as the record, the item leaves the list.
+- **Window.** `workspace.at_risk_days` (`0085`, default 3, `CHECK` 0 to 90). `GET /workspace/planning` (anyone signed in) and
+  `PATCH /workspace/planning` (`it_management:write`, audited as `workspace.planning`); a Planning panel on /it.
+- **Web.** Each stage cell is tinted from `stage.state` with a tooltip (Overdue, At risk, Done late); Tracking has Overdue, At risk
+  and Delayed chips reading the row flags; the Overdue metric reads `is_overdue`; the All projects scope lists the new filters.
+  The browser's own date sums (`dateCellColor`, the chip's date test) are gone. The "Due this week" metric is not a state and
+  keeps its own 7-day test.
+- **Dates.** "Today" is the server's date (UTC in the container), as the dashboard counts already used; the browser's date is no
+  longer part of any state. Whether a workspace in Australia wants its own time zone is not decided.
+- **Tests.** `test_stage_states.py` (each state, the earlier-stage rule incl. paint order and unneeded paint, the window setting
+  and who may change it, per-workspace, delayed until installed, the lists = the flags; all fail without the change),
+  `test_migration_downgrades.py` (`0085`), `tracking_stage_states.spec.ts` (chips, cell tooltips, All projects, the /it control).
+- **Not built.** Notifications and escalation (Q616); the Orderbook's own overdue (`procurement_v1/queue`) is a separate thing
+  (deliveries), left alone; no At Risk / Delayed dashboard cards (decided).

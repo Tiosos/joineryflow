@@ -29,11 +29,7 @@ interface Props {
   deletedView: boolean;
 }
 
-type QuickFilter = "my" | "void" | "tgsolid" | "orders" | "overdue" | "installed" | null;
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+type QuickFilter = "my" | "void" | "tgsolid" | "orders" | "overdue" | "at_risk" | "delayed" | "installed" | null;
 
 export function TrackingClient({
   project,
@@ -90,8 +86,6 @@ export function TrackingClient({
     router.push(qs ? `/tracking?${qs}` : "/tracking");
   }
 
-  const today = todayISO();
-
   const visibleItems = useMemo(() => {
     if (!quick) return items;
     const partsWithOrder = new Set(
@@ -105,9 +99,11 @@ export function TrackingClient({
         case "void":
           return it.status === "VOID";
         case "overdue":
-          return Object.values(it.stages).some(
-            (s) => s.due_date && !s.done_date && s.due_date < today,
-          );
+          return Boolean(it.is_overdue);       // the server's definition (Q591)
+        case "at_risk":
+          return Boolean(it.is_at_risk);
+        case "delayed":
+          return Boolean(it.is_delayed);
         case "installed":
           return Boolean(it.stages.INST?.done_date);
         case "tgsolid":
@@ -130,7 +126,7 @@ export function TrackingClient({
         ? it.parent_item_id != null && kept.has(it.parent_item_id)
         : kept.has(it.id),
     );
-  }, [items, quick, me, today]);
+  }, [items, quick, me]);
 
   function refresh() {
     router.refresh();
@@ -303,7 +299,9 @@ export function TrackingClient({
         <Chip label="Tg Solid" active={quick === "tgsolid"} onClick={() => setQuick(quick === "tgsolid" ? null : "tgsolid")} title="Items tagged Tg Solid" />
         <Chip label="Orders" active={quick === "orders"} onClick={() => setQuick(quick === "orders" ? null : "orders")} title="Items with an order, or whose related parts have one" />
         <span className="mx-1 h-4 w-px bg-h-line" />
-        <Chip label="Overdue" tone="bad" active={quick === "overdue"} onClick={() => setQuick(quick === "overdue" ? null : "overdue")} />
+        <Chip label="Overdue" tone="bad" active={quick === "overdue"} onClick={() => setQuick(quick === "overdue" ? null : "overdue")} title="A stage is past its due date and not done" />
+        <Chip label="At risk" tone="warn" active={quick === "at_risk"} onClick={() => setQuick(quick === "at_risk" ? null : "at_risk")} title="A stage is due soon and an earlier stage is not done" />
+        <Chip label="Delayed" tone="warn" active={quick === "delayed"} onClick={() => setQuick(quick === "delayed" ? null : "delayed")} title="A stage was finished after its due date, on a job not installed yet" />
         <Chip label="Installed" tone="good" active={quick === "installed"} onClick={() => setQuick(quick === "installed" ? null : "installed")} />
         <button
           type="button"
@@ -468,7 +466,7 @@ interface ChipProps {
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
-  tone?: "bad" | "good";
+  tone?: "bad" | "warn" | "good";
   title?: string;
 }
 
@@ -478,6 +476,10 @@ function Chip({ label, active, onClick, disabled, tone, title }: ChipProps) {
       ? active
         ? "bg-[#f2dcd9] text-[#b4443d] border-[#b4443d]"
         : "border-h-line text-[#b4443d] hover:bg-[#f2dcd9]/30"
+      : tone === "warn"
+      ? active
+        ? "bg-[#f4ebd9] text-[#c48a2e] border-[#c48a2e]"
+        : "border-h-line text-[#c48a2e] hover:bg-[#f4ebd9]/30"
       : tone === "good"
       ? active
         ? "bg-[#e4efe5] text-[#3f7d48] border-[#3f7d48]"

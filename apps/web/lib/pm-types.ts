@@ -159,9 +159,13 @@ export interface CloseOutOut {
 // Source: apps/api/app/items/schemas.py
 // =============================================================================
 
+/** A stage's state (Q591), worked out on the server: see the API's `items/card_filters.py`. */
+export type StageState = "done" | "delayed" | "open" | "overdue" | "at_risk";
+
 export interface StageDates {
   due_date: string | null; // date → ISO 8601 YYYY-MM-DD
   done_date: string | null; // date → ISO 8601 YYYY-MM-DD
+  state?: StageState | null; // set on the Tracking lists
 }
 
 export interface AvailabilityRollup {
@@ -175,6 +179,9 @@ export interface TrackingItemRow {
   id: number;
   project_id?: number; // which project the row is in
   project_code?: string | null;
+  is_overdue?: boolean; // any stage Overdue / At risk, or a stage done late on a job not installed yet (Q591)
+  is_at_risk?: boolean;
+  is_delayed?: boolean;
   factory_code?: string | null; // where the work is made (`0053`); null = not assigned yet
   tg_solid?: boolean; // the per-item Tg Solid tag (`0053`)
   item_number: number | null;
@@ -245,7 +252,7 @@ export interface TrackingGridOut {
 }
 
 /** The dashboard cards' item filters (Q633); keys of the API's `card_filters.CARD_FILTERS`. */
-export type CardFilter = "overdue" | "in_optimisation" | "awaiting_install";
+export type CardFilter = "overdue" | "at_risk" | "delayed" | "in_optimisation" | "awaiting_install";
 
 /** `GET /tracking/items`: Tracking's All projects scope. */
 export interface TrackingAllOut {

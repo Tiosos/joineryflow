@@ -118,7 +118,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | --- | --- |
 | `apps/api/` | FastAPI + SQLAlchemy Core (`text()` queries, no ORM models) + Pydantic v2 |
 | `apps/web/` | Next.js 16 (App Router, Turbopack) + Tailwind v4 + TypeScript |
-| `db/` | Alembic migrations `0001`→`0084` (head `0084_project_folder_url`) |
+| `db/` | Alembic migrations `0001`→`0085` (head `0085_workspace_at_risk_days`) |
 | `seed/` | `seed.hartwood_joinery` dev seed (workspace + 13 staff users + demo data) |
 | `legacy/` | Read-only FileMaker-era prototypes. Reference only |
 | `apps/api/tests/` | pytest suite (~100 files; counts drift, so none are recorded here). Shared setup: `conftest.py` + `helpers*.py` (see §3) |
@@ -279,7 +279,7 @@ One entry per sub-project: what it is, the rule you most need, and the migration
 - **Material Take → Summary (#12, `0034`).** Per-item takes (draft → approved → superseded) generated from parts/hardware, then owned by a person; project summary computed on read, with required / ordered / received / outstanding per line from the Orderbook (matched on product code = catalog SKU, `docs/sub-projects/02-cutlist-search-material-take.md`), and a line can raise a `Pending` order for what is not yet on one (`POST /material-summaries/{sid}/lines/{lid}/order`, `orderbook:write`); confirmation is advisory.
 
 ### Tracking and item detail — `03-tracking-and-item-detail.md`
-- **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items). A dashboard card's count and the list it opens read one definition, `items/card_filters.py` (`/tracking?scope=all&filter=`, Q633).
+- **Tracking 2.0 (`0035`).** JID code/colour, VAR/BOQ, contractor, total; sub-tabs; bulk status (one status + required note, up to 500 items). A dashboard card's count and the list it opens read one definition, `items/card_filters.py` (`/tracking?scope=all&filter=`, Q633), which is also the one place a stage is Overdue, At risk or Delayed (Q591, `workspace.at_risk_days`): the web shows the server's `state` and never works one out from dates.
 - **Item & Project Detail 2.0 (`0036`).** `/projects/[id]` page, contacts, lift access, item queries, Document Register, close-out (the only way to close; PATCH to Current/Hold reopens; advisory checks first: `GET /projects/{id}/close-out-checks` lists open QC defects / rework, items not installed and open orders, the dialog asks for a reason kept in the audit row, nothing blocks).
 - **Tracking modal, Document Register UI.** Modal shows register, five slots and reference fields read-only; editing stays on the item editor.
 - **Duplicate item (`0050`).** Same-project copy with its own new cutlist, status reset to `CLEAR`, QC checklist unticked; links to source via `duplicated_from_item_id`. Deleting an item is a soft delete (next entry).

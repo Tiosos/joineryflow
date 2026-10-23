@@ -40,6 +40,12 @@ ALLOWED: dict[tuple[str, str], str] = {
         "a re-run reuses the cutlist row of the same number, deleted or not",
     ("importers/tracking_grid.py", "SELECT setval"):
         "the shared number sequence must clear every number ever used, deleted rows included",
+    ("items/_q_read.py", "SELECT s.item_id, s.stage_key, s.due_date, s.done_date"):
+        "the stage rows of item ids the list already resolved (the Deleted view lists deleted items and "
+        "their stage dates must still show); the joined `it` only supplies the paint flags",
+    ("items/card_filters.py", "EXISTS (SELECT 1 FROM item_stages s JOIN items it"):
+        "`it` is the outer item `i` itself, which every caller already filters (live_joinery_items or "
+        "`i.deleted`); the join only reads its paint flags",
     ("related_parts/queries.py", "FROM items i"):
         "`_PART_FROM`: a bare fragment; `get_related_part` and `list_for_parent` add `NOT i.deleted`",
 }
