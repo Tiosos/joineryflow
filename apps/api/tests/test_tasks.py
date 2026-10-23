@@ -285,6 +285,13 @@ def test_unauthenticated_requests_are_401(ws):
 
 # --- the bell: GET /notifications carries the caller's open tasks --------------------------
 
+def _open_tasks(c, **params):
+    """The task part of the bell's attention list: {"rows": [...], "count": total or None (not on this call)}."""
+    body = c.get("/notifications", params=params).json()
+    return {"rows": [a for a in body["attention"] if a["kind"] == "task"],
+            "count": body["attention_totals"].get("task")}
+
+
 def test_notifications_carry_my_open_tasks_soonest_due_first(ws):
     mgr = client(ws, "manager")
     mine = ws["uid"]["drafter"]
@@ -293,27 +300,28 @@ def test_notifications_carry_my_open_tasks_soonest_due_first(ws):
     done = _make(mgr, title="done", assignee_id=mine)
     _make(mgr, title="not mine", assignee_id=ws["uid"]["editor"])
     mgr.post(f"/tasks/{done['task_id']}/status", json={"status": "done"})
-    r = client(ws, "drafter").get("/notifications").json()
-    assert r["tasks_open_count"] == 2
-    assert [t["title"] for t in r["tasks_open"]] == ["soon", "later"]
-    assert r["tasks_open"][1]["target_label"] and r["tasks_open"][0]["url"] == f"/tasks?task={soon['task_id']}"
+    r = _open_tasks(client(ws, "drafter"))
+    assert r["count"] == 2
+    assert [t["title"] for t in r["rows"]] == ["soon", "later"]
+    assert r["rows"][1]["detail"].startswith("Due 2026-12-01 · ")      # the task on an item names its target
+    assert r["rows"][0]["url"] == f"/tasks?task={soon['task_id']}" and r["rows"][0]["detail"].startswith("Due 2026-11-01")
     # not on a paged or unread-only call
-    assert client(ws, "drafter").get("/notifications?unread_only=true").json()["tasks_open"] == []
-    assert client(ws, "drafter").get("/notifications?offset=1").json()["tasks_open_count"] == 0
+    assert _open_tasks(client(ws, "drafter"), unread_only="true")["rows"] == []
+    assert _open_tasks(client(ws, "drafter"), offset=1)["count"] is None
     # a finished task leaves the bell
     client(ws, "drafter").post(f"/tasks/{soon['task_id']}/status", json={"status": "in_progress"})
-    assert client(ws, "drafter").get("/notifications").json()["tasks_open_count"] == 2
+    assert _open_tasks(client(ws, "drafter"))["count"] == 2
     client(ws, "drafter").post(f"/tasks/{soon['task_id']}/status", json={"status": "cancelled"})
-    assert client(ws, "drafter").get("/notifications").json()["tasks_open_count"] == 1
+    assert _open_tasks(client(ws, "drafter"))["count"] == 1
 
 
 def test_a_purchase_officer_and_a_manager_get_tasks_beside_their_waiting_lists(ws):
     mgr = client(ws, "manager")
     _make(mgr, title="for po", assignee_id=ws["uid"]["purchase_officer"])
     _make(mgr, title="for mgr", assignee_id=ws["uid"]["manager"])
-    assert client(ws, "purchase_officer").get("/notifications").json()["tasks_open_count"] == 1
+    assert _open_tasks(client(ws, "purchase_officer"))["count"] == 1
     body = mgr.get("/notifications").json()
-    assert body["tasks_open_count"] == 1 and "lock_requests_waiting" in body
+    assert body["attention_totals"] == {"lock_request": 0, "variation": 0, "task": 1}
 
 
 def test_a_projects_task_list_covers_its_items_and_cutlists_and_a_cutlists_is_its_own(ws):

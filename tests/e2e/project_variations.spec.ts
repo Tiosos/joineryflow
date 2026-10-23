@@ -159,3 +159,35 @@ test("a variation shows its number, reason, requester, impacts and history", asy
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByTestId("variation-row").filter({ hasText: "Second" })).toContainText("VAR-002");
 });
+
+// Q617/Q613: a Draft variation waits in the bell of the manager who decides it, and leaves when decided.
+test("a draft variation appears in a manager's bell and leaves it once approved", async ({ page }) => {
+  const pid = await convertedProject(page);
+  const code = (await (await page.request.get(`/api/projects/${pid}`)).json()).project_code as string;
+
+  await login(page, "noa.lindqvist@hartwood.test");
+  expect(
+    (await page.request.post(`/api/projects/${pid}/contract/variations`, {
+      data: { description: "Bell variation", amount_delta: "75", reason: "E2E reason" },
+    })).status(),
+  ).toBe(201);
+  await page.goto("/dashboard");
+  await page.getByTestId("notification-bell").click();
+  await expect(page.getByTestId("variations-waiting")).toHaveCount(0);      // the drafter does not decide it
+
+  await login(page);
+  await page.goto("/dashboard");
+  await page.getByTestId("notification-bell").click();
+  const entry = page.getByTestId("variation-waiting").filter({ hasText: `VAR-001 · ${code}` });
+  await expect(entry).toContainText("Bell variation");
+  await expect(page.getByTestId("notification-bell")).toHaveAttribute("aria-label", /need attention/);
+  await entry.click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${pid}$`));
+
+  await page.getByTestId("variation-row").filter({ hasText: "Bell variation" }).getByRole("button", { name: "Approve" }).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("variation-status")).toHaveText("Approved");
+  await page.goto("/dashboard");
+  await page.getByTestId("notification-bell").click();
+  await expect(page.getByTestId("variation-waiting").filter({ hasText: `VAR-001 · ${code}` })).toHaveCount(0);
+});

@@ -294,3 +294,37 @@ def void_variation(
     )
     db.flush()
     return get_contract(db, project_id=project_id, workspace_id=workspace_id)
+
+
+def variations_waiting_for_approval(
+    db: Session, *, workspace_id: int, limit: int = 20
+) -> tuple[int, list[dict]]:
+    """(count, newest `limit` rows) of the Draft variations in this workspace: they wait for a manager
+    or admin to approve or reject them (Q617). Derived on read, never stored, so a decided one drops
+    out by itself and nothing is marked read."""
+    where = "v.status = 'Draft' AND p.workspace_id = :w"
+    count = db.execute(
+        text(
+            f"""
+            SELECT count(*) FROM project_contract_variation v
+              JOIN projects p ON p.project_id = v.project_id WHERE {where}
+            """
+        ),
+        {"w": workspace_id},
+    ).scalar_one()
+    rows = db.execute(
+        text(
+            f"""
+            SELECT v.variation_id, v.project_id, p.project_code, v.number, v.description,
+                   cu.full_name AS created_by_name, v.created_at
+              FROM project_contract_variation v
+              JOIN projects p ON p.project_id = v.project_id
+              LEFT JOIN app_user cu ON cu.id = v.created_by
+             WHERE {where}
+             ORDER BY v.created_at DESC, v.variation_id DESC
+             LIMIT :lim
+            """
+        ),
+        {"w": workspace_id, "lim": limit},
+    ).mappings().all()
+    return count, [dict(r) for r in rows]

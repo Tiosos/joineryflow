@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notificationsApi } from "@/lib/comments-fetch";
-import type { LockRequestWaiting, NotificationOut, OrderWaiting } from "@/lib/comments-types";
-import type { TaskOpen } from "@/lib/tasks-types";
+import type { AttentionItem, AttentionKind } from "@/lib/attention";
+import type { NotificationOut } from "@/lib/comments-types";
+
+import { AttentionSections } from "./AttentionSections";
 
 const POLL_MS = 60_000;
 const PREVIEW = 6;
@@ -24,32 +26,22 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<NotificationOut[]>([]);
-  const [waiting, setWaiting] = useState<OrderWaiting[]>([]);
-  const [waitingCount, setWaitingCount] = useState(0);
-  const [lockWaiting, setLockWaiting] = useState<LockRequestWaiting[]>([]);
-  const [lockCount, setLockCount] = useState(0);
-  const [tasks, setTasks] = useState<TaskOpen[]>([]);
-  const [taskCount, setTaskCount] = useState(0);
-  // Orders and lock requests waiting for a decision, and your own open tasks, count on the badge
-  // too; they have no read state, they leave when decided or done. So the badge is "need attention",
-  // not "unread".
-  const badge = unread + waitingCount + lockCount + taskCount;
-  const shownTasks = tasks.slice(0, PREVIEW);
-  const shownWaiting = waiting.slice(0, PREVIEW);
-  const shownLock = lockWaiting.slice(0, PREVIEW);
-  const showEmpty = items.length === 0 && waitingCount === 0 && lockCount === 0 && taskCount === 0;
+  const [attention, setAttention] = useState<AttentionItem[]>([]);
+  const [totals, setTotals] = useState<Partial<Record<AttentionKind, number>>>({});
+  const [attentionCount, setAttentionCount] = useState(0);
+  // Everything waiting for you (tasks, decisions) counts on the badge too; it has no read state, it
+  // leaves when decided or done. So the badge is "need attention", not "unread".
+  const badge = unread + attentionCount;
+  const showEmpty = items.length === 0 && attentionCount === 0;
 
   const refresh = useCallback(async () => {
     try {
       const r = await notificationsApi.list({ limit: PREVIEW });
       setUnread(r.unread_count);
       setItems(r.notifications);
-      setWaiting(r.orders_waiting ?? []);
-      setWaitingCount(r.orders_waiting_count ?? 0);
-      setLockWaiting(r.lock_requests_waiting ?? []);
-      setLockCount(r.lock_requests_waiting_count ?? 0);
-      setTasks(r.tasks_open ?? []);
-      setTaskCount(r.tasks_open_count ?? 0);
+      setAttention(r.attention ?? []);
+      setTotals(r.attention_totals ?? {});
+      setAttentionCount(r.attention_count ?? 0);
     } catch {
       // A failed poll keeps the last known state; the next tick retries.
     }
@@ -126,105 +118,13 @@ export function NotificationBell() {
               </button>
             )}
           </div>
-          {lockCount > 0 && (
-            <div data-testid="lock-requests-waiting" className="border-b border-h-line">
-              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
-                {`Held saves waiting for your decision (${lockCount})`}
-              </div>
-              <ul>
-                {shownLock.map((l) => (
-                  <li key={l.request_id}>
-                    <Link
-                      href={l.url}
-                      onClick={() => setOpen(false)}
-                      data-testid="lock-request-waiting"
-                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
-                    >
-                      <span className="h-mono">{l.item_number != null ? `#${l.item_number}` : `Item ${l.item_id}`}</span>
-                      <span className="text-xs text-h-muted">
-                        {` · ${l.project_code ?? "no project"}${l.requested_by_name ? ` · ${l.requested_by_name}` : ""}`}
-                      </span>
-                      <span className="block truncate text-xs text-h-muted">{`Changes ${l.fields.join(", ")}`}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              {lockCount > shownLock.length && (
-                <Link
-                  href="/notifications"
-                  onClick={() => setOpen(false)}
-                  className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
-                >
-                  {`+${lockCount - shownLock.length} more`}
-                </Link>
-              )}
-            </div>
-          )}
-          {taskCount > 0 && (
-            <div data-testid="tasks-open" className="border-b border-h-line">
-              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
-                {`Your tasks (${taskCount})`}
-              </div>
-              <ul>
-                {shownTasks.map((t) => (
-                  <li key={t.task_id}>
-                    <Link
-                      href={t.url}
-                      onClick={() => setOpen(false)}
-                      data-testid="task-open"
-                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
-                    >
-                      <span className="block truncate">{t.title}</span>
-                      <span className="text-xs text-h-muted">
-                        {[t.due_date ? `Due ${t.due_date}` : null, t.target_label].filter(Boolean).join(" · ") || "No due date"}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/tasks"
-                onClick={() => setOpen(false)}
-                className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
-              >
-                {taskCount > shownTasks.length ? `+${taskCount - shownTasks.length} more · all my tasks` : "All my tasks"}
-              </Link>
-            </div>
-          )}
-          {waitingCount > 0 && (
-            <div data-testid="orders-waiting" className="border-b border-h-line">
-              <div className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-h-muted">
-                {`Orders waiting for your decision (${waitingCount})`}
-              </div>
-              <ul>
-                {shownWaiting.map((o) => (
-                  <li key={o.po_id}>
-                    <Link
-                      href={o.url}
-                      onClick={() => setOpen(false)}
-                      data-testid="order-waiting"
-                      className="block px-3 py-1.5 text-sm text-h-ink hover:bg-h-bg"
-                    >
-                      <span className="h-mono">{o.po_number}</span>
-                      <span className="text-xs text-h-muted">
-                        {` · ${o.vendor_name ?? "no supplier"}${o.requester_name ? ` · ${o.requester_name}` : ""}`}
-                      </span>
-                      <span className="block truncate text-xs text-h-muted">{o.description}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/orderbook?status=Pending"
-                onClick={() => setOpen(false)}
-                className="block px-3 pb-2 text-xs text-h-muted hover:text-h-ink"
-              >
-                {waitingCount > shownWaiting.length
-                  ? `+${waitingCount - shownWaiting.length} more · all pending orders`
-                  : "All pending orders"}
-              </Link>
-            </div>
-          )}
+          <AttentionSections
+            items={attention}
+            totals={totals}
+            variant="bell"
+            preview={PREVIEW}
+            onNavigate={() => setOpen(false)}
+          />
           {showEmpty && <p className="px-3 py-4 text-sm text-h-muted">Nothing yet.</p>}
           {items.length > 0 && (
             <ul>

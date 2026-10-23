@@ -60,13 +60,3 @@ export interface PatchTaskBody {
   due_date?: string | null;
   expected_versions?: Record<string, number>;
 }
-
-/** What the bell shows for a task: the caller's own, still to do. */
-export interface TaskOpen {
-  task_id: number;
-  title: string;
-  status: string;
-  due_date: string | null;
-  target_label: string | null;
-  url: string;
-}

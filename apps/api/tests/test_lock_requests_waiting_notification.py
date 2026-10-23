@@ -49,9 +49,12 @@ def _item(pid: int) -> int:
 
 
 def _waiting(c, **params):
+    """The lock-request part of the bell's attention list: {"rows": [...], "count": total or None (not a recipient)}."""
     r = c.get("/notifications", params=params)
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    return {"rows": [a for a in body["attention"] if a["kind"] == "lock_request"],
+            "count": body["attention_totals"].get("lock_request")}
 
 
 @pytest.fixture
@@ -79,49 +82,44 @@ def ws():
 def test_the_lock_owner_a_manager_and_an_admin_are_told(ws):
     for who in ("owner", "manager", "admin"):
         body = _waiting(ws[who])
-        assert body["lock_requests_waiting_count"] == 1, who
-        row = body["lock_requests_waiting"][0]
-        assert (row["request_id"], row["item_id"]) == (ws["rid"], ws["iid"]), who
-        assert row["requested_by_name"] == "Asker Drafter"
-        assert sorted(row["fields"]) == ["description", "qty"]
+        assert body["count"] == 1, who
+        row = body["rows"][0]
+        assert row["key"] == f"lock_request:{ws['rid']}", who
         assert row["url"] == f"/items/{ws['iid']}"
-        assert row["project_code"].startswith("LK-")
-        assert isinstance(row["item_number"], int)
+        assert "Asker Drafter" in row["title"] and "LK-" in row["title"] and row["title"].startswith("#")
+        assert row["detail"] in ("Changes description, qty", "Changes qty, description")
 
 
 def test_nobody_else_is_told(ws):
     # An unrelated drafter, and the person who asked, cannot decide it.
     for who in ("other", "asker"):
-        body = _waiting(ws[who])
-        assert body["lock_requests_waiting_count"] == 0 and body["lock_requests_waiting"] == [], who
+        assert _waiting(ws[who]) == {"rows": [], "count": 0}, who
     # Roles the approve / reject routes refuse (or that cannot write at all) get the plain list.
     for role in ("editor", "viewer", "estimator", "purchase_officer"):
         c, _ = login_same_workspace(ws["wid"], role)
-        body = _waiting(c)
-        assert "lock_requests_waiting" not in body and "lock_requests_waiting_count" not in body, role
+        assert _waiting(c) == {"rows": [], "count": None}, role
 
 
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 def test_a_decided_request_leaves_the_list(ws, decision):
-    assert _waiting(ws["owner"])["lock_requests_waiting_count"] == 1
+    assert _waiting(ws["owner"])["count"] == 1
     r = ws["owner"].post(f"/lock-requests/{ws['rid']}/{decision}", json={})
     assert r.status_code == 200, r.text
     for who in ("owner", "manager", "admin"):
-        body = _waiting(ws[who])
-        assert (body["lock_requests_waiting_count"], body["lock_requests_waiting"]) == (0, []), who
+        assert _waiting(ws[who]) == {"rows": [], "count": 0}, who
 
 
 def test_a_new_request_after_a_decision_comes_back(ws):
     ws["owner"].post(f"/lock-requests/{ws['rid']}/reject", json={})
     r = ws["asker"].patch(f"/items/{ws['iid']}", json={"description": "Second try"})
     assert r.status_code == 409
-    assert _waiting(ws["manager"])["lock_requests_waiting_count"] == 1
+    assert _waiting(ws["manager"])["count"] == 1
 
 
 def test_a_deleted_items_request_is_hidden(ws):
     set_item(ws["iid"], "deleted = true")
     for who in ("owner", "manager", "admin"):
-        assert _waiting(ws[who])["lock_requests_waiting_count"] == 0, who
+        assert _waiting(ws[who])["count"] == 0, who
 
 
 def test_another_workspaces_manager_is_not_told():
@@ -144,11 +142,10 @@ def test_another_workspaces_manager_is_not_told():
     m2, i2 = one_workspace()
     for m, mine in ((m1, i1), (m2, i2)):
         body = _waiting(m)
-        assert body["lock_requests_waiting_count"] == 1
-        assert [r["item_id"] for r in body["lock_requests_waiting"]] == [mine]
+        assert body["count"] == 1
+        assert [r["url"] for r in body["rows"]] == [f"/items/{mine}"]
 
 
 def test_a_paged_or_unread_only_call_does_not_carry_the_list(ws):
     for params in ({"offset": 1}, {"unread_only": True}):
-        body = _waiting(ws["manager"], **params)
-        assert "lock_requests_waiting" not in body, params
+        assert _waiting(ws["manager"], **params) == {"rows": [], "count": None}, params

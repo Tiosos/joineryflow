@@ -1,6 +1,6 @@
 // Mirrors apps/api/app/comments/schemas.py and notifications/schemas.py
 // (migrations 0042 + 0043, Plan V1 §29). Timestamps arrive as ISO strings.
-import type { TaskOpen } from "./tasks-types";
+import type { AttentionItem, AttentionKind } from "./attention";
 
 export type CommentObjectType =
   | "project"
@@ -55,44 +55,15 @@ export interface NotificationOut {
   url: string | null;
 }
 
-/** An order still `Pending`, waiting for the purchase officer's decision. Derived on read: it has no
- *  read state and leaves the list when the order is decided or cancelled. */
-export interface OrderWaiting {
-  po_id: number;
-  po_number: string;
-  description: string | null;
-  vendor_name: string | null;
-  requester_name: string | null;
-  created_at: string;
-  url: string;
-}
-
-/** A held save on a Controlled-Lock item, still pending, that this user may decide (the lock owner,
- *  a manager, an admin). Derived on read: no read state, it leaves the list when decided. */
-export interface LockRequestWaiting {
-  request_id: number;
-  item_id: number;
-  item_number: number | null;
-  project_code: string | null;
-  requested_by_name: string | null;
-  /** The item fields the held save would change. */
-  fields: string[];
-  created_at: string;
-  url: string;
-}
-
 export interface NotificationList {
   notifications: NotificationOut[];
   unread_count: number;
-  /** Purchase officers only; left out of the reply for everyone else. */
-  orders_waiting?: OrderWaiting[];
-  orders_waiting_count?: number;
-  /** Drafters, managers and admins only; left out of the reply for everyone else. */
-  lock_requests_waiting?: LockRequestWaiting[];
-  lock_requests_waiting_count?: number;
-  /** The caller's own tasks still to do (every role); derived on read, no read state. */
-  tasks_open?: TaskOpen[];
-  tasks_open_count?: number;
+  /** What is waiting for the caller (Q613): every list they qualify for, at most 20 of each; empty on
+   *  a paged or unread-only call. */
+  attention: AttentionItem[];
+  /** Each qualifying kind's true total (a kind the caller does not qualify for is absent). */
+  attention_totals: Partial<Record<AttentionKind, number>>;
+  attention_count: number;
 }
 
 /** Live comment counts per area / room of one project (absent = none). */

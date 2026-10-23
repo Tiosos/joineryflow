@@ -1,5 +1,5 @@
 """Schemas for the in-app notification inbox (migration 0042, Q521)."""
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -21,62 +21,25 @@ class NotificationOut(BaseModel):
     url: str | None = None
 
 
-class OrderWaitingOut(BaseModel):
-    po_id: int
-    po_number: str
-    description: str | None = None
-    vendor_name: str | None = None
-    requester_name: str | None = None
-    created_at: datetime
-    url: str
-
-
-class LockRequestWaitingOut(BaseModel):
-    request_id: int
-    item_id: int
-    item_number: int | None = None
-    project_code: str | None = None
-    requested_by_name: str | None = None
-    # The item fields the held save would change (the keys of `requested_changes`).
-    fields: list[str]
-    created_at: datetime
-    url: str
-
-
-class TaskOpenOut(BaseModel):
-    task_id: int
+class AttentionItemOut(BaseModel):
+    """One thing waiting for the caller (Q613). Derived on read: no row, no read state."""
+    kind: Literal["lock_request", "variation", "order", "task"]
+    key: str                      # "<kind>:<id>", unique within the list
     title: str
-    status: str
-    due_date: date | None
-    target_label: str | None
+    detail: str | None = None
     url: str
+    created_at: datetime | None = None
 
 
 class NotificationListOut(BaseModel):
     notifications: list[NotificationOut]
     unread_count: int
-    # The caller's own tasks still to do (open + in progress), soonest due first, at most 20, and how
-    # many in all. Derived on read like `orders_waiting` (no table, no read state): a task leaves when
-    # it is done or cancelled. First, unfiltered page only; empty otherwise.
-    tasks_open: list[TaskOpenOut] = []
-    tasks_open_count: int = 0
-
-
-class NotificationListWaitingOut(NotificationListOut):
-    """A purchase officer's first page: also the orders still Pending, newest first (at most 20)
-    and how many in all. Derived on read, so there is nothing to mark read: an order leaves when
-    it is decided. Everyone else, and paged or unread-only calls, get `NotificationListOut`."""
-    orders_waiting: list[OrderWaitingOut]
-    orders_waiting_count: int
-
-
-class NotificationListLockRequestsOut(NotificationListOut):
-    """The first page of someone who may decide lock requests (the lock owner, a manager, an
-    admin): also the held saves still pending on items they may decide, newest first (at most
-    20) and how many in all. Derived on read like the purchase officer's orders: a request leaves
-    when it is approved or rejected, so there is nothing to mark read."""
-    lock_requests_waiting: list[LockRequestWaitingOut]
-    lock_requests_waiting_count: int
+    # What is waiting for the caller, every list they qualify for in `KINDS` order, at most 20 of
+    # each newest first, with each kind's true total and the grand total. First, unfiltered page
+    # only; empty otherwise. See notifications/attention.py.
+    attention: list[AttentionItemOut] = []
+    attention_totals: dict[str, int] = {}
+    attention_count: int = 0
 
 
 class ReadAllOut(BaseModel):

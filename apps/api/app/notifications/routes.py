@@ -10,18 +10,14 @@ and module threads (their link opens the item editor), without `shop_dwgs:read`
 the revision threads. Their notifications are hidden, not deleted — they
 reappear if access is restored.
 
-Every role's first, unfiltered page also carries their own open tasks (`tasks_open`, derived the same way:
-no rows stored, a task leaves when it is done or cancelled).
-
-A purchase officer's first, unfiltered page also carries the orders still waiting for a decision (`orders_waiting`),
-derived from `purchase_orders.status = 'Pending'` on every call: no rows are stored, so nothing is
-marked read and an order disappears the moment it is Approved, Rejected or Cancelled.
+The first, unfiltered page also carries what is waiting for the caller (`attention`, Q613): their
+open tasks, and the lock requests, variations and orders they may decide. See `attention.py`:
+derived on every call, so nothing is stored or marked read, and an item leaves the moment it is
+decided or done.
 
 Marking read is audited (`notification.read`, `notification.read_all`), once per
 real change, so CLAUDE.md's "every authenticated mutation is audited" holds.
 """
-from urllib.parse import quote
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -31,25 +27,15 @@ from ..auth.rbac_engine import has_permission_db
 from ..auth.sessions import AuthUser
 from ..db import get_db
 from ..comments.queries import READ_MODULES
-from ..items.queries import lock_requests_waiting_for_decision
-from ..orders.queries import orders_waiting_for_decision
-from ..tasks.queries import list_tasks, scope as task_scope
+from ..tasks.queries import scope as task_scope
 from . import queries as q
-from .schemas import (
-    NotificationListLockRequestsOut,
-    NotificationListOut,
-    NotificationListWaitingOut,
-    ReadAllOut,
-)
+from .attention import attention_for
+from .schemas import NotificationListOut, ReadAllOut
 
 router = APIRouter(tags=["notifications"])
 
 
-# Three reply shapes (`NotificationListOut`, `NotificationListWaitingOut` for a purchase officer,
-# `NotificationListLockRequestsOut` for whoever may decide lock requests), so no single
-# `response_model`; the reply is built from the right model below.
-@router.get("/notifications", response_model=None,
-            responses={200: {"model": NotificationListWaitingOut}})
+@router.get("/notifications", response_model=NotificationListOut)
 def list_notifications_route(
     unread_only: bool = False,
     limit: int = Query(50, ge=1, le=100),
@@ -65,45 +51,10 @@ def list_notifications_route(
         unread_only=unread_only, limit=limit, offset=offset, types=types,
         task_scope=task_scope(db, user),
     )
-    # The caller's own open tasks ride on the same first, unfiltered page, for every role (a task
-    # is assigned to a person, whatever their role). Visibility is the tasks module's own: a task
-    # on a target they can no longer read is left out.
+    # What is waiting for the caller rides on the first, unfiltered page only: the bell and the page
+    # ask for that, a paged or unread-only call has no use for it.
     if offset == 0 and not unread_only:
-        mine = list_tasks(
-            db, actor=user, assignee_id=user.id, status="active", project_id=None,
-            item_id=None, cutlist_id=None, due_before=None, limit=20, offset=0,
-        )
-        out["tasks_open_count"] = mine["total"]
-        out["tasks_open"] = [
-            {"task_id": t["task_id"], "title": t["title"], "status": t["status"],
-             "due_date": t["due_date"], "target_label": t["target_label"],
-             "url": f"/tasks?task={t['task_id']}"}
-            for t in mine["items"]
-        ]
-    # Orders waiting for a decision are the purchase officer's (the customer's choice: that role
-    # only, not everyone with `orderbook:approve`), only while they can read the Orderbook, and
-    # only on a first, unfiltered page: the bell and the page ask for that, a paged or unread-only
-    # call has no use for them.
-    if (user.auth_role == "purchase_officer" and offset == 0 and not unread_only
-            and has_permission_db(db, user, "orderbook", "read")):
-        count, rows = orders_waiting_for_decision(db, workspace_id=user.workspace_id)
-        return NotificationListWaitingOut(
-            **out, orders_waiting_count=count,
-            orders_waiting=[{**r, "url": f"/orderbook?order={quote(r['po_number'])}"} for r in rows],
-        )
-    # Lock requests waiting for a decision are the lock owner's, a manager's and an admin's (the
-    # people `decide_lock_request` lets decide), on the same first, unfiltered page. They need to
-    # be able to act on it (`tracking:write`, as the approve / reject routes) and to open the item
-    # the entry links to (`list:read`).
-    if (offset == 0 and not unread_only
-            and user.auth_role in ("drafter", "manager", "admin")
-            and has_permission_db(db, user, "tracking", "write")
-            and has_permission_db(db, user, "list", "read")):
-        count, rows = lock_requests_waiting_for_decision(db, user=user)
-        return NotificationListLockRequestsOut(
-            **out, lock_requests_waiting_count=count,
-            lock_requests_waiting=[{**r, "url": f"/items/{r['item_id']}"} for r in rows],
-        )
+        out.update(attention_for(db, user))
     return NotificationListOut(**out)
 
 
