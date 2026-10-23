@@ -45,8 +45,8 @@
   happen even against pre-existing data with hand-inserted rows.
 - **`project_contract` (one row per project, immutable `original_value`) +
   `project_contract_variation`** (append-only). `current_value` is
-  **computed on read** as `original_value + SUM(variation.amount_delta)`,
-  never stored — the same "nowhere to drift" stance `material_summary`
+  **computed on read** as `original_value + SUM(variation.amount_delta)`
+  over the **Approved** variations only (Q608, `0086`), never stored — the same "nowhere to drift" stance `material_summary`
   (#12) already takes (Q491).
 - **`_LEGAL_TRANSITIONS`** (`apps/api/app/estimating/queries.py`) — each of
   the 10 sequential stages permits its successor or `WITHDRAWN`;
@@ -138,10 +138,17 @@
   - `GET /projects/{pid}/contract` — 404 if the project has none yet
     (predates Q491 or wasn't created from a converted estimate — not an
     error).
-  - `POST /projects/{pid}/contract/variations` — creating the row *is* the
-    decision (§6: "the PM decides whether a change becomes a Variation");
-    there is no separate approval step here — whoever can write already
-    decided.
+  - `POST /projects/{pid}/contract/variations` — a manager's or admin's
+    variation is `Approved` at once (§6: "the PM decides whether a change
+    becomes a Variation"); anyone else's with `tracking:write` is a `Draft`
+    that does not count (Q608, `0086`). `PATCH …/variations/{id}` edits a
+    Draft (creator, manager, admin); `POST …/variations/{id}/decision`
+    (`approved` / `rejected`, manager/admin only, rejection needs a note)
+    decides it, finally. Codes: `DECISION_FORBIDDEN`,
+    `REJECTION_NOTE_REQUIRED`, `VARIATION_ALREADY_DECIDED`,
+    `VARIATION_NOT_DRAFT`, `NOT_YOUR_VARIATION`. The Financials card shows
+    a status badge, Approve / Reject / Edit on a Draft, and the
+    `live_contract_value` (Value in Progress) sum counts Approved only.
   - `GET /projects/{pid}/actual-costs` — always 200 (zeros when nothing to
     roll up yet), 404 only for a foreign/missing project.
 - **RBAC — no matrix change.** Contract/actual-costs routes reuse
@@ -175,7 +182,8 @@
 - **Seed.** `make seed` now lands the three demo estimates on
   `QUOTE_PREPARED` / `SUBMITTED` / `WON` (was `draft` / `sent` / `accepted`)
   and adds one `project_contract` row on ALF-001 (`$185,000.00`) with one
-  variation (`+$4,250.00`, "Client-requested benchtop upgrade") — through
+  variation (`+$4,250.00`, "Client-requested benchtop upgrade", Approved) and
+  one Draft (`+$1,800.00`, pantry shelving) — through
   the same query functions the API uses, so the seeded row carries a real
   `audit_log` entry. Idempotent (`DELETE FROM project_contract WHERE
   project_id = :p` before insert).

@@ -10,6 +10,11 @@ export interface ContractVariation {
   amount_delta: string;
   created_at: string;
   created_by: number | null;
+  /** Q608: only Approved counts toward `current_value`. */
+  status: "Draft" | "Approved" | "Rejected";
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
 }
 
 export interface ProjectContract {
