@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActualCosts, ProjectContract } from "@/lib/project-contract-types";
 import { projectContractApi } from "@/lib/project-contract-fetch";
 import { useConfirm } from "@/components/confirm/ConfirmProvider";
 import { useUndo } from "@/components/undo/UndoProvider";
-import type { ContractVariation } from "@/lib/project-contract-types";
+import type { ContractVariation, VariationItem } from "@/lib/project-contract-types";
 
 interface Props {
   projectId: number;
@@ -157,6 +157,8 @@ function VariationRow({
   const { confirm, askReason, askFields } = useConfirm();
   const { notify } = useUndo();
   const isDraft = v.status === "Draft";
+  const [linking, setLinking] = useState(false);
+  const [picked, setPicked] = useState<number[]>(v.items.map((i) => i.item_id));
 
   async function run(fn: () => Promise<unknown>) {
     try {
@@ -202,7 +204,12 @@ function VariationRow({
       ],
     });
     if (!r) return;
-    await run(() => projectContractApi.editVariation(projectId, v.variation_id, r.description, r.amount));
+    await run(() => projectContractApi.editVariation(projectId, v.variation_id, { description: r.description, amount_delta: r.amount }));
+  }
+
+  async function saveLinks() {
+    await run(() => projectContractApi.editVariation(projectId, v.variation_id, { item_ids: picked }));
+    setLinking(false);
   }
 
   return (
@@ -220,6 +227,28 @@ function VariationRow({
         <span className={`font-mono ${v.status === "Approved" ? "" : "opacity-60"}`}>{fmtMoney(v.amount_delta)}</span>
       </div>
       {v.decision_note && <div className="italic">{v.decision_note}</div>}
+      {v.items.length > 0 && (
+        <div data-testid="variation-items" className="flex flex-wrap gap-1">
+          {v.items.map((i) => (
+            <span key={i.item_id} className="rounded border border-h-line px-1.5 py-0.5 text-[10px]">
+              {`#${i.num}${i.description ? ` ${i.description}` : ""}`}
+            </span>
+          ))}
+        </div>
+      )}
+      {linking && (
+        <div className="grid gap-1 rounded border border-h-line bg-h-bg p-2">
+          <ItemPicker projectId={projectId} selected={picked} onChange={setPicked} />
+          <div className="flex gap-2">
+            <button type="button" onClick={saveLinks} className="rounded bg-h-accent px-2 py-1 text-xs font-medium text-white">
+              Save items
+            </button>
+            <button type="button" onClick={() => setLinking(false)} className="rounded border border-h-line px-2 py-1 text-xs text-h-ink">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {isDraft && (canEditThis || canDecideThis) && (
         <div className="flex gap-3">
           {canDecideThis && (
@@ -235,6 +264,18 @@ function VariationRow({
           {canEditThis && (
             <button type="button" onClick={edit} className="text-h-ink hover:underline">
               Edit
+            </button>
+          )}
+          {canEditThis && !linking && (
+            <button
+              type="button"
+              onClick={() => {
+                setPicked(v.items.map((i) => i.item_id));
+                setLinking(true);
+              }}
+              className="text-h-ink hover:underline"
+            >
+              Items
             </button>
           )}
         </div>
@@ -256,6 +297,7 @@ function AddVariationForm({
 }) {
   const [description, setDescription] = useState("");
   const [amountDelta, setAmountDelta] = useState("");
+  const [itemIds, setItemIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -265,7 +307,7 @@ function AddVariationForm({
     setBusy(true);
     setError(null);
     try {
-      await projectContractApi.addVariation(projectId, description.trim(), amountDelta.trim());
+      await projectContractApi.addVariation(projectId, description.trim(), amountDelta.trim(), itemIds);
       onDone();
     } catch {
       setError("Failed to add variation");
@@ -289,6 +331,7 @@ function AddVariationForm({
           className="w-32 rounded border border-h-line bg-white px-2 py-1 text-sm"
         />
       </div>
+      <ItemPicker projectId={projectId} selected={itemIds} onChange={setItemIds} />
       <p className="text-xs text-h-muted">
         {approvedAtOnce
           ? "Approved immediately and counted in the current contract value."
@@ -312,5 +355,55 @@ function AddVariationForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/** Optional links to the project's Joinery Items (Q609): none ticked = a project-level variation. */
+function ItemPicker({
+  projectId,
+  selected,
+  onChange,
+}: {
+  projectId: number;
+  selected: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const [items, setItems] = useState<VariationItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    projectContractApi
+      .linkableItems(projectId)
+      .then((r) => live && setItems(r))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+
+  if (failed) return <p className="text-xs text-rose-700">Could not load the items.</p>;
+  if (items == null) return <p className="text-xs text-h-muted">Loading items…</p>;
+  if (items.length === 0) return <p className="text-xs text-h-muted">No items in this project to link.</p>;
+  return (
+    <fieldset data-testid="variation-item-picker" className="grid gap-1">
+      <legend className="text-[10px] font-semibold uppercase tracking-wider text-h-muted">
+        Items touched (optional)
+      </legend>
+      <div className="max-h-32 overflow-auto rounded border border-h-line bg-white p-1 text-xs">
+        {items.map((i) => (
+          <label key={i.item_id} className="flex items-center gap-2 py-0.5">
+            <input
+              type="checkbox"
+              checked={selected.includes(i.item_id)}
+              onChange={(e) =>
+                onChange(e.target.checked ? [...selected, i.item_id] : selected.filter((x) => x !== i.item_id))
+              }
+            />
+            <span>{`#${i.num}${i.description ? ` ${i.description}` : ""}`}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }

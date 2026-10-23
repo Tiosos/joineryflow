@@ -56,3 +56,32 @@ test("a drafter's variation waits for a manager, who approves one and rejects an
   await expect(wrong).toContainText("Not in scope");
   await expect(current).toHaveText("$1,250.00");                       // a rejected one never counts
 });
+
+// Q609: a variation may name the Joinery Items it touches; none ticked is a project-level variation.
+test("a variation is linked to items when added and its draft links can be changed", async ({ page }) => {
+  const pid = await convertedProject(page);
+  const stamp = Date.now();
+  await login(page);
+  for (const name of [`Vanity ${stamp}`, `Wardrobe ${stamp}`]) {
+    const r = await page.request.post(`/api/projects/${pid}/items`, { data: { description: name } });
+    expect(r.status(), name).toBeLessThan(300);
+  }
+
+  await login(page, "noa.lindqvist@hartwood.test");
+  await page.goto(`/projects/${pid}`);
+  await page.getByRole("button", { name: "+ Add variation" }).click();
+  await page.getByPlaceholder("Description *").fill("Linked change");
+  await page.getByPlaceholder("Amount (+/-) *").fill("40");
+  await page.getByTestId("variation-item-picker").getByLabel(new RegExp(`Vanity ${stamp}`)).check();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+
+  const row = page.getByTestId("variation-row").filter({ hasText: "Linked change" });
+  await expect(row.getByTestId("variation-items")).toContainText(`Vanity ${stamp}`);
+
+  await row.getByRole("button", { name: "Items" }).click();
+  await row.getByTestId("variation-item-picker").getByLabel(new RegExp(`Vanity ${stamp}`)).uncheck();
+  await row.getByTestId("variation-item-picker").getByLabel(new RegExp(`Wardrobe ${stamp}`)).check();
+  await row.getByRole("button", { name: "Save items" }).click();
+  await expect(row.getByTestId("variation-items")).toContainText(`Wardrobe ${stamp}`);
+  await expect(row.getByTestId("variation-items")).not.toContainText(`Vanity ${stamp}`);
+});

@@ -249,6 +249,107 @@ def test_edits_and_decisions_are_audited():
             "project.contract.variation_decide"} <= events
 
 
+# --- Variation item links (Q609) -------------------------------------------
+
+
+def _item(pid: int, desc: str = "Vanity", **cols) -> int:
+    """A live Joinery Item in project `pid`; `cols` sets extras (row_type, deleted, parent_item_id...)."""
+    s = SessionLocal()
+    try:
+        names = ["num", "project_id", "description", "status", *cols]
+        vals = ["nextval('joinery_number_seq')", ":p", ":d", "'CLEAR'", *(f":{k}" for k in cols)]
+        iid = s.execute(
+            text(f"INSERT INTO items({', '.join(names)}) VALUES ({', '.join(vals)}) RETURNING item_id"),
+            {"p": pid, "d": desc, **cols},
+        ).scalar()
+        s.commit()
+        return iid
+    finally:
+        s.close()
+
+
+def _post(c, pid: int, item_ids, desc="Linked", amount="10.00"):
+    return c.post(f"/projects/{pid}/contract/variations",
+                  json={"description": desc, "amount_delta": amount, "item_ids": item_ids})
+
+
+def test_a_variation_has_no_items_unless_it_is_linked_to_some():
+    c, wid, uid, pid = _setup()
+    assert _add(c, pid)["variations"][0]["items"] == []           # a project-level variation
+
+
+def test_a_variation_can_be_linked_to_several_items_of_its_project():
+    c, wid, uid, pid = _setup()
+    a, b = _item(pid, "Vanity"), _item(pid, "Wardrobe")
+    r = _post(c, pid, [b, a, a])                                   # duplicates collapse
+    assert r.status_code == 201, r.text
+    got = r.json()["variations"][0]["items"]
+    assert sorted(i["item_id"] for i in got) == sorted([a, b])
+    assert {i["description"] for i in got} == {"Vanity", "Wardrobe"}
+    assert all(isinstance(i["num"], int) for i in got)
+    assert c.get(f"/projects/{pid}/contract").json()["variations"][0]["items"] == got
+
+
+def test_only_a_live_joinery_item_of_the_same_project_can_be_linked():
+    c, wid, uid, pid = _setup()
+    other = _make_project(wid, uid, "V2")
+    elsewhere = _item(other)
+    parent = _item(pid)
+    related = _item(pid, "Top", row_type="related_part", parent_item_id=parent,
+                    related_part_type_key="benchtop")
+    gone = _item(pid, "Gone", deleted=True)
+    c2, wid2, uid2 = login(role="admin")
+    foreign = _item(_make_project(wid2, uid2, "FX"))
+    ghost = _post(c, pid, [987654321])
+    assert ghost.status_code == 404 and ghost.json()["detail"]["code"] == "ITEM_NOT_FOUND"
+    for bad in (elsewhere, related, gone, foreign):                 # every one answers like a missing id
+        r = _post(c, pid, [parent, bad])
+        assert (r.status_code, r.json()) == (ghost.status_code, ghost.json()), bad
+    assert c.get(f"/projects/{pid}/contract").json()["variations"] == []     # nothing was half-written
+
+
+def test_a_draft_s_links_are_replaced_on_edit_and_frozen_once_decided():
+    c, wid, uid, pid = _setup()
+    cd, _ = login_same_workspace(wid, "drafter")
+    a, b = _item(pid, "A"), _item(pid, "B")
+    vid = cd.post(f"/projects/{pid}/contract/variations",
+                  json={"description": "d", "amount_delta": "5", "item_ids": [a]}).json()["variations"][0]["variation_id"]
+    r = cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": [b]})
+    assert r.status_code == 200 and [i["item_id"] for i in r.json()["variations"][0]["items"]] == [b]
+    r = cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"description": "renamed"})
+    assert [i["item_id"] for i in r.json()["variations"][0]["items"]] == [b]      # omitted = unchanged
+    assert cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": None}).status_code == 422
+    r = cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": []})
+    assert r.status_code == 200 and r.json()["variations"][0]["items"] == []        # [] unlinks all
+    assert cd.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": [987654321]}).status_code == 404
+    assert _decide(c, pid, vid, "approved").status_code == 200
+    r = c.patch(f"/projects/{pid}/contract/variations/{vid}", json={"item_ids": [a]})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "VARIATION_NOT_DRAFT"
+
+
+def test_a_deleted_item_drops_off_the_variation_and_comes_back_on_restore():
+    c, wid, uid, pid = _setup()
+    a = _item(pid, "A")
+    assert _post(c, pid, [a]).status_code == 201
+    assert c.delete(f"/items/{a}").status_code in (200, 204)
+    assert c.get(f"/projects/{pid}/contract").json()["variations"][0]["items"] == []
+    assert c.post(f"/items/{a}/restore").status_code == 204
+    assert [i["item_id"] for i in c.get(f"/projects/{pid}/contract").json()["variations"][0]["items"]] == [a]
+
+
+def test_linking_is_audited():
+    c, wid, uid, pid = _setup()
+    a = _item(pid)
+    _post(c, pid, [a])
+    s = SessionLocal()
+    try:
+        payload = s.execute(text("SELECT payload FROM audit_log WHERE event = 'project.contract.variation_add'"
+                                 " AND workspace_id = :w"), {"w": wid}).scalar()
+    finally:
+        s.close()
+    assert payload["item_ids"] == [a]
+
+
 # --- Actual costs (Q493/Q549) ---------------------------------------------
 
 def test_actual_costs_zero_for_untouched_project():

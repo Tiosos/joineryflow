@@ -44,7 +44,7 @@ def create_variation_route(
     row = q.create_variation(
         db, project_id=pid, workspace_id=user.workspace_id,
         description=body.description, amount_delta=body.amount_delta,
-        actor_id=user.id, auto_approve=_is_manager(user),
+        actor_id=user.id, auto_approve=_is_manager(user), item_ids=body.item_ids,
     )
     if row is None:
         raise HTTPException(status_code=404, detail="contract not found")

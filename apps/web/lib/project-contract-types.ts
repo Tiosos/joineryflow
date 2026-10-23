@@ -3,6 +3,13 @@
 // strings (Pydantic Decimal) — the orders-types.ts / material-take-types.ts
 // lesson: type them `number` and `.toFixed` throws.
 
+/** A Joinery Item a variation touches (Q609); `num` is the Item ID. */
+export interface VariationItem {
+  item_id: number;
+  num: number;
+  description: string | null;
+}
+
 export interface ContractVariation {
   variation_id: number;
   project_id: number;
@@ -15,6 +22,8 @@ export interface ContractVariation {
   decided_by: number | null;
   decided_at: string | null;
   decision_note: string | null;
+  /** Empty = a project-level variation. */
+  items: VariationItem[];
 }
 
 export interface ProjectContract {

@@ -149,6 +149,12 @@
     `VARIATION_NOT_DRAFT`, `NOT_YOUR_VARIATION`. The Financials card shows
     a status badge, Approve / Reject / Edit on a Draft, and the
     `live_contract_value` (Value in Progress) sum counts Approved only.
+  - Variation item links (Q609, `0087`): `project_contract_variation_item`;
+    `item_ids` on create and on a Draft's PATCH (replace); each variation
+    carries `items` (`item_id`, `num`, `description`; live Joinery Items
+    only, so a deleted item drops off and returns on restore);
+    `404 ITEM_NOT_FOUND` for any id that is not a live Joinery Item of the
+    variation's project.
   - `GET /projects/{pid}/actual-costs` — always 200 (zeros when nothing to
     roll up yet), 404 only for a foreign/missing project.
 - **RBAC — no matrix change.** Contract/actual-costs routes reuse
