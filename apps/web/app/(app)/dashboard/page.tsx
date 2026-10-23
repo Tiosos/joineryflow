@@ -37,7 +37,7 @@ export default async function DashboardPage() {
     <div className="grid gap-6">
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {data.metrics.map((m) => (
-          <MetricCard key={m.key} label={m.label} value={m.value} href={m.href} />
+          <MetricCard key={m.key} label={m.label} value={m.value} href={m.href} unit={m.unit} />
         ))}
       </section>
       <section className="grid gap-6 lg:grid-cols-2">

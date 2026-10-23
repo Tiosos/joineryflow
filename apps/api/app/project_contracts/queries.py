@@ -55,6 +55,28 @@ def get_contract(db: Session, *, project_id: int, workspace_id: int) -> dict | N
     }
 
 
+def live_contract_value(db: Session, *, workspace_id: int, pm_id: int | None = None) -> Decimal:
+    """Sum of `current_value` (original value + variations, as `get_contract` computes it) over the
+    workspace's live (`Current`) projects that have a contract; `pm_id` narrows it to one manager's.
+    The dashboard's Value in Progress card (Q634)."""
+    return db.execute(
+        text(
+            """
+            SELECT COALESCE(SUM(c.original_value + COALESCE(v.delta, 0)), 0)
+              FROM project_contract c
+              JOIN projects p ON p.project_id = c.project_id
+              LEFT JOIN (SELECT project_id, SUM(amount_delta) AS delta
+                           FROM project_contract_variation GROUP BY project_id) v
+                     ON v.project_id = c.project_id
+             WHERE p.workspace_id = :w
+               AND p.status = 'Current'
+               AND (CAST(:pm AS bigint) IS NULL OR p.pm_id = :pm)
+            """
+        ),
+        {"w": workspace_id, "pm": pm_id},
+    ).scalar()
+
+
 def create_variation(
     db: Session, *, project_id: int, workspace_id: int,
     description: str, amount_delta: Decimal, actor_id: int,

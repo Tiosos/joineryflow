@@ -620,6 +620,24 @@ items the card counted, across projects.
 - **Not built.** The fourth card, Value in Progress (hard-coded 0), is Q634. The cards' definitions are still the old ones, not
   Q591's.
 
+## Value in Progress (2026-10-22, Q634)
+
+The dashboard's fourth card was hard-coded to 0 (`value_in_progress = 0.0`, waiting for an `items.value` column that no
+decision asked for). It is now the sum of `current_value` (original value + variations) over the **live (`Current`) projects that
+have a contract**, from `project_contracts.queries.live_contract_value`, the same definition `get_contract` uses.
+
+- **Who.** Managers and admins only, as the project budget: for other roles the card is left out of `metrics` (three cards), not
+  shown as zero. An admin's figure is the workspace's; a manager's is their own projects' (`projects.pm_id`), matching their other
+  three cards (asked while building; not in the recorded Q634 answer).
+- **Shape.** `MetricCard.href` is now optional (this card has none: no screen lists projects by contract value, and the old
+  `/tracking?status=LIVE` was ignored) and `MetricCard.unit = "money"` makes the web write `$1,234.50`. `value` stays a JSON number,
+  as the other cards' do.
+- **Tests.** `test_home_dashboard.py` (admin sums live projects only, with variations; a manager's own projects; drafter / editor /
+  viewer get three cards; all fail without the change) and `dashboard_cards.spec.ts` (manager: dollar figure, not a link; drafter:
+  no card).
+- **Not built.** Q608's Draft / Approved variation states (when built, only `Approved` variations count here, in
+  `live_contract_value` and `get_contract` together).
+
 ## Project folder link (2026-10-22, Q640, `0084`)
 
 SharePoint (Q535) waits for its tenant, site, library and folder names (Q480 / Q484 / Q547), so each project got one plain link

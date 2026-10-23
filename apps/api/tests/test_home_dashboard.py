@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.auth.passwords import hash_password
 from app.db import SessionLocal
 
-from .helpers import login
+from .helpers import login, login_same_workspace
 from .conftest import truncate_fixture
 
 
@@ -239,6 +239,68 @@ def test_dashboard_drafter_scope_filters_to_own_items():
     assert data["role_view"] == "drafter"
     overdue_card = next(m for m in data["metrics"] if m["key"] == "overdue")
     assert overdue_card["value"] == 1
+
+
+def _contract(db, *, pid: int, original: str, variations: tuple[str, ...] = (), status: str = "Current") -> None:
+    """A project's contract (`original` ex the variations) and its variations; sets the project status."""
+    db.execute(text("UPDATE projects SET status = :s WHERE project_id = :p"), {"s": status, "p": pid})
+    db.execute(text("INSERT INTO project_contract(project_id, original_value) VALUES (:p, :v)"),
+               {"p": pid, "v": original})
+    for delta in variations:
+        db.execute(text("INSERT INTO project_contract_variation(project_id, description, amount_delta)"
+                        " VALUES (:p, 'v', :d)"), {"p": pid, "d": delta})
+    db.commit()
+
+
+def _value_card(c) -> dict | None:
+    return next((m for m in c.get("/home/dashboard").json()["metrics"] if m["key"] == "value_in_progress"), None)
+
+
+def test_value_in_progress_adds_up_the_current_value_of_live_projects_for_an_admin():
+    """Q634: original value plus variations, live (`Current`) projects only, workspace-wide."""
+    c, wid, uid = login(role="admin")
+    db = SessionLocal()
+    try:
+        live_a = _create_project(db, wid=wid, uid=uid, code="VP-A")
+        live_b = _create_project(db, wid=wid, uid=uid, code="VP-B")
+        held = _create_project(db, wid=wid, uid=uid, code="VP-H")
+        closed = _create_project(db, wid=wid, uid=uid, code="VP-C")
+        no_contract = _create_project(db, wid=wid, uid=uid, code="VP-N")  # never converted: no contract
+        _contract(db, pid=live_a, original="1000.50", variations=("200.25", "-50.00"))
+        _contract(db, pid=live_b, original="3000.00")
+        _contract(db, pid=held, original="9999.00", status="Hold")
+        _contract(db, pid=closed, original="9999.00", status="Closed")
+        assert no_contract
+    finally:
+        db.close()
+    card = _value_card(c)
+    assert card is not None
+    assert card["value"] == 4150.75          # 1000.50 + 200.25 - 50.00 + 3000.00
+    assert card["unit"] == "money"
+    assert card["href"] is None              # nothing lists projects by contract value to open
+
+
+def test_a_managers_value_in_progress_counts_only_their_own_projects():
+    c, wid, uid = login(role="manager")
+    _, other = login_same_workspace(wid, "manager")
+    db = SessionLocal()
+    try:
+        mine = _create_project(db, wid=wid, uid=uid, code="VM-1")
+        theirs = _create_project(db, wid=wid, uid=other, code="VM-2")
+        _contract(db, pid=mine, original="500.00")
+        _contract(db, pid=theirs, original="7000.00")
+    finally:
+        db.close()
+    assert _value_card(c)["value"] == 500.0
+
+
+def test_value_in_progress_is_left_out_for_roles_that_may_not_see_money():
+    """Money is manager / admin only (as the project budget): the card is absent, not zero."""
+    for role in ("drafter", "editor", "viewer"):
+        c, wid, uid = login(role=role)
+        r = c.get("/home/dashboard").json()
+        assert _value_card(c) is None, role
+        assert [m["key"] for m in r["metrics"]] == ["overdue", "in_optimisation", "awaiting_install"], role
 
 
 def test_dashboard_purchase_officer_metrics_shape():
