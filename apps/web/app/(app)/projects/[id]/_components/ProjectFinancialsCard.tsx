@@ -27,6 +27,18 @@ function fmtMoney(s: string | null | undefined): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function varNo(n: number): string {
+  return `VAR-${String(n).padStart(3, "0")}`;
+}
+
+function fmtDay(s: string | null | undefined): string {
+  return s ? s.slice(0, 10) : "";
+}
+
+function fmtDays(n: number): string {
+  return `${n > 0 ? "+" : ""}${n} d`;
+}
+
 export function ProjectFinancialsCard({ projectId, contract, actualCosts, canEdit, canDecide, meId }: Props) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -212,11 +224,24 @@ function VariationRow({
       tone: "default",
       fields: [
         { name: "description", label: "Description", initial: v.description, required: true },
-        { name: "amount", label: "Amount (+/-)", initial: v.amount_delta, required: true },
+        { name: "amount", label: "Selling price impact (+/-)", initial: v.amount_delta, required: true },
+        { name: "reason", label: "Reason", initial: v.reason ?? "", required: true },
+        { name: "requester", label: "Requested by", initial: v.requester ?? "" },
+        { name: "requested_on", label: "Requested on (YYYY-MM-DD)", initial: v.requested_on ?? "" },
+        { name: "cost", label: "Cost impact (+/-)", initial: v.cost_impact ?? "" },
+        { name: "days", label: "Time impact (working days, +/-)", initial: v.time_impact_days?.toString() ?? "" },
       ],
     });
     if (!r) return;
-    await run(() => projectContractApi.editVariation(projectId, v.variation_id, { description: r.description, amount_delta: r.amount }));
+    await run(() => projectContractApi.editVariation(projectId, v.variation_id, {
+        description: r.description,
+        amount_delta: r.amount,
+        reason: r.reason,
+        requester: r.requester || null,
+        requested_on: r.requested_on || null,
+        cost_impact: r.cost || null,
+        time_impact_days: r.days ? Number(r.days) : null,
+      }));
   }
 
   async function saveLinks() {
@@ -228,7 +253,7 @@ function VariationRow({
     <li data-testid="variation-row" className="grid gap-0.5">
       <div className="flex items-baseline justify-between gap-2">
         <span className={v.status === "Rejected" || v.status === "Voided" ? "line-through" : undefined}>
-          {v.description}{" "}
+          <span className="h-mono">{varNo(v.number)}</span> {v.description}{" "}
           <span
             data-testid="variation-status"
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[v.status]}`}
@@ -238,8 +263,31 @@ function VariationRow({
         </span>
         <span className={`font-mono ${v.status === "Approved" ? "" : "opacity-60"}`}>{fmtMoney(v.amount_delta)}</span>
       </div>
-      {v.decision_note && <div className="italic">{v.decision_note}</div>}
-      {v.void_reason && <div className="italic">{`Voided: ${v.void_reason}`}</div>}
+      <div data-testid="variation-details">
+        {[
+          v.reason ? `Reason: ${v.reason}` : null,
+          v.requester || v.requested_on
+            ? `Requested${v.requester ? ` by ${v.requester}` : ""}${v.requested_on ? ` on ${fmtDay(v.requested_on)}` : ""}`
+            : null,
+          v.cost_impact != null ? `Cost impact ${fmtMoney(v.cost_impact)}` : null,
+          v.time_impact_days != null ? `Time impact ${fmtDays(v.time_impact_days)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </div>
+      <ul data-testid="variation-history" className="text-[11px] italic">
+        <li>{`Added${v.created_by_name ? ` by ${v.created_by_name}` : ""} on ${fmtDay(v.created_at)}`}</li>
+        {(v.status === "Approved" || v.status === "Rejected" || v.status === "Voided") && v.decided_at && (
+          <li>
+            {`${v.status === "Rejected" ? "Rejected" : "Approved"}${v.decided_by_name ? ` by ${v.decided_by_name}` : ""} on ${fmtDay(v.decided_at)}${v.decision_note ? `: ${v.decision_note}` : ""}`}
+          </li>
+        )}
+        {v.status === "Voided" && v.voided_at && (
+          <li>
+            {`Voided${v.voided_by_name ? ` by ${v.voided_by_name}` : ""} on ${fmtDay(v.voided_at)}: ${v.void_reason ?? ""}`}
+          </li>
+        )}
+      </ul>
       {v.status === "Approved" && canDecideThis && (
         <div className="flex gap-3">
           <button type="button" onClick={voidIt} className="text-rose-700 hover:underline">
@@ -317,17 +365,31 @@ function AddVariationForm({
 }) {
   const [description, setDescription] = useState("");
   const [amountDelta, setAmountDelta] = useState("");
+  const [reason, setReason] = useState("");
+  const [requester, setRequester] = useState("");
+  const [requestedOn, setRequestedOn] = useState("");
+  const [costImpact, setCostImpact] = useState("");
+  const [timeDays, setTimeDays] = useState("");
   const [itemIds, setItemIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!description.trim() || !amountDelta.trim()) return;
+    if (!description.trim() || !amountDelta.trim() || !reason.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await projectContractApi.addVariation(projectId, description.trim(), amountDelta.trim(), itemIds);
+      await projectContractApi.addVariation(projectId, {
+        description: description.trim(),
+        amount_delta: amountDelta.trim(),
+        reason: reason.trim(),
+        ...(requester.trim() && { requester: requester.trim() }),
+        ...(requestedOn && { requested_on: requestedOn }),
+        ...(costImpact.trim() && { cost_impact: costImpact.trim() }),
+        ...(timeDays.trim() && { time_impact_days: Number(timeDays) }),
+        item_ids: itemIds,
+      });
       onDone();
     } catch {
       setError("Failed to add variation");
@@ -347,8 +409,42 @@ function AddVariationForm({
         <input
           value={amountDelta}
           onChange={(e) => setAmountDelta(e.target.value)}
-          placeholder="Amount (+/-) *"
-          className="w-32 rounded border border-h-line bg-white px-2 py-1 text-sm"
+          placeholder="Selling price impact (+/-) *"
+          className="w-44 rounded border border-h-line bg-white px-2 py-1 text-sm"
+        />
+      </div>
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Reason *"
+        className="rounded border border-h-line bg-white px-2 py-1 text-sm"
+      />
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={requester}
+          onChange={(e) => setRequester(e.target.value)}
+          placeholder="Requested by"
+          className="min-w-32 flex-1 rounded border border-h-line bg-white px-2 py-1 text-sm"
+        />
+        <input
+          type="date"
+          value={requestedOn}
+          onChange={(e) => setRequestedOn(e.target.value)}
+          aria-label="Requested on"
+          className="rounded border border-h-line bg-white px-2 py-1 text-sm"
+        />
+        <input
+          value={costImpact}
+          onChange={(e) => setCostImpact(e.target.value)}
+          placeholder="Cost impact (+/-)"
+          className="w-36 rounded border border-h-line bg-white px-2 py-1 text-sm"
+        />
+        <input
+          value={timeDays}
+          onChange={(e) => setTimeDays(e.target.value)}
+          placeholder="Time impact (days)"
+          inputMode="numeric"
+          className="w-36 rounded border border-h-line bg-white px-2 py-1 text-sm"
         />
       </div>
       <ItemPicker projectId={projectId} selected={itemIds} onChange={setItemIds} />
@@ -361,7 +457,7 @@ function AddVariationForm({
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={busy || !description.trim() || !amountDelta.trim()}
+          disabled={busy || !description.trim() || !amountDelta.trim() || !reason.trim()}
           className="rounded bg-h-accent px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
         >
           Add

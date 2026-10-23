@@ -17,13 +17,23 @@ export interface ContractVariation {
   amount_delta: string;
   created_at: string;
   created_by: number | null;
+  created_by_name: string | null;
+  /** Q611: `amount_delta` is the selling-price impact (Q612); cost impact is shown beside it, never summed. */
+  number: number;
+  reason: string | null; // empty only on variations that predate Q611
+  requester: string | null;
+  requested_on: string | null; // YYYY-MM-DD
+  cost_impact: string | null; // Decimal string
+  time_impact_days: number | null; // signed working days, informational
   /** Q608: only Approved counts toward `current_value`. */
   status: "Draft" | "Approved" | "Rejected" | "Voided";
   decided_by: number | null;
+  decided_by_name: string | null;
   decided_at: string | null;
   decision_note: string | null;
   /** Q610: a voided variation keeps its approval but no longer counts. */
   voided_by: number | null;
+  voided_by_name: string | null;
   voided_at: string | null;
   void_reason: string | null;
   /** Empty = a project-level variation. */

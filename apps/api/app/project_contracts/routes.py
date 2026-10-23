@@ -45,6 +45,8 @@ def create_variation_route(
         db, project_id=pid, workspace_id=user.workspace_id,
         description=body.description, amount_delta=body.amount_delta,
         actor_id=user.id, auto_approve=_is_manager(user), item_ids=body.item_ids,
+        reason=body.reason, requester=body.requester, requested_on=body.requested_on,
+        cost_impact=body.cost_impact, time_impact_days=body.time_impact_days,
     )
     if row is None:
         raise HTTPException(status_code=404, detail="contract not found")

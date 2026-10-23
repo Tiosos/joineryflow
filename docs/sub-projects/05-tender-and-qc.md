@@ -149,6 +149,13 @@
     `VARIATION_NOT_DRAFT`, `NOT_YOUR_VARIATION`. The Financials card shows
     a status badge, Approve / Reject / Edit on a Draft, and the
     `live_contract_value` (Value in Progress) sum counts Approved only.
+  - Variation fields (Q611/Q612, `0089`): `number` (per project, `VAR-001`),
+    `reason` (required on new ones), `requester`, `requested_on` (defaults to
+    today), `cost_impact` (optional, never summed), `time_impact_days`
+    (signed working days, informational). `amount_delta` is the selling-price
+    impact. All editable on a Draft, frozen once decided. Each variation
+    also carries `created_by_name` / `decided_by_name` / `voided_by_name` for
+    the card's history lines.
   - Variation Void (Q610, `0088`): `POST …/variations/{id}/void`
     (`{reason}`, manager/admin only, `403 DECISION_FORBIDDEN`) turns an
     **Approved** variation into `Voided` (`voided_by/at`, `void_reason`; the
