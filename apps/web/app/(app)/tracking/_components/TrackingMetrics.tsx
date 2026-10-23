@@ -30,17 +30,13 @@ export function TrackingMetrics({ items }: Props) {
   let dueWeek = 0;
   let installed = 0;
   for (const it of joineryItems) {
-    let isOverdue = false;
     let isDueWeek = false;
     for (const sk of Object.keys(it.stages)) {
       const s = it.stages[sk];
       if (!s) continue;
-      if (s.due_date && !s.done_date) {
-        if (s.due_date < today) isOverdue = true;
-        else if (s.due_date <= weekOut) isDueWeek = true;
-      }
+      if (s.due_date && !s.done_date && s.due_date >= today && s.due_date <= weekOut) isDueWeek = true;
     }
-    if (isOverdue) overdue++;
+    if (it.is_overdue) overdue++;   // the server's definition (Q591)
     if (isDueWeek) dueWeek++;
     const inst = it.stages.INST;
     if (inst?.done_date) installed++;

@@ -4,6 +4,8 @@ import { STAGE_KEYS, statusClasses } from "./items-table/shared";
 
 const TITLES: Record<CardFilter, { title: string; note: string }> = {
   overdue: { title: "Overdue items", note: "at least one stage is past its due date and not done" },
+  at_risk: { title: "At risk", note: "a stage is due soon and an earlier stage is not done" },
+  delayed: { title: "Delayed", note: "a stage was finished after its due date, on a job not installed yet" },
   in_optimisation: { title: "In optimisation", note: "marked down (DOWN done), not yet cut (CNC not done)" },
   awaiting_install: { title: "Awaiting install", note: "delivered (DEL done), not yet installed (INST not done)" },
 };
@@ -11,13 +13,11 @@ const TITLES: Record<CardFilter, { title: string; note: string }> = {
 interface Props {
   filter: CardFilter | null;
   items: TrackingItemRow[];
-  /** Today as YYYY-MM-DD, to tint a stage that is past due. */
-  today: string;
 }
 
 /** Tracking's All projects scope (Q633): the items a dashboard card counted, across projects. Read-only:
  *  an item is opened in its own project's Tracking or in the item editor. */
-export function AllProjectsTracking({ filter, items, today }: Props) {
+export function AllProjectsTracking({ filter, items }: Props) {
   const heading = filter ? TITLES[filter] : { title: "All items", note: "every live joinery item you can see" };
   return (
     <div className="grid gap-3" data-testid="tracking-all-projects">
@@ -72,12 +72,15 @@ export function AllProjectsTracking({ filter, items, today }: Props) {
                         const s = it.stages[sk];
                         if (!s || (!s.due_date && !s.done_date)) return null;
                         const done = Boolean(s.done_date);
-                        const late = !done && Boolean(s.due_date) && (s.due_date as string) < today;
                         return (
                           <span
                             key={sk}
                             className={`h-mono rounded border border-h-line px-1.5 py-0.5 text-[10px] ${
-                              late ? "text-h-bad" : done ? "text-h-muted" : "text-h-ink2"
+                              s.state === "overdue"
+                                ? "text-h-bad"
+                                : s.state === "at_risk" || s.state === "delayed"
+                                  ? "text-[#c48a2e]"
+                                  : done ? "text-h-muted" : "text-h-ink2"
                             }`}
                             title={done ? `${sk} done ${s.done_date}` : `${sk} due ${s.due_date}`}
                           >

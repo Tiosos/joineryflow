@@ -94,23 +94,6 @@ export function statusClasses(status: string | null): string {
   }
 }
 
-export function addDaysISO(iso: string, days: number): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export function dateCellColor(dueIso: string | null, doneIso: string | null, todayIso: string): string {
-  if (doneIso) return "text-[#3f7d48]";
-  if (dueIso && dueIso < todayIso) return "text-[#b4443d] font-semibold";
-  if (dueIso && dueIso <= addDaysISO(todayIso, 7)) return "text-[#c48a2e]";
-  return "text-h-muted";
-}
-
 export function formatAmount(amount: string | null | undefined): string {
   if (amount == null || amount === "") return "—";
   const n = Number(amount);

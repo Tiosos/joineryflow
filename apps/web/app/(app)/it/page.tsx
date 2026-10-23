@@ -3,6 +3,7 @@ import { fetchMe } from "@/lib/session";
 import { redirect } from "next/navigation";
 
 import { LabourRatesPanel } from "./_components/LabourRatesPanel";
+import { PlanningPanel } from "./_components/PlanningPanel";
 import { PermissionGroupsPanel } from "./_components/PermissionGroupsPanel";
 import { SearchHealthPanel } from "./_components/SearchHealthPanel";
 import { ViewAsRolePanel } from "./_components/ViewAsRolePanel";
@@ -25,6 +26,7 @@ export default async function ITPage() {
       <WorkerRosterPanel />
       <StaffPhotosPanel />
       <LabourRatesPanel />
+      <PlanningPanel />
       <SearchHealthPanel />
     </section>
   );

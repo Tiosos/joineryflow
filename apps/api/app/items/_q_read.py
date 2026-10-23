@@ -7,7 +7,7 @@ from datetime import timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from ..auth.sessions import AuthUser
-from .card_filters import CARD_FILTERS, scope_clause
+from .card_filters import CARD_FILTERS, STAGE_STATE_SQL, scope_clause
 from ._q_base import _JOINERY_I, _WORKSPACE_FILTER
 
 
@@ -158,7 +158,10 @@ def list_items_for_project(
     item_rows = db.execute(
         text(
             f"""
-            SELECT {_ITEM_COLS}
+            SELECT {_ITEM_COLS},
+                   ({CARD_FILTERS["overdue"]}) AS is_overdue,
+                   ({CARD_FILTERS["at_risk"]}) AS is_at_risk,
+                   ({CARD_FILTERS["delayed"]}) AS is_delayed
             FROM items i
             LEFT JOIN app_user u ON u.id = i.cutlist_owner_id
             LEFT JOIN items parent ON parent.item_id = i.parent_item_id
@@ -236,13 +239,14 @@ def list_items_for_project(
     # Query 2: fetch all item_stages rows for these items in one shot
     stage_rows = db.execute(
         text(
-            """
-            SELECT item_id, stage_key, due_date, done_date
-            FROM item_stages
-            WHERE item_id = ANY(:ids)
+            f"""
+            SELECT s.item_id, s.stage_key, s.due_date, s.done_date, ({STAGE_STATE_SQL}) AS state
+            FROM item_stages s
+            JOIN items it ON it.item_id = s.item_id
+            WHERE s.item_id = ANY(:ids)
             """
         ),
-        {"ids": item_ids},
+        {"ids": item_ids, "wid": workspace_id, "today": params["today"]},
     ).mappings().all()
 
     # Build stages dict per item_id
@@ -252,6 +256,7 @@ def list_items_for_project(
         stages_by_item[iid][sr["stage_key"]] = {
             "due_date": sr["due_date"],
             "done_date": sr["done_date"],
+            "state": sr["state"],
         }
 
     # Assemble final result list
@@ -291,6 +296,9 @@ def list_items_for_project(
                 "order_supplier": r["order_supplier"],
                 "order_due_date": r["order_due_date"],
                 "stages": stages_by_item.get(item_id, {}),
+                "is_overdue": bool(r["is_overdue"]),
+                "is_at_risk": bool(r["is_at_risk"]),
+                "is_delayed": bool(r["is_delayed"]),
                 "availability": {
                     "ready": int(r["ready"]),
                     "blocked": int(r["blocked"]),

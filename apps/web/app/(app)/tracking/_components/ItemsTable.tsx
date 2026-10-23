@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { TrackingItemRow } from "@/lib/pm-types";
-import { PIN_COLS, PIN_MIN_SCROLL_PX, SubTab, SUB_TABS, STAGE_KEYS, DATE_LIKE_SUBTABS, SUB_TAB_COLUMNS, SortKey, FilterState, EMPTY_FILTERS, todayISO, uniqStrings, sortRows } from "./items-table/shared";
+import { PIN_COLS, PIN_MIN_SCROLL_PX, SubTab, SUB_TABS, STAGE_KEYS, DATE_LIKE_SUBTABS, SUB_TAB_COLUMNS, SortKey, FilterState, EMPTY_FILTERS, uniqStrings, sortRows } from "./items-table/shared";
 import { Row } from "./items-table/Row";
 import { Th } from "./items-table/Th";
 import { FilterSelect } from "./items-table/FilterSelect";
@@ -190,7 +190,6 @@ export function ItemsTable({
 
   const isDateLike = DATE_LIKE_SUBTABS.has(subTab);
   const subCols = isDateLike ? null : SUB_TAB_COLUMNS[subTab as Exclude<SubTab, "DATE" | "TO BE ORDERED">];
-  const today = todayISO();
 
   return (
     <div
@@ -350,7 +349,6 @@ export function ItemsTable({
                   isDateLike={isDateLike}
                   subTab={subTab}
                   subColCount={subCols?.length ?? 0}
-                  today={today}
                   relatedCount={kids.length}
                   relatedOpen={isOpen}
                   onToggleRelated={() => toggleRelated(it.id)}
@@ -373,8 +371,7 @@ export function ItemsTable({
                       isDateLike={isDateLike}
                       subTab={subTab}
                       subColCount={subCols?.length ?? 0}
-                      today={today}
-                      bulkEnabled={bulkEnabled}
+                          bulkEnabled={bulkEnabled}
                       checked={selectedIds?.has(kid.id) ?? false}
                       onToggle={onToggleSelect ? () => onToggleSelect(kid.id) : undefined}
                       onOpen={() => onOpenItem(kid.id)}

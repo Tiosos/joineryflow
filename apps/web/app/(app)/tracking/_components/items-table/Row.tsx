@@ -17,7 +17,6 @@ export function Row({
   isDateLike,
   subTab,
   subColCount,
-  today,
   relatedCount = 0,
   relatedOpen = false,
   onToggleRelated,
@@ -34,7 +33,6 @@ export function Row({
   isDateLike: boolean;
   subTab: SubTab;
   subColCount: number;
-  today: string;
   relatedCount?: number;
   relatedOpen?: boolean;
   onToggleRelated?: () => void;
@@ -169,7 +167,7 @@ export function Row({
         ))
       ) : isDateLike ? (
         STAGE_KEYS.map((sk) => (
-          <StageCell key={sk} stage={row.stages[sk]} today={today} />
+          <StageCell key={sk} stage={row.stages[sk]} />
         ))
       ) : subTab === "O/BOOK" ? (
         <OrderCells row={row} />

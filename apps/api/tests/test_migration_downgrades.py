@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 
 DB_DIR = next(p / "db" for p in Path(__file__).resolve().parents if (p / "db" / "alembic.ini").is_file())
 
-# The current head revision: bump it with each new migration (0084, project folder link).
-HEAD = "0084"
+# The current head revision: bump it with each new migration (0085, At risk window).
+HEAD = "0085"
 
 _NINE = ("board_materials", "hardware_materials", "custom_made", "benchtop_materials", "appliances",
          "equipment_hire", "edging_materials", "glass_materials", "timber_materials")
@@ -369,4 +369,21 @@ def test_0084_only_a_web_link_is_stored_and_a_downgrade_refuses_to_drop_recorded
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name = 'projects'"
                               " AND column_name = 'project_folder_url'")).scalar() == 0
+    assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
+
+
+def test_0085_the_at_risk_window_defaults_to_three_days_within_zero_to_ninety_and_a_downgrade_drops_it(scratch):
+    eng, alembic = scratch
+    w = _workspace(eng)
+    with eng.connect() as c:
+        assert c.execute(text("SELECT at_risk_days FROM workspace WHERE id = :w"), {"w": w}).scalar_one() == 3
+    for bad in (-1, 91):
+        with pytest.raises(IntegrityError), eng.begin() as c:
+            c.execute(text("UPDATE workspace SET at_risk_days = :d WHERE id = :w"), {"d": bad, "w": w})
+    with eng.begin() as c:
+        c.execute(text("UPDATE workspace SET at_risk_days = 0 WHERE id = :w"), {"w": w})
+    assert alembic("downgrade", "0084").returncode == 0
+    with eng.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name = 'workspace'"
+                              " AND column_name = 'at_risk_days'")).scalar() == 0
     assert alembic("upgrade", "head").returncode == 0 and _version(eng) == HEAD
