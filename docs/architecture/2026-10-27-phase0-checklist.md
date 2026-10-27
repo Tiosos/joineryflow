@@ -16,6 +16,7 @@
 | ~~D4~~ | ~~Expected go-live date for the second customer~~ **Partly resolved by D1** | With one deployment per customer, the multi-tenant items in §7 stop blocking customer two — see §7.0. What remains open is *when*, which now drives capacity rather than security |
 
 > Until D2 is settled, §3 keeps one open slot (secret injection); §1–§2 and §6 can start (they are independent of deployment shape).
+> **Every question still open across all four documents is collected in §0.2** — including the ones raised further down (image delivery §9.1, RTO/RPO §5, telemetry §6.2).
 
 ### 0.1 What D1 fixes — and what it costs
 
@@ -43,6 +44,32 @@ This resolves things in both directions, and both need writing down.
 | Backup becomes a shared responsibility | You provide the tooling; the customer runs it and owns the storage target. **Who is accountable for RTO/RPO has to be written down per customer**, or it will be assumed to be you |
 
 **Keep the option to converge later.** Per-customer deployment is designed to be *capable* of becoming shared, not to foreclose it. Concretely: never hard-code a single-tenant assumption into the code. The `public_workspace_slug` config field in `2026-10-27-public-stats.md` is deliberately a config field rather than a baked-in slug for this reason.
+
+### 0.2 Consolidated open-questions register — everything still unanswered, in one place
+
+D1 closed one question and changed the shape of several others. What follows is the complete remainder: every item from this document, from `2026-10-27-scalable-architecture.md` §7, and from `2026-10-27-public-stats.md`, gathered so that nothing has to be recovered by reading four files. **Nothing in this table has been decided on anyone's behalf** — each row names what it blocks so the order can be chosen deliberately.
+
+| # | Question | Where it lands | What it blocks | Needed by |
+| --- | --- | --- | --- | --- |
+| **Q1** (= D2) | Production domain, and where TLS terminates — a reverse proxy in front, or is Next exposed directly? | §3 | `COOKIE_SECURE`, `API_URL`, and whether the web tier needs its own TLS. One slot in the secrets work; §1, §2 and §6 can start regardless | Before §3 |
+| **Q2** (= D3) | Who runs migrations — the pipeline automatically, or a human after review? | §4 | The shape of the pipeline: automatic migration vs an approval gate. Nothing in §4 can be built before this | Before §4 |
+| **Q3** (= D4) | When does the second customer go live? | §0 / ops | No longer a security gate (one deployment per customer). It now sets **operational capacity**: N customers means N environments to upgrade, monitor and keep on a supported version | Before customer two |
+| **Q4** | Image delivery: a registry the customer can pull from, or an offline bundle (`docker save` / `load`) for air-gapped sites? | §9.1 | The artefact format the pipeline produces. Air-gapped delivery is not a flag you add later — ask before building §9 | Before §9 |
+| **Q5** | RTO and RPO per customer, and who is accountable for hitting them | §5 | Backup here is a shared responsibility: we ship the tooling, the customer runs it and owns the storage target. Unwritten, accountability is assumed to be ours | Before the first go-live |
+| **Q6** | Is telemetry allowed to leave the customer's environment? | §6.2 | Sentry SaaS exports stack traces and request context off-site. A customer who self-hosts precisely to keep data in may refuse it; §6.2 then needs a self-hosted or local-only option | Before §6 |
+| **Q7** | Who performs the upgrade, and in what window — the customer, or us under an agreed arrangement? | §9.1 | Whether `upgrade.sh` is a customer-facing script or an internal runbook, whether we need access to the host, and whether a rollback window has to be staffed | Before the first upgrade |
+| **Q8** | Billing model: per seat, per project count, or a flat price per workspace? | Roadmap §7 (Q3) | The design of the quota tables. Per-customer hosting carries a real per-customer infrastructure cost, which sits awkwardly with a pure per-seat price — decide the two together | Before any quota work |
+| **Q9** | `/public/stats`: Option A (tenant comes from server config, remove the `workspace_slug` parameter) or Option B (drop the endpoint entirely)? | `2026-10-27-public-stats.md` §5–§6 | B is cleaner still, but it costs the login page its live counts — a product decision, not an engineering one | Before §7.2 starts |
+| **Q10** | Formal acceptance of the two cross-tenant leaks as Phase 1 risk | §7.0 | D1 made them **unreachable, not fixed**. Someone should sign that risk explicitly, and it has to be closed before any move back to shared hosting | Now — it is one line |
+| **Q11** | `tests/e2e/` spec count: 76 on disk vs 66 in `CLAUDE.md:125` | Roadmap §7 (Q1) | Documentation accuracy only. Second half of the question: should `CLAUDE.md` drop the concrete number the way it already does for pytest counts? | Low |
+
+**Two of these block Phase 0 work (Q1, Q2).** The rest set the shape of individual sections or of the commercial model, and none of them prevents §1, §2 or §6 from starting this week.
+
+**Interactions worth noticing before answering:**
+
+- **Q4, Q5 and Q7 are the same conversation.** They are all "what does support look like when we cannot reach the environment" — decide them together, not in three separate threads.
+- **Q6 and Q5 pull against each other.** No telemetry off-site (Q6) and a tight RTO (Q5) both require the customer to operate more of the stack themselves, or to grant us access. Expect both answers to move together.
+- **Q8 is the one that outlives Phase 0.** Everything else here is about shipping safely; the billing model decides what the quota tables look like, and getting it wrong is expensive to unwind once tables exist.
 
 ---
 
@@ -240,7 +267,7 @@ Add `scripts/check-files.sh` to prove it after a restore: for every `storage_key
 
 Under customer self-hosting **you supply the tooling and the customer runs it**. That split is fine, but if nobody writes down who owns RTO/RPO it will default to you by assumption, and you will find out during an incident.
 
-Per customer, record: backup schedule, where the target is, who monitors that the job ran, who is allowed to restore, and the agreed RTO/RPO.
+Per customer, record: backup schedule, where the target is, who monitors that the job ran, who is allowed to restore, and the agreed RTO/RPO. (→ **Q5** in §0.2: the numbers and the named owner. **Q7** is the same question for the upgrade path.)
 
 **Acceptance (hard)**: **the restore drill succeeds once, and the measured RTO/RPO are written into `docs/`.** An untested backup is not a backup.
 
@@ -269,6 +296,8 @@ Add middleware in `app/main.py` emitting one JSON line per request:
 ### 6.2 Error reporting
 
 Wire up Sentry (or equivalent). **Scrubbing must be configured**: production data includes customer projects, suppliers, and amounts, so stack traces and request context must not carry those fields out.
+
+**Answer Q6 (§0.2) before choosing a vendor**: if telemetry is not allowed to leave the customer's environment at all, this section needs a self-hosted or local-only option rather than a SaaS DSN, and scrubbing does not rescue it — the data still leaves.
 
 ### 6.3 Metrics
 
@@ -301,6 +330,8 @@ Add `/metrics` (Prometheus format). Two options:
 
 Keep **7.3** in Phase 0 regardless — it is a regression test, it is cheap, and it holds behaviour that already works.
 
+**Downgrading these is a risk decision, and it needs an owner (Q10 in §0.2).** D1 made them unreachable; it did not fix them. Someone should accept that explicitly, and the acceptance should carry the condition that closes it: *if we ever move back to shared hosting, both items revert to launch blockers before the second workspace lands anywhere.*
+
 > **Correction**: the first version of the companion document listed "single-root file store" as a leak. **That was wrong.** Verified against the code: the layout is already sharded by workspace (`app/files/store.py` docstring: `<root>/<workspace_slug>/<sha256[0:2]>/<sha256>`), and all three download paths **do** check ownership — `files/routes.py:153`, `files/uploads.py:94` (`WHERE file_blob_id = :b AND workspace_id = :w`), `orders/attachments.py:83` (`_order_exists`). This item is downgraded from "fix this" to "add a test to hold it in place".
 
 ### 7.1 Meilisearch: replace the master key — **real work**
@@ -319,11 +350,16 @@ Keep **7.3** in Phase 0 regardless — it is a regression test, it is cheap, and
 
 **Clarification**: what leaks is **three numbers**, not customer data itself. Acceptable with one customer; with several, it means anyone can enumerate other customers' project and supplier counts, and can distinguish "a workspace with data" from "a slug that does not exist".
 
-**Change (pick one)**:
-- Make the slug unguessable (random suffix) + rate limiting; or
-- Remove the endpoint before multi-customer launch and turn the login-page branding panel into static copy
+**Change**: the full work-up is in `2026-10-27-public-stats.md`. In short:
 
-**Acceptance**: requesting with a slug that does not exist or is not yours → no distinguishing information returned.
+| Option | What it is | Cost |
+| --- | --- | --- |
+| **A — recommended** | The tenant comes from server config (`public_workspace_slug`); delete the `workspace_slug` request parameter. ~15 lines | None functionally. The parameter is used by exactly one caller, which always asks for the same workspace (`apps/web/app/(public)/login/page.tsx:5`) |
+| **B** | Delete the endpoint; make the login-page brand panel static copy | Zero public surface, but the panel loses its live counts — a product decision |
+
+**Q9 in §0.2 is this choice.** The finding underneath it: the parameter is flexibility nothing uses, so *the parameter is the entire attack surface*.
+
+**Acceptance**: no caller can ask for another tenant's counts; `tests/test_public_stats.py:73` — which pins the leak as a feature — is deleted and replaced by a test asserting the response comes from config.
 
 ### 7.3 File download ownership — **add a test to hold current behaviour**
 
@@ -362,7 +398,9 @@ This is the biggest shape difference from a cloud deployment. CI must not hold c
 | **Build and publish** | GitHub Actions | Build the prod images, tag with an immutable version, push to a registry the customer can pull from. Also publish a release note |
 | **Upgrade** | On the customer's host, by the customer (or by you in an agreed window) | `scripts/upgrade.sh <version>`: pull → `alembic upgrade head` → replace containers → poll `/health/ready` → on failure, re-tag back to the previous version |
 
-**Image delivery is an open question the customer has to answer**: a registry they can reach, or an offline bundle (`docker save` / `load`) for air-gapped sites. Air-gapped changes the artefact format, so ask before building the pipeline.
+**Image delivery is an open question the customer has to answer (Q4 in §0.2)**: a registry they can reach, or an offline bundle (`docker save` / `load`) for air-gapped sites. Air-gapped changes the artefact format, so ask before building the pipeline — bolting it on afterwards is a rewrite, not a flag.
+
+**Who runs the upgrade row of that table is Q7**, and it is not a detail: customer-run means `upgrade.sh` has to be documented for someone who did not write it, while us-run means we need host access and a staffed rollback window.
 
 #### 9.2 Add a version endpoint — you will be asked which version a customer is on
 
