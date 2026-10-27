@@ -10,12 +10,66 @@
 
 | # | Question | Why it blocks |
 | --- | --- | --- |
-| D1 | **Self-hosted (customer premises / own servers) or cloud-hosted?** | Determines the backup approach (self-managed WAL archiving vs managed snapshots), the image registry location, and how secrets are injected |
+| ~~D1~~ | ~~Self-hosted or cloud-hosted?~~ **DECIDED 2026-10-27: customer self-hosted, one deployment per customer.** | Resolved. See §0.1 for what it fixes and what it costs |
 | D2 | Production domain and where TLS terminates (reverse proxy, or is Next exposed directly?) | Determines `COOKIE_SECURE`, `API_URL`, and whether the web tier needs its own TLS |
 | D3 | Who runs migrations: the pipeline automatically, or a human after review? | Determines the shape of the pipeline in §4 (automatic migration vs approval gate) |
-| D4 | Expected go-live date for the second customer | Determines whether the multi-tenant items in §7 are "do now" or "schedule at the end of this phase" |
+| ~~D4~~ | ~~Expected go-live date for the second customer~~ **Partly resolved by D1** | With one deployment per customer, the multi-tenant items in §7 stop blocking customer two — see §7.0. What remains open is *when*, which now drives capacity rather than security |
 
-> Until D1/D2 are settled, §1–§3 and §6 can start (they are independent of deployment shape); §4 and §5 have to wait.
+> Until D2 is settled, §3 keeps one open slot (secret injection); §1–§2 and §6 can start (they are independent of deployment shape).
+> **Every question still open across all four documents is collected in §0.2** — including the ones raised further down (image delivery §9.1, RTO/RPO §5, telemetry §6.2).
+
+### 0.1 What D1 fixes — and what it costs
+
+**Decided: each customer hosts their own deployment, on their own premises or in their own cloud account. One deployment serves one workspace.**
+
+This resolves things in both directions, and both need writing down.
+
+**What it settles:**
+
+| Settled | How |
+| --- | --- |
+| Backup approach | Self-managed WAL archiving inside the customer's environment — **not** managed snapshots. §5 is now specified |
+| Secret injection | No cloud secret manager of ours. The customer owns the env file. §3 is now specified |
+| Data residency | **Resolved by definition** — customer data never leaves the customer's environment. The open question from the review closes here |
+| The two multi-tenant leaks | Downgraded from launch blockers to Phase 1 — see §7.0. This is the single biggest relief D1 buys |
+
+**What it costs — say these out loud before committing to it:**
+
+| Cost | Detail |
+| --- | --- |
+| Operational cost is linear in customers | Customer N means N Postgres instances, N sets of containers, N upgrade windows. Customer three is the turning point; past that, revisit shared hosting |
+| You cannot reach the environment | CI cannot deploy into it (and should not hold credentials that could). §9 becomes "produce artifacts here, run the upgrade there" |
+| Telemetry may not leave | Sentry SaaS exports stack traces and request context off-site — possibly unacceptable to a customer who self-hosts precisely to keep data in. §6.2 has to offer a self-hosted or local-only option |
+| Support needs version visibility | With N environments you will be asked "which version is that customer on?". There is no version endpoint today (`main.py` has only `/health`), so §9 adds one |
+| Backup becomes a shared responsibility | You provide the tooling; the customer runs it and owns the storage target. **Who is accountable for RTO/RPO has to be written down per customer**, or it will be assumed to be you |
+
+**Keep the option to converge later.** Per-customer deployment is designed to be *capable* of becoming shared, not to foreclose it. Concretely: never hard-code a single-tenant assumption into the code. The `public_workspace_slug` config field in `2026-10-27-public-stats.md` is deliberately a config field rather than a baked-in slug for this reason.
+
+### 0.2 Consolidated open-questions register — everything still unanswered, in one place
+
+D1 closed one question and changed the shape of several others. What follows is the complete remainder: every item from this document, from `2026-10-27-scalable-architecture.md` §7, and from `2026-10-27-public-stats.md`, gathered so that nothing has to be recovered by reading four files. **Nothing in this table has been decided on anyone's behalf** — each row names what it blocks so the order can be chosen deliberately.
+
+| # | Question | Where it lands | What it blocks | Needed by |
+| --- | --- | --- | --- | --- |
+| **Q1** (= D2) | Production domain, and where TLS terminates — a reverse proxy in front, or is Next exposed directly? | §3 | `COOKIE_SECURE`, `API_URL`, and whether the web tier needs its own TLS. One slot in the secrets work; §1, §2 and §6 can start regardless | Before §3 |
+| **Q2** (= D3) | Who runs migrations — the pipeline automatically, or a human after review? | §4 | The shape of the pipeline: automatic migration vs an approval gate. Nothing in §4 can be built before this | Before §4 |
+| **Q3** (= D4) | When does the second customer go live? | §0 / ops | No longer a security gate (one deployment per customer). It now sets **operational capacity**: N customers means N environments to upgrade, monitor and keep on a supported version | Before customer two |
+| **Q4** | Image delivery: a registry the customer can pull from, or an offline bundle (`docker save` / `load`) for air-gapped sites? | §9.1 | The artefact format the pipeline produces. Air-gapped delivery is not a flag you add later — ask before building §9 | Before §9 |
+| **Q5** | RTO and RPO per customer, and who is accountable for hitting them | §5 | Backup here is a shared responsibility: we ship the tooling, the customer runs it and owns the storage target. Unwritten, accountability is assumed to be ours | Before the first go-live |
+| **Q6** | Is telemetry allowed to leave the customer's environment? | §6.2 | Sentry SaaS exports stack traces and request context off-site. A customer who self-hosts precisely to keep data in may refuse it; §6.2 then needs a self-hosted or local-only option | Before §6 |
+| **Q7** | Who performs the upgrade, and in what window — the customer, or us under an agreed arrangement? | §9.1 | Whether `upgrade.sh` is a customer-facing script or an internal runbook, whether we need access to the host, and whether a rollback window has to be staffed | Before the first upgrade |
+| **Q8** | Billing model: per seat, per project count, or a flat price per workspace? | Roadmap §7 (Q3) | The design of the quota tables. Per-customer hosting carries a real per-customer infrastructure cost, which sits awkwardly with a pure per-seat price — decide the two together | Before any quota work |
+| **Q9** | `/public/stats`: Option A (tenant comes from server config, remove the `workspace_slug` parameter) or Option B (drop the endpoint entirely)? | `2026-10-27-public-stats.md` §5–§6 | B is cleaner still, but it costs the login page its live counts — a product decision, not an engineering one | Before §7.2 starts |
+| **Q10** | Formal acceptance of the two cross-tenant leaks as Phase 1 risk | §7.0 | D1 made them **unreachable, not fixed**. Someone should sign that risk explicitly, and it has to be closed before any move back to shared hosting | Now — it is one line |
+| **Q11** | `tests/e2e/` spec count: 76 on disk vs 66 in `CLAUDE.md:125` | Roadmap §7 (Q1) | Documentation accuracy only. Second half of the question: should `CLAUDE.md` drop the concrete number the way it already does for pytest counts? | Low |
+
+**Two of these block Phase 0 work (Q1, Q2).** The rest set the shape of individual sections or of the commercial model, and none of them prevents §1, §2 or §6 from starting this week.
+
+**Interactions worth noticing before answering:**
+
+- **Q4, Q5 and Q7 are the same conversation.** They are all "what does support look like when we cannot reach the environment" — decide them together, not in three separate threads.
+- **Q6 and Q5 pull against each other.** No telemetry off-site (Q6) and a tight RTO (Q5) both require the customer to operate more of the stack themselves, or to grant us access. Expect both answers to move together.
+- **Q8 is the one that outlives Phase 0.** Everything else here is about shipping safely; the billing model decides what the quota tables look like, and getting it wrong is expensive to unwind once tables exist.
 
 ---
 
@@ -124,16 +178,21 @@ CMD ["pnpm", "start"]
 
 **Current state**: `Settings` in `apps/api/app/config.py` has only 8 fields and reads `.env` (`SettingsConfigDict(env_file=".env")`); `docker-compose.yml` mounts the file into containers with `env_file: .env`.
 
-**Change**:
+**Change** (D1 settled: customer self-hosted, so *the customer owns this file* — there is no secret manager of ours to inject from):
 
-1. In production **do not mount `.env`** — inject everything as environment variables (D1 decides between a secret manager and the orchestrator's secrets)
-2. `COOKIE_SECURE=true` (`.env.example:12` already notes it must be true anywhere https is used, otherwise session cookies travel in the clear)
-3. `MEILI_API_KEY` distinct from `MEILI_MASTER_KEY` (see §7.1)
-4. `API_URL`: in compose it is `http://api:8000`; in production set the real address per D2 (the web tier inlines it at build time, so changing it means rebuilding)
+1. **The image must not contain `.env`** — that is the hard rule. The file lives on the customer's host (e.g. `/opt/joineryflow/.env`, `chmod 600`), and `docker-compose.prod.yml` points `env_file` at it. Mounting a host-owned file is fine; baking one into an image is not
+2. Ship a **production `.env.example`** covering every variable with a comment on where the value comes from. Today `Settings` has 8 fields and reads `.env` (`SettingsConfigDict(env_file=".env")`), and `.env.example` is the only guide a customer has
+3. Add `scripts/check-env.sh`: assert every required variable is set *and non-empty* before `compose up`. Worth it because a missing field makes `Settings()` raise `ValidationError` at import — the container crash-loops, and on a customer's box that reads as "JoineryFlow is broken" rather than "you forgot to set `DATABASE_URL`"
+4. `COOKIE_SECURE=true` (`.env.example:12` already notes it must be true anywhere https is used, otherwise session cookies travel in the clear)
+5. `MEILI_API_KEY` distinct from `MEILI_MASTER_KEY` (see §7.1)
+6. `API_URL`: in compose it is `http://api:8000`; in production set the real address per D2 (the web tier inlines it at build time, so changing it means rebuilding)
 
 **Acceptance**:
 - Inside the production image, `ls .env` → does not exist
+- `scripts/check-env.sh` with `DATABASE_URL` unset exits non-zero and names the variable
 - After login, `curl -I` shows `Set-Cookie` with `Secure; HttpOnly; SameSite`
+
+**Consequence to accept**: the customer holds the secrets, so **you cannot read them**. When something breaks you will be asking the customer to paste redacted config. Design error messages to be diagnosable from logs alone — this is another reason §6.1 (structured logging) matters more under self-hosting than under cloud hosting.
 
 ---
 
@@ -164,14 +223,51 @@ CMD ["pnpm", "start"]
 
 **Current state**: `pg_dump` / `wal-g` / `barman` — **zero hits** repo-wide; the Makefile has no backup / restore target.
 
-**Change**:
+**Change** (D1 settled: no managed snapshots exist in a customer's own environment, so this is self-managed WAL archiving):
+
+#### 5.1 Three volumes, three different answers
+
+`docker-compose.yml:51-54` declares `dbdata`, `uploads` and `meilidata`. They are not equally important:
+
+| Volume | What's in it | Back it up? |
+| --- | --- | --- |
+| `dbdata` | Postgres data directory | **Yes** — PITR, below |
+| `uploads` | Every stored file (`FILE_STORE_ROOT=/uploads`, `docker-compose.yml:17,24`) | **Yes**, and with a consistency rule — see 5.2 |
+| `meilidata` | Meilisearch index | **No.** It is a derived index: `make reindex` (`Makefile:10`) rebuilds it from Postgres. Run it once after any restore and save the storage |
+
+The `meilidata` answer is the cheap win here: skipping it removes a volume from every backup, every restore and every drill.
+
+#### 5.2 The consistency rule — the database and the file volume are not independent
+
+This is the part most likely to be got wrong, and it is not obvious.
+
+`store_bytes` writes bytes **before** it writes the row: `store.put(...)` then `insert_blob_or_existing(...)` (`app/files/uploads.py:73-79`). So a file exists on disk slightly before it exists in `file_blob`. That fixes which way a restore may drift:
+
+| If the file volume is restored… | Result |
+| --- | --- |
+| **older** than the database | Rows point at bytes that aren't there. `stream_blob` checks `store.exists(...)` and raises `404 "file not found"` (`uploads.py:99-100`) — **visible to users as lost files** |
+| **newer** than the database | Orphaned files on disk with no row. Invisible, harmless, just wasted space |
+
+**Rule: the file volume's restore point must be at or after the database's. When in doubt, let the files be newer.** Do not aim for "the same moment" and hope.
+
+Add `scripts/check-files.sh` to prove it after a restore: for every `storage_key` in `file_blob`, the bytes must exist in the store. Report orphaned files (bytes with no row) as a count — do not delete them automatically.
+
+#### 5.3 The mechanism
 
 | Item | Action |
 | --- | --- |
-| PITR | Production Postgres with `wal_level=replica` + WAL archiving; a daily base backup |
-| Logical backup | Daily `pg_dump -Fc` to **off-site** storage (a different machine from the database) |
-| Restore drill | New `scripts/restore-drill.sh`: pull the latest backup → start a temporary instance → restore to a random point in time → run `make test` or `tests/e2e/smoke.spec.ts` → print elapsed time |
-| Makefile | Add `backup` and `restore-drill` targets |
+| PITR | `wal_level=replica` + an `archive_command` writing to a target **inside the customer's environment but not on the database host** (second machine, NAS, or their object storage); daily `pg_basebackup` |
+| Logical backup | Daily `pg_dump -Fc`, same rule about location. Belt and braces next to PITR, not instead of it |
+| File volume | Copy or snapshot `uploads` on the same schedule. Note it is a named volume, so the script must resolve its path (`docker volume inspect`) rather than assume a bind mount |
+| After any restore | `make reindex` to rebuild Meilisearch; then `scripts/check-files.sh` |
+| Restore drill | `scripts/restore-drill.sh`: restore dbdata + uploads to a random point in time → `make reindex` → run `tests/e2e/smoke.spec.ts` → print elapsed time |
+| Makefile | Add `backup`, `restore-drill` and `check-files` targets |
+
+#### 5.4 Who is accountable — settle this per customer, in writing
+
+Under customer self-hosting **you supply the tooling and the customer runs it**. That split is fine, but if nobody writes down who owns RTO/RPO it will default to you by assumption, and you will find out during an incident.
+
+Per customer, record: backup schedule, where the target is, who monitors that the job ran, who is allowed to restore, and the agreed RTO/RPO. (→ **Q5** in §0.2: the numbers and the named owner. **Q7** is the same question for the upgrade path.)
 
 **Acceptance (hard)**: **the restore drill succeeds once, and the measured RTO/RPO are written into `docs/`.** An untested backup is not a backup.
 
@@ -201,6 +297,8 @@ Add middleware in `app/main.py` emitting one JSON line per request:
 
 Wire up Sentry (or equivalent). **Scrubbing must be configured**: production data includes customer projects, suppliers, and amounts, so stack traces and request context must not carry those fields out.
 
+**Answer Q6 (§0.2) before choosing a vendor**: if telemetry is not allowed to leave the customer's environment at all, this section needs a self-hosted or local-only option rather than a SaaS DSN, and scrubbing does not rescue it — the data still leaves.
+
 ### 6.3 Metrics
 
 Add `/metrics` (Prometheus format). Two options:
@@ -218,7 +316,21 @@ Add `/metrics` (Prometheus format). Two options:
 
 ---
 
-## 7. Multi-tenant security (must be done before SaaS launch)
+## 7. Multi-tenant security (downgraded by D1 — read §7.0 first)
+
+### 7.0 What D1 does to this section
+
+**The two leaks below stop being launch blockers.** With one deployment per customer, a deployment contains one workspace, so "another tenant's data" mostly isn't there to leak. They move from Phase 0 to **Phase 1**.
+
+**Do not delete them.** Three reasons:
+
+1. **The codebase is shared.** One commit ships to every customer. A leak that is unreachable today becomes reachable the moment any environment holds a second workspace — which is exactly what `--workspace-slug` imports and staging data tend to produce.
+2. **Converging on shared hosting reverses this instantly.** Customer three or four is when that gets revisited. If the leaks are still open then, they revert to blockers on someone else's schedule.
+3. **The relief comes from topology, not from correctness.** That is worth stating plainly: D1 didn't fix these, it made them unreachable. Change the topology and the bugs are exactly as real as they are today.
+
+Keep **7.3** in Phase 0 regardless — it is a regression test, it is cheap, and it holds behaviour that already works.
+
+**Downgrading these is a risk decision, and it needs an owner (Q10 in §0.2).** D1 made them unreachable; it did not fix them. Someone should accept that explicitly, and the acceptance should carry the condition that closes it: *if we ever move back to shared hosting, both items revert to launch blockers before the second workspace lands anywhere.*
 
 > **Correction**: the first version of the companion document listed "single-root file store" as a leak. **That was wrong.** Verified against the code: the layout is already sharded by workspace (`app/files/store.py` docstring: `<root>/<workspace_slug>/<sha256[0:2]>/<sha256>`), and all three download paths **do** check ownership — `files/routes.py:153`, `files/uploads.py:94` (`WHERE file_blob_id = :b AND workspace_id = :w`), `orders/attachments.py:83` (`_order_exists`). This item is downgraded from "fix this" to "add a test to hold it in place".
 
@@ -238,11 +350,16 @@ Add `/metrics` (Prometheus format). Two options:
 
 **Clarification**: what leaks is **three numbers**, not customer data itself. Acceptable with one customer; with several, it means anyone can enumerate other customers' project and supplier counts, and can distinguish "a workspace with data" from "a slug that does not exist".
 
-**Change (pick one)**:
-- Make the slug unguessable (random suffix) + rate limiting; or
-- Remove the endpoint before multi-customer launch and turn the login-page branding panel into static copy
+**Change**: the full work-up is in `2026-10-27-public-stats.md`. In short:
 
-**Acceptance**: requesting with a slug that does not exist or is not yours → no distinguishing information returned.
+| Option | What it is | Cost |
+| --- | --- | --- |
+| **A — recommended** | The tenant comes from server config (`public_workspace_slug`); delete the `workspace_slug` request parameter. ~15 lines | None functionally. The parameter is used by exactly one caller, which always asks for the same workspace (`apps/web/app/(public)/login/page.tsx:5`) |
+| **B** | Delete the endpoint; make the login-page brand panel static copy | Zero public surface, but the panel loses its live counts — a product decision |
+
+**Q9 in §0.2 is this choice.** The finding underneath it: the parameter is flexibility nothing uses, so *the parameter is the entire attack surface*.
+
+**Acceptance**: no caller can ask for another tenant's counts; `tests/test_public_stats.py:73` — which pins the leak as a feature — is deleted and replaced by a test asserting the response comes from config.
 
 ### 7.3 File download ownership — **add a test to hold current behaviour**
 
@@ -272,36 +389,56 @@ Add `.github/workflows/deploy.yml` (today `.github/workflows/` has only `ci.yml`
 
 **Job-name caution**: the header comment of `ci-docs-only.yml` states that its four job names must match `ci.yml`'s, otherwise docs-only PRs get stuck on required checks. **Do not reuse those four names for deploy jobs**, to avoid conflicting with branch protection rules.
 
-Steps follow the order in §4.
+#### 9.1 Under D1 the pipeline splits in two — CI cannot reach the customer's host
+
+This is the biggest shape difference from a cloud deployment. CI must not hold credentials that can log into a customer's machine, and in practice often cannot reach one at all (no inbound access, sometimes no outbound internet either).
+
+| Stage | Where it runs | What it does |
+| --- | --- | --- |
+| **Build and publish** | GitHub Actions | Build the prod images, tag with an immutable version, push to a registry the customer can pull from. Also publish a release note |
+| **Upgrade** | On the customer's host, by the customer (or by you in an agreed window) | `scripts/upgrade.sh <version>`: pull → `alembic upgrade head` → replace containers → poll `/health/ready` → on failure, re-tag back to the previous version |
+
+**Image delivery is an open question the customer has to answer (Q4 in §0.2)**: a registry they can reach, or an offline bundle (`docker save` / `load`) for air-gapped sites. Air-gapped changes the artefact format, so ask before building the pipeline — bolting it on afterwards is a rewrite, not a flag.
+
+**Who runs the upgrade row of that table is Q7**, and it is not a detail: customer-run means `upgrade.sh` has to be documented for someone who did not write it, while us-run means we need host access and a staffed rollback window.
+
+#### 9.2 Add a version endpoint — you will be asked which version a customer is on
+
+There is no version endpoint today (`main.py` exposes only `/health`, line 111). With N environments this becomes a daily support question. Add `GET /version` (or extend `/health`) returning the image tag plus the Alembic head, and surface it in the support-facing docs.
+
+This also makes the release check honest: after an upgrade, assert the running version is the one you intended, not just that something is answering 200.
 
 **Acceptance**:
 - Rehearse one release
 - Rehearse one rollback (**a rollback that has never been rehearsed is not a rollback**)
+- `GET /version` on a freshly upgraded environment reports the expected tag and migration head
 
 ---
 
 ## Suggested execution order
 
 ```
-Can start in parallel (independent of D1-D4)
+Can start now (nothing open blocks these)
   ├─ 1.1 API image
   ├─ 1.2 Web image
-  ├─ 2   Health check split
+  ├─ 2   Health check split, plus the /version endpoint (§9.2)
+  ├─ 5   Backup and restore (+ drill)      <- D1 settled it: self-managed WAL, §5
   ├─ 6.1 Structured logging
-  └─ 7.3 File download ownership test
-
-Once D1/D2 are settled
-  ├─ 3   Configuration and secrets
-  ├─ 5   Backup and restore (+ drill)
-  ├─ 6.2 Error reporting
-  ├─ 6.3 Metrics
+  ├─ 7.3 File download ownership test
   └─ 8   Configuration split
 
-Once D3 is settled
+Once D2 is settled (domain / where TLS terminates)
+  ├─ 3   Configuration and secrets        <- COOKIE_SECURE, API_URL
+  ├─ 6.2 Error reporting                  <- self-hosted option matters here (§0.1)
+  └─ 6.3 Metrics
+
+Once D3 is settled (who runs migrations)
   ├─ 4   Migration and release order
   └─ 9   Deploy pipeline (+ release/rollback drills)
 
-D4 decides whether 7.1 / 7.2 are immediate or scheduled for the end of this phase
+Moved to Phase 1 by D1 — no longer blockers, see §7.0
+  ├─ 7.1 Meilisearch tenant tokens
+  └─ 7.2 /public/stats
 ```
 
 ---
@@ -314,8 +451,11 @@ D4 decides whether 7.1 / 7.2 are immediate or scheduled for the end of this phas
 | 2 | A failing `pnpm install` fails the build | ❌ (swallowed by `|| true`) |
 | 3 | With the DB down, `/health/ready` returns non-200 | ❌ (`/health` does not query the DB) |
 | 4 | Production does not mount `.env` and `COOKIE_SECURE=true` | ❌ |
-| 5 | Backups exist **and a restore drill has succeeded once**, with RTO/RPO recorded | ❌ (no backups) |
+| 5 | Backups exist **and a restore drill has succeeded once**, with RTO/RPO recorded — database **and** `uploads`, consistent per §5.2 | ❌ (no backups) |
 | 6 | One 500 can be traced end to end by `request_id` | ❌ (no structured logging) |
 | 7 | Releases are one-click rollbackable, and rollback has been rehearsed | ❌ (no deploy workflow) |
-| 8 | Credentials for tenant A cannot reach tenant B's search results | ❌ (master key) |
+| 8 | Any running environment reports its version and migration head | ❌ (only `/health`, no version) |
 | 9 | No dev-only flags such as `fsync=off` in production config | ❌ (only one dev compose file exists) |
+| ~~10~~ | ~~Credentials for tenant A cannot reach tenant B's search results~~ | ❌ (master key) — **moved to Phase 1 by D1**, §7.0 |
+
+Row 10 is struck through rather than deleted on purpose: it is deferred, not fixed, and the reason it is safe to defer is a deployment decision that can be reversed.

@@ -314,9 +314,25 @@ The project moves very fast (226 commits / 25 days, 43% with AI pair-programming
 
 ## 7. Open questions (RULE ZERO: no unilateral decisions)
 
+> This section holds the architecture-level questions. **The complete register of everything still open — including the operational ones the deployment decision created (image delivery, RTO/RPO ownership, telemetry egress, who runs upgrades) — is `2026-10-27-phase0-checklist.md` §0.2.** If the question affects shipping or support, it is in that table; this section is the subset that would change the architecture.
+
 1. **Number of specs in `tests/e2e/`**: `ls tests/e2e/*.spec.ts` gives **76**, while `CLAUDE.md:125` says **66**. At least one is wrong; confirm and reconcile. (`CLAUDE.md` §1 notes for pytest file counts that "counts drift, so none are recorded here" — please decide whether the e2e line should drop the concrete number too.)
-2. **The target shape of production deployment is undecided**: Phase 0 here assumes "containers + one pipeline", but the project does not state whether it is self-hosted (on the customer's premises) or cloud-hosted. This directly determines backup (PITR vs managed snapshots) and the observability choice, so **it needs confirming first**.
+2. ~~The target shape of production deployment is undecided~~ — **DECIDED 2026-10-27: customer self-hosted, one deployment per customer.** Consequences recorded in `2026-10-27-phase0-checklist.md` §0.1: backup becomes self-managed WAL archiving, secrets are owned by the customer, CI cannot reach the host so the pipeline splits into "publish" and "upgrade", telemetry may not be allowed off-site, and **the two multi-tenant leaks in decision 5.2 drop from launch blockers to Phase 1** — mitigated by topology, not fixed.
 3. ~~Whether to move to multi-customer SaaS~~ — **confirmed: the target is SaaS.** §decision 5 is written accordingly (isolation model, verified leaks, gap list). New questions that follow from it:
-   - When is the first non-Hartwood customer expected to go live? This decides whether Phase 0's "two multi-tenant security items" happen now or can be scheduled later — **if a second customer is coming within 3 months, it is the first item in P0**.
-   - Billing model: per seat, per project count, or a flat price per workspace? This determines how the quota tables are designed.
-   - Data residency: must customer data stay in a specific region (for example, only within Australia)? This determines the hosting choice and compounds with open question 2 above (production deployment shape).
+   - When is the first non-Hartwood customer expected to go live? **No longer a security gate** (one deployment per customer, see above) but it now drives operational capacity: N customers means N environments to upgrade and monitor.
+   - Billing model: per seat, per project count, or a flat price per workspace? This determines how the quota tables are designed. Note that per-customer hosting carries a real per-customer infrastructure cost, which sits awkwardly with a pure per-seat price — worth deciding together.
+   - ~~Data residency: must customer data stay in a specific region?~~ **Resolved by the deployment decision** — under customer self-hosting the data stays in the customer's own environment by construction.
+
+**Opened by the deployment decision** (blocking relationships and owners in `2026-10-27-phase0-checklist.md` §0.2):
+
+| # | Question |
+| --- | --- |
+| Q4 | Image delivery: a registry the customer can reach, or an offline bundle for air-gapped sites? Decides the artefact format — ask before the pipeline is built |
+| Q5 | RTO and RPO per customer, and the named owner. Backup is a shared responsibility: unwritten, it is assumed to be ours |
+| Q6 | May telemetry leave the customer's environment? Sentry SaaS exports stack traces and request context off-site |
+| Q7 | Who runs the upgrade, and in what window — the customer, or us under an agreed arrangement? |
+| Q8 | Billing model (also above): per seat, per project, or flat per workspace. Decides the quota tables |
+| Q9 | `/public/stats`: Option A (tenant from server config) or Option B (drop the endpoint). See `2026-10-27-public-stats.md` |
+| Q10 | Formal acceptance of the two cross-tenant leaks as Phase 1 risk — D1 made them unreachable, not fixed |
+
+**None of these changes the conclusions of §decisions 1–6.** They change *how* Phase 0 is executed and what the commercial model has to carry.
