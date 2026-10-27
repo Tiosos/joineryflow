@@ -1,316 +1,322 @@
-# JoineryFlow 可扩展架构设计与长期演进规划
+# JoineryFlow Scalable Architecture Design and Long-Term Roadmap
 
-> **状态：提案（Draft / 未批准）。** 本文是外部架构评审产出，**不是规则**。在团队接受之前，它不改变 `CLAUDE.md`（rulebook）和 Plan V1 的任何约束力。被接受的条目应分别落到 ADR、`CLAUDE.md` 与 Plan V1，而不是留在本文件里长期生效。
+> **Status: draft proposal (not approved).** This is the output of an external architecture review and is **not a rule**. Until the team accepts it, it changes nothing binding in `CLAUDE.md` (the rulebook) or in Plan V1. Items that are accepted should land separately as ADRs, in `CLAUDE.md`, or in Plan V1 — not live here indefinitely.
 >
-> **对象**：`Tiosos/joineryflow`（Python/FastAPI + Next.js 16，替换 FileMaker 的细木工生产系统）
-> **依据**：对 `apps/api`、`apps/web`、`db/alembic`、`tests/` 的实地代码勘查（2026-10-27，HEAD = `main`，迁移 head `0089_variation_fields`）+ `CLAUDE.md`、`docs/REVIEW-2026-10.md`、Plan V1
-> **定位**：给"下一步怎么走"的架构判断与可执行路线，不是通用最佳实践清单
+> **Subject**: `Tiosos/joineryflow` (Python/FastAPI + Next.js 16, a joinery production system replacing FileMaker)
+> **Basis**: hands-on inspection of `apps/api`, `apps/web`, `db/alembic`, and `tests/` (2026-10-27, HEAD = `main`, migration head `0089_variation_fields`), plus `CLAUDE.md`, `docs/REVIEW-2026-10.md`, and Plan V1
+> **Purpose**: architectural judgement and an executable route for "what next" — not a generic best-practice list
 >
-> **与既有文档的关系**
-> - 与 `CLAUDE.md`：本文只描述现状与建议，不新增硬规则。若本文与 `CLAUDE.md` 冲突，**以 `CLAUDE.md` 为准**，并把冲突上报（RULE ZERO）。
-> - 与 Plan V1（`docs/plan-v1/`）：Plan V1 是**客户目标规格与路线图**，本文是**代码树的可演进性评估**。两者视角不同，不构成替代关系；建任何东西前仍须读 `ALIGNMENT.md` §3。
-> - 与 `docs/REVIEW-2026-10.md`：那份是缺陷清单（已逐项处理），本文是结构性/长期议题。二者不重复。
+> **Relationship to existing documents**
+> - With `CLAUDE.md`: this document only describes the current shape and makes suggestions; it adds no hard rules. Where this document and `CLAUDE.md` conflict, **`CLAUDE.md` wins**, and the conflict should be escalated (RULE ZERO).
+> - With Plan V1 (`docs/plan-v1/`): Plan V1 is the **customer target spec and roadmap**; this document is an **evolvability assessment of the code tree**. Different perspectives, not substitutes. `ALIGNMENT.md` §3 still has to be read before building anything.
+> - With `docs/REVIEW-2026-10.md`: that one is a defect list (handled item by item); this one covers structural / long-term issues. The two do not overlap.
 
 ---
 
-## 0. 结论先行：六个要点
+## 0. Conclusions first: six points
 
-| # | 要点 | 一句话 |
+| # | Point | In one sentence |
 | --- | --- | --- |
-| **1** | **不要拆微服务，做"可拆而暂不拆"的模块化单体** | 107 张表高度内聚、`items` 是事实上的上帝表，拆服务会立刻撞上跨服务 join 与分布式事务；而 1690 个真库集成测试是单体最贵的资产，拆分会让它贬值一半 |
-| **2** | **真正的风险不是性能，是"生产化缺失"** | 实测 1000 items 列表 137 ms、5000 items 715 ms，性能远未到瓶颈；但两个 Dockerfile 都是 dev 镜像（装 dev 依赖、非 multi-stage、root 运行），且**没有部署流水线、没有监控、没有备份** |
-| **3** | **最脆的耦合是"用 SQL 字符串当接口"** | `row_types` 被 47 处调用点依赖，`open_orders_sql`、`FROM_VISIBLE` 被跨模块 import 后字符串拼接。类型检查、编译器都管不了它，只有测试能管——这是拆任何东西之前必须先消除的东西 |
-| **4** | **缺 Application 层，业务规则粘在 HTTP 层** | `routes.py` 合计 9580 行且 `commit()` 全在 route 里。这导致规则无法被 worker / CLI / 后台任务复用，也意味着每多一个非 HTTP 入口就要重写一遍业务判断 |
-| **5** | **把 outbox 从"搜索专用"升级为"系统级集成模式"** | 搜索已经用对了（DB 触发器写 outbox + 独立 worker + `FOR UPDATE SKIP LOCKED`），这是全项目唯一的真解耦范例，应推广到 PDF 生成、CV 导入、E3 数据迁移 |
-| **6** | **把规矩从"文档"变成"CI 门禁"** | `CLAUDE.md` 323 条规则靠自律执行，而 AI 结对贡献了 43% 的提交（226 提交 / 25 天）。速度还会涨，护栏必须自动化才有意义 |
+| **1** | **Do not split into microservices. Build a modular monolith that is divisible, then don't divide it** | ~107 tables are tightly coupled and `items` is the de facto god table, so splitting services hits cross-service joins and distributed transactions immediately; meanwhile the 1,690 tests that run against a real database are the monolith's most valuable asset, and splitting halves their value |
+| **2** | **The real risk is not performance — it is the missing production path** | Measured: 1,000-item list 137 ms, 5,000 items 715 ms — nowhere near a bottleneck. But both Dockerfiles are dev images (dev dependencies, not multi-stage, running as root), and there is **no deploy pipeline, no monitoring, no backup** |
+| **3** | **The most brittle coupling is using SQL strings as interfaces** | `row_types` is depended on at 47 call sites; `open_orders_sql` and `FROM_VISIBLE` are imported across modules and then concatenated. Neither the type checker nor the compiler can police this — only tests can. This is what has to be eliminated before anything is split |
+| **4** | **There is no Application layer; business rules are stuck to the HTTP layer** | `routes.py` totals 9,580 lines and every `commit()` lives in a route. Rules therefore cannot be reused by workers / CLI / background jobs, and every new non-HTTP entry point means rewriting the business logic again |
+| **5** | **Promote the outbox from "search-only" to a system-level integration pattern** | Search already does it right (DB trigger writes outbox + separate worker + `FOR UPDATE SKIP LOCKED`). It is the only real decoupling example in the tree and should be extended to PDF generation, CV import, and E3 data migration |
+| **6** | **Turn rules from "documentation" into "CI gates"** | `CLAUDE.md` has 323 rules enforced by self-discipline, while AI pair-programming contributed 43% of commits (226 commits / 25 days). The pace will only increase, so guardrails only matter once they are automated |
 
-> **补充（目标为多客户 SaaS，已确认）**：多租户**不改变**上面第 1 条——租户数量多不等于要拆服务。但它新增一项**上线前必须完成**的 P0 工作：Meilisearch master key、单根文件存储、未鉴权的 `/public/stats` 这三处在单客户时可接受，多客户后即跨租户数据泄露（详见 §决策 5.2）。
+> **Addition (multi-tenant SaaS is the confirmed target)**: multi-tenancy does **not** change point 1 above — more tenants does not mean more services. It does add one **must-complete-before-launch** P0 item: the Meilisearch master key and the unauthenticated `/public/stats` are tolerable with a single customer but become cross-tenant information leaks once there are several (see §decision 5.2; the file store was verified as already sharded by workspace with ownership checks on every download path, so it is not on that list).
 
 ---
 
-## 1. 现状体检
+## 1. Current state assessment
 
-### 1.1 客观规模
+### 1.1 Objective scale
 
-| 维度 | 实测值 |
+| Dimension | Measured |
 | --- | --- |
-| 后端 | `apps/api/app` 44 个模块目录、40,056 行 Python；`routes.py` 9,580 行、`queries.py` 13,829 行、`schemas.py` 4,486 行 |
-| 数据库 | 89 个 Alembic 迁移（`0001`→`0089`）、约 **107 张表 + 5 个视图**，全部裸 DDL |
-| 前端 | `apps/web` 300 个 TS/TSX、38,590 行、28 个 `page.tsx`；`useState` 896 处、`useEffect` 262 处 |
-| 测试 | 157 个 `test_*.py`、**1690 个测试函数**，全部跑真 Postgres + 真迁移；`tests/e2e/` 有 **76 个 `*.spec.ts`**（实测 `ls`，⚠️ `CLAUDE.md:125` 记为 66，见 §7） |
-| 交付 | 2 个 Dockerfile（均 dev 级）、1 个 `docker-compose.yml`（dev 级）、2 个 GitHub workflow（**0 个 deploy**） |
-| 团队 | 3 位贡献者（117 / 97 / 12），其中 Claude 占 43% |
+| Backend | `apps/api/app`: 44 module directories, 40,056 lines of Python; `routes.py` 9,580 lines, `queries.py` 13,829 lines, `schemas.py` 4,486 lines |
+| Database | 89 Alembic migrations (`0001`→`0089`), roughly **107 tables + 5 views**, all bare DDL |
+| Frontend | `apps/web`: 300 TS/TSX files, 38,590 lines, 28 `page.tsx`; `useState` 896 occurrences, `useEffect` 262 |
+| Tests | 157 `test_*.py`, **1,690 test functions**, all against real Postgres with real migrations; `tests/e2e/` has **76 `*.spec.ts`** (measured with `ls`; ⚠️ `CLAUDE.md:125` says 66, see §7) |
+| Delivery | 2 Dockerfiles (both dev-grade), 1 `docker-compose.yml` (dev-grade), 2 GitHub workflows (**0 deploys**) |
+| Team | 3 contributors (117 / 97 / 12), of which Claude is 43% |
 
-### 1.2 当前分层：两层半
+### 1.2 Current layering: two and a half layers
 
 ```
-HTTP routes.py  ──►  queries.py  ──►  Postgres (text() 裸 SQL)
+HTTP routes.py  ──►  queries.py  ──►  Postgres (text() bare SQL)
      │                    │
-     │ 业务规则 + commit   │ 跨模块 SQL 字符串片段共享
-     └────────────────────┴──── 没有中间的 Application / Domain 层
+     │ business rules     │ cross-module sharing of SQL string fragments
+     │ + commit           │
+     └────────────────────┴──── no Application / Domain layer in between
 ```
 
-- **0 个** `service.py` / `repo.py` / `models.py` / `router.py`；约定是 `routes.py + queries.py + schemas.py`
-- **无 ORM 实体层**：`relationship` / `joinedload` / `declarative_base` 零命中，`app/db.py` 只有 `create_engine` + `sessionmaker`
-- 事务边界在 route：`estimating/routes.py` 29 处 `commit()`、`items/routes.py` 14 处；辅助层只 flush 不 commit（`auth/audit.py:6-8` 有明确注释）
+- **Zero** `service.py` / `repo.py` / `models.py` / `router.py`; the convention is `routes.py + queries.py + schemas.py`
+- **No ORM entity layer**: `relationship` / `joinedload` / `declarative_base` — zero hits. `app/db.py` has only `create_engine` + `sessionmaker`
+- Transaction boundaries live in routes: 29 `commit()` calls in `estimating/routes.py`, 14 in `items/routes.py`; helper layers flush but do not commit (explicit comment at `auth/audit.py:6-8`)
 
-### 1.3 已经做对、不要动的事
+### 1.3 What is already right — do not touch it
 
-这几项是真正的资产，重构时最容易误伤：
+These are genuine assets and are the easiest things to break during refactoring:
 
-1. **搜索 outbox**（`0033_search_outbox`）：PL/pgSQL 触发器写 `search_outbox`，业务代码零侵入（app 内 `INSERT INTO search_outbox` 零命中）；worker 用 `FOR UPDATE SKIP LOCKED` 批量取，等 Meili 任务真成功才删行。**这是全项目唯一的真解耦范例。**
-2. **Workspace 隔离 + 自动探针**：`workspace_scope.py` 集中提供 `project_in_workspace` / `user_in_workspace` / `vendor_in_workspace`；`test_workspace_isolation_probe.py` 遍历 `app.openapi()` 的 paths，**新增路由自动被覆盖，5xx 也算失败**。这是做多客户 SaaS 的真实基础。
-3. **RBAC 真集中式**：`require_permission()` 工厂 + DB 驱动引擎，且用独立短事务避免被业务 rollback 波及（`rbac.py:20-28`）。
-4. **文件存储有 Protocol 抽象**：`files/store.py:16-21`，注释已写明"S3 实现可平替，routes 不用改"。
-5. **测试密度**：1690 个测试、真库真迁移、xdist 每 worker 独立库、downgrade 也有测试。远超同类项目，是所有重构的安全网。
-6. **性能没有 N+1**：语句数在 14 items 和 1000 items 下完全一致。
+1. **Search outbox** (`0033_search_outbox`): a PL/pgSQL trigger writes `search_outbox`; business code is completely untouched (zero hits for `INSERT INTO search_outbox` inside `app`); the worker claims batches with `FOR UPDATE SKIP LOCKED` and deletes rows only after the Meili task actually succeeds. **This is the only real decoupling example in the whole project.**
+2. **Workspace isolation + the automatic probe**: `workspace_scope.py` centrally provides `project_in_workspace` / `user_in_workspace` / `vendor_in_workspace`; `test_workspace_isolation_probe.py` walks the paths of `app.openapi()`, so **new routes are covered automatically and 5xx counts as a failure**. This is the real foundation for multi-customer SaaS.
+3. **RBAC is genuinely centralised**: a `require_permission()` factory plus a DB-driven engine, using a separate short transaction so it cannot be caught by a business rollback (`rbac.py:20-28`).
+4. **The file store has a Protocol abstraction**: `files/store.py:16-21`, with a comment stating an S3 implementation can replace it without touching routes.
+5. **Test density**: 1,690 tests, real database and real migrations, xdist with a separate database per worker, downgrades tested too. Far above comparable projects, and the safety net for every refactor here.
+6. **No N+1 in performance**: statement count is identical at 14 items and at 1,000 items.
 
-### 1.4 五个结构性风险（按优先级）
+### 1.4 Five structural risks (in priority order)
 
-| 级别 | 风险 | 证据 | 后果 |
+| Level | Risk | Evidence | Consequence |
 | --- | --- | --- | --- |
-| **P0** | 生产化缺口 | Dockerfile 装 dev 依赖、无 multi-stage、root 运行；`docker-compose.yml` 是 dev（`--reload`/源码挂载），且 `db` 带 `fsync=off`（虽有注释警告，但复用同一份 compose 就会踩中）；0 个 deploy workflow；grep `sentry\|prometheus\|grafana\|/metrics` 零命中；grep `pg_dump\|wal-g` 零命中 | 上线即事故；出事无据可查；数据无退路 |
-| **P1** | SQL 字符串当接口 | `row_types.py` 被 24 个模块 import、47 处调用点；`notifications/queries.py:12` import 了 `tasks.queries.FROM_VISIBLE` 再 f-string 拼接；`home/queries.py:24-27` 一个文件拼 6 个模块的 SQL 片段 | 改一个列名会静默破坏别处；**拆服务时第一个断的就是它** |
-| **P1** | 已存在循环依赖 | `orders/queries.py:31` ←→ `catalog/routes.py:26`，图上确认 `catalog ↔ orders` 成环，`orders/queries.py:212` 用函数内延迟 import 绕开 | 边界已破，无法按模块物理隔离 |
-| **P2** | 缺 Application 层 | 业务规则 + `commit()` 在 route；`get_db` 只 `close()` 不显式 `rollback()`，靠连接关闭隐式回滚 | 规则无法被 worker/CLI 复用；异常路径的事务语义不显式 |
-| **P2** | 前端无数据层、契约靠手写 | 21 个手写 `*-types.ts`（3,084 行）、无 OpenAPI 生成；`lib/api.ts` 的 `apiCall` 硬编码 `cache:"no-store"`，另有 3 份重复 fetch 封装；契约正确性靠 tsc + 76 个 e2e 兜底 | 后端改字段 → 前端静默错；重复取数无去重 |
+| **P0** | Productionisation gap | Dockerfiles install dev dependencies, no multi-stage, running as root; `docker-compose.yml` is a dev file (`--reload`, source mounts) and its `db` service sets `fsync=off` (commented as a warning, but reusing the same compose file hits it); 0 deploy workflows; grep for `sentry\|prometheus\|grafana\|/metrics` — zero hits; grep for `pg_dump\|wal-g` — zero hits | Incident on day one; no evidence when it happens; no way back for the data |
+| **P1** | SQL strings used as interfaces | `row_types.py` imported by 24 modules, 47 call sites; `notifications/queries.py:12` imports `tasks.queries.FROM_VISIBLE` and then f-string-concatenates it; `home/queries.py:24-27` assembles SQL fragments from 6 modules in one file | Renaming one column silently breaks other places; **this is the first thing to break when splitting services** |
+| **P1** | An import cycle already exists | `orders/queries.py:31` ←→ `catalog/routes.py:26`; the graph confirms `catalog ↔ orders` is a cycle, worked around at `orders/queries.py:212` with a deferred import inside a function | The boundary is already broken; modules cannot be physically isolated |
+| **P2** | No Application layer | Business rules and `commit()` live in routes; `get_db` only `close()`s and never calls `rollback()` explicitly, relying on implicit rollback when the connection closes | Rules cannot be reused by workers/CLI; transactional semantics on the error path are implicit |
+| **P2** | No frontend data layer; contracts are hand-written | 21 hand-written `*-types.ts` (3,084 lines), no OpenAPI generation; `apiCall` in `lib/api.ts` hard-codes `cache:"no-store"`, plus 3 duplicated fetch wrappers; contract correctness rests on tsc + 76 e2e specs | Backend field change → silent frontend error; no dedup for repeated fetches |
 
 ---
 
-## 2. 目标架构：有界上下文 + 可拆而暂不拆
+## 2. Target architecture: bounded contexts, divisible but not divided
 
-### 2.1 分层目标
+### 2.1 Target layering
 
 ```
-┌─ Interface 层 ─────────────────────────────────────────┐
-│  routes.py  — 只做：鉴权、参数校验、调用用例、映射响应  │
-└───────────────────────┬────────────────────────────────┘
-┌─ Application 层（新增，本项目最大缺口）────────────────┐
-│  use cases：业务规则、事务边界、编排、发领域事件        │
-└───────────────────────┬────────────────────────────────┘
-┌─ Domain / 数据访问 ────────────────────────────────────┐
-│  queries.py（现有资产保留） + 显式的数据服务接口        │
-└───────────────────────┬────────────────────────────────┘
-┌─ Infrastructure ───────────────────────────────────────┐
-│  Postgres / Meili / FileStore / outbox worker           │
-└────────────────────────────────────────────────────────┘
+┌─ Interface layer ─────────────────────────────────────────┐
+│  routes.py  — auth, parameter validation, call use case,   │
+│               map response. Nothing else.                  │
+└───────────────────────┬────────────────────────────────────┘
+┌─ Application layer (new — the project's biggest gap) ──────┐
+│  use cases: business rules, transaction boundaries,         │
+│  orchestration, emitting domain events                     │
+└───────────────────────┬────────────────────────────────────┘
+┌─ Domain / data access ─────────────────────────────────────┐
+│  queries.py (existing asset, kept) + explicit data-service  │
+│  interfaces                                                │
+└───────────────────────┬────────────────────────────────────┘
+┌─ Infrastructure ───────────────────────────────────────────┐
+│  Postgres / Meili / FileStore / outbox worker               │
+└────────────────────────────────────────────────────────────┘
 ```
 
-**关键取舍**：不引入 ORM。现有 `text()` 裸 SQL 是团队已验证的性能优势（无 N+1、DB 时间 ≤37 ms）。补的是**结构**，不是**抽象**。
+**Key trade-off**: do not introduce an ORM. The current `text()` bare SQL is a proven performance advantage for this team (no N+1, DB time ≤ 37 ms). What is missing is **structure**, not **abstraction**.
 
-### 2.2 上下文地图（建议的边界划分）
+### 2.2 Context map (proposed boundaries)
 
-| 上下文 | 现有模块 | 类型 | 演进策略 |
+| Context | Existing modules | Type | Evolution strategy |
 | --- | --- | --- | --- |
-| **Item & Production**（核心域） | `items` `parts` `cutlists` `related_parts` `hardware_lines` | 核心 | 留在主库，绝不外迁 |
-| **Project & Tracking**（核心域） | `projects` `areas` `order_tabs` `project_*` | 核心 | 同上 |
-| **Estimating / Tender** | `estimating` `catalog`(部分) | 核心 | 先抽 Application 层，暂不拆 |
-| **Procurement** | `orders` `purchase_orders` `procurement_v1` `suppliers` | 支撑 | 与 `catalog` 的环必须打破 |
-| **Shop Floor / Cut Floor** | `shop_floor` `cut_floor` `qc` | 支撑 | 现场 kiosk，未来最可能需要离线/独立部署 |
-| **Catalog** | `catalog` `cv` `importers` | 支撑 | 九张表不做统一（现有不变量，遵守） |
-| **Search** | `search` + worker | 通用 | **已独立进程**，是拆分模板 |
-| **Files / Printing** | `files` `printing` `shop_drawings` | 通用 | CPU 密集（PDF 3.3 s / 300 行），**最适合第一个拆出去** |
+| **Item & Production** (core domain) | `items` `parts` `cutlists` `related_parts` `hardware_lines` | Core | Stays in the main database; never extracted |
+| **Project & Tracking** (core domain) | `projects` `areas` `order_tabs` `project_*` | Core | Same as above |
+| **Estimating / Tender** | `estimating`, `catalog` (partly) | Core | Extract the Application layer first; do not split yet |
+| **Procurement** | `orders` `purchase_orders` `procurement_v1` `suppliers` | Supporting | The cycle with `catalog` must be broken |
+| **Shop Floor / Cut Floor** | `shop_floor` `cut_floor` `qc` | Supporting | Floor kiosk; most likely to need offline / separate deployment later |
+| **Catalog** | `catalog` `cv` `importers` | Supporting | The nine tables are deliberately not unified (existing invariant — respect it) |
+| **Search** | `search` + worker | Generic | **Already a separate process**; the template for splitting |
+| **Files / Printing** | `files` `printing` `shop_drawings` | Generic | CPU-heavy (PDF 3.3 s / 300 lines) — **the best first candidate to extract** |
 
-### 2.3 依赖规则（要能被 CI 检查，不能只写在文档里）
+### 2.3 Dependency rules (must be checkable in CI, not just written down)
 
-1. 上下文之间**只能**通过显式接口通信，禁止 import 对方的 `queries.py` 内部符号
-2. 禁止 import 任何模块的 `_q_*` 私有文件
-3. 通用层（`db` `auth` `files` `search`）不得反向依赖业务上下文
-4. **先冻结、再收敛**：用 import-linter 把"当前状态"固化为基线契约，禁止新增违规，存量违规登记后逐个消灭
+1. Contexts may communicate **only** through explicit interfaces; importing internal symbols from another context's `queries.py` is forbidden
+2. Importing any module's private `_q_*` files is forbidden
+3. The generic layer (`db` `auth` `files` `search`) must not depend back on business contexts
+4. **Freeze first, then converge**: use import-linter to fix "the current state" as the baseline contract, forbid new violations, and retire the existing ones one at a time
 
 ---
 
-## 3. 扩展性设计的六个关键决策
+## 3. Six key decisions for extensibility
 
-### 决策 1：保持单体进程，但让它"随时可拆"
+### Decision 1: keep a single process, but keep it ready to split
 
-**理由**：峰值负载远低于实测的 5000 items / 715 ms（单 workspace 基线）。分布式系统的全部成本（网络失败、幂等、最终一致、链路追踪）现在换不来任何收益。
+**Rationale**: peak load is far below the measured 5,000 items / 715 ms (single-workspace baseline). None of the costs of a distributed system (network failure, idempotency, eventual consistency, distributed tracing) buy anything right now.
 
-**注意**：目标是多客户 SaaS（已确认），但**租户数量多 ≠ 要拆服务**。多租户是数据与隔离问题，靠 §决策 5 解决；拆不拆服务是部署与团队问题。**不要因为要做 SaaS 就去拆微服务**——一家细木工公司的用量下，共享进程 + 强租户隔离是最优解。
+**Note**: multi-tenant SaaS is the confirmed target, but **more tenants ≠ more services**. Multi-tenancy is a data and isolation problem, solved by decision 5; whether to split services is a deployment and team problem. **Do not go and split microservices just because you are building SaaS** — at a joinery company's volumes, a shared process plus strong tenant isolation is the optimal answer.
 
-**可拆的条件先备齐**（这些本身就有价值）：
-- 所有跨上下文调用走显式接口，而非 SQL 字符串
-- 所有写操作的事务边界收敛到 Application 层
-- 所有跨上下文的副作用走 outbox，而非同步调用
+**Prepare the preconditions for splitting first** (these are worth having anyway):
+- All cross-context calls go through explicit interfaces, not SQL strings
+- Transaction boundaries for all writes converge in the Application layer
+- All cross-context side effects go through an outbox, not synchronous calls
 
-### 决策 2：抽 Application 层，把业务规则从 HTTP 里救出来
+### Decision 2: extract an Application layer and rescue the business rules from HTTP
 
-按**变更频率**而非代码量排序试点：`estimating`（4591 行、已拆 facade）→ `orders` → `items`。
+Pilot in order of **rate of change**, not size: `estimating` (4,591 lines, already has a facade) → `orders` → `items`.
 
-每步的验收标准：
-- route 里不再出现 `db.commit()`
-- 新增的用例函数可以在**不启动 HTTP** 的情况下被测试调用
-- 1690 个测试全绿（这是硬性门槛）
+Acceptance criteria for each step:
+- No `db.commit()` remains in routes
+- The new use-case functions can be called from tests **without starting HTTP**
+- All 1,690 tests are green (a hard gate)
 
-### 决策 3：用"数据服务接口"消灭 SQL 字符串耦合
+### Decision 3: kill the SQL-string coupling with data-service interfaces
 
-把 `row_types.joinery_items_only()`、`orders.queries.open_orders_sql`、`tasks.queries.FROM_VISIBLE` 这类被跨模块 import 的 SQL 片段，改成**归属方提供的显式函数**（如 `items.read.visible_items(...)`、`orders.read.open_orders(...)`），调用方拿到的是**数据**，不是**可拼接的 SQL 文本**。
+Turn the SQL fragments that are imported across modules — `row_types.joinery_items_only()`, `orders.queries.open_orders_sql`, `tasks.queries.FROM_VISIBLE` — into **explicit functions owned by the owning context** (e.g. `items.read.visible_items(...)`, `orders.read.open_orders(...)`). Callers receive **data**, not **concatenable SQL text**.
 
-- 收益：列名变更从"静默破坏 47 处"变成"编译期/导入期报错"
-- 成本：中等。建议先在 `orders ↔ catalog` 这个已确认成环的一对上试点
+- Benefit: renaming a column changes from "silently breaking 47 call sites" to "an import-time / type-check error"
+- Cost: moderate. Pilot on `orders ↔ catalog`, the one pair already confirmed to be in a cycle
 
-### 决策 4：把 outbox 升级为系统级集成模式
+### Decision 4: promote the outbox to a system-level integration pattern
 
-`search_outbox` 的模式（触发器 → outbox 表 → 独立 worker → `SKIP LOCKED`）已经验证可用。推广到：
+The `search_outbox` pattern (trigger → outbox table → separate worker → `SKIP LOCKED`) is proven. Extend it to:
 
-| 场景 | 现状 | 改后 |
+| Scenario | Now | After |
 | --- | --- | --- |
-| 报价 PDF | 300 行 3.3 s、800 行 12 s，同步阻塞（已有 `0062` 缓存） | 异步生成 + 通知，缓存兜底 |
-| CV 导入 | 3 阶段向导，同步 | 后台任务 + 进度查询 |
-| E3 数据迁移 | CLI，dry run 靠回滚 | 复用同一任务表 |
-| 通知 | 唯一写入点在 `comments/queries.py:328` 硬编码 INSERT | 领域事件 → outbox → 通知服务 |
+| Quote PDF | 300 lines 3.3 s, 800 lines 12 s, synchronous and blocking (caching exists via `0062`) | Asynchronous generation + notification, cache as fallback |
+| CV import | 3-stage wizard, synchronous | Background job + progress query |
+| E3 data migration | CLI, dry run via rollback | Reuse the same job table |
+| Notifications | The single write point is a hard-coded INSERT at `comments/queries.py:328` | Domain event → outbox → notification service |
 
-注意：搜索 outbox 是**身份型**（只记 id，worker 反查）。通用任务 outbox 需要**载荷型**（记完整 payload），两者不要混用一张表。
+Note: the search outbox is **identity-based** (stores only ids; the worker looks them up). A general job outbox needs to be **payload-based** (stores the full payload). Do not put both in one table.
 
-### 决策 5：多租户——目标是 SaaS，先修三个真实的跨租户泄露点
+### Decision 5: multi-tenancy — the target is SaaS; after verification only two cross-tenant leaks remain
 
-**已确认目标是多客户 SaaS。** 好消息是 `workspace` 已经是事实上的租户，而且数据面基础比多数项目扎实：`workspace_scope.py` 集中提供 `project_in_workspace` / `user_in_workspace` / `vendor_in_workspace`（跨租户一律 404），`test_workspace_isolation_probe.py` 遍历 `app.openapi()` 的 paths——**新增路由自动被覆盖，5xx 也算失败**。这是全项目最成熟的工程资产，不要另起炉灶。
+> **Correction record (2026-10-27)**: the first version of this document listed "single-root file store" as leak #2. **That judgement was wrong.** Verified against the code: the layout is already sharded by workspace (`app/files/store.py` docstring: `<root>/<workspace_slug>/<sha256[0:2]>/<sha256>`), and all three download paths **do** check ownership — `files/routes.py:153`, `files/uploads.py:94`, `orders/attachments.py:83`. Downgraded from "fix this" to "add a test to hold it in place". Lesson: every other assertion here must be checked against the code before being cited.
 
-#### 5.1 隔离模型：保持 shared schema + `workspace_id`
+**Multi-customer SaaS is the confirmed target.** The good news is that `workspace` is already the de facto tenant, and the data-plane foundation is stronger than in most projects: `workspace_scope.py` centrally provides `project_in_workspace` / `user_in_workspace` / `vendor_in_workspace` (cross-tenant is always a 404), and `test_workspace_isolation_probe.py` walks the paths of `app.openapi()` — **new routes are covered automatically and 5xx counts as a failure**. This is the most mature engineering asset in the project; do not start over.
 
-| 方案 | 评价 |
+#### 5.1 Isolation model: keep shared schema + `workspace_id`
+
+| Option | Assessment |
 | --- | --- |
-| **shared schema + `workspace_id`**（现状） | ✅ 采纳。89 个迁移对所有租户原子生效；单客户数据量小；已有集中 helper + 自动 probe |
-| schema-per-tenant | ❌ 现在上成本极高：107 张表只有 DDL、**无 ORM 元数据**，且每次迁移要遍历所有 schema |
-| database-per-tenant | ❌ 同上，且连接管理复杂化 |
+| **shared schema + `workspace_id`** (current) | ✅ Adopt. The 89 migrations apply atomically to all tenants; per-customer data volume is small; the central helper and the automatic probe already exist |
+| schema-per-tenant | ❌ Very expensive to adopt now: ~107 tables have DDL only and **no ORM metadata**, and every migration would have to iterate all schemas |
+| database-per-tenant | ❌ Same as above, plus connection management complexity |
 
-**只在出现明确信号时才迁移到独立库**：大客户合同要求物理隔离、单租户数据量让维护窗口不可接受、或需要租户级 PITR。为将来留门只需两件事：SQL 里不写死 schema 名、租户表上的 `workspace_id` 保持齐全（现状已满足）。
+**Move to separate databases only on a clear signal**: a large customer's contract demands physical isolation, one tenant's data volume makes maintenance windows unacceptable, or tenant-level PITR is required. Keeping that door open takes only two things: never hard-code schema names in SQL, and keep `workspace_id` present on every tenant table (both are already true).
 
-#### 5.2 三个必须修的跨租户泄露点（P0，与 Phase 0 生产化同期）
+#### 5.2 Verified cross-tenant risks (P0, in parallel with Phase 0 productionisation)
 
-| # | 风险 | 证据 | 为什么单客户时能忍、多客户时不能 |
+| # | Risk | Evidence | Assessment |
 | --- | --- | --- | --- |
-| **1** | **Meilisearch 用 master key** | `.env.example` 注释原话："The master key is also used as the api's key in dev; **scoped keys are out of scope for v1**"；隔离目前只靠应用层的 `build_filter`（`app/search/index.py:20-35`） | 应用层过滤是**唯一**防线，一处遗漏即全量泄露。多客户必须改用 Meilisearch **tenant token**，把 `workspace_id` 过滤下沉到搜索引擎侧，让"忘加过滤"变成"拿不到数据" |
-| **2** | **文件存储是单根目录** | `FILE_STORE_ROOT=/uploads`（`docker-compose.yml`）；`files/store.py` 的 `LocalDiskStore` 无租户分层的强制约束 | 下载路由若校验不严即跨租户读文件。改为按 `workspace` 分片存储，且下载路由**强制**校验归属（不能只靠路径不可猜测） |
-| **3** | **`GET /public/stats?workspace_slug=` 未鉴权** | `docs/REVIEW-2026-10.md` A4 已接受此风险（"知道或猜到 slug 就能读三个计数"） | 单客户时只是三个数字；多客户时意味着**任何人可枚举其他客户的项目数/供应商数**。要么让 slug 不可猜测 + 限流，要么在多客户上线前直接下线 |
+| **1** | **Meilisearch uses the master key** | `.env.example:21-24`, comment verbatim: "The master key is also used as the api's key in dev; **scoped keys are out of scope for v1**" | **Needs fixing.** The application layer already has two filters — `app/search/index.py:96 build_filter` builds from `me.workspace_id` (its comment says "The workspace clause is unconditional"), and `readable_types` in `app/search/routes.py` then filters types by module `read` permission. But **the engine side enforces nothing**: the master key can read the whole index, so any path that bypasses `build_filter` is a total leak. Move to **tenant tokens** so the `workspace_id` filter is enforced by the engine, downgrading "forgot the filter" from "leak" to "no data returned" |
+| **2** | **`GET /public/stats?workspace_slug=` is unauthenticated** | `app/public/routes.py:19`, comment verbatim: "No authentication required"; `docs/REVIEW-2026-10.md` A4 accepted this risk | **Needs fixing, but severity is moderate.** What leaks is **three counts** (projects, parts, suppliers), not customer data itself. Acceptable with one customer; with several, anyone can enumerate other customers' counts, and can distinguish "a workspace with data" from "a slug that does not exist". Options: add a random suffix to the slug + rate limiting, or remove the endpoint before multi-customer launch |
+| ~~3~~ | ~~Single-root file store~~ | ~~`FILE_STORE_ROOT=/uploads`~~ | **Not a real issue after verification; no change needed.** The layout is already sharded by workspace, and all three download paths check `workspace_id` (`files/routes.py:153`, `files/uploads.py:94`, `orders/attachments.py:83`). Only add a test to hold the current behaviour so a future download route cannot forget the check |
 
-#### 5.3 深度防御（Phase 2 评估，不要现在就上）
+#### 5.3 Defence in depth (evaluate in Phase 2 — not now)
 
-Postgres **RLS** 可作为应用层过滤之外的第二道防线：连接时 `SET LOCAL app.workspace_id`，策略为 `workspace_id = current_setting('app.workspace_id')`。
+Postgres **RLS** can act as a second line behind the application-layer filtering: `SET LOCAL app.workspace_id` on connect, with policies of `workspace_id = current_setting('app.workspace_id')`.
 
-- 收益：把"忘记加 workspace 过滤"从数据泄露降级为查询报错
-- 成本：需在每张租户表建策略；当前是单连接池单角色，需改造
-- **建议**：先做一个模块的可行性验证再决定是否全量铺开。主防线仍是 `workspace_scope` + 自动 probe
+- Benefit: downgrades "forgot the workspace filter" from data leak to query error
+- Cost: a policy is needed on every tenant table; today there is a single connection pool with a single role, which has to change
+- **Recommendation**: run a feasibility trial on one module before deciding whether to roll it out everywhere. The main line of defence stays `workspace_scope` + the automatic probe
 
-#### 5.4 缺口清单
+#### 5.4 Gap list
 
-- [ ] workspace 自助开通与 onboarding（现在靠 `make seed`；`CLAUDE.md:137`、`seed_system_groups()` 需在开通流程里自动化，见 `CLAUDE.md:171`）
-- [ ] 订阅 / 配额 / 计费模型
-- [ ] **租户级备份与恢复**（当前全仓无 `pg_dump` / 无 PITR，shared schema 下至少要做到"按 workspace 导出 + 按 workspace 恢复"）
-- [ ] 租户级数据导出（客户要带走数据）与删除（合同终止 / 合规）
-- [ ] 租户级配置隔离（`workspace.at_risk_days` 已由 `0085` 建立，可沿此模式推广）
+- [ ] Workspace self-service provisioning and onboarding (today it is `make seed`; `CLAUDE.md:137`; `seed_system_groups()` must be automated inside the provisioning flow, see `CLAUDE.md:171`)
+- [ ] Subscription / quota / billing model
+- [ ] **Tenant-level backup and restore** (the whole repo has no `pg_dump` and no PITR; under shared schema the minimum is "export by workspace + restore by workspace")
+- [ ] Tenant-level data export (customers taking their data with them) and deletion (contract termination / compliance)
+- [ ] Tenant-level configuration isolation (`workspace.at_risk_days` was introduced by `0085`; extend along that pattern)
 
-> **现成骨架**：E3 importer 已经在做"把一个 workspace 的数据灌进去"（`python -m app.importers.tracking_grid FILE.xlsx … --workspace-slug`，含 dry-run 回滚语义）。租户 onboarding 的导入可以直接复用它，不用从零写。
+> **Existing scaffolding**: the E3 importer already does "load one workspace's data in" (`python -m app.importers.tracking_grid FILE.xlsx … --workspace-slug`, with dry-run rollback semantics). Tenant onboarding imports can reuse it directly instead of being written from scratch.
 
-### 决策 6：前端补两件高回报的事
+### Decision 6: two high-return frontend items
 
-1. **OpenAPI → TS 类型生成**：21 个手写 `*-types.ts`（3,084 行）可直接生成，契约漂移从"靠 tsc 撞运气"变成"CI 报错"。后端已有 `app.openapi()`（probe 测试在用），基础现成。
-2. **统一取数层**：262 处裸 `useEffect` + 3 份重复 fetch 封装 → 一个带去重/失效/错误规范的 hook 层。不必引入 TanStack Query（现有约束明确不用），自建薄层即可，但要**先统一到 `lib/api.ts`**。
-
----
-
-## 4. 长期演进路线
-
-### Phase 0 — 生产化（2–4 周，最高优先级）
-
-| 项 | 动作 | 验收 |
-| --- | --- | --- |
-| 生产镜像 | Dockerfile 改 multi-stage、非 root、装 prod 依赖、`next build` + `next start` / gunicorn+uvicorn workers | 镜像不含 dev 依赖，进程非 root |
-| 配置分离 | `docker-compose.yml`（dev）与 `docker-compose.prod.yml` 彻底分开，**移除 `fsync=off` 等** | dev 危险参数不出现在任何 prod 配置里 |
-| 部署流水线 | 新增 deploy workflow（构建 → 推镜像 → 迁移 → 健康检查 → 回滚） | 一键可回滚 |
-| 备份 | PITR（WAL 归档）+ 定期 `pg_dump`，**并演练恢复** | 恢复演练成功一次（没演练过的备份不算备份） |
-| 可观测性 | 结构化日志 + 错误上报 + `/metrics` + 关键告警 | 出事故能在 5 分钟内定位 |
-| **多租户安全三件事** | Meili 换 tenant token；文件存储按 workspace 分片 + 下载路由强制校验；`/public/stats` 加固或下线 | 拿 A 租户的凭据取不到 B 租户的任何数据（写成自动化测试，不是人工验证） |
-
-**这一步不做完，后面所有架构工作都没有承载体。**（多租户三件事属于"上线前必须完成"，不是"可以后补"——见 §决策 5.2。）
-
-### Phase 1 — 边界与契约（1–2 个月）
-
-- OpenAPI → TS 类型生成上线，删掉手写 types
-- import-linter 落地，冻结当前依赖图为基线契约
-- **打破 `catalog ↔ orders` 环**（唯一确认的循环依赖）
-- 消灭 SQL 字符串跨模块共享：先在 `orders↔catalog` 试点，再推 `row_types` / `FROM_VISIBLE` / `open_orders_sql`
-- 前端 fetch 封装统一到 `lib/api.ts`
-- **workspace 自助开通 + onboarding**（替换 `make seed` 的手工流程，`seed_system_groups()` 自动化）+ 订阅 / 配额表与迁移
-
-### Phase 2 — 抽出 Application 层（2–4 个月）
-
-- 按 `estimating` → `orders` → `items` 顺序抽用例层
-- `commit()` 全部移出 route，引入显式 unit-of-work
-- `get_db` 显式 `rollback()`，去掉"靠连接关闭隐式回滚"
-- PDF / CV 导入 / E3 迁移后台化（通用任务 outbox）
-- 通知改为领域事件驱动
-- **租户级数据导出 / 删除**（合同终止与合规），复用 E3 importer 的导入骨架做反向能力
-- RLS 可行性验证（一个模块试点，验证后再决定是否全量铺开，见 §决策 5.3）
-
-### Phase 3 — 选择性拆分（条件触发，6–12 个月）
-
-**只在出现明确信号时才拆**，不要按时间表拆：
-
-| 触发信号 | 拆什么 | 为什么它最安全 |
-| --- | --- | --- |
-| PDF / 优化计算成为 CPU 瓶颈 | `printing` `cut_floor` 的 `/optimise` | 天然无状态、纯函数、无共享写 |
-| 搜索吞吐成为瓶颈，或需要搜索独立扩缩容 | `search` + worker | 已经是独立进程，模式现成（**注意**：第二家客户本身**不是**拆分的触发条件，见 §决策 5.1） |
-| Shop Floor kiosk 需要现场离线能力 | `shop_floor` `qc` | 读写集与主流程交集小 |
-| 团队规模增长到需要独立发布 | 见 §2.2 上下文边界 | 边界已在 Phase 1 收敛 |
-
-**拆分前必须先完成的前置**：补上 SQLAlchemy Core 的 `Table` 元数据定义（现在 107 张表只有 DDL、无模型元数据）。没有元数据，"按模块拆库"无从做起。
+1. **OpenAPI → TS type generation**: the 21 hand-written `*-types.ts` (3,084 lines) can be generated, turning contract drift from "relying on tsc and luck" into "a CI failure". The backend already exposes `app.openapi()` (the probe test uses it), so the foundation exists.
+2. **A unified data-fetching layer**: 262 bare `useEffect` calls and 3 duplicated fetch wrappers → one hook layer with dedup, invalidation, and error conventions. No need to bring in TanStack Query (the current constraint explicitly rules it out); a thin in-house layer is fine, but **converge on `lib/api.ts` first**.
 
 ---
 
-## 5. 工程治理：让护栏自动生效
+## 4. Long-term roadmap
 
-项目速度极高（226 提交 / 25 天，AI 结对占 43%）。`CLAUDE.md` 的 323 条规则目前靠自律执行——这在高速 + AI 参与下不可持续。建议把规则逐条转成 CI 门禁：
+### Phase 0 — Productionisation (2–4 weeks, highest priority)
 
-| 现有规则（文档） | 转成（CI） |
+| Item | Action | Acceptance |
+| --- | --- | --- |
+| Production images | Dockerfiles become multi-stage, non-root, prod dependencies only; `next build` + `next start` / uvicorn workers | Image contains no dev dependencies; process is not root |
+| Configuration split | `docker-compose.yml` (dev) and `docker-compose.prod.yml` fully separated, **`fsync=off` and friends removed** | No dev-only dangerous flag appears in any prod config |
+| Deploy pipeline | New deploy workflow (build → push image → migrate → health check → rollback) | One-click rollback |
+| Backup | PITR (WAL archiving) + periodic `pg_dump`, **and a restore drill** | The restore drill succeeds once (an untested backup is not a backup) |
+| Observability | Structured logging + error reporting + `/metrics` + key alerts | An incident can be located within 5 minutes |
+| **Two multi-tenant security items** | Meili moves to tenant tokens; `/public/stats` hardened or removed; plus a test locking in the workspace check on file downloads | Credentials for tenant A cannot reach any of tenant B's data (as an automated test, not a manual check) |
+
+**Until this step is done, none of the later architecture work has anything to stand on.** (The two multi-tenant items are "must be done before SaaS launch", not "can be done later" — see §decision 5.2. Item-by-item changes are in the companion checklist `2026-10-27-phase0-checklist.md`.)
+
+### Phase 1 — Boundaries and contracts (1–2 months)
+
+- Ship OpenAPI → TS type generation and delete the hand-written types
+- Land import-linter and freeze the current dependency graph as the baseline contract
+- **Break the `catalog ↔ orders` cycle** (the only confirmed import cycle)
+- Eliminate cross-module SQL string sharing: pilot on `orders↔catalog`, then extend to `row_types` / `FROM_VISIBLE` / `open_orders_sql`
+- Converge frontend fetch wrappers onto `lib/api.ts`
+- **Workspace self-service provisioning + onboarding** (replacing the manual `make seed` flow, with `seed_system_groups()` automated) plus subscription / quota tables and migrations
+
+### Phase 2 — Extract the Application layer (2–4 months)
+
+- Extract use cases in the order `estimating` → `orders` → `items`
+- Move every `commit()` out of routes; introduce an explicit unit of work
+- `get_db` calls `rollback()` explicitly; drop the "implicit rollback when the connection closes" behaviour
+- Background PDF / CV import / E3 migration (general job outbox)
+- Move notifications to domain-event driven
+- **Tenant-level data export / deletion** (contract termination and compliance), reusing the E3 importer's import scaffolding for the reverse capability
+- RLS feasibility trial (one module; decide on full rollout after the trial, see §decision 5.3)
+
+### Phase 3 — Selective extraction (trigger-driven, 6–12 months)
+
+**Extract only on a clear signal**, not on a timetable:
+
+| Trigger | Extract what | Why it is the safest |
+| --- | --- | --- |
+| PDF / optimisation compute becomes a CPU bottleneck | `/optimise` in `printing` and `cut_floor` | Naturally stateless, pure functions, no shared writes |
+| Search throughput becomes a bottleneck, or search needs to scale independently | `search` + worker | Already a separate process; the pattern exists (**note**: a second customer is by itself **not** a trigger for extraction — see §decision 5.1) |
+| The Shop Floor kiosk needs on-site offline capability | `shop_floor` `qc` | Read/write set overlaps little with the main flow |
+| Team growth requires independent releases | See the context boundaries in §2.2 | Boundaries already converged in Phase 1 |
+
+**Prerequisite before any extraction**: add SQLAlchemy Core `Table` metadata (today ~107 tables have DDL only, no model metadata). Without metadata, "split the database by module" cannot even start.
+
+---
+
+## 5. Engineering governance: make the guardrails automatic
+
+The project moves very fast (226 commits / 25 days, 43% with AI pair-programming). The 323 rules in `CLAUDE.md` are currently enforced by self-discipline — that is not sustainable at this pace with AI in the loop. Convert the rules into CI gates one by one:
+
+| Existing rule (documentation) | Convert to (CI) |
 | --- | --- |
-| "workspace 隔离 everywhere" | 已有 ✅ 自动 probe（标杆做法，保持） |
-| "动态 SQL 列名必须走 allow-list" | 已有 ✅ `test_sql_set_columns.py` |
-| "PATCH 必须 `no_null`" | 可补：扫描所有 PATCH schema 字段 vs 列 NOT NULL |
-| "读 items 必须带 `not_deleted`" | 已有 ✅ `test_items_deleted_filter.py` |
-| **模块依赖规则** | **缺失 ❌** — 引入 import-linter |
-| **契约漂移** | **缺失 ❌** — OpenAPI → TS 生成 + diff 检查 |
-| **迁移安全** | 部分：有 downgrade 测试，可补"禁止破坏性 DDL"检查（Q435 要求数据保全） |
+| "workspace isolation everywhere" | Already ✅ automatic probe (exemplary — keep it) |
+| "dynamic SQL columns must go through an allow-list" | Already ✅ `test_sql_set_columns.py` |
+| "PATCH must use `no_null`" | Possible: scan every PATCH schema field against column NOT NULL |
+| "reading items must include `not_deleted`" | Already ✅ `test_items_deleted_filter.py` |
+| **Module dependency rules** | **Missing ❌** — introduce import-linter |
+| **Contract drift** | **Missing ❌** — OpenAPI → TS generation + diff check |
+| **Migration safety** | Partial: downgrade tests exist; add a "no destructive DDL" check (Q435 requires data preservation) |
 
-**ADR 建议**：`docs/adr/` 记录关键决策（为什么不拆微服务、为什么不上 ORM、outbox 选型），避免每季度重新辩论一遍。
+**ADR recommendation**: record key decisions under `docs/adr/` (why not microservices, why no ORM, outbox choice) so the same debate is not re-run every quarter.
 
 ---
 
-## 6. 风险登记
+## 6. Risk register
 
-| 风险 | 影响 | 缓解 |
+| Risk | Impact | Mitigation |
 | --- | --- | --- |
-| 89 迁移 / 107 表无 ORM 元数据 | 阻断未来一切拆库动作 | Phase 2 内补 Core `Table` 定义（只读用途即可） |
-| `items` 被 10 个模块硬依赖，锁语义被 7 个模块复制 | 改动 blast radius 大 | 锁检查收敛为单一入口，其余通过接口调用 |
-| AI 结对 43% 提交 + 规则靠自律 | 架构腐化速度快于人工 review | 护栏 CI 化（§5）是第一优先级治理项 |
-| 单 Postgres + 单 Meili 无高可用 | 单点故障，且多客户后影响所有租户 | Phase 0 至少要有 PITR 与演练过的恢复 |
-| **Meili master key + 单根文件存储 + 未鉴权 `/public/stats`** | **多客户上线后即跨租户数据泄露** | §决策 5.2，与 Phase 0 同期修完 |
-| shared schema 下租户级恢复粒度粗 | 一个租户误删数据要全库回滚 | 先做"按 workspace 导出/恢复"（可复用 E3 importer），不要为此提前拆库 |
-| e2e 分 2 shards 且 `main` 上为 required check | 一个 spec 依赖另一个 spec 留下的数据时会在分片下失败 | `CLAUDE.md:152-153` 已规定"自造数据、不放回"，遵守即可；本文不再把它列为风险 |
+| 89 migrations / ~107 tables with no ORM metadata | Blocks every future database split | Add Core `Table` definitions within Phase 2 (read-only use is enough) |
+| `items` is hard-depended on by 10 modules; lock semantics are duplicated in 7 | Large blast radius for changes | Converge lock checks into a single entry point; the rest call it through an interface |
+| 43% AI-authored commits + rules enforced by self-discipline | Architecture decays faster than human review | CI-ifying the guardrails (§5) is the top-priority governance item |
+| Single Postgres + single Meili, no HA | Single point of failure; after multi-tenancy it affects every tenant | Phase 0 must at least deliver PITR and a rehearsed restore |
+| **Meili master key + unauthenticated `/public/stats`** | Cross-tenant information leak once multiple customers are live | §decision 5.2 — fix in parallel with Phase 0 |
+| Coarse tenant-level restore granularity under shared schema | One tenant's accidental deletion forces a whole-database rollback | Build "export/restore by workspace" first (the E3 importer can be reused); do not split databases early just for this |
+| e2e runs in 2 shards and is a required check on `main` | A spec that depends on data left by another spec fails under sharding | `CLAUDE.md:152-153` already mandates "create your own data, do not leave it behind"; follow it. This document no longer lists it as a risk |
 
 ---
 
-## 附：本次判断所依据的关键证据
+## Appendix: key evidence behind these judgements
 
-| 结论 | 证据位置 |
+| Conclusion | Evidence location |
 | --- | --- |
-| 两层半、无 service 层 | `apps/api/app/**/routes.py` 9,580 行含 `commit()`；`find -name "service*.py"` → 0 |
-| 无 ORM | `app/db.py:5-6`；`relationship\|joinedload\|declarative_base` 零命中 |
-| 循环依赖 | `apps/api/app/orders/queries.py:31` ↔ `apps/api/app/catalog/routes.py:26` |
-| SQL 字符串接口 | `app/row_types.py`（24 个模块 import / 47 调用点）；`app/notifications/queries.py:12`；`app/home/queries.py:24-27` |
-| outbox 范例 | `db/alembic/versions/0033_search_outbox.py:86-127`；`app/search/worker.py:44-49` |
-| 事务边界在 route | `app/auth/audit.py:6-8` 注释；`estimating/routes.py` 29 处 `commit()` |
-| dev 级 Dockerfile | `apps/web/Dockerfile`（`pnpm install \|\| true`、无 build）、`apps/api/Dockerfile`（`pip install -e ".[dev]"`） |
-| 无运维资产 | `sentry\|prometheus\|grafana\|/metrics\|pg_dump\|wal-g` 全仓零命中；`.github/workflows` 仅 2 个且无 deploy |
-| 性能基线 | `docs/REVIEW-2026-10.md` §C（1000 items → 137 ms / 1.5 MB；5000 items → 715 ms；PDF 300 行 → 3.3 s） |
+| Two and a half layers, no service layer | `apps/api/app/**/routes.py` — 9,580 lines including `commit()`; `find -name "service*.py"` → 0 |
+| No ORM | `app/db.py:5-6`; `relationship\|joinedload\|declarative_base` — zero hits |
+| Import cycle | `apps/api/app/orders/queries.py:31` ↔ `apps/api/app/catalog/routes.py:26` |
+| SQL strings as interfaces | `app/row_types.py` (imported by 24 modules / 47 call sites); `app/notifications/queries.py:12`; `app/home/queries.py:24-27` |
+| Outbox example | `db/alembic/versions/0033_search_outbox.py:86-127`; `app/search/worker.py:44-49` |
+| Transaction boundaries in routes | `app/auth/audit.py:6-8` comment; 29 `commit()` calls in `estimating/routes.py` |
+| Dev-grade Dockerfiles | `apps/web/Dockerfile` (`pnpm install \|\| true`, no build), `apps/api/Dockerfile` (`pip install -e ".[dev]"`) |
+| No operational assets | `sentry\|prometheus\|grafana\|/metrics\|pg_dump\|wal-g` — zero hits repo-wide; `.github/workflows` has 2 files and no deploy |
+| Performance baseline | `docs/REVIEW-2026-10.md` §C (1,000 items → 137 ms / 1.5 MB; 5,000 items → 715 ms; PDF 300 lines → 3.3 s) |
 
 ---
 
-## 7. 待澄清（RULE ZERO：不自行取舍）
+## 7. Open questions (RULE ZERO: no unilateral decisions)
 
-1. **`tests/e2e/` 的 spec 数量**：实测 `ls tests/e2e/*.spec.ts` = **76**，而 `CLAUDE.md:125` 写 **66**。二者必有一错，需确认后统一。（`CLAUDE.md` §1 对 pytest 文件数注明"counts drift, so none are recorded here"——e2e 这一行是否也应去掉具体数字，请定。）
-2. **生产部署的目标形态未定**：本文 Phase 0 假设"容器 + 一条流水线"，但项目没有说明是自托管（客户机房）还是云托管。这直接决定备份（PITR vs 托管快照）与可观测性选型，**需先确认**。
-3. ~~是否要走向多客户 SaaS~~ — **已确认：目标是 SaaS。** §决策 5 已按此展开（隔离模型、三个泄露点、缺口清单）。由此产生的新问题：
-   - 首个非 Hartwood 客户预计何时上线？这决定 Phase 0 的"多租户安全三件事"是现在做还是可以排到后面——**如果 3 个月内会有第二家客户，它就是 P0 里的第一件事**。
-   - 计费模型：按席位、按项目数，还是按 workspace 一口价？这决定配额表怎么设计。
-   - 数据驻留：客户数据是否要求留在特定地区（如只在澳大利亚境内）？这决定托管选型，且与 §7 第 2 条（生产部署目标形态）叠加。
+1. **Number of specs in `tests/e2e/`**: `ls tests/e2e/*.spec.ts` gives **76**, while `CLAUDE.md:125` says **66**. At least one is wrong; confirm and reconcile. (`CLAUDE.md` §1 notes for pytest file counts that "counts drift, so none are recorded here" — please decide whether the e2e line should drop the concrete number too.)
+2. **The target shape of production deployment is undecided**: Phase 0 here assumes "containers + one pipeline", but the project does not state whether it is self-hosted (on the customer's premises) or cloud-hosted. This directly determines backup (PITR vs managed snapshots) and the observability choice, so **it needs confirming first**.
+3. ~~Whether to move to multi-customer SaaS~~ — **confirmed: the target is SaaS.** §decision 5 is written accordingly (isolation model, verified leaks, gap list). New questions that follow from it:
+   - When is the first non-Hartwood customer expected to go live? This decides whether Phase 0's "two multi-tenant security items" happen now or can be scheduled later — **if a second customer is coming within 3 months, it is the first item in P0**.
+   - Billing model: per seat, per project count, or a flat price per workspace? This determines how the quota tables are designed.
+   - Data residency: must customer data stay in a specific region (for example, only within Australia)? This determines the hosting choice and compounds with open question 2 above (production deployment shape).
