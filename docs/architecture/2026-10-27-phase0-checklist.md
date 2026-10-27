@@ -11,8 +11,8 @@
 | # | Question | Why it blocks |
 | --- | --- | --- |
 | ~~D1~~ | ~~Self-hosted or cloud-hosted?~~ **DECIDED 2026-10-27: customer self-hosted, one deployment per customer.** | Resolved. See §0.1 for what it fixes and what it costs |
-| D2 | Production domain and where TLS terminates (reverse proxy, or is Next exposed directly?) | Determines `COOKIE_SECURE`, `API_URL`, and whether the web tier needs its own TLS |
-| D3 | Who runs migrations: the pipeline automatically, or a human after review? | Determines the shape of the pipeline in §4 (automatic migration vs approval gate) |
+| ~~D2~~ | ~~Production domain and where TLS terminates~~ **DECIDED 2026-10-27 (Q1): single hostname, TLS terminated by the customer's existing reverse proxy.** | Resolved — §0.3 lists what follows, including the request-body limit and the ports that must not be published |
+| ~~D3~~ | ~~Who runs migrations~~ **DECIDED 2026-10-27 (Q2): automatic, gated by a mandatory backup and an explicit confirmation for destructive revisions.** | Resolved — §4 is now specified |
 | ~~D4~~ | ~~Expected go-live date for the second customer~~ **Partly resolved by D1** | With one deployment per customer, the multi-tenant items in §7 stop blocking customer two — see §7.0. What remains open is *when*, which now drives capacity rather than security |
 
 > Until D2 is settled, §3 keeps one open slot (secret injection); §1–§2 and §6 can start (they are independent of deployment shape).
@@ -51,8 +51,8 @@ D1 closed one question and changed the shape of several others. What follows is 
 
 | # | Question | Where it lands | What it blocks | Needed by |
 | --- | --- | --- | --- | --- |
-| **Q1** (= D2) | Production domain, and where TLS terminates — a reverse proxy in front, or is Next exposed directly? | §3 | `COOKIE_SECURE`, `API_URL`, and whether the web tier needs its own TLS. One slot in the secrets work; §1, §2 and §6 can start regardless | Before §3 |
-| **Q2** (= D3) | Who runs migrations — the pipeline automatically, or a human after review? | §4 | The shape of the pipeline: automatic migration vs an approval gate. Nothing in §4 can be built before this | Before §4 |
+| ~~**Q1** (= D2)~~ | ~~Production domain, and where TLS terminates~~ **DECIDED: single hostname, TLS terminated by the customer's existing reverse proxy** | §0.3 | Resolved. Sets `COOKIE_SECURE=true`, keeps `API_URL` container-internal, and adds proxy requirements (body size, read timeout, forwarded headers) | Settled |
+| ~~**Q2** (= D3)~~ | ~~Who runs migrations~~ **DECIDED: automatic, behind a mandatory backup gate and an explicit confirmation for destructive revisions** | §0.3, §4 | Resolved. §4 is written; §2 gains a schema-version check and §5 supplies the dump the gate depends on | Settled |
 | **Q3** (= D4) | When does the second customer go live? | §0 / ops | No longer a security gate (one deployment per customer). It now sets **operational capacity**: N customers means N environments to upgrade, monitor and keep on a supported version | Before customer two |
 | **Q4** | Image delivery: a registry the customer can pull from, or an offline bundle (`docker save` / `load`) for air-gapped sites? | §9.1 | The artefact format the pipeline produces. Air-gapped delivery is not a flag you add later — ask before building §9 | Before §9 |
 | **Q5** | RTO and RPO per customer, and who is accountable for hitting them | §5 | Backup here is a shared responsibility: we ship the tooling, the customer runs it and owns the storage target. Unwritten, accountability is assumed to be ours | Before the first go-live |
@@ -70,6 +70,57 @@ D1 closed one question and changed the shape of several others. What follows is 
 - **Q4, Q5 and Q7 are the same conversation.** They are all "what does support look like when we cannot reach the environment" — decide them together, not in three separate threads.
 - **Q6 and Q5 pull against each other.** No telemetry off-site (Q6) and a tight RTO (Q5) both require the customer to operate more of the stack themselves, or to grant us access. Expect both answers to move together.
 - **Q8 is the one that outlives Phase 0.** Everything else here is about shipping safely; the billing model decides what the quota tables look like, and getting it wrong is expensive to unwind once tables exist.
+
+### 0.3 Q1 and Q2, settled 2026-10-27
+
+#### Q1 — one hostname; TLS ends at the customer's existing reverse proxy
+
+**Decided**: a single external hostname (for example `jf.customer.com`). TLS terminates at the reverse proxy / gateway / WAF the customer already runs. The api and Meilisearch stay inside the compose network and are never published.
+
+**Why this is the low-risk answer** — the evidence that made it obvious:
+
+- **The browser never talks to the api.** `apps/web/app/api/[...proxy]/route.ts:15-27` forwards every `/api/**` request server-side to `API_URL` and copies the upstream response headers back — `Set-Cookie` included. So the session cookie is issued into the browser's relationship with the *web* hostname: host-only and `SameSite=Lax` (`apps/api/app/auth/sessions.py:95-96`).
+- **A separate api hostname would break login, not merely complicate it.** Cross-site XHR does not carry a `Lax` cookie, so every authenticated request would arrive anonymous. Repairing that means `SameSite=None; Secure` plus CORS, and then Chrome/Safari third-party cookie policy applies — a worse position than we are in now.
+- **"Expose Next directly" was never available.** Next's standalone server speaks HTTP; something has to terminate TLS in front of it either way. The real question was only *who owns that point*.
+
+**What follows, concretely**:
+
+| Item | Setting |
+| --- | --- |
+| `COOKIE_SECURE` | `true` (already §3) |
+| `API_URL` | **stays `http://api:8000`** — container-internal. It is read by two server components (`apps/web/app/items/[id]/label/page.tsx:14`, `apps/web/app/(app)/tracking/page.tsx:25`) and by the proxy route; no public address is needed for either |
+| Published ports | Only the proxy's 80/443. `docker-compose.prod.yml` must **not** publish 5432 or 8000 — dev compose publishes `5432/8000/3000` (see §8) |
+| Request body size | Must be raised at the proxy. The proxy route reads the whole body into memory (`await req.arrayBuffer()`, `route.ts:20`) and uploads pass through it; nginx's default `client_max_body_size 1m` answers 413 before the application sees the request |
+| Proxy read timeout | PDF and export routes are inherently slow (`docs/REVIEW-2026-10.md` §C: a 300-line PDF ≈ 3.3 s). Raise `proxy_read_timeout` for those paths rather than globally, and keep a ceiling |
+| Forwarded headers | Nothing reads `request.url` / `base_url` today, so `X-Forwarded-Proto` is not *required* yet — but add `--proxy-headers` to uvicorn now, so the first feature that builds an absolute URL does not emit `http://` links behind https |
+| WebSockets / SSE | Not used. A plain HTTP reverse proxy is sufficient |
+
+**Consequence to accept**: we do not control the proxy. Certificate renewal, TLS policy and any WAF rule are the customer's, so an outage in their tier looks like an outage in ours and we have no lever on it. Ask for the proxy config to be part of the install checklist, and make `GET /version` reachable so "is it up on your side?" is answerable without shell access.
+
+#### Q2 — migrations run automatically, behind a mandatory backup and an explicit confirmation for destructive ones
+
+**Decided**: `scripts/upgrade.sh` runs `alembic upgrade head` by default. It is *gated*, not interactive by default — three gates, any of which can abort the upgrade.
+
+**What the 89 revisions actually contain** (scanned, not assumed):
+
+| Property | Count | Consequence |
+| --- | --- | --- |
+| Linear chain, single head | 89 | `alembic upgrade head` is unambiguous |
+| `upgrade()` contains a DROP (column or table) | **7** | Data loss is real and irreversible |
+| `upgrade()` contains data DML (UPDATE / INSERT / DELETE) | **36** | Backfills — duration depends on table size, and they hold locks while they run |
+| `downgrade()` implemented | 88 of 89 | Downgrades exist, **but they do not restore dropped data** — they recreate empty columns |
+
+That last row is the one that decides the design: **rolling back a migration is a database restore, not `alembic downgrade`.** Which is why the backup gate is mandatory rather than polite.
+
+**The three gates**:
+
+1. **Back up first, or stop.** Before migrating, run `pg_dump -Fc` to the target from §5 and record the dump path in the upgrade log. If the dump fails, abort and leave the running version untouched.
+2. **Destructive revisions ask.** Scan the pending revisions for `drop_column` / `drop_table` / bulk DML. If any is present, print what will be dropped or rewritten — naming the revision ids — and require an explicit `--yes`. Without it the script exits non-zero and says which revisions stopped it.
+3. **Prove the schema landed.** After migrating, assert that `alembic_version` equals the head compiled into the image. `/health/ready` carries this check (§2) so that "new image, old schema" reads as *unhealthy* instead of silently serving 500s, and `GET /version` (§9.2) exposes both the image tag and the schema head.
+
+`--skip-migrate` remains available for whoever wants to migrate by hand — but gate 3 then keeps the deployment unhealthy until the schema matches, so a half-upgrade cannot go unnoticed.
+
+**Consequence to accept**: the gate is a script, not a reviewer. Nobody reads the SQL before it runs; what we buy is a guaranteed restore point and a loud stop on the seven dangerous revisions. If a customer additionally wants a human to sign off, that is **Q7** (who runs the upgrade), not Q2.
 
 ---
 
@@ -166,11 +217,13 @@ CMD ["pnpm", "start"]
 | Endpoint | Checks | Used for |
 | --- | --- | --- |
 | `GET /health/live` | Process is alive (keep today's `{"ok": true}`) | Deciding whether to restart the container |
-| `GET /health/ready` | `SELECT 1` through `db.get_db()`; Meili optional (`GET /search/health` already exists) | Deciding whether to admit traffic |
+| `GET /health/ready` | `SELECT 1` through `db.get_db()`; **plus `alembic_version` == the head compiled into the image** (Q2 gate 3, §0.3); Meili optional (`GET /search/health` already exists) | Deciding whether to admit traffic |
 
 **Keep `/health`**: `README.md:40` documents `http://localhost:3000/api/health -> {"ok":true}` and existing e2e specs may depend on it (`tests/e2e/smoke.spec.ts`) — **do not delete it**; make it equivalent to live.
 
 **Acceptance**: stop the db container → `/health/ready` returns non-200 while `/health/live` still returns 200.
+
+**Add the schema check (Q2 gate 3)**: `/health/ready` should also compare `SELECT version_num FROM alembic_version` against the head stored in the image. Without it, "new image + old schema" answers 200 on liveness and then 500s on every request that touches a new column — and nobody notices until a user reports it.
 
 ---
 
@@ -185,7 +238,7 @@ CMD ["pnpm", "start"]
 3. Add `scripts/check-env.sh`: assert every required variable is set *and non-empty* before `compose up`. Worth it because a missing field makes `Settings()` raise `ValidationError` at import — the container crash-loops, and on a customer's box that reads as "JoineryFlow is broken" rather than "you forgot to set `DATABASE_URL`"
 4. `COOKIE_SECURE=true` (`.env.example:12` already notes it must be true anywhere https is used, otherwise session cookies travel in the clear)
 5. `MEILI_API_KEY` distinct from `MEILI_MASTER_KEY` (see §7.1)
-6. `API_URL`: in compose it is `http://api:8000`; in production set the real address per D2 (the web tier inlines it at build time, so changing it means rebuilding)
+6. `API_URL`: **keep `http://api:8000`**. Q1 settled on a single hostname with the api inside the compose network (§0.3), so this stays a container-internal address — no public api URL exists. It is read server-side only: by the proxy route and by two server components. (The web tier inlines it at build time, so if a customer ever needs a different address it means a rebuild, not a restart.)
 
 **Acceptance**:
 - Inside the production image, `ls .env` → does not exist
@@ -200,22 +253,31 @@ CMD ["pnpm", "start"]
 
 **Current state**: `make migrate` = `docker compose exec -w /db api alembic upgrade head`. 89 migrations, ~107 tables; `sqlalchemy.url` in `db/alembic.ini` comes from `${DATABASE_URL}`.
 
-**Change** (depends on D3):
+**Change** (Q2 settled — automatic and gated, §0.3 gives the reasoning):
 
 ```
-1. Build and push the new image (do not switch traffic yet)
-2. alembic upgrade head        <- separate step; abort on failure
-3. Rolling replacement of the web / api containers
-4. Poll /health/ready until all return 200
-5. On failure -> roll back to the previous image tag; per Q435 ("preserve data"),
-   migrations never do a destructive downgrade
+scripts/upgrade.sh <version>
+  0. scripts/check-env.sh                     -> abort on any missing variable
+  1. pull the new image                       (do not switch traffic yet)
+  2. pg_dump -Fc to the §5 target             -> GATE 1: abort if the dump fails
+  3. scan pending revisions for drop_column / drop_table / bulk DML
+       if any found: print the ids and what will be lost, require --yes   GATE 2
+  4. alembic upgrade head                     -> abort on failure
+  5. replace the web / api containers
+  6. poll /health/ready until 200             -> GATE 3: includes the schema check
+  7. on failure: re-tag to the previous version, then restore the dump from step 2
 ```
 
-**Key constraint**: `CLAUDE.md` requires that changes land only behind **data-preserving migrations** (Q435). The release order must therefore be **migrate first, switch traffic second**, and migrations must be forward-compatible for one version (both old and new code can run) — otherwise a rollback hits a schema incompatibility.
+**Why the dump is gate 1 and not a nice-to-have.** Of the 89 revisions, **7 drop a column or a table** and **36 run data DML**. A `downgrade` exists for 88 of them, but a downgrade rebuilds *structure*, not *contents* — a dropped column comes back empty. So the only real rollback is the dump taken one minute earlier. Running `alembic downgrade` on a customer's production database and calling it a rollback would destroy more than it saves.
+
+**Key constraint** (unchanged): `CLAUDE.md` requires that changes land only behind **data-preserving migrations** (Q435). The order is therefore **migrate first, switch traffic second**, and migrations must stay forward-compatible for one version so the old code can still run if we roll back.
 
 **Acceptance**:
-- Rehearse once: "migration succeeded + release succeeded"
-- Rehearse once: "migration failed → release aborted, traffic still on the old version"
+- Rehearse: migration succeeded + release succeeded
+- Rehearse: **the dump fails → the upgrade aborts and the running version is untouched**
+- Rehearse: **a destructive revision is pending → the script stops, names the revision, and does not migrate**
+- Rehearse: migration succeeded but the schema head does not match → `/health/ready` returns non-200
+- Rehearse **one rollback from the pre-migration dump** — this is the drill everyone skips, and it is the only one that proves gate 1 was worth building
 
 ---
 
@@ -262,6 +324,8 @@ Add `scripts/check-files.sh` to prove it after a restore: for every `storage_key
 | After any restore | `make reindex` to rebuild Meilisearch; then `scripts/check-files.sh` |
 | Restore drill | `scripts/restore-drill.sh`: restore dbdata + uploads to a random point in time → `make reindex` → run `tests/e2e/smoke.spec.ts` → print elapsed time |
 | Makefile | Add `backup`, `restore-drill` and `check-files` targets |
+
+**`upgrade.sh` reuses this** (Q2 gate 1, §0.3): the same `pg_dump -Fc` invocation and the same target are used before every migration. One artefact to verify rather than two, and the restore point a customer needs after a bad upgrade is the thing they already know how to find.
 
 #### 5.4 Who is accountable — settle this per customer, in writing
 
@@ -376,10 +440,19 @@ Add `docker-compose.prod.yml`, fully separate from dev — **do not reuse the sa
 | `postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off` | **all removed** |
 | `uvicorn --reload` + `pnpm dev` | `uvicorn --workers 4` + `pnpm start` |
 | Source mount `./apps/api:/code` | **no mount**; the code is in the image |
-| `ports: ["5432:5432", "8000:8000"]`, everything exposed | Only required ports; the DB is not exposed |
+| `ports: ["5432:5432", "8000:8000"]`, everything exposed | **Only the web tier is published** (and only to the proxy). Under Q1 neither 5432 nor 8000 is reachable from outside the compose network |
 | `env_file: .env` | Environment variables / injected secrets |
+| `uvicorn app.main:app ...` | add `--proxy-headers`, so absolute URLs built later respect `X-Forwarded-Proto` |
 
-**Acceptance**: `grep -c "fsync=off" docker-compose.prod.yml` → **0**.
+**Also ship a proxy configuration snippet** (`deploy/proxy/`), because Q1 puts TLS in the customer's hands and three defaults there will break the app before anyone suspects the proxy:
+
+| Setting | Why |
+| --- | --- |
+| `client_max_body_size` (nginx default `1m`) | Uploads pass through the web tier's proxy route, which buffers the whole body; the default answers 413 before the app sees the request |
+| `proxy_read_timeout` (nginx default `60s`) | PDF and export routes are slow by nature (review §C: 300-line PDF ≈ 3.3 s). Raise it for those paths, keep a ceiling |
+| `X-Forwarded-Proto` / `X-Forwarded-For` | Nothing reads them today; add them now so the first absolute-URL feature does not emit `http://` links behind https |
+
+**Acceptance**: `grep -c "fsync=off" docker-compose.prod.yml` → **0**; from outside the host, `nc -zv <host> 5432` and `8000` both fail while `443` answers.
 
 ---
 
