@@ -20,12 +20,11 @@ from sqlalchemy.orm import Session
 
 
 def _alembic_ini() -> Path | None:
-    here = Path(__file__).resolve()
-    candidates = [
-        Path("/db/alembic.ini"),
-        Path("db/alembic.ini"),
-        here.parents[3] / "db" / "alembic.ini",  # <repo>/db from apps/api/app
-    ]
+    # Walk every ancestor rather than indexing into parents: the code sits at
+    # apps/api/app in a checkout but at /code/app in the container, where a
+    # fixed parents[N] would raise IndexError.
+    candidates = [Path("/db/alembic.ini"), Path("db/alembic.ini")]
+    candidates += [p / "db" / "alembic.ini" for p in Path(__file__).resolve().parents]
     return next((p for p in candidates if p.is_file()), None)
 
 
