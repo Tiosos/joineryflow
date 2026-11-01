@@ -1,4 +1,10 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+from .config import settings
+from .db import SessionLocal
+from .meta import current_schema_version, expected_schema_head
 
 from .auth.routes import router as auth_router
 from .catalog.routes import router as catalog_router
@@ -111,3 +117,55 @@ app.include_router(tasks_router)
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"ok": True}
+
+
+@app.get("/health/ready")
+def health_ready():
+    """Admit-traffic probe: the database answers AND its schema is at the head
+    this image was built with. A new image on an old schema must read
+    unhealthy, not serve 500s silently (Phase 0 §2, Q2 gate 3).
+
+    200 on healthy, 503 otherwise; the body names the failing check either
+    way so a human (or a load balancer log) can see why."""
+    checks: dict = {}
+    try:
+        with SessionLocal() as db:
+            checks["db"] = db.execute(text("SELECT 1")).scalar() == 1
+            db_schema = current_schema_version(db)
+    except Exception:
+        checks["db"] = False
+        db_schema = None
+
+    head = expected_schema_head()
+    checks["expected_schema_head"] = head
+    checks["db_schema"] = db_schema
+    if head is None:
+        # Migration scripts not shipped with this process — cannot verify.
+        checks["schema_match"] = "skipped"
+    else:
+        checks["schema_match"] = db_schema == [head]
+
+    ok = checks["db"] is True and checks["schema_match"] in (True, "skipped")
+    return JSONResponse({"ok": ok, "checks": checks}, status_code=200 if ok else 503)
+
+
+@app.get("/version")
+def version():
+    """Support-facing identity: image tag, the schema head this build expects,
+    and the revision the database is actually on. Never 500s — this endpoint
+    exists to be answerable when things are broken."""
+    try:
+        with SessionLocal() as db:
+            db_schema = current_schema_version(db)
+    except Exception:
+        db_schema = None
+    return {
+        "version": settings.app_version,
+        "schema_head": expected_schema_head(),
+        "db_schema": db_schema,
+    }

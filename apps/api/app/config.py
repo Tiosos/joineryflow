@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     meili_url: str = "http://meili:7700"
     meili_api_key: str = ""
     search_index: str = "jf_search"
+    # Image tag baked in at build/publish time (CI sets APP_VERSION); surfaced
+    # by GET /version. "dev" marks a source checkout, not a release.
+    app_version: str = "dev"
     model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
