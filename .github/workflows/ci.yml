@@ -148,7 +148,7 @@ jobs:
   # job's name, so the required name `E2E (Playwright)` belongs to the `e2e-result` job below.
   e2e:
     name: E2E shard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
