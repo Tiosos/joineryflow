@@ -12,7 +12,7 @@ up while checking the code, and each one changes the design:
 | --- | --- |
 | CI runs the whole pytest suite **inside** the api image (`ci.yml:41-82`) | The image cannot simply drop pytest — it needs a second target |
 | `Makefile:6` runs `alembic` with `-w /db`, and `app/meta.py` probes `/db/alembic.ini` | The api image must contain `db/`, so its build context is the **repo root**, not `apps/api` |
-| `printing/templates/print.css:7` loads fonts from `../../../seed/fonts/` | The runtime image needs the fonts, which today arrive only through a dev-only volume mount |
+| `printing/templates/print.css:7` loads fonts from `../../../seed/fonts/` | The runtime image needs the fonts, which today arrive only through a dev-only volume mount — **decided: move them into `apps/api`** (D3) |
 | `docker-compose.yml:36` starts `search-worker` from the same image with a different command | Two Dockerfiles, **three** container roles |
 
 ---
@@ -21,7 +21,7 @@ up while checking the code, and each one changes the design:
 
 | Role | Built from | Command | Image contents it needs |
 | --- | --- | --- | --- |
-| `api` | `apps/api/Dockerfile` | `uvicorn app.main:app …` | `app/`, `db/` (alembic), WeasyPrint libs, `seed/fonts` |
+| `api` | `apps/api/Dockerfile` | `uvicorn app.main:app …` | `app/` (incl. `printing/fonts`), `db/` (alembic), WeasyPrint libs |
 | `search-worker` | **same image** | `python -m app.search.worker` | same; keeps the Meili master key (§7.1) |
 | `web` | `apps/web/Dockerfile` | `next start` | `.next`, `public/`, production `node_modules` |
 
@@ -63,10 +63,17 @@ text. Keep all four, and add a PDF smoke test (§8) rather than trusting the lis
 `<workdir>/seed/fonts/Inter-Regular.woff2`; in dev that path exists only because
 `docker-compose.yml:23` bind-mounts `./seed:/code/seed`. The production image has no such
 mount, so today's Dockerfile would produce a PDF with every font silently substituted.
-Two ways out, both cheap: copy only `seed/fonts` into the image, or move the fonts to
-`apps/api/app/printing/fonts/` and fix the two `../` segments in the CSS. The second is
-better — application assets should not live in a directory named `seed` — but it touches
-a template, so it is a decision (§6, D3).
+
+One detail that decides the fix: WeasyPrint resolves the `@font-face` URL against the
+template's `base_url`, which `printing/engine.py` sets to `templates/` — not against the
+CSS file's own location. Both happen to be the same directory here, so the relative path
+is simply one level up from `templates/`.
+
+**Decided (D3): move the fonts to `apps/api/app/printing/fonts/` and change the four
+`url()` entries from `../../../seed/fonts/X` to `../fonts/X`.** Fonts are application
+assets; `seed/` holds a dev dataset, and shipping a directory named `seed` inside a
+customer's runtime image invites someone to run it. After the move the runtime image
+needs no `seed/` at all, and `COPY apps/api /code` carries the fonts.
 
 **C6 — non-root needs a writable upload root.** `files/store.py:62` reads
 `FILE_STORE_ROOT` from the environment with default `/uploads`; compose sets it to
@@ -132,8 +139,6 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /code
 COPY apps/api /code
 COPY db /db
-# PDF fonts (C5). Path matches print.css; see decision D3.
-COPY seed/fonts /code/seed/fonts
 # Upload root, writable by the unprivileged user (C6).
 RUN mkdir -p /uploads && chown 10001:10001 /uploads
 ARG APP_VERSION=dev
@@ -267,18 +272,23 @@ default as `dev` and overriding in production only — also works but makes a ba
 .pytest_cache
 ```
 
-**No `seed/` in the production api image beyond the fonts** — see §6 D3 and Q12.
+**No `seed/` in the production api image at all.** With the fonts moved (D3) there is
+nothing left in `seed/` that belongs in front of a customer — it is a dev dataset with
+eight known passwords (Q12) — so the runtime image simply does not copy it. The `dev`
+target keeps getting it through the compose bind mount, which is how CI seeds.
 
 ---
 
-## 6. Decisions requested
+## 6. Decisions
 
-| # | Decision | Recommendation |
+All four settled; recorded here so the Dockerfiles have one source of truth.
+
+| # | Decision | Outcome |
 | --- | --- | --- |
-| **D1** | Keep a `dev` target with pytest, or move CI off the image (run pytest on the runner with a venv) | **Keep the target.** Moving CI is a bigger change, and the suite currently proves the exact image we ship |
-| **D2** | `output: "standalone"` now, or later | **Later, its own PR.** The size win is real; the risk is asset handling, and e2e is the only thing that can settle it |
-| **D3** | PDF fonts: `COPY seed/fonts` into the image, or move them to `app/printing/fonts/` and fix `print.css` | **Move them.** Fonts are application assets; `seed/` holds demo data and should not be in the runtime image at all |
-| **D4** | `--workers` default in the image: 1, 2, or 4 | **2.** Forking is safe (no in-process scheduler), but each worker carries WeasyPrint; customers with headroom override it |
+| **D1** | Keep a `dev` target with pytest, or move CI off the image | **Keep the target.** CI keeps proving the image we ship; `build.target: dev` in compose selects it without a workflow edit |
+| **D2** | `output: "standalone"` now or later | **Later, its own PR.** The size win is real, the risk is asset handling, and e2e is the only thing that can settle it |
+| **D3** | PDF fonts: copy `seed/fonts` into the image, or move them | **Move to `apps/api/app/printing/fonts/`**, four `url()` entries become `../fonts/X`. Nothing named `seed` ships to a customer |
+| **D4** | `--workers` default | **2**, with `--proxy-headers` and `--forwarded-allow-ips=*`. Forking is safe (no in-process scheduler); WeasyPrint makes each worker expensive |
 
 ---
 
@@ -291,8 +301,8 @@ and it is a **dev** seed: one workspace, eight staff users with the password
 reference tables the rest of the schema depends on (`stages`, `status_options`,
 `status_symbols`). So a customer install cannot run it as-is (it would log in with a
 known password) and cannot run without it (nothing else fills those tables). This is not
-a Dockerfile problem, but §1 is where it surfaces, because the answer decides whether
-the runtime image carries `seed/` at all. Options: a separate `seed/reference.py` for
+a Dockerfile problem — D3 already settled that the image carries no `seed/` — but §1 is
+where it surfaces, and it blocks the first customer install. Options: a separate `seed/reference.py` for
 the lookup tables only, plus a first-run "create workspace + first admin" step; or move
 the reference rows into a migration so an empty database is a usable one. **Blocks the
 first customer install, not this PR.**
@@ -317,7 +327,8 @@ Run against the built images, not against a compose-up dev stack:
 | `docker run --rm <api-runtime> pip list \| grep -ci pytest` | `0` |
 | `docker run --rm <api-runtime> id -u` | `10001` |
 | `docker run --rm <api-runtime> python -c "import weasyprint; from weasyprint import HTML; print(len(HTML(string='<p>x</p>').write_pdf()))"` | prints a byte count > 1000 (proves C4) |
-| `docker run --rm <api-runtime> test -f /code/seed/fonts/Inter-Regular.woff2` | exit 0 (proves C5) |
+| `docker run --rm <api-runtime> test -f /code/app/printing/fonts/Inter-Regular.woff2` | exit 0 (proves C5) |
+| Render a quote PDF in the container and open it | Inter / JetBrains Mono actually embedded, not substituted |
 | `docker run --rm <api-runtime> test -f /db/alembic.ini` | exit 0 (proves C2) |
 | Start api + db, `curl /health/ready` | 200 after migrations (already covered by #179) |
 | Start api only, `curl /version` | `{"app_version": "…", …}` |
@@ -334,8 +345,9 @@ The last one is the acceptance test that matters most: the current image cannot 
 
 1. **PR A** — `apps/api/Dockerfile` and `apps/web/Dockerfile` (multi-stage, targets),
    root `.dockerignore`, compose build blocks with `context: .` / `target: dev`, and the
-   fonts move if D3 goes that way. CI stays green because `dev` is what CI builds. This
-   PR alone proves C1, C2, C3, C8 and the "install failures fail the build" acceptance.
+   font move with its four `url()` edits. CI stays green because `dev` is what CI builds.
+   This PR alone proves C1, C2, C3, C8 and the "install failures fail the build"
+   acceptance.
 2. **PR B** — `docker-compose.prod.yml` with `target: runtime` (part of checklist §8):
    this is where the runtime image first gets exercised.
 3. **PR C (optional, later)** — `output: "standalone"` slimming, behind a full green e2e
