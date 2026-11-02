@@ -62,6 +62,8 @@ D1 closed one question and changed the shape of several others. What follows is 
 | **Q9** | `/public/stats`: Option A (tenant comes from server config, remove the `workspace_slug` parameter) or Option B (drop the endpoint entirely)? | `2026-10-27-public-stats.md` §5–§6 | B is cleaner still, but it costs the login page its live counts — a product decision, not an engineering one | Before §7.2 starts |
 | **Q10** | Formal acceptance of the two cross-tenant leaks as Phase 1 risk | §7.0 | D1 made them **unreachable, not fixed**. Someone should sign that risk explicitly, and it has to be closed before any move back to shared hosting | Now — it is one line |
 | **Q11** | `tests/e2e/` spec count: 76 on disk vs 66 in `CLAUDE.md:125` | Roadmap §7 (Q1) | Documentation accuracy only. Second half of the question: should `CLAUDE.md` drop the concrete number the way it already does for pytest counts? | Low |
+| **Q12** | How does a brand-new customer database get its starting rows? The only seeding tool is `python -m seed.hartwood_joinery`, and it is a **dev** seed (8 staff users, password `hartwood-dev`) that is also the only thing populating `stages` / `status_options` / `status_symbols` | `2026-10-27-production-images.md` §7 | Whether the runtime image carries `seed/` at all, and the first customer install has no usable starting state without it | Before the first customer install |
+| **Q13** | Do images need to be byte-reproducible (base images pinned by digest)? | §9 | Rebuildability and "is this the image we audited?" against automatic base-image security fixes. Much cheaper to settle before the release pipeline exists | Before §9 |
 
 **Two of these block Phase 0 work (Q1, Q2).** The rest set the shape of individual sections or of the commercial model, and none of them prevents §1, §2 or §6 from starting this week.
 
@@ -125,6 +127,20 @@ That last row is the one that decides the design: **rolling back a migration is 
 ---
 
 ## 1. Production images
+
+**Design doc: `2026-10-27-production-images.md`.** The sketches below are the short
+version. That document carries the full stage layout, the four constraints found while
+reading the code, the compose build blocks and the acceptance commands — read it before
+writing the Dockerfiles. Three things it corrects here:
+
+- CI runs pytest **inside** the api image (`ci.yml:41-82`), so the image needs a `dev`
+  target as well as a `runtime` one; deleting dev dependencies outright breaks CI.
+- The api build context has to become the **repository root**, because `db/` (alembic)
+  ships inside the image — `Makefile:6` migrates with `-w /db` and `app/meta.py` reads
+  the schema head from `/db/alembic.ini`. That also means a root `.dockerignore`.
+- The image needs the PDF fonts. `printing/templates/print.css:7` loads them from
+  `seed/fonts/`, which today exists only through a dev bind mount; without them quote
+  PDFs render with substituted fonts and nothing fails loudly.
 
 ### 1.1 `apps/api/Dockerfile`
 
