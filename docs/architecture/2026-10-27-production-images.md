@@ -248,9 +248,9 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
 ```dockerfile
 FROM node:22-slim AS build
 ENV NEXT_TELEMETRY_DISABLED=1
-# pnpm is pinned rather than "whatever corepack picks today": the lockfile is
-# lockfileVersion 9.0 and a future pnpm major would be free to reject it. (D7)
-RUN corepack enable && corepack prepare pnpm@10.34.9 --activate
+# No pnpm version here on purpose: corepack reads packageManager from
+# package.json, which is the one pin CI and the image share (D7).
+RUN corepack enable
 WORKDIR /code
 # pnpm-workspace.yaml carries ignoredBuiltDependencies; without it the install
 # runs with different settings than CI (C13).
@@ -264,7 +264,7 @@ RUN pnpm build
 
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && corepack prepare pnpm@10.34.9 --activate
+RUN corepack enable
 WORKDIR /app
 COPY --from=build /code/package.json /code/pnpm-lock.yaml /code/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod
@@ -387,7 +387,7 @@ Settled, recorded here so the Dockerfiles have one source of truth.
 | **D4** | `--workers` default | **2**, with `--proxy-headers` and `--forwarded-allow-ips=*`. Forking is safe (no in-process scheduler); WeasyPrint makes each worker expensive |
 | **D5** | Build-time env for the web image | **One `ARG`: `NEXT_PUBLIC_PROCUREMENT_UI_READY`, default `1`.** It is inlined at build; `SESSION_COOKIE_NAME` and `API_URL` stay runtime-only |
 | **D6** | Does the runtime api image carry `tests/`? | **No.** `apps/api/tests` and `perf_ids.txt` leave via `.dockerignore`; CI keeps its tests through the bind mount (C11, C12) |
-| **D7** | Where the pnpm version is pinned | **Pending** — see §7, Q15. Today the draft pins `10.34.9` in the Dockerfile while CI pins major `10` and `package.json` has no `packageManager` field |
+| **D7** | Where the pnpm version is pinned | **`package.json`'s `packageManager` field** (settled 2026-11-03). CI and the image then read the same pin through corepack, so they cannot drift. The exact version still has to be confirmed against the lockfile before the field is written — see Q15 |
 
 ---
 
@@ -421,15 +421,22 @@ is much cheaper to decide before the release pipeline (§9) is built than after.
 **Q14 — image tags and where they are pushed** is **Q4** in the register
 (registry vs offline bundle). It does not change anything in these Dockerfiles.
 
-**Q15 — one pnpm version, in one place.** The draft pins `pnpm@10.34.9` in the Dockerfile;
-CI pins `version: 10` (`ci.yml:105,212`) and `apps/web/package.json` declares no
-`packageManager`. Three sources, two of them ranges. Either add
-`"packageManager": "pnpm@<exact>"` to `package.json` and let `corepack enable` read it —
-then CI, the image and a developer's shell cannot disagree — or keep the Dockerfile pin and
-accept that a CI pnpm upgrade is invisible to the image. **Recommendation: the
-`packageManager` field.** It is one line, and it is the only option where the three agree
-by construction. Needs the exact version confirmed against the lockfile before it is
-written.
+**Q15 — one pnpm version, in one place. DECIDED 2026-11-03: the `packageManager` field.**
+The problem it settles: the draft pinned `pnpm@10.34.9` in the Dockerfile, CI pins
+`version: 10` (`ci.yml:105,212`) and `apps/web/package.json` declares nothing — three
+sources, two of them ranges. Adding `"packageManager": "pnpm@<exact>"` to
+`apps/web/package.json` makes CI, the image and a developer's shell agree by construction,
+because `corepack enable` reads that field; the Dockerfile then needs no version at all.
+
+Two details still to settle at implementation time, neither of them a design question:
+
+- **The exact version.** It has to be one that exists and matches the lockfile's
+  `lockfileVersion: 9.0` lineage; the number in the draft (`10.34.9`) was not verified
+  against the registry. Whatever CI resolves today under `version: 10` is the honest
+  starting point.
+- **CI's `pnpm/action-setup@v4` step.** It takes `version: 10` explicitly. Leave it or
+  drop the `version` input so the action reads `packageManager`; both work, but only the
+  second removes the last duplicated pin.
 
 ---
 
