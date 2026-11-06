@@ -387,7 +387,7 @@ Settled, recorded here so the Dockerfiles have one source of truth.
 | **D4** | `--workers` default | **2**, with `--proxy-headers` and `--forwarded-allow-ips=*`. Forking is safe (no in-process scheduler); WeasyPrint makes each worker expensive |
 | **D5** | Build-time env for the web image | **One `ARG`: `NEXT_PUBLIC_PROCUREMENT_UI_READY`, default `1`.** It is inlined at build; `SESSION_COOKIE_NAME` and `API_URL` stay runtime-only |
 | **D6** | Does the runtime api image carry `tests/`? | **No.** `apps/api/tests` and `perf_ids.txt` leave via `.dockerignore`; CI keeps its tests through the bind mount (C11, C12) |
-| **D7** | Where the pnpm version is pinned | **`package.json`'s `packageManager` field** (settled 2026-11-03). CI and the image then read the same pin through corepack, so they cannot drift. The exact version still has to be confirmed against the lockfile before the field is written — see Q15 |
+| **D7** | Where the pnpm version is pinned | **`package.json`'s `packageManager` field** (settled 2026-11-03). CI and the image then read the same pin through corepack, so they cannot drift. Exact version **`pnpm@10.34.9`**, verified 2026-11-06 — see Q15 |
 
 ---
 
@@ -430,10 +430,11 @@ because `corepack enable` reads that field; the Dockerfile then needs no version
 
 Two details still to settle at implementation time, neither of them a design question:
 
-- **The exact version.** It has to be one that exists and matches the lockfile's
-  `lockfileVersion: 9.0` lineage; the number in the draft (`10.34.9`) was not verified
-  against the registry. Whatever CI resolves today under `version: 10` is the honest
-  starting point.
+- **The exact version — settled 2026-11-06: `pnpm@10.34.9`.** `npm view 'pnpm@10' version`
+  shows it exists and is the latest 10.x, which is what CI's `version: 10` resolves to
+  today; the lockfile is `lockfileVersion: 9.0`, the pnpm 10 lineage. The number in the
+  first draft was right after all — it was simply never checked, which is why this
+  question existed. Write `"packageManager": "pnpm@10.34.9"`.
 - **CI's `pnpm/action-setup@v4` step.** It takes `version: 10` explicitly. Leave it or
   drop the `version` input so the action reads `packageManager`; both work, but only the
   second removes the last duplicated pin.
