@@ -132,7 +132,7 @@ That last row is the one that decides the design: **rolling back a migration is 
 **Design doc: `2026-10-27-production-images.md`.** The sketches below are the short
 version. That document carries the full stage layout, the constraints found while
 reading the code, the compose build blocks and the acceptance commands — read it before
-writing the Dockerfiles. Six things it corrects here:
+writing the Dockerfiles. Seven things it corrects here:
 
 - CI runs pytest **inside** the api image (`ci.yml:42-75`), so the image needs a `dev`
   target as well as a `runtime` one; deleting dev dependencies outright breaks CI.
@@ -149,6 +149,10 @@ writing the Dockerfiles. Six things it corrects here:
   every worker on every PDF.
 - `COPY apps/api /code` would ship `tests/`; the runtime image excludes it through
   `.dockerignore`, and CI keeps its tests through the bind mount.
+- **The web image needs its own `dev` target** (`C14`). The dev compose service mounts
+  source at `/code` and runs `pnpm dev`; a two-stage web Dockerfile would boot the
+  production stage in `/app` and break `make up` — and CI would not catch it, because
+  e2e builds web on the runner, not as this image.
 
 **The two snippets in §1.1 and §1.2 are the original sketch and are superseded** by §3
 and §4 of the design doc — do not build from them. They assume the `apps/api` build

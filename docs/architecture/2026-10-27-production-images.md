@@ -1,13 +1,14 @@
 # Production images — design (Phase 0 §1)
 
-**Status: proposed. No Dockerfile has been changed yet.** This document exists so the
-shape of the images can be reviewed on its own; the code change is a separate step
-after the decisions in §6 are settled.
+**Status: reviewed and approved 2026-11-06. No Dockerfile has been changed yet.** This
+document exists so the shape of the images can be agreed before a line of build config is
+committed; the code change is the next PR.
 
 **Revised 2026-11-03** — every claim below re-checked against the tree at `db6564b`
-(the commit that carries the §2 health split). Eight things the original sketch did not
-know about are recorded here; four of them came from that re-check and are listed in
-§10 with the evidence that corrected them.
+(the commit that carries the §2 health split). **Reviewed again 2026-11-06 before merging
+PR #181**; that review found one blocking defect (C14) and one unverifiable assertion
+(C10), both corrected below. Nine things the original sketch did not know about are
+recorded here; the full trail of corrections is in §10.
 
 It replaces the sketch in `2026-10-27-phase0-checklist.md` §1 with something that
 survives contact with the repository:
@@ -20,8 +21,9 @@ survives contact with the repository:
 | `docker-compose.yml:39` starts `search-worker` from the same image with a different command | Two Dockerfiles, **three** container roles |
 | `tracking/page.tsx:97` reads `NEXT_PUBLIC_PROCUREMENT_UI_READY`, and `ci.yml:239` exports `.env` before `pnpm build` for exactly that reason | The web build **does** need one build-time value (D5), which the first draft denied |
 | `apps/api/tests/` is inside the directory `COPY apps/api /code` copies | The runtime image would ship the test suite unless the context excludes it (D6) |
-| `USER 10001` has no home directory, and fontconfig wants a writable cache | Every PDF render rebuilds the font cache unless `HOME`/`XDG_CACHE_HOME` are set (C10) |
+| `USER 10001` has no writable home, and fontconfig wants a cache there | Every PDF render risks a font-cache rebuild unless `HOME`/`XDG_CACHE_HOME` are pinned (C10) |
 | `apps/web/pnpm-workspace.yaml` carries `ignoredBuiltDependencies` | It has to be copied **before** `pnpm install`, or the install runs with different settings than CI (C13) |
+| `docker-compose.yml:45-50` mounts source at `/code` and runs `pnpm dev` | The web image needs its own `dev` target, or `make up` boots the production stage and the dev stack dies (C14) |
 
 ---
 
@@ -136,12 +138,15 @@ consistent with this: its build step exports `API_URL=http://localhost:8000`, bu
 same export is what the subsequent `next start` inherits — the build itself would not
 fail without it.
 
-**C10 — UID 10001 has no home directory, and fontconfig writes a cache.** `python:3.12-slim`
-declares no `HOME`, so a numeric `USER 10001` starts with `HOME=/root` inherited from the
-base image's environment — unwritable. fontconfig then falls back, warns on stderr, and
-each worker rebuilds its font cache; WeasyPrint pays that cost per process, and there are
-two workers. `ENV HOME=/tmp XDG_CACHE_HOME=/tmp/.cache` is the whole fix. It is cheap and
-it removes a class of "PDFs are slow on the customer's box and nobody knows why".
+**C10 — UID 10001 has no writable home, and fontconfig caches fonts there.** The
+`python:3.12-slim` image declares no `HOME`, so with a numeric `USER 10001` the process
+starts with `HOME` unset or pointing at a root-owned path — either way fontconfig has no
+writable cache directory. It falls back, warns on stderr, and each worker rebuilds its
+font cache; WeasyPrint pays that cost per process, and there are two workers.
+`ENV HOME=/tmp XDG_CACHE_HOME=/tmp/.cache` makes the behaviour deterministic regardless of
+which of the two it is. (The earlier wording claimed the base image sets `HOME=/root`;
+that was an assumption, not something we verified, and Docker is not available in the
+environment this review ran in. The fix is the same either way.)
 
 **C11 — `COPY apps/api /code` would ship the test suite.** `apps/api/` contains `tests/`,
 `perf_ids.txt` and the Dockerfile itself. The runtime image should carry `app/` and
@@ -149,16 +154,42 @@ it removes a class of "PDFs are slow on the customer's box and nobody knows why"
 is safe for CI because CI's container sees the source through the bind mount
 (`docker-compose.yml:21`), not through the image.
 
-**C12 — the `dev` target deliberately contains no application source.** `deps` and `dev`
-install dependencies only; the source arrives from `./apps/api:/code`. That is what makes
-the dev image cheap and cache-stable, but it means `docker run <dev image> pytest` finds
-nothing. Worth stating plainly, because the next person to debug CI will try exactly that.
+**C12 — the `dev` targets deliberately contain no application source.** Both images'
+`deps` and `dev` stages install dependencies only; the source arrives from the bind
+mounts (`./apps/api:/code` and `./apps/web:/code`). That is what makes the dev images
+cheap and cache-stable, but it means `docker run <api-dev image> pytest` finds nothing.
+Worth stating plainly, because the next person to debug CI will try exactly that.
 
 **C13 — `pnpm-workspace.yaml` changes how `pnpm install` behaves.** It carries
 `ignoredBuiltDependencies: [sharp, unrs-resolver]`, which is the pnpm 10 build-script
 allow-list. If the file is absent when `pnpm install` runs, the install uses different
 settings than CI does (CI runs from `apps/web`, where the file is present). Copy it with
 `package.json` and the lockfile, before the install — not with the later `COPY apps/web ./`.
+
+**C14 — the web image needs a `dev` target too, or `make up` breaks.** This is the one
+blocking defect found in the 2026-11-06 review. The dev compose service is
+`docker-compose.yml:45-50`: `build: ./apps/web`, `volumes: ["./apps/web:/code"]`,
+`command: pnpm dev`. A multi-stage Dockerfile builds its **last** stage when no `target`
+is given. If that last stage is `runtime`, the container starts with `WORKDIR /app`,
+`NODE_ENV=production` and `--prod`-only `node_modules` — while the source is mounted at
+`/code`. `next dev` then runs in `/app` with no `app/` directory, no `next.config.ts` and
+no `tailwindcss`; the dev stack is dead on the first `make up`.
+
+It does not get caught by CI either: `ci.yml:172-181` bakes only `api` and
+`search-worker`; the e2e job builds and starts web **on the runner**
+(`ci.yml:238-272`), never as this image. So the failure would surface on a developer's
+machine, not in a check.
+
+**Fix:** give the web Dockerfile a `deps` stage (`WORKDIR /code`, full dependency set, no
+source) and a `dev` stage inheriting it, and set `target: dev` in the dev compose file —
+exactly the shape the api image already uses (C12). The production compose file overrides
+`target: runtime`.
+
+One consequence to accept: the bind mount at `/code` shadows the image's
+`/code/node_modules`, so `pnpm dev` uses the **host's** `apps/web/node_modules`. That is
+already how the dev stack works today, and it is why `make up` assumes a local `pnpm
+install`. The `dev` target is there to put `WORKDIR`, `NODE_ENV` and the command in the
+right place, not to supply the dependencies in compose.
 
 ---
 
@@ -246,7 +277,11 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
 ## 4. Proposed `apps/web/Dockerfile`
 
 ```dockerfile
-FROM node:22-slim AS build
+# Build context is the repository root:
+#   docker build -f apps/web/Dockerfile .
+
+# ---- deps: full dependency set, no source (C12/C14) ----
+FROM node:22-slim AS deps
 ENV NEXT_TELEMETRY_DISABLED=1
 # No pnpm version here on purpose: corepack reads packageManager from
 # package.json, which is the one pin CI and the image share (D7).
@@ -256,12 +291,22 @@ WORKDIR /code
 # runs with different settings than CI (C13).
 COPY apps/web/package.json apps/web/pnpm-lock.yaml apps/web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
+
+# ---- dev: what the dev compose file builds (C14) ----
+# WORKDIR stays /code, NODE_ENV stays development; source and node_modules
+# arrive from the ./apps/web:/code bind mount.
+FROM deps AS dev
+ENV NODE_ENV=development
+
+# ---- build: the production bundle ----
+FROM deps AS build
 COPY apps/web ./
 # The one build-time value (C7). Default matches .env.example:19.
 ARG NEXT_PUBLIC_PROCUREMENT_UI_READY=1
 ENV NEXT_PUBLIC_PROCUREMENT_UI_READY=${NEXT_PUBLIC_PROCUREMENT_UI_READY}
 RUN pnpm build
 
+# ---- runtime ----
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
@@ -305,6 +350,15 @@ CMD ["pnpm", "start"]
 - **`output: "standalone"` is not in this change.** It would cut the runtime image
   substantially, but it changes how static assets and `next start` behave and would need
   the full e2e suite to prove. Separate PR, after this one is on `main` (D2).
+- **Four targets, `runtime` last.** `dev` and `build` both branch off `deps`, so neither
+  repeats the install. `runtime` is last so a bare `docker build` stays production-shaped.
+  `dev` is reachable only because compose names it explicitly — see C14 for why that is
+  mandatory and not cosmetic.
+- **The flag must also be present at runtime.** The build `ARG` covers the inlined path
+  (C7). `docker-compose.prod.yml` must keep `NEXT_PUBLIC_PROCUREMENT_UI_READY` in its
+  `env_file` / `environment` as well, so that a future refactor which reads it in a
+  server component at runtime does not silently resolve to `undefined`. Do not strip
+  `NEXT_PUBLIC_*` when writing the production env whitelist.
 
 **Resolved during the re-check (was V2):** the pnpm 10 build-script question is already
 answered in the tree — `apps/web/pnpm-workspace.yaml` lists `sharp` and `unrs-resolver`
@@ -332,17 +386,19 @@ under `ignoredBuiltDependencies`. Nothing to add; just copy the file before inst
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      target: dev                      # C14: `pnpm dev` must run in /code, not /app
 ```
 
 Setting `target: dev` in the compose file is what keeps CI untouched: `docker/bake-action`
 reads the same file (`ci.yml:42-50`), so it builds `dev` without any workflow edit. The
-production file written in §8 of the checklist overrides `target: runtime`. The
-alternative — leaving the default as `dev` and overriding in production only — also works
-but makes a bare `docker build` produce a test-bearing image.
+production file written in §8 of the checklist overrides `target: runtime` for all three
+services. The alternative — leaving the default as `dev` and overriding in production
+only — also works but makes a bare `docker build` produce a test-bearing image.
 
-Because `dev` carries no source (C12), the bind mounts at `docker-compose.yml:21,42,49`
-stop being a convenience and become load-bearing. They must not be removed from the dev
-file.
+Because the `dev` targets carry no source (C12, C14), the bind mounts at
+`docker-compose.yml:21,42,49` stop being a convenience and become load-bearing. They must
+not be removed from the dev file — and the web one must keep pointing at `/code`,
+because that is the `dev` stage's `WORKDIR`.
 
 **New root `.dockerignore`** (C3, C11):
 
@@ -443,7 +499,8 @@ Two details still to settle at implementation time, neither of them a design que
 
 ## 8. Acceptance
 
-Run against the built images, not against a compose-up dev stack:
+Run against the built images, not against a compose-up dev stack — with one deliberate
+exception: the C14 check has to prove that `make up` still works.
 
 | Check | Expected |
 | --- | --- |
@@ -462,6 +519,8 @@ Run against the built images, not against a compose-up dev stack:
 | Build with `--build-arg NEXT_PUBLIC_PROCUREMENT_UI_READY=0`, log in, open `/tracking` | the Procurement entry point is **absent**; rebuild with the default and it is **present** (proves D5 is wired) |
 | Start web + api, `curl -I localhost:3000` and one authenticated e2e spec | 200 / pass |
 | Deliberately corrupt a version in `apps/web/package.json` | **build fails** (proves `|| true` is gone) |
+| `docker build -f apps/web/Dockerfile --target build .` with no api or db container running | build succeeds (proves C9) |
+| `make up`, then `curl -s -o /dev/null -w '%{http_code}' localhost:3000/login` | `200`, and `docker compose logs web` shows `next dev` (proves C14 — the dev stack is not broken by the new last stage) |
 
 The last one is the acceptance test that matters most: the current image cannot fail. The
 one above it is the second: an image that quietly loses a feature is the failure mode a
@@ -471,12 +530,14 @@ green build does not catch.
 
 ## 9. Suggested sequence
 
-1. **PR A** — `apps/api/Dockerfile` and `apps/web/Dockerfile` (multi-stage, targets),
-   root `.dockerignore`, compose build blocks with `context: .` / `target: dev`, the font
-   move with its four `url()` edits, and the stale `.env.example:6-7` comment (C7).
-   CI stays green because `dev` is what CI builds.
-   This PR alone proves C1, C2, C3, C8, C11 and the "install failures fail the build"
-   acceptance.
+1. **PR A** — `apps/api/Dockerfile` (three targets) and `apps/web/Dockerfile` (**four**
+   targets, including `dev` — C14), root `.dockerignore`, compose build blocks with
+   `context: .` / `target: dev` for all three services, the `packageManager` pin (Q15),
+   the font move with its four `url()` edits, and the stale `.env.example:6-7` comment
+   (C7). CI stays green because `dev` is what CI builds.
+   This PR alone proves C1, C2, C3, C8, C11, C12, C14 and the "install failures fail the
+   build" acceptance. **Also run `make up` before merging** — that is the only check
+   which would have caught C14.
 2. **PR B** — `docker-compose.prod.yml` with `target: runtime` (part of checklist §8):
    this is where the runtime image first gets exercised, and where C6/C10 stop being
    theoretical.
@@ -509,3 +570,19 @@ apps/api`), and C12 (the `dev` target is source-less by design).
 Two claims were re-verified and stand unchanged: the four `url()` entries in `print.css`
 and their resolution against `TEMPLATES_DIR` (C5), and `FILE_STORE_ROOT` defaulting to
 `/uploads` at `files/store.py:62` (C6).
+
+### 10.1 Review before merging PR #181 — 2026-11-06
+
+One blocking defect, one unverifiable assertion, two gaps in verification, and one count:
+
+| Severity | Finding | What changed |
+| --- | --- | --- |
+| **Blocking** | The web Dockerfile had only `build` and `runtime` stages while the dev compose file named no `target`. Compose builds the last stage, so `make up` would run `pnpm dev` in `/app` (`NODE_ENV=production`, `--prod` deps) with the source mounted at `/code`. CI would not catch it — `ci.yml:172-181` bakes only `api` and `search-worker`, and e2e builds web on the runner | **C14 added**, web Dockerfile gains `deps` + `dev` stages, compose gains `target: dev`, two acceptance rows added, §9 PR A now requires `make up` |
+| Accuracy | C10 asserted the base image sets `HOME=/root`. Docker was not available to verify it, and the official image declares no `HOME` | **C10 reworded** to the observable fact (no writable cache dir for a numeric UID); the `HOME`/`XDG_CACHE_HOME` fix is unchanged and is now justified without the assumption |
+| Gap | C9 asserted `next build` needs no reachable api but had no acceptance command | **row added** to §8: build `--target build` with no api/db running |
+| Gap | Nothing proved the production env whitelist keeps the Procurement flag | **note added** to §4: prod compose must keep `NEXT_PUBLIC_PROCUREMENT_UI_READY` in `env_file`/`environment` |
+| Count | The PR body said "14 acceptance commands"; the table already had 15 | corrected in the PR body — it now has **17** |
+
+**Not verified in this review:** none of the §8 commands were executed — there is no
+Docker daemon in this environment. The document is a design, not a tested build; PR A is
+where C4, C6, C10 and C14 become evidence. Merging it approves the shape, not the result.
