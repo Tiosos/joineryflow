@@ -132,7 +132,8 @@ That last row is the one that decides the design: **rolling back a migration is 
 **Design doc: `2026-10-27-production-images.md`.** The sketches below are the short
 version. That document carries the full stage layout, the constraints found while
 reading the code, the compose build blocks and the acceptance commands — read it before
-writing the Dockerfiles. Seven things it corrects here:
+writing the Dockerfiles. Ten things it corrects here (the last three were found by
+actually building and running the images — `2026-10-27-production-images.md` §10.2):
 
 - CI runs pytest **inside** the api image (`ci.yml:42-75`), so the image needs a `dev`
   target as well as a `runtime` one; deleting dev dependencies outright breaks CI.
@@ -153,6 +154,14 @@ writing the Dockerfiles. Seven things it corrects here:
   source at `/code` and runs `pnpm dev`; a two-stage web Dockerfile would boot the
   production stage in `/app` and break `make up` — and CI would not catch it, because
   e2e builds web on the runner, not as this image.
+- **The WeasyPrint apt layer belongs in a shared `base` stage**, not just `runtime`
+  (`C4`/`C15`): `app/main.py` imports weasyprint at startup, so the `dev` target CI runs
+  pytest in fails with `libgobject-2.0-0` missing.
+- **The web dev service needs an anonymous `/code/node_modules` volume** (`C14`): the
+  source bind mount otherwise shadows the image's dependencies, and on Windows the host's
+  pnpm links are absolute `/c/Users/...` paths that do not resolve in the container.
+- **The web runtime `CMD` must call `next` directly, not `pnpm start`** (`C16`): under
+  `USER 10001` corepack tries to write `/.cache/node/corepack/v1` and exits `EACCES`.
 
 **The two snippets in §1.1 and §1.2 are the original sketch and are superseded** by §3
 and §4 of the design doc — do not build from them. They assume the `apps/api` build

@@ -11,7 +11,10 @@ services:
     ports: ["5432:5432"]
     volumes: ["dbdata:/var/lib/postgresql/data"]
   api:
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
     env_file: .env
     environment:
       FILE_STORE_ROOT: /uploads
@@ -36,17 +39,29 @@ services:
   # retry loop cannot starve the api). Same image, different command; no
   # --reload, so restart it after editing app/search/.
   search-worker:
-    build: ./apps/api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
     env_file: .env
     depends_on: [db, meili]
     volumes: ["./apps/api:/code"]
     command: python -m app.search.worker
   web:
-    build: ./apps/web
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: dev
     env_file: .env
     depends_on: [api]
     ports: ["3000:3000"]
-    volumes: ["./apps/web:/code"]
+    volumes:
+      - ./apps/web:/code
+      # Keep the dev image's own node_modules (Linux symlinks). The host bind
+      # mount above would otherwise shadow it, and on Windows pnpm's host
+      # symlinks are absolute /c/Users/... paths that do not resolve in the
+      # container — `next dev` then dies with MODULE_NOT_FOUND.
+      - /code/node_modules
     command: pnpm dev
 volumes:
   dbdata:
