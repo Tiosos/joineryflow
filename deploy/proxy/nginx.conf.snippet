@@ -1,0 +1,71 @@
+# JoineryFlow — nginx reverse-proxy snippet (customer-owned tier).
+#
+# Q1 decided: ONE external hostname, TLS terminates at the customer's existing
+# reverse proxy / gateway / WAF. We do not own this tier, so this is a SNIPPET
+# to merge into the customer's config, not a complete nginx.conf.
+# Certificates, TLS policy, HSTS and any WAF rules stay the customer's.
+#
+# Put `upstream` and the two `server` blocks inside `http { }`. Adjust
+# server_name, certificate paths and the upstream address, then `nginx -t`.
+#
+# If the proxy runs on ANOTHER host, change the upstream address to the compose
+# host's internal IP and set JF_WEB_BIND to that same IP in .env; firewall the
+# port so only the proxy can reach it. Never publish 5432 or 8000.
+
+upstream joineryflow_web {
+    # Must match JF_WEB_BIND:JF_WEB_PORT in .env (default 127.0.0.1:3000).
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name jf.customer.com;
+
+    # Customer-owned TLS. Replace with their real paths / policy.
+    ssl_certificate     /etc/ssl/certs/jf.customer.com.crt;
+    ssl_certificate_key /etc/ssl/private/jf.customer.com.key;
+
+    # Uploads pass through Next's /api/[...proxy] route, which buffers the
+    # whole body into memory before forwarding. nginx's 1m default answers 413
+    # before the application ever sees the request. Raise to the customer's
+    # largest expected attachment.
+    client_max_body_size 25m;
+
+    # PDF / quote rendering is slow by nature (REVIEW-2026-10 section C: a
+    # 300-line quote PDF is about 3.3s). Raise the read timeout ONLY for these
+    # paths; the global 60s ceiling stays in the location / block below.
+    # No WebSocket/SSE is used, so no Upgrade headers are needed.
+    location ~ ^/api/items/[^/]+/(cutlist|hardware|combined)\.pdf$ {
+        proxy_pass http://joineryflow_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Connection        "";
+        proxy_read_timeout 120s;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://joineryflow_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Connection        "";
+        proxy_read_timeout 60s;
+    }
+
+    # Support needs GET /version reachable without shell access (checklist 9.2).
+    # It is matched by location / above; no special case required.
+}
+
+server {
+    listen 80;
+    server_name jf.customer.com;
+    return 301 https://$host$request_uri;
+}

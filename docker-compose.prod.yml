@@ -1,0 +1,108 @@
+# JoineryFlow production stack — customer self-hosted (D1).
+#
+# This file is deliberately NOT an override of docker-compose.yml. The dev file
+# mounts source, runs --reload / next dev, publishes 5432/8000 and disables
+# Postgres durability flags. None of that belongs here.
+#
+# TLS terminates at the customer's existing reverse proxy (Q1). Only the web
+# tier is published, and by default only on 127.0.0.1. db, meili, api and
+# search-worker have no `ports:` at all.
+#
+# Deploy (from the directory holding this file and .env):
+#   scripts/check-env.sh .env
+#   docker compose --env-file .env -f docker-compose.prod.yml up -d
+#
+# `--env-file` is MANDATORY: it supplies the ${...} values below. The same file
+# is injected into containers via `env_file`. Do not run this from a source
+# checkout with its dev .env — JF_VERSION is deliberately required with `:?`,
+# so a missing/incorrect --env-file fails loudly instead of starting with dev
+# credentials and COOKIE_SECURE=false.
+#
+# Image naming works for BOTH delivery modes (Q4, decided 2026-11-08):
+#   registry : JF_REGISTRY=registry.customer.com/joineryflow  JF_VERSION=1.0.0
+#   offline  : JF_REGISTRY=joineryflow (default), images pre-loaded by
+#              `docker load` from the release bundle, same JF_VERSION.
+# CI must tag the two runtime images with exactly these names.
+
+services:
+  db:
+    image: postgres:16
+    # NO durability shortcuts here. The dev compose disables fsync,
+    # synchronous_commit and full_page_writes for test speed; on real data a
+    # crash can lose recent writes (checklist section 8).
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: ["dbdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    # No ports: unreachable from outside the compose network.
+
+  meili:
+    image: getmeili/meilisearch:v1.54.0
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+    volumes: ["meilidata:/meili_data"]
+    restart: unless-stopped
+    # No ports. Production mode requires a master key of at least 16 bytes;
+    # scripts/check-env.sh enforces that.
+
+  api:
+    image: ${JF_REGISTRY:-joineryflow}/api:${JF_VERSION:?JF_VERSION is required (e.g. 1.0.0 or a release tag)}
+    env_file: ${JF_ENV_FILE:-/opt/joineryflow/.env}
+    environment:
+      FILE_STORE_ROOT: /uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      meili:
+        condition: service_started
+    volumes: ["uploads:/uploads"]
+    restart: unless-stopped
+    # No ports. The api Dockerfile's CMD already has --proxy-headers and
+    # --forwarded-allow-ips=* (production design D4/C7), so X-Forwarded-Proto
+    # from the customer proxy is honoured. Its HEALTHCHECK probes /health/live,
+    # NOT /health/ready — see deploy/README.md for why using ready here would
+    # deadlock a first install on an unmigrated database.
+
+  # Same image, different command (Q577). Keeps a crashed retry loop from
+  # starving the api process.
+  search-worker:
+    image: ${JF_REGISTRY:-joineryflow}/api:${JF_VERSION:?JF_VERSION is required (e.g. 1.0.0 or a release tag)}
+    env_file: ${JF_ENV_FILE:-/opt/joineryflow/.env}
+    depends_on:
+      db:
+        condition: service_healthy
+      meili:
+        condition: service_started
+    restart: unless-stopped
+    command: ["python", "-m", "app.search.worker"]
+
+  web:
+    image: ${JF_REGISTRY:-joineryflow}/web:${JF_VERSION:?JF_VERSION is required (e.g. 1.0.0 or a release tag)}
+    env_file: ${JF_ENV_FILE:-/opt/joineryflow/.env}
+    depends_on:
+      api:
+        condition: service_healthy
+    # Q1: only the proxy's 80/443 are public. Bind to loopback by default;
+    # if the proxy is on another host, set JF_WEB_BIND to this host's internal
+    # IP (and let the customer's firewall restrict access to the proxy only).
+    # JF_WEB_PORT only changes the HOST port — the container and its healthcheck
+    # stay on 3000. Point the proxy's upstream at the same port.
+    ports:
+      - "${JF_WEB_BIND:-127.0.0.1}:${JF_WEB_PORT:-3000}:3000"
+    restart: unless-stopped
+    # No build:, no source mounts: the code is in the image.
+
+volumes:
+  dbdata:
+  uploads:
+  meilidata:
