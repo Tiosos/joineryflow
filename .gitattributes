@@ -1,1 +1,5 @@
 *.pdf binary
+# Shell scripts must keep LF in the working tree too: the offline release
+# bundle (Q4) may be assembled on Windows, and a CRLF shebang makes
+# scripts/check-env.sh fail with "bad interpreter" on the customer's Linux host.
+*.sh text eol=lf
