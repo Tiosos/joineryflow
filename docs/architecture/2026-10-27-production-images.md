@@ -2,8 +2,10 @@
 
 **Status: implemented and verified 2026-11-08** on local branch `feat/prod-images`
 (**not pushed**). PR #181 merged the design on 2026-11-06. Building the images and
-running all 17 §8 checks against them found **three further design defects** — all fixed
-here and in the local implementation. Per-check results and the evidence are in §10.2.
+running all 17 §8 checks against them found **three further design defects** — per-check
+results and the evidence are in §10.2. A second review the same day found **one more
+runtime defect (C17)** and **one CI-breaking suggestion in Q15**; both are corrected here
+and in the local implementation — see §10.3. Nothing in this branch has been pushed.
 
 **Revised 2026-11-03** — every claim below re-checked against the tree at `db6564b`
 (the commit that carries the §2 health split). **Reviewed again 2026-11-06 before merging
@@ -27,6 +29,7 @@ survives contact with the repository:
 | `docker-compose.yml:45-50` mounts source at `/code` and runs `pnpm dev` | The web image needs its own `dev` target, or `make up` boots the production stage and the dev stack dies (C14) |
 | `app/main.py` imports weasyprint at process start | The four WeasyPrint system libraries have to be in **every** stage, not just `runtime`, or the `dev` target CI runs pytest in cannot even import the app (C4, C15) |
 | Host pnpm symlinks are absolute paths, and corepack re-resolves pnpm at container start | The dev service needs an anonymous `node_modules` volume, and the runtime `CMD` must not go through `pnpm` at all (C14, C16) |
+| `COPY --from=build /code/.next` lands as root while the process is `USER 10001` | `/app/.next/cache` must be chowned, or the first ISR / image-optimisation write fails with `EACCES` (C17) |
 
 ---
 
@@ -238,6 +241,18 @@ CMD ["node", "node_modules/next/dist/bin/next", "start"]
 The same reasoning applies to the `HEALTHCHECK`: it uses `node -e` and never touches a
 package manager.
 
+**C17 — the web runtime needs a writable `.next/cache`.** Found in the second review
+(2026-11-08), after the 17 checks had already passed. `COPY --from=build /code/.next`
+lands as **root**, while the process runs as `USER 10001`; `touch
+/app/.next/cache/.probe` inside the running container returns `Permission denied`.
+Nothing in today's app writes there — no `next/image`, and server-side fetches default to
+no-store — which is exactly why all 17 checks stayed green. The first ISR page, image
+optimisation call or persistent fetch cache would fail with `EACCES`, on a customer's box,
+with no build-time warning. `RUN mkdir -p /app/.next/cache && chown -R 10001:10001
+/app/.next/cache` **after** the COPY is the whole fix. This is the same class of bug as
+C6 (upload root) and C10 (fontconfig cache): a non-root process inherits root-owned
+directories from the build.
+
 ---
 
 ## 3. Proposed `apps/api/Dockerfile`
@@ -365,6 +380,10 @@ COPY --from=build /code/package.json /code/pnpm-lock.yaml /code/pnpm-workspace.y
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=build /code/.next ./.next
 COPY --from=build /code/public ./public
+# Next writes ISR / fetch / image-optimisation caches under .next/cache at
+# runtime. The COPY above lands as root, so UID 10001 would hit EACCES the
+# first time a cache is written (C17). This must come after the COPY.
+RUN mkdir -p /app/.next/cache && chown -R 10001:10001 /app/.next/cache
 USER 10001
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
@@ -401,6 +420,9 @@ CMD ["node", "node_modules/next/dist/bin/next", "start"]
 - **`output: "standalone"` is not in this change.** It would cut the runtime image
   substantially, but it changes how static assets and `next start` behave and would need
   the full e2e suite to prove. Separate PR, after this one is on `main` (D2).
+- **`.next/cache` is chowned after the COPY (C17).** A `standalone` build would change
+  where that directory lives, so PR C must re-check ownership rather than assume this
+  line still applies.
 - **Four targets, `runtime` last.** `dev` and `build` both branch off `deps`, so neither
   repeats the install. `runtime` is last so a bare `docker build` stays production-shaped.
   `dev` is reachable only because compose names it explicitly — see C14 for why that is
@@ -498,7 +520,7 @@ Settled, recorded here so the Dockerfiles have one source of truth.
 | **D4** | `--workers` default | **2**, with `--proxy-headers` and `--forwarded-allow-ips=*`. Forking is safe (no in-process scheduler); WeasyPrint makes each worker expensive |
 | **D5** | Build-time env for the web image | **One `ARG`: `NEXT_PUBLIC_PROCUREMENT_UI_READY`, default `1`.** It is inlined at build; `SESSION_COOKIE_NAME` and `API_URL` stay runtime-only |
 | **D6** | Does the runtime api image carry `tests/`? | **No.** `apps/api/tests` and `perf_ids.txt` leave via `.dockerignore`; CI keeps its tests through the bind mount (C11, C12) |
-| **D7** | Where the pnpm version is pinned | **`package.json`'s `packageManager` field** (settled 2026-11-03). CI and the image then read the same pin through corepack, so they cannot drift. Exact version **`pnpm@10.34.9`**, verified 2026-11-06 — see Q15 |
+| **D7** | Where the pnpm version is pinned | **`apps/web/package.json`'s `packageManager` field**, exact **`pnpm@10.34.9`** (settled 2026-11-03, verified 2026-11-06). The image and a developer's shell read it via corepack. CI still installs pnpm with `pnpm/action-setup@v4` and `version: 10` — a **major range** — so all three coincide today but are **not** guaranteed to stay in step. See the CI caveat in Q15 |
 
 ---
 
@@ -535,20 +557,34 @@ is much cheaper to decide before the release pipeline (§9) is built than after.
 **Q15 — one pnpm version, in one place. DECIDED 2026-11-03: the `packageManager` field.**
 The problem it settles: the draft pinned `pnpm@10.34.9` in the Dockerfile, CI pins
 `version: 10` (`ci.yml:105,212`) and `apps/web/package.json` declares nothing — three
-sources, two of them ranges. Adding `"packageManager": "pnpm@<exact>"` to
-`apps/web/package.json` makes CI, the image and a developer's shell agree by construction,
-because `corepack enable` reads that field; the Dockerfile then needs no version at all.
+sources, two of them ranges. `"packageManager": "pnpm@10.34.9"` in
+`apps/web/package.json` is now the pin the **image** and a **developer's shell** read
+(corepack and pnpm both honour it); the Dockerfile needs no version of its own.
 
-Two details still to settle at implementation time, neither of them a design question:
+**CI is the exception, and an earlier version of this section got it wrong.** CI does not
+use corepack — it installs pnpm with `pnpm/action-setup@v4` and an explicit `version: 10`,
+a major range. All three resolve to 10.34.9 today (verified 2026-11-08: the image's
+corepack, `corepack pnpm` on the host, and even the host's pnpm 11.6.0 invoked from
+`apps/web/` all report 10.34.9), but they do so **independently**. A 10.35.0 release would
+move CI while the image stays pinned. "Cannot drift by construction" was too strong; the
+honest statement is "coincide today".
+
+Two implementation notes:
 
 - **The exact version — settled 2026-11-06: `pnpm@10.34.9`.** `npm view 'pnpm@10' version`
-  shows it exists and is the latest 10.x, which is what CI's `version: 10` resolves to
-  today; the lockfile is `lockfileVersion: 9.0`, the pnpm 10 lineage. The number in the
-  first draft was right after all — it was simply never checked, which is why this
-  question existed. Write `"packageManager": "pnpm@10.34.9"`.
-- **CI's `pnpm/action-setup@v4` step.** It takes `version: 10` explicitly. Leave it or
-  drop the `version` input so the action reads `packageManager`; both work, but only the
-  second removes the last duplicated pin.
+  shows it exists and is the latest 10.x; the lockfile is `lockfileVersion: 9.0`, the pnpm
+  10 lineage. The number in the first draft was right — it was simply never checked.
+- **Keep `version: 10` in CI. Do not just drop it.** The previous wording here suggested
+  "drop the `version` input so the action reads `packageManager`; both work" — **that would
+  break CI**. `pnpm/action-setup@v4` defaults `package_json_file` to `package.json` at
+  `GITHUB_WORKSPACE` (the repo root), and this repo has **no root `package.json`**; the
+  field lives in `apps/web/package.json`. With `version` removed the action finds no
+  `packageManager` and fails with `No pnpm version is specified`. It also throws
+  `Multiple versions of pnpm specified` if a `version` input and a *visible*
+  `packageManager` ever disagree. Exactly two safe configurations exist: keep
+  `version: 10` (current state), or remove `version` **and** add
+  `package_json_file: apps/web/package.json` to both action steps. Keep the first — the
+  lockfile is 9.0 and a pnpm 10.x patch drift does not invalidate it.
 
 ---
 
@@ -569,7 +605,7 @@ exception: the C14 check has to prove that `make up` still works.
 | `docker run --rm <api-runtime> test -f /db/alembic.ini` | exit 0 (proves C2) |
 | Start api + db, `curl /health/ready` | 200 after migrations (already covered by #179) |
 | Start api only, `curl /version` | `{"version": "dev", "schema_head": "…", …}` |
-| `docker run --rm <web-runtime> node -e "console.log(process.getuid())"` | `10001` |
+| `docker run --rm <web-runtime> node -e "console.log(process.getuid())"`; plus `docker run --rm --entrypoint sh <web-runtime> -c 'touch /app/.next/cache/.probe'` | `10001`; exit 0 (proves C17) |
 | `docker run --rm <web-runtime> ls node_modules \| grep -c "typescript"` | `0` (no devDependencies) |
 | Build with `--build-arg NEXT_PUBLIC_PROCUREMENT_UI_READY=0`, log in, open `/tracking` | the Procurement entry point is **absent**; rebuild with the default and it is **present** (proves D5 is wired) |
 | Start web + api, `curl -I localhost:3000` and one authenticated e2e spec | 200 / pass |
@@ -609,11 +645,13 @@ during the 2026-11-08 run):
    `apps/web/Dockerfile` (`deps`/`dev`/`build`/`runtime`), root `.dockerignore`, compose
    build blocks with `context: .` / `target: dev` for all three services **plus the web
    `/code/node_modules` anonymous volume**, the `packageManager` pin (Q15), the font move
-   with its four `url()` edits, the direct-`next` `CMD` (C16), and the stale
-   `.env.example:6-7` comment (C7). CI stays green because `dev` is what CI builds.
-   All of this is already implemented and verified on the local `feat/prod-images`
-   branch (§10.2) — **not pushed**. Before merging, re-run `make up` and the §8 table;
-   the three defects in §10.2 were invisible until a container was actually started.
+   with its four `url()` edits, the direct-`next` `CMD` (C16), the `.next/cache` chown
+   (C17), and the stale `.env.example:6-7` comment (C7). CI stays green because `dev` is
+   what CI builds. All of this is already implemented and verified on the local
+   `feat/prod-images` branch (§10.2, §10.3) — **not pushed**. Before merging, re-run
+   `make up` and the §8 table; the defects in §10.2/§10.3 were invisible until a
+   container was actually started. **Leave `ci.yml` alone** — Q15's "drop `version`"
+   suggestion was wrong and has been removed.
 2. **PR B** — `docker-compose.prod.yml` with `target: runtime` (part of checklist §8):
    this is where the runtime image first gets exercised, and where C6/C10 stop being
    theoretical.
@@ -681,7 +719,7 @@ All five images (`api:dev`, `api:runtime`, `web:dev`, `web:build`, `web:runtime`
 | 8 | PASS | `/db/alembic.ini` present |
 | 9 | PASS | after `alembic upgrade head` (→ `0089`) and seed: `{"ok":true,...,"schema_match":true}`, HTTP 200 |
 | 10 | PASS | api alone: `{"version":"dev","schema_head":"0089","db_schema":null}` |
-| 11 | PASS | `process.getuid()` → `10001` |
+| 11 | PASS (C17 added later) | `process.getuid()` → `10001`; the `.next/cache` writability assertion was added in §10.3 and re-run there |
 | 12 | PASS | runtime `node_modules` has no `typescript` |
 | 13 | PASS | ssr chunk `procurementReady:!0` (default) vs `!1` (`ARG=0`) |
 | 14 | PASS | runtime stack `curl -I /login` → 200; `smoke.spec.ts` (login → six tabs → logout) `1 passed (2.8s)` |
@@ -713,3 +751,49 @@ was run with `--output` pointed at a fresh directory. Neither changes any conclu
 PR B) was not exercised; the runtime stack here was assembled manually from the two
 runtime images. C6 (upload ownership under a named volume) and the §5 restore drill are
 still unverified.
+
+### 10.3 Second review — 2026-11-08 (before opening PR A)
+
+A read-through of the whole `feat/prod-images` diff, plus checks the 17-row table did not
+cover. No code was changed during the review itself; the two fixes were applied
+afterwards.
+
+**Checks that were added, not repeated:**
+
+| Check | Result |
+| --- | --- |
+| `docker buildx bake -f docker-compose.yml --print api` | resolves `context: .`, `dockerfile: apps/api/Dockerfile`, `target: dev` — the workflow's bake step will read the new build blocks |
+| `pytest -q tests/test_public_stats.py` inside the **dev** service | `2 passed` — C1 holds; the 17-row table never ran pytest |
+| `docker compose ps` | all five dev services Up; `search-worker` stable for 30 min |
+| `docker compose up --help \| grep renew-anon` | `-V, --renew-anon-volumes` exists, so the C14 rebuild advice is executable |
+| §3/§4 Dockerfile snippets vs the real files (normalised diff) | byte-identical after the C17 edit |
+| Full-tree grep for `seed/fonts` | only `print.css` (new `../fonts/` paths) and historical archive docs remain |
+
+**Two findings, both fixed:**
+
+| # | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | **High (documentation)** | §7 Q15 advised dropping `version: 10` from `pnpm/action-setup@v4` so it would read `packageManager`. That fails: the action defaults `package_json_file` to a **root** `package.json`, which this repo does not have, and throws `No pnpm version is specified`. D7 and the checklist also overstated "cannot drift" — CI uses pnpm via the action, not corepack | Q15 rewritten with the action's source-level behaviour and the two safe configurations; D7, the checklist row and the header note now say the three versions *coincide today* rather than being drift-proof. **No `ci.yml` change was made — `version: 10` stays** |
+| 2 | **Medium (runtime)** | `/app/.next/cache` is root-owned; `touch` as UID 10001 returns `Permission denied`. Invisible today (no `next/image`, fetches default to no-store), but ISR / image optimisation would fail on a customer's box | `RUN mkdir -p /app/.next/cache && chown -R 10001:10001 /app/.next/cache` after the `.next` COPY, in both the implementation and §4's snippet; recorded as C17 and added to §8 row 11 |
+
+**Re-verification after the chown:** the web runtime image was rebuilt;
+`docker run --rm --entrypoint sh jf-verify/web:runtime -c 'id -u; touch
+/app/.next/cache/.probe'` printed `10001` and `C17_WRITABLE=PASS`, with `ls -ld` showing
+the directory owned by `10001:10001`. The runtime web container came up `healthy`,
+`/login` returned 200, and `smoke.spec.ts` passed again. Row 11's expected result was
+updated accordingly.
+
+**One environment trap worth recording:** the review ran
+`pytest tests/test_public_stats.py` inside the dev service to prove C1. pytest truncates
+workspace-scoped tables (`ci.yml:67-70` documents this), which deleted the seeded users;
+the next e2e run then failed with `POST /auth/login → 401 invalid credentials`. That was
+**not** a regression from the chown — re-running `python -m seed.hartwood_joinery`
+restored login to 200 and the spec passed again. If pytest and an e2e run share a
+database, re-seed between them.
+
+**Still open, deliberately not in scope for these two fixes:** the web runtime has no
+explicit `HOME` (harmless now that C16 removed corepack from the startup path, but it is
+inconsistent with the api image); `.dockerignore` does not exclude local-only directories
+such as `.workbuddy-ai/` or `test-results/` (they enter the build context but are never
+`COPY`ed into an image); and `docs/archive/2026-05-02-pdf-generation.md` still describes
+`seed/fonts/` — a historical record, left as-is.

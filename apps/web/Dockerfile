@@ -36,6 +36,10 @@ COPY --from=build /code/package.json /code/pnpm-lock.yaml /code/pnpm-workspace.y
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=build /code/.next ./.next
 COPY --from=build /code/public ./public
+# Next writes ISR / fetch / image-optimisation caches under .next/cache at
+# runtime. The COPY above lands as root, so UID 10001 would hit EACCES the
+# first time a cache is written (C17). This must come after the COPY.
+RUN mkdir -p /app/.next/cache && chown -R 10001:10001 /app/.next/cache
 USER 10001
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
