@@ -882,13 +882,24 @@ statement about the production template.
 | `docker inspect PortBindings` | web `{"3000/tcp":[{"HostIp":"127.0.0.1","HostPort":"13001"}]}`; api `{}`; db `{}` |
 | host-side HTTP | `/login` 200, `/api/health` 200 |
 
-**A defect found by this run:** the first attempt failed with
-`bind: Only one usage of each socket address` because the dev stack already
-owned `127.0.0.1:3000`. Only `JF_WEB_BIND` was configurable, so the host port
-was fixed. `JF_WEB_PORT` (default 3000, host side only) was added to compose,
-the env template, the nginx snippet's upstream note and the deployment docs;
-the container and its `HEALTHCHECK` still use 3000. A customer with another
-service on 3000 would have hit the same wall.
+**Two defects were found by this run.**
+
+1. The first attempt failed with `bind: Only one usage of each socket address`
+   because the dev stack already owned `127.0.0.1:3000`. Only `JF_WEB_BIND` was
+   configurable, so the host port was fixed. `JF_WEB_PORT` (default 3000, host
+   side only) was added to compose, the env template, the nginx snippet's
+   upstream note and the deployment docs; the container and its `HEALTHCHECK`
+   still use 3000. A customer with another service on 3000 would have hit the
+   same wall.
+2. `search-worker` came up **unhealthy**. It shares the api **runtime** image,
+   whose `HEALTHCHECK` probes `127.0.0.1:8000/health/live` — but the worker runs
+   `python -m app.search.worker` and never listens on 8000, so every probe
+   failed with a connection error. The dev stack uses the `dev` target (no
+   `HEALTHCHECK`), which is why PR A's 17 checks never saw it. Fixed with
+   `healthcheck: { disable: true }` on that service; after recreation it reports
+   plain `Up`. A meaningful worker liveness signal needs an in-code heartbeat
+   and is out of scope here — `restart: unless-stopped` covers crashes only, not
+   a stuck retry loop. **Revisit this before the first customer install.**
 
 **Not verified:** `nginx -t` (nginx absent), external `nc` against a real host,
 and `Set-Cookie: Secure` behind an actual TLS proxy. Q12 still blocks a genuine

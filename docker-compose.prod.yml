@@ -85,6 +85,15 @@ services:
         condition: service_started
     restart: unless-stopped
     command: ["python", "-m", "app.search.worker"]
+    # The api runtime image carries a HEALTHCHECK that probes :8000/health/live.
+    # This container runs the worker, not uvicorn, so it would inherit a probe
+    # that can never succeed and be reported unhealthy forever. (The dev stack
+    # uses the dev target, which has no HEALTHCHECK — that is why this only
+    # showed up in production.) A real liveness signal for the worker needs an
+    # in-code heartbeat; out of scope here, so disable the inherited probe and
+    # rely on `restart: unless-stopped` for crashes.
+    healthcheck:
+      disable: true
 
   web:
     image: ${JF_REGISTRY:-joineryflow}/web:${JF_VERSION:?JF_VERSION is required (e.g. 1.0.0 or a release tag)}

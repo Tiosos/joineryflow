@@ -93,6 +93,13 @@ the migration above runs as a one-shot container before `up -d`.
 | `env_file: .env` from the repo | host-owned `.env` at `JF_ENV_FILE` |
 | `MEILI_ENV: development` | `MEILI_ENV: production` (requires a ≥16-byte master key) |
 | no restart policy | `restart: unless-stopped` on all five services |
+| `search-worker` uses the dev image (no healthcheck) | `healthcheck: disable: true` — the api **runtime** image's `/health/live` probe would otherwise be inherited by a worker that never listens on 8000 |
+
+> **Operational caveat:** the worker currently has no liveness signal of its own.
+> `restart: unless-stopped` recovers a crash, but not a worker stuck in a retry
+> loop. A heartbeat in `app/search/worker.py` is still owed before the first
+> customer install; until then, watch the search outbox / Meili index age as the
+> practical signal.
 
 ## Acceptance
 
