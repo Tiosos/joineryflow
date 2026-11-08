@@ -64,7 +64,7 @@ D1 closed one question and changed the shape of several others. What follows is 
 | **Q11** | `tests/e2e/` spec count: 76 on disk vs 66 in `CLAUDE.md:125` | Roadmap §7 (Q1) | Documentation accuracy only. Second half of the question: should `CLAUDE.md` drop the concrete number the way it already does for pytest counts? | Low |
 | **Q12** | How does a brand-new customer database get its starting rows? The only seeding tool is `python -m seed.hartwood_joinery`, and it is a **dev** seed (a fixed staff roster, password `hartwood-dev`) that is also the only thing populating `stages` (10 rows) and `status_options` (6 rows) | `2026-10-27-production-images.md` §7 | Whether the runtime image carries `seed/` at all, and the first customer install has no usable starting state without it | Before the first customer install |
 | **Q13** | Do images need to be byte-reproducible (base images pinned by digest)? | §9 | Rebuildability and "is this the image we audited?" against automatic base-image security fixes. Much cheaper to settle before the release pipeline exists | Before §9 |
-| **Q15** | Where is the pnpm version pinned: `package.json`'s `packageManager`, the Dockerfile, or CI's `version: 10`? Today all three differ | `2026-10-27-production-images.md` §7 | **DECIDED 2026-11-03: the `packageManager` field**, so CI and the image read one pin. Exact version `pnpm@10.34.9`, verified 2026-11-06 | Before PR A |
+| **Q15** | Where is the pnpm version pinned: `package.json`'s `packageManager`, the Dockerfile, or CI's `version: 10`? Today all three differ | `2026-10-27-production-images.md` §7 | **DECIDED 2026-11-03: `apps/web/package.json`'s `packageManager`, exact `pnpm@10.34.9`.** Image and dev shells read it via corepack; CI keeps `version: 10` (a major range) and coincides today rather than by construction. Do not drop the `version` input without `package_json_file: apps/web/package.json` — the repo has no root `package.json` | Settled |
 
 **Two of these block Phase 0 work (Q1, Q2).** The rest set the shape of individual sections or of the commercial model, and none of them prevents §1, §2 or §6 from starting this week.
 
@@ -132,7 +132,8 @@ That last row is the one that decides the design: **rolling back a migration is 
 **Design doc: `2026-10-27-production-images.md`.** The sketches below are the short
 version. That document carries the full stage layout, the constraints found while
 reading the code, the compose build blocks and the acceptance commands — read it before
-writing the Dockerfiles. Seven things it corrects here:
+writing the Dockerfiles. Eleven things it corrects here (the last four were found by
+actually building and running the images — `2026-10-27-production-images.md` §10.2/§10.3):
 
 - CI runs pytest **inside** the api image (`ci.yml:42-75`), so the image needs a `dev`
   target as well as a `runtime` one; deleting dev dependencies outright breaks CI.
@@ -153,6 +154,17 @@ writing the Dockerfiles. Seven things it corrects here:
   source at `/code` and runs `pnpm dev`; a two-stage web Dockerfile would boot the
   production stage in `/app` and break `make up` — and CI would not catch it, because
   e2e builds web on the runner, not as this image.
+- **The WeasyPrint apt layer belongs in a shared `base` stage**, not just `runtime`
+  (`C4`/`C15`): `app/main.py` imports weasyprint at startup, so the `dev` target CI runs
+  pytest in fails with `libgobject-2.0-0` missing.
+- **The web dev service needs an anonymous `/code/node_modules` volume** (`C14`): the
+  source bind mount otherwise shadows the image's dependencies, and on Windows the host's
+  pnpm links are absolute `/c/Users/...` paths that do not resolve in the container.
+- **The web runtime `CMD` must call `next` directly, not `pnpm start`** (`C16`): under
+  `USER 10001` corepack tries to write `/.cache/node/corepack/v1` and exits `EACCES`.
+- **`/app/.next/cache` must be chowned to UID 10001 after the COPY** (`C17`): the build
+  lands it as root, and the first ISR / image-optimisation write would fail with
+  `EACCES`. All 17 checks stayed green because nothing writes there today.
 
 **The two snippets in §1.1 and §1.2 are the original sketch and are superseded** by §3
 and §4 of the design doc — do not build from them. They assume the `apps/api` build

@@ -1,13 +1,16 @@
 # Production images — design (Phase 0 §1)
 
-**Status: reviewed and approved 2026-11-06. No Dockerfile has been changed yet.** This
-document exists so the shape of the images can be agreed before a line of build config is
-committed; the code change is the next PR.
+**Status: implemented and verified 2026-11-08** on local branch `feat/prod-images`
+(**not pushed**). PR #181 merged the design on 2026-11-06. Building the images and
+running all 17 §8 checks against them found **three further design defects** — per-check
+results and the evidence are in §10.2. A second review the same day found **one more
+runtime defect (C17)** and **one CI-breaking suggestion in Q15**; both are corrected here
+and in the local implementation — see §10.3. Nothing in this branch has been pushed.
 
 **Revised 2026-11-03** — every claim below re-checked against the tree at `db6564b`
 (the commit that carries the §2 health split). **Reviewed again 2026-11-06 before merging
 PR #181**; that review found one blocking defect (C14) and one unverifiable assertion
-(C10), both corrected below. Nine things the original sketch did not know about are
+(C10), both corrected below. Twelve things the original sketch did not know about are
 recorded here; the full trail of corrections is in §10.
 
 It replaces the sketch in `2026-10-27-phase0-checklist.md` §1 with something that
@@ -24,6 +27,9 @@ survives contact with the repository:
 | `USER 10001` has no writable home, and fontconfig wants a cache there | Every PDF render risks a font-cache rebuild unless `HOME`/`XDG_CACHE_HOME` are pinned (C10) |
 | `apps/web/pnpm-workspace.yaml` carries `ignoredBuiltDependencies` | It has to be copied **before** `pnpm install`, or the install runs with different settings than CI (C13) |
 | `docker-compose.yml:45-50` mounts source at `/code` and runs `pnpm dev` | The web image needs its own `dev` target, or `make up` boots the production stage and the dev stack dies (C14) |
+| `app/main.py` imports weasyprint at process start | The four WeasyPrint system libraries have to be in **every** stage, not just `runtime`, or the `dev` target CI runs pytest in cannot even import the app (C4, C15) |
+| Host pnpm symlinks are absolute paths, and corepack re-resolves pnpm at container start | The dev service needs an anonymous `node_modules` volume, and the runtime `CMD` must not go through `pnpm` at all (C14, C16) |
+| `COPY --from=build /code/.next` lands as root while the process is `USER 10001` | `/app/.next/cache` must be chowned, or the first ISR / image-optimisation write fails with `EACCES` (C17) |
 
 ---
 
@@ -70,10 +76,19 @@ no longer be built with `build: ./apps/api`. It has to be
 every `__pycache__` to the daemon. A root `.dockerignore` is part of this change, not an
 optional tidy-up.
 
-**C4 — the four WeasyPrint libraries are load-bearing.** `apps/api/Dockerfile:2-5`
-installs `libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b fonts-liberation`. Dropping any
-of them does not fail the build; it fails months later when a quote PDF renders without
-text. Keep all four, and add a PDF smoke test (§8) rather than trusting the list.
+**C4 — the four WeasyPrint libraries are load-bearing, and belong in every stage.**
+The original `apps/api/Dockerfile:2-5` installs
+`libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b fonts-liberation`. Dropping any of them
+does not fail the build; it fails months later when a quote PDF renders without text.
+Keep all four, and add a PDF smoke test (§8) rather than trusting the list.
+
+**Verified 2026-11-08:** putting them only in the `runtime` stage (as the first draft of
+this design did) breaks the `dev` target outright. `app/main.py` imports weasyprint at
+process start, and `libpango` is what pulls in `libgobject-2.0-0`; without it the api dev
+container dies with `OSError: cannot load library 'libgobject-2.0-0'` and CI's pytest
+never runs. The fix is a shared `base` stage carrying the apt layer, with `deps`, `dev`
+and `runtime` all descending from it — one apt layer, no duplication, no stage left out.
+See C15.
 
 **C5 — PDF fonts live outside `apps/api`.** `printing/templates/print.css:7,13,19,25`
 resolves to `<workdir>/seed/fonts/*.woff2`; in dev that path exists only because
@@ -185,11 +200,58 @@ source) and a `dev` stage inheriting it, and set `target: dev` in the dev compos
 exactly the shape the api image already uses (C12). The production compose file overrides
 `target: runtime`.
 
-One consequence to accept: the bind mount at `/code` shadows the image's
-`/code/node_modules`, so `pnpm dev` uses the **host's** `apps/web/node_modules`. That is
-already how the dev stack works today, and it is why `make up` assumes a local `pnpm
-install`. The `dev` target is there to put `WORKDIR`, `NODE_ENV` and the command in the
-right place, not to supply the dependencies in compose.
+**Verified 2026-11-08 — the first version of this fix was still incomplete.** A `dev`
+target alone is not enough. The bind mount at `/code` shadows the image's
+`/code/node_modules`, so `pnpm dev` had been using the **host's** `apps/web/node_modules`.
+On Windows that fails: pnpm's host links are absolute
+`/c/Users/.../node_modules/.pnpm/...` paths that do not exist inside a Linux container,
+and `next dev` dies with `Cannot find module '/code/node_modules/next/dist/bin/next'`.
+
+The correction is an **anonymous volume** in the dev compose service:
+
+```yaml
+    volumes:
+      - ./apps/web:/code
+      - /code/node_modules
+```
+
+Docker seeds that volume from the image on first creation, so the container uses the
+Linux-correct `node_modules` the `deps` stage installed. This also removes the old
+assumption that `make up` requires a local `pnpm install` on the host — a small win on
+every platform, and the difference between working and not working on Windows. If
+`apps/web/package.json` changes, the anonymous volume has to be recreated
+(`docker compose down -v` for the dev stack, or a fresh `up --build --renew-anon-volumes`).
+
+**C15 — the WeasyPrint apt layer must be shared across stages.** See C4. The evidence
+is the `dev` container's startup failure; `deps`/`dev` are not merely "dependency only"
+stages, they are the environment CI imports the whole application in.
+
+**C16 — the runtime `CMD` must not go through corepack.** The first draft used
+`CMD ["pnpm", "start"]`. Under `USER 10001` corepack tries to re-resolve the pinned pnpm
+at container start; with no writable `HOME` it attempts
+`mkdir '/.cache/node/corepack/v1'` and exits with `EACCES`. The build-time copy lives in
+`/root/.cache` (root-owned), and even a writable cache would leave a production container
+needing network access at startup. Call the bundled binary directly instead:
+
+```dockerfile
+CMD ["node", "node_modules/next/dist/bin/next", "start"]
+```
+
+`pnpm` remains a build-time tool only, which is what a production image should want.
+The same reasoning applies to the `HEALTHCHECK`: it uses `node -e` and never touches a
+package manager.
+
+**C17 — the web runtime needs a writable `.next/cache`.** Found in the second review
+(2026-11-08), after the 17 checks had already passed. `COPY --from=build /code/.next`
+lands as **root**, while the process runs as `USER 10001`; `touch
+/app/.next/cache/.probe` inside the running container returns `Permission denied`.
+Nothing in today's app writes there — no `next/image`, and server-side fetches default to
+no-store — which is exactly why all 17 checks stayed green. The first ISR page, image
+optimisation call or persistent fetch cache would fail with `EACCES`, on a customer's box,
+with no build-time warning. `RUN mkdir -p /app/.next/cache && chown -R 10001:10001
+/app/.next/cache` **after** the COPY is the whole fix. This is the same class of bug as
+C6 (upload root) and C10 (fontconfig cache): a non-root process inherits root-owned
+directories from the build.
 
 ---
 
@@ -201,8 +263,14 @@ right place, not to supply the dependencies in compose.
 # db/ has to be in the image: Makefile runs `alembic -w /db`, and app/meta.py
 # reads the schema head from /db/alembic.ini (C2).
 
+# ---- base: WeasyPrint system libraries, shared by every stage (C4/C15) ----
+FROM python:3.12-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+
 # ---- deps: runtime dependencies only ----
-FROM python:3.12-slim AS deps
+FROM base AS deps
 ENV PIP_NO_CACHE_DIR=1
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -216,11 +284,7 @@ FROM deps AS dev
 RUN pip install -e ".[dev]"
 
 # ---- runtime ----
-FROM python:3.12-slim AS runtime
-# All four WeasyPrint libraries from the current image; see C4.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b fonts-liberation \
- && rm -rf /var/lib/apt/lists/*
+FROM base AS runtime
 COPY --from=deps /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
@@ -245,10 +309,11 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
 
 **Notes on the choices**
 
-- **Three targets, default last.** `deps → dev → runtime` means the runtime image
-  inherits the dependency layer and never sees pytest, so the "no pytest in production"
-  rule is structural rather than a `pip uninstall` that someone can drop. `runtime` is
-  last so a bare `docker build` produces the production shape — fail-safe.
+- **Four stages, default last.** `base → deps → dev → runtime`: `base` carries the apt
+  layer every stage needs (C15), `deps` the venv, `dev` the test toolchain. The runtime
+  image inherits the dependency layer and never sees pytest, so the "no pytest in
+  production" rule is structural rather than a `pip uninstall` that someone can drop.
+  `runtime` is last so a bare `docker build` produces the production shape — fail-safe.
 - **`dev` does not re-copy `pyproject.toml`.** It inherits it from `deps`; repeating the
   `COPY` in the first draft was redundant and would only invalidate the layer twice.
 - **`--proxy-headers` needs `--forwarded-allow-ips`.** Uvicorn trusts forwarded headers
@@ -315,11 +380,16 @@ COPY --from=build /code/package.json /code/pnpm-lock.yaml /code/pnpm-workspace.y
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=build /code/.next ./.next
 COPY --from=build /code/public ./public
+# Next writes ISR / fetch / image-optimisation caches under .next/cache at
+# runtime. The COPY above lands as root, so UID 10001 would hit EACCES the
+# first time a cache is written (C17). This must come after the COPY.
+RUN mkdir -p /app/.next/cache && chown -R 10001:10001 /app/.next/cache
 USER 10001
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["pnpm", "start"]
+# Not `pnpm start`: see C16.
+CMD ["node", "node_modules/next/dist/bin/next", "start"]
 ```
 
 **Notes on the choices**
@@ -350,6 +420,9 @@ CMD ["pnpm", "start"]
 - **`output: "standalone"` is not in this change.** It would cut the runtime image
   substantially, but it changes how static assets and `next start` behave and would need
   the full e2e suite to prove. Separate PR, after this one is on `main` (D2).
+- **`.next/cache` is chowned after the COPY (C17).** A `standalone` build would change
+  where that directory lives, so PR C must re-check ownership rather than assume this
+  line still applies.
 - **Four targets, `runtime` last.** `dev` and `build` both branch off `deps`, so neither
   repeats the install. `runtime` is last so a bare `docker build` stays production-shaped.
   `dev` is reachable only because compose names it explicitly — see C14 for why that is
@@ -387,6 +460,9 @@ under `ignoredBuiltDependencies`. Nothing to add; just copy the file before inst
       context: .
       dockerfile: apps/web/Dockerfile
       target: dev                      # C14: `pnpm dev` must run in /code, not /app
+    volumes:
+      - ./apps/web:/code
+      - /code/node_modules             # C14: keep the image's Linux node_modules
 ```
 
 Setting `target: dev` in the compose file is what keeps CI untouched: `docker/bake-action`
@@ -395,10 +471,11 @@ production file written in §8 of the checklist overrides `target: runtime` for 
 services. The alternative — leaving the default as `dev` and overriding in production
 only — also works but makes a bare `docker build` produce a test-bearing image.
 
-Because the `dev` targets carry no source (C12, C14), the bind mounts at
-`docker-compose.yml:21,42,49` stop being a convenience and become load-bearing. They must
-not be removed from the dev file — and the web one must keep pointing at `/code`,
-because that is the `dev` stage's `WORKDIR`.
+Because the `dev` targets carry no source (C12, C14), the dev file's bind mounts stop
+being a convenience and become load-bearing. They must not be removed — and the web one
+must keep pointing at `/code`, because that is the `dev` stage's `WORKDIR`. The
+`/code/node_modules` anonymous volume is equally load-bearing: it is what keeps those
+Linux-correct dependencies visible under the source mount (C14).
 
 **New root `.dockerignore`** (C3, C11):
 
@@ -443,7 +520,7 @@ Settled, recorded here so the Dockerfiles have one source of truth.
 | **D4** | `--workers` default | **2**, with `--proxy-headers` and `--forwarded-allow-ips=*`. Forking is safe (no in-process scheduler); WeasyPrint makes each worker expensive |
 | **D5** | Build-time env for the web image | **One `ARG`: `NEXT_PUBLIC_PROCUREMENT_UI_READY`, default `1`.** It is inlined at build; `SESSION_COOKIE_NAME` and `API_URL` stay runtime-only |
 | **D6** | Does the runtime api image carry `tests/`? | **No.** `apps/api/tests` and `perf_ids.txt` leave via `.dockerignore`; CI keeps its tests through the bind mount (C11, C12) |
-| **D7** | Where the pnpm version is pinned | **`package.json`'s `packageManager` field** (settled 2026-11-03). CI and the image then read the same pin through corepack, so they cannot drift. Exact version **`pnpm@10.34.9`**, verified 2026-11-06 — see Q15 |
+| **D7** | Where the pnpm version is pinned | **`apps/web/package.json`'s `packageManager` field**, exact **`pnpm@10.34.9`** (settled 2026-11-03, verified 2026-11-06). The image and a developer's shell read it via corepack. CI still installs pnpm with `pnpm/action-setup@v4` and `version: 10` — a **major range** — so all three coincide today but are **not** guaranteed to stay in step. See the CI caveat in Q15 |
 
 ---
 
@@ -480,20 +557,34 @@ is much cheaper to decide before the release pipeline (§9) is built than after.
 **Q15 — one pnpm version, in one place. DECIDED 2026-11-03: the `packageManager` field.**
 The problem it settles: the draft pinned `pnpm@10.34.9` in the Dockerfile, CI pins
 `version: 10` (`ci.yml:105,212`) and `apps/web/package.json` declares nothing — three
-sources, two of them ranges. Adding `"packageManager": "pnpm@<exact>"` to
-`apps/web/package.json` makes CI, the image and a developer's shell agree by construction,
-because `corepack enable` reads that field; the Dockerfile then needs no version at all.
+sources, two of them ranges. `"packageManager": "pnpm@10.34.9"` in
+`apps/web/package.json` is now the pin the **image** and a **developer's shell** read
+(corepack and pnpm both honour it); the Dockerfile needs no version of its own.
 
-Two details still to settle at implementation time, neither of them a design question:
+**CI is the exception, and an earlier version of this section got it wrong.** CI does not
+use corepack — it installs pnpm with `pnpm/action-setup@v4` and an explicit `version: 10`,
+a major range. All three resolve to 10.34.9 today (verified 2026-11-08: the image's
+corepack, `corepack pnpm` on the host, and even the host's pnpm 11.6.0 invoked from
+`apps/web/` all report 10.34.9), but they do so **independently**. A 10.35.0 release would
+move CI while the image stays pinned. "Cannot drift by construction" was too strong; the
+honest statement is "coincide today".
+
+Two implementation notes:
 
 - **The exact version — settled 2026-11-06: `pnpm@10.34.9`.** `npm view 'pnpm@10' version`
-  shows it exists and is the latest 10.x, which is what CI's `version: 10` resolves to
-  today; the lockfile is `lockfileVersion: 9.0`, the pnpm 10 lineage. The number in the
-  first draft was right after all — it was simply never checked, which is why this
-  question existed. Write `"packageManager": "pnpm@10.34.9"`.
-- **CI's `pnpm/action-setup@v4` step.** It takes `version: 10` explicitly. Leave it or
-  drop the `version` input so the action reads `packageManager`; both work, but only the
-  second removes the last duplicated pin.
+  shows it exists and is the latest 10.x; the lockfile is `lockfileVersion: 9.0`, the pnpm
+  10 lineage. The number in the first draft was right — it was simply never checked.
+- **Keep `version: 10` in CI. Do not just drop it.** The previous wording here suggested
+  "drop the `version` input so the action reads `packageManager`; both work" — **that would
+  break CI**. `pnpm/action-setup@v4` defaults `package_json_file` to `package.json` at
+  `GITHUB_WORKSPACE` (the repo root), and this repo has **no root `package.json`**; the
+  field lives in `apps/web/package.json`. With `version` removed the action finds no
+  `packageManager` and fails with `No pnpm version is specified`. It also throws
+  `Multiple versions of pnpm specified` if a `version` input and a *visible*
+  `packageManager` ever disagree. Exactly two safe configurations exist: keep
+  `version: 10` (current state), or remove `version` **and** add
+  `package_json_file: apps/web/package.json` to both action steps. Keep the first — the
+  lockfile is 9.0 and a pnpm 10.x patch drift does not invalidate it.
 
 ---
 
@@ -514,7 +605,7 @@ exception: the C14 check has to prove that `make up` still works.
 | `docker run --rm <api-runtime> test -f /db/alembic.ini` | exit 0 (proves C2) |
 | Start api + db, `curl /health/ready` | 200 after migrations (already covered by #179) |
 | Start api only, `curl /version` | `{"version": "dev", "schema_head": "…", …}` |
-| `docker run --rm <web-runtime> node -e "console.log(process.getuid())"` | `10001` |
+| `docker run --rm <web-runtime> node -e "console.log(process.getuid())"`; plus `docker run --rm --entrypoint sh <web-runtime> -c 'touch /app/.next/cache/.probe'` | `10001`; exit 0 (proves C17) |
 | `docker run --rm <web-runtime> ls node_modules \| grep -c "typescript"` | `0` (no devDependencies) |
 | Build with `--build-arg NEXT_PUBLIC_PROCUREMENT_UI_READY=0`, log in, open `/tracking` | the Procurement entry point is **absent**; rebuild with the default and it is **present** (proves D5 is wired) |
 | Start web + api, `curl -I localhost:3000` and one authenticated e2e spec | 200 / pass |
@@ -526,18 +617,41 @@ The last one is the acceptance test that matters most: the current image cannot 
 one above it is the second: an image that quietly loses a feature is the failure mode a
 green build does not catch.
 
+**Three methods that produce false results if done the obvious way** (all three were hit
+during the 2026-11-08 run):
+
+- **Row 7 — use the application's own stylesheet path.** Rendering with
+  `weasyprint.CSS(filename=...)` passed via `stylesheets=[...]` resolves the `@font-face`
+  URL against the CSS *file* URL rather than the template's `base_url`, so the fonts are
+  not found and the PDF falls back to Liberation Mono — a **false FAIL**. The application
+  loads the stylesheet through `<link rel="stylesheet" href="print.css">` in
+  `templates/_base.html`; reproduce that (`HTML(string=..., base_url=TEMPLATES_DIR)` with
+  the link in the markup) and inspect `/BaseFont` in the PDF with `pypdf`.
+- **Row 13 — diff the compiled chunk, not `page.js`.** `.next/server/app/(app)/tracking/page.js`
+  is a ~1 KB re-export stub and is byte-identical between the two builds. The flag lands
+  in `.next/server/chunks/ssr/[root-of-the-server]__*.js` as
+  `procurementReady:!0` (ARG=1) versus `procurementReady:!1` (ARG=0).
+- **Row 14 — run the e2e spec against the runtime image, not `next dev`.** On the dev
+  stack `POST /auth/login` succeeds and sets the cookie, but `smoke.spec.ts` stays on
+  `/login?` — the click-before-hydration race `ci.yml` already warns about. Against
+  `next start` the same spec passes in 2.8 s. Row 17 is the *only* check that belongs on
+  the dev stack.
+
 ---
 
 ## 9. Suggested sequence
 
-1. **PR A** — `apps/api/Dockerfile` (three targets) and `apps/web/Dockerfile` (**four**
-   targets, including `dev` — C14), root `.dockerignore`, compose build blocks with
-   `context: .` / `target: dev` for all three services, the `packageManager` pin (Q15),
-   the font move with its four `url()` edits, and the stale `.env.example:6-7` comment
-   (C7). CI stays green because `dev` is what CI builds.
-   This PR alone proves C1, C2, C3, C8, C11, C12, C14 and the "install failures fail the
-   build" acceptance. **Also run `make up` before merging** — that is the only check
-   which would have caught C14.
+1. **PR A** — `apps/api/Dockerfile` (`base`/`deps`/`dev`/`runtime`) and
+   `apps/web/Dockerfile` (`deps`/`dev`/`build`/`runtime`), root `.dockerignore`, compose
+   build blocks with `context: .` / `target: dev` for all three services **plus the web
+   `/code/node_modules` anonymous volume**, the `packageManager` pin (Q15), the font move
+   with its four `url()` edits, the direct-`next` `CMD` (C16), the `.next/cache` chown
+   (C17), and the stale `.env.example:6-7` comment (C7). CI stays green because `dev` is
+   what CI builds. All of this is already implemented and verified on the local
+   `feat/prod-images` branch (§10.2, §10.3) — **not pushed**. Before merging, re-run
+   `make up` and the §8 table; the defects in §10.2/§10.3 were invisible until a
+   container was actually started. **Leave `ci.yml` alone** — Q15's "drop `version`"
+   suggestion was wrong and has been removed.
 2. **PR B** — `docker-compose.prod.yml` with `target: runtime` (part of checklist §8):
    this is where the runtime image first gets exercised, and where C6/C10 stop being
    theoretical.
@@ -583,6 +697,103 @@ One blocking defect, one unverifiable assertion, two gaps in verification, and o
 | Gap | Nothing proved the production env whitelist keeps the Procurement flag | **note added** to §4: prod compose must keep `NEXT_PUBLIC_PROCUREMENT_UI_READY` in `env_file`/`environment` |
 | Count | The PR body said "14 acceptance commands"; the table already had 15 | corrected in the PR body — it now has **17** |
 
-**Not verified in this review:** none of the §8 commands were executed — there is no
-Docker daemon in this environment. The document is a design, not a tested build; PR A is
-where C4, C6, C10 and C14 become evidence. Merging it approves the shape, not the result.
+**Not verified in this review:** none of the §8 commands were executed — there was no
+Docker daemon in the environment at the time. That gap was closed on 2026-11-08; see
+§10.2.
+
+### 10.2 Acceptance run — 2026-11-08
+
+Docker Desktop 4.94.0 / Engine 29.8.2 on Windows, local branch `feat/prod-images`.
+All five images (`api:dev`, `api:runtime`, `web:dev`, `web:build`, `web:runtime`, plus a
+`web:flag0` variant) were built from the repository root, then all 17 rows were run.
+
+| # | Result | Evidence |
+| --- | --- | --- |
+| 1 | PASS | `pip list \| grep -ci pytest` → `0` |
+| 2 | PASS | `id -u` → `10001` |
+| 3 | PASS | `/code` contains `Dockerfile`, `app`, `pyproject.toml` — no `tests/` |
+| 4 | PASS | WeasyPrint rendered 2150–2151 bytes |
+| 5 | PASS | stderr empty on PDF render |
+| 6 | PASS | `/code/app/printing/fonts/Inter-Regular.woff2` present |
+| 7 | PASS | linked stylesheet embeds `/RQQJXR+Inter` and `/KTPBXU+JetBrains-Mono` (see method note in §8) |
+| 8 | PASS | `/db/alembic.ini` present |
+| 9 | PASS | after `alembic upgrade head` (→ `0089`) and seed: `{"ok":true,...,"schema_match":true}`, HTTP 200 |
+| 10 | PASS | api alone: `{"version":"dev","schema_head":"0089","db_schema":null}` |
+| 11 | PASS (C17 added later) | `process.getuid()` → `10001`; the `.next/cache` writability assertion was added in §10.3 and re-run there |
+| 12 | PASS | runtime `node_modules` has no `typescript` |
+| 13 | PASS | ssr chunk `procurementReady:!0` (default) vs `!1` (`ARG=0`) |
+| 14 | PASS | runtime stack `curl -I /login` → 200; `smoke.spec.ts` (login → six tabs → logout) `1 passed (2.8s)` |
+| 15 | PASS | corrupting `next` to `16.2.5` → `ERR_PNPM_OUTDATED_LOCKFILE`, build exit 1 |
+| 16 | PASS | `--target build` succeeded with no api/db container running |
+| 17 | PASS | `make up` → `/login` 200, web log `▲ Next.js 16.2.4 … Ready in 741ms` |
+
+**Three design defects the run exposed.** None were hypothetical; each stopped a container.
+All are fixed in the local implementation and in §2–§5 above.
+
+| # | Symptom | Root cause | Fix |
+| --- | --- | --- | --- |
+| 1 | api dev container: `OSError: cannot load library 'libgobject-2.0-0'`; CI's pytest would never start | WeasyPrint apt layer was in `runtime` only, but `app/main.py` imports weasyprint on startup in **every** target | shared `base` stage (C4, C15) |
+| 2 | web dev container: `Cannot find module '/code/node_modules/next/dist/bin/next'` | bind mount shadowed the image's `node_modules`; on Windows the host's pnpm links are absolute `/c/Users/...` paths | anonymous `/code/node_modules` volume (C14) |
+| 3 | web runtime container exited 1: `EACCES: mkdir '/.cache/node/corepack/v1'` | `CMD ["pnpm","start"]` re-resolves corepack as UID 10001; build-time cache is in root-owned `/root/.cache` | call `next` directly, no package manager at runtime (C16) |
+
+**Also confirmed empirically:** `USER 10001` in `python:3.12-slim` gets `HOME=/` (not
+`/root`) and no `XDG_CACHE_HOME` — so the C10 rewording was right and the original claim
+was wrong. `corepack` resolved `pnpm v10.34.9` from `packageManager` in both the image and
+the host (D7). `expected_schema_head()` returned `0089` from `/db/alembic.ini` even with
+no database reachable (C2).
+
+**Environment caveats, not design issues:** on Git Bash, `docker compose exec -w /db`
+needs `MSYS_NO_PATHCONV=1` or Docker reports `Cwd must be an absolute path`; and
+Playwright's output-directory cleanup tripped the host's bulk-delete guard, so the spec
+was run with `--output` pointed at a fresh directory. Neither changes any conclusion.
+
+**What this does not prove:** the production compose file (`docker-compose.prod.yml`,
+PR B) was not exercised; the runtime stack here was assembled manually from the two
+runtime images. C6 (upload ownership under a named volume) and the §5 restore drill are
+still unverified.
+
+### 10.3 Second review — 2026-11-08 (before opening PR A)
+
+A read-through of the whole `feat/prod-images` diff, plus checks the 17-row table did not
+cover. No code was changed during the review itself; the two fixes were applied
+afterwards.
+
+**Checks that were added, not repeated:**
+
+| Check | Result |
+| --- | --- |
+| `docker buildx bake -f docker-compose.yml --print api` | resolves `context: .`, `dockerfile: apps/api/Dockerfile`, `target: dev` — the workflow's bake step will read the new build blocks |
+| `pytest -q tests/test_public_stats.py` inside the **dev** service | `2 passed` — C1 holds; the 17-row table never ran pytest |
+| `docker compose ps` | all five dev services Up; `search-worker` stable for 30 min |
+| `docker compose up --help \| grep renew-anon` | `-V, --renew-anon-volumes` exists, so the C14 rebuild advice is executable |
+| §3/§4 Dockerfile snippets vs the real files (normalised diff) | byte-identical after the C17 edit |
+| Full-tree grep for `seed/fonts` | only `print.css` (new `../fonts/` paths) and historical archive docs remain |
+
+**Two findings, both fixed:**
+
+| # | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | **High (documentation)** | §7 Q15 advised dropping `version: 10` from `pnpm/action-setup@v4` so it would read `packageManager`. That fails: the action defaults `package_json_file` to a **root** `package.json`, which this repo does not have, and throws `No pnpm version is specified`. D7 and the checklist also overstated "cannot drift" — CI uses pnpm via the action, not corepack | Q15 rewritten with the action's source-level behaviour and the two safe configurations; D7, the checklist row and the header note now say the three versions *coincide today* rather than being drift-proof. **No `ci.yml` change was made — `version: 10` stays** |
+| 2 | **Medium (runtime)** | `/app/.next/cache` is root-owned; `touch` as UID 10001 returns `Permission denied`. Invisible today (no `next/image`, fetches default to no-store), but ISR / image optimisation would fail on a customer's box | `RUN mkdir -p /app/.next/cache && chown -R 10001:10001 /app/.next/cache` after the `.next` COPY, in both the implementation and §4's snippet; recorded as C17 and added to §8 row 11 |
+
+**Re-verification after the chown:** the web runtime image was rebuilt;
+`docker run --rm --entrypoint sh jf-verify/web:runtime -c 'id -u; touch
+/app/.next/cache/.probe'` printed `10001` and `C17_WRITABLE=PASS`, with `ls -ld` showing
+the directory owned by `10001:10001`. The runtime web container came up `healthy`,
+`/login` returned 200, and `smoke.spec.ts` passed again. Row 11's expected result was
+updated accordingly.
+
+**One environment trap worth recording:** the review ran
+`pytest tests/test_public_stats.py` inside the dev service to prove C1. pytest truncates
+workspace-scoped tables (`ci.yml:67-70` documents this), which deleted the seeded users;
+the next e2e run then failed with `POST /auth/login → 401 invalid credentials`. That was
+**not** a regression from the chown — re-running `python -m seed.hartwood_joinery`
+restored login to 200 and the spec passed again. If pytest and an e2e run share a
+database, re-seed between them.
+
+**Still open, deliberately not in scope for these two fixes:** the web runtime has no
+explicit `HOME` (harmless now that C16 removed corepack from the startup path, but it is
+inconsistent with the api image); `.dockerignore` does not exclude local-only directories
+such as `.workbuddy-ai/` or `test-results/` (they enter the build context but are never
+`COPY`ed into an image); and `docs/archive/2026-05-02-pdf-generation.md` still describes
+`seed/fonts/` — a historical record, left as-is.

@@ -1,0 +1,15 @@
+.git
+.env
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+apps/api/tests
+apps/api/perf_ids.txt
+legacy
+docs
+tests
+.github
+New system pictures
