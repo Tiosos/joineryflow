@@ -797,3 +797,110 @@ inconsistent with the api image); `.dockerignore` does not exclude local-only di
 such as `.workbuddy-ai/` or `test-results/` (they enter the build context but are never
 `COPY`ed into an image); and `docs/archive/2026-05-02-pdf-generation.md` still describes
 `seed/fonts/` — a historical record, left as-is.
+
+---
+
+## 11. PR B — the production compose file (2026-11-08, branch `feat/prod-compose`)
+
+PR A made the images; PR B is the first thing that **runs** them with real
+configuration. It also closes checklist §3 items 2–3 and §8. The full
+customer-facing write-up is `deploy/README.md`; this section records the
+decisions and the reasoning that is not obvious from the files.
+
+### 11.1 Decisions taken before writing anything
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| 1 | Where is the proxy? | `JF_WEB_BIND` (default `127.0.0.1`) and `JF_WEB_PORT` (default `3000`, host side only) | Same-host proxy is the safe default; the two variables cover the other-host and port-conflict cases without publishing 3000 to the world. The port variable was added **during verification**: a second local stack could not start because the dev stack already owned 3000 — a collision a customer can hit too. The container and its healthcheck stay on 3000; only the proxy's `upstream` needs to follow |
+| 2 | How are images named (Q4 = both)? | `${JF_REGISTRY:-joineryflow}/{api,web}:${JF_VERSION}` | One compose file serves a registry pull and a `docker load` from an offline bundle; the tag is identical in both modes |
+| 3 | Production env template | New `deploy/.env.prod.example` | The dev `.env.example` has `COOKIE_SECURE=false` and a published password — copying it would be a security incident, not a shortcut |
+| 4 | Who upgrades (Q7)? | The customer | Shapes §9: `upgrade.sh` becomes a customer-facing document; CI holds no host credentials |
+
+`JF_VERSION` is declared with `:?` in all three `image:` lines. That is a
+deliberate second purpose beyond "no `:dev` in production": forgetting
+`--env-file`, or running the prod file from a source checkout, would otherwise
+interpolate the **dev** `.env` (weak password, `COOKIE_SECURE=false`). With `:?`
+the command fails immediately instead.
+
+### 11.2 Files
+
+| File | Purpose |
+| --- | --- |
+| `docker-compose.prod.yml` | Five services, runtime images, no source mounts, no db/api/meili ports, `restart: unless-stopped`, `MEILI_ENV=production`, three named volumes |
+| `deploy/.env.prod.example` | Every variable, source noted, `__SET_ME__` placeholders, comments on their own line so the checker never mangles a `#` inside a secret |
+| `scripts/check-env.sh` | Pre-flight: non-empty required keys, no placeholders, `COOKIE_SECURE=true`, ≥16-byte Meili key, `APP_VERSION` == `JF_VERSION`; parses rather than sources the file |
+| `deploy/proxy/nginx.conf.snippet` | `client_max_body_size 25m`; 120 s read timeout **only** on the three `*.pdf` routes; `X-Forwarded-*` on every path; 60 s global ceiling |
+| `deploy/proxy/README.md` | Why each nginx default breaks the app, and the verification steps |
+| `deploy/README.md` | First install, both delivery modes, dev/prod diff, decisions, Q12 blocker |
+
+### 11.3 Why `/health/ready` is not a compose startup gate
+
+`web` depends on `api: condition: service_healthy`, and the api image's
+`HEALTHCHECK` probes `/health/live`. That is deliberate. Readiness additionally
+requires `alembic_version` to equal the image's schema head (Q2 gate 3); on a
+brand-new empty database it is false, so making readiness the compose gate would
+leave api permanently unhealthy and web would never start — a first-install
+deadlock. The one-shot migration container runs **before** `up -d`, and
+`upgrade.sh` polls readiness afterwards.
+
+### 11.4 What this PR does not solve
+
+- **Q12 is a real first-install blocker.** Migration creates the schema but not
+  its starting rows (`stages`, `status_options`) or the first workspace/admin.
+  The only seed is a dev dataset with a published password. `deploy/README.md`
+  marks the step explicitly rather than pretending the install is complete.
+- `nginx -t` could not be run — nginx is not installed in this environment. The
+  snippet must be syntax-checked when merged into a customer's config.
+- The external `nc -zv <host> 5432/8000` checks need a real host; locally,
+  `docker compose config` expansion (only web has `ports:`) and `docker inspect`
+  of the running containers were used instead (§11.5).
+- `docker-compose.prod.yml` is not yet exercised by CI; §9 does not exist yet,
+  so there is no `upgrade.sh` to consume it. A local end-to-end run was done —
+  see §11.5.
+
+### 11.5 Verification of PR B (2026-11-08, local)
+
+Ran the real production file as an isolated compose project (`jf-prod-verify`)
+using the PR A runtime images tagged `joineryflow/{api,web}:1.0.0`, with
+`JF_WEB_PORT=13001` to avoid the dev stack's 3000. `--env-file` pointed at the
+**local dev `.env`**, so this run validates structure and runtime behaviour only —
+`GET /version` reported `dev` and `COOKIE_SECURE` was false; neither is a
+statement about the production template.
+
+| Check | Result |
+| --- | --- |
+| `docker compose config --quiet` | OK with `JF_VERSION` set; missing `JF_VERSION` fails with a named error |
+| `grep -c "fsync=off" docker-compose.prod.yml` | `0` |
+| config expansion: published ports | only web, `127.0.0.1:3000`; db/meili/api/search-worker have none |
+| `scripts/check-env.sh` (5 paths) | template → exit 1 with 4 named placeholders; filled → 0; `DATABASE_URL` removed → exit 1 naming it; `COOKIE_SECURE=false` → exit 1; missing file → exit 2 |
+| `up -d db meili` → db healthcheck | `healthy` |
+| one-shot `run --rm -w /db api alembic upgrade head` | reached `0089` |
+| `up -d` all five services | api `healthy`, db `healthy`, meili Up, search-worker Up, web `healthy` |
+| `GET /health/ready` (inside api) | `{"ok":true,"db":true,"schema_match":true}` |
+| `GET /version` | `{"version":"dev","schema_head":"0089","db_schema":["0089"]}` |
+| **C6 — `/uploads` named volume** | `uid=10001`, directory `10001:10001`, `touch` succeeds → **PASS** (previously unverified) |
+| `docker inspect PortBindings` | web `{"3000/tcp":[{"HostIp":"127.0.0.1","HostPort":"13001"}]}`; api `{}`; db `{}` |
+| host-side HTTP | `/login` 200, `/api/health` 200 |
+
+**Two defects were found by this run.**
+
+1. The first attempt failed with `bind: Only one usage of each socket address`
+   because the dev stack already owned `127.0.0.1:3000`. Only `JF_WEB_BIND` was
+   configurable, so the host port was fixed. `JF_WEB_PORT` (default 3000, host
+   side only) was added to compose, the env template, the nginx snippet's
+   upstream note and the deployment docs; the container and its `HEALTHCHECK`
+   still use 3000. A customer with another service on 3000 would have hit the
+   same wall.
+2. `search-worker` came up **unhealthy**. It shares the api **runtime** image,
+   whose `HEALTHCHECK` probes `127.0.0.1:8000/health/live` — but the worker runs
+   `python -m app.search.worker` and never listens on 8000, so every probe
+   failed with a connection error. The dev stack uses the `dev` target (no
+   `HEALTHCHECK`), which is why PR A's 17 checks never saw it. Fixed with
+   `healthcheck: { disable: true }` on that service; after recreation it reports
+   plain `Up`. A meaningful worker liveness signal needs an in-code heartbeat
+   and is out of scope here — `restart: unless-stopped` covers crashes only, not
+   a stuck retry loop. **Revisit this before the first customer install.**
+
+**Not verified:** `nginx -t` (nginx absent), external `nc` against a real host,
+and `Set-Cookie: Secure` behind an actual TLS proxy. Q12 still blocks a genuine
+first install.

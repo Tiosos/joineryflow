@@ -54,10 +54,10 @@ D1 closed one question and changed the shape of several others. What follows is 
 | ~~**Q1** (= D2)~~ | ~~Production domain, and where TLS terminates~~ **DECIDED: single hostname, TLS terminated by the customer's existing reverse proxy** | §0.3 | Resolved. Sets `COOKIE_SECURE=true`, keeps `API_URL` container-internal, and adds proxy requirements (body size, read timeout, forwarded headers) | Settled |
 | ~~**Q2** (= D3)~~ | ~~Who runs migrations~~ **DECIDED: automatic, behind a mandatory backup gate and an explicit confirmation for destructive revisions** | §0.3, §4 | Resolved. §4 is written; §2 gains a schema-version check and §5 supplies the dump the gate depends on | Settled |
 | **Q3** (= D4) | When does the second customer go live? | §0 / ops | No longer a security gate (one deployment per customer). It now sets **operational capacity**: N customers means N environments to upgrade, monitor and keep on a supported version | Before customer two |
-| **Q4** | Image delivery: a registry the customer can pull from, or an offline bundle (`docker save` / `load`) for air-gapped sites? | §9.1 | The artefact format the pipeline produces. Air-gapped delivery is not a flag you add later — ask before building §9 | Before §9 |
+| ~~**Q4**~~ | ~~Image delivery: a registry the customer can pull from, or an offline bundle (`docker save` / `load`) for air-gapped sites?~~ **DECIDED 2026-11-08: support BOTH.** | §9.1, `deploy/README.md` | CI must emit two artefacts (immutable registry tags + a `docker save` bundle with both runtime images, both base images, compose file, scripts, manifest and checksums). `upgrade.sh` must support `pull` and `load`. Image naming: `${JF_REGISTRY:-joineryflow}/{api,web}:${JF_VERSION}` | Settled; shapes §9 |
 | **Q5** | RTO and RPO per customer, and who is accountable for hitting them | §5 | Backup here is a shared responsibility: we ship the tooling, the customer runs it and owns the storage target. Unwritten, accountability is assumed to be ours | Before the first go-live |
 | **Q6** | Is telemetry allowed to leave the customer's environment? | §6.2 | Sentry SaaS exports stack traces and request context off-site. A customer who self-hosts precisely to keep data in may refuse it; §6.2 then needs a self-hosted or local-only option | Before §6 |
-| **Q7** | Who performs the upgrade, and in what window — the customer, or us under an agreed arrangement? | §9.1 | Whether `upgrade.sh` is a customer-facing script or an internal runbook, whether we need access to the host, and whether a rollback window has to be staffed | Before the first upgrade |
+| ~~**Q7**~~ | ~~Who performs the upgrade, and in what window — the customer, or us under an agreed arrangement?~~ **DECIDED 2026-11-08: the customer performs it.** | §9.1, `deploy/README.md` | `upgrade.sh` is a **customer-facing document**, not an internal runbook: clear prompts, self-diagnosing errors, a rollback path that needs no host access from us. CI holds no credentials for customer machines | Settled; shapes §9 |
 | **Q8** | Billing model: per seat, per project count, or a flat price per workspace? | Roadmap §7 (Q3) | The design of the quota tables. Per-customer hosting carries a real per-customer infrastructure cost, which sits awkwardly with a pure per-seat price — decide the two together | Before any quota work |
 | **Q9** | `/public/stats`: Option A (tenant comes from server config, remove the `workspace_slug` parameter) or Option B (drop the endpoint entirely)? | `2026-10-27-public-stats.md` §5–§6 | B is cleaner still, but it costs the login page its live counts — a product decision, not an engineering one | Before §7.2 starts |
 | **Q10** | Formal acceptance of the two cross-tenant leaks as Phase 1 risk | §7.0 | D1 made them **unreachable, not fixed**. Someone should sign that risk explicitly, and it has to be closed before any move back to shared hosting | Now — it is one line |
@@ -273,20 +273,20 @@ CMD ["pnpm", "start"]
 
 ## 3. Configuration and secrets
 
-**Current state**: `Settings` in `apps/api/app/config.py` has only 8 fields and reads `.env` (`SettingsConfigDict(env_file=".env")`); `docker-compose.yml` mounts the file into containers with `env_file: .env`.
+**Current state (as of PR B)**: `Settings` in `apps/api/app/config.py` has **9** fields and reads `.env` (`SettingsConfigDict(env_file=".env")`); `docker-compose.yml` mounts the file into containers with `env_file: .env`.
 
 **Change** (D1 settled: customer self-hosted, so *the customer owns this file* — there is no secret manager of ours to inject from):
 
 1. **The image must not contain `.env`** — that is the hard rule. The file lives on the customer's host (e.g. `/opt/joineryflow/.env`, `chmod 600`), and `docker-compose.prod.yml` points `env_file` at it. Mounting a host-owned file is fine; baking one into an image is not
-2. Ship a **production `.env.example`** covering every variable with a comment on where the value comes from. Today `Settings` has 8 fields and reads `.env` (`SettingsConfigDict(env_file=".env")`), and `.env.example` is the only guide a customer has
-3. Add `scripts/check-env.sh`: assert every required variable is set *and non-empty* before `compose up`. Worth it because a missing field makes `Settings()` raise `ValidationError` at import — the container crash-loops, and on a customer's box that reads as "JoineryFlow is broken" rather than "you forgot to set `DATABASE_URL`"
-4. `COOKIE_SECURE=true` (`.env.example:12` already notes it must be true anywhere https is used, otherwise session cookies travel in the clear)
-5. `MEILI_API_KEY` distinct from `MEILI_MASTER_KEY` (see §7.1)
-6. `API_URL`: **keep `http://api:8000`**. Q1 settled on a single hostname with the api inside the compose network (§0.3), so this stays a container-internal address — no public api URL exists. It is read server-side only: by the proxy route and by two server components. (The web tier inlines it at build time, so if a customer ever needs a different address it means a rebuild, not a restart.)
+2. Ship a **production env template** covering every variable with a comment on where the value comes from. **Done in PR B: `deploy/.env.prod.example`** — deliberately a separate file, because the dev `.env.example` has `COOKIE_SECURE=false` and a published dev password
+3. Add `scripts/check-env.sh`: assert every required variable is set *and non-empty* before `compose up`. Worth it because a missing field makes `Settings()` raise `ValidationError` at import — the container crash-loops, and on a customer's box that reads as "JoineryFlow is broken" rather than "you forgot to set `DATABASE_URL`". **Done in PR B**: also rejects `__SET_ME__`, enforces `COOKIE_SECURE=true`, a ≥16-byte Meili master key, and `APP_VERSION` == `JF_VERSION`
+4. `COOKIE_SECURE=true` (the template sets it; `check-env.sh` refuses to start otherwise)
+5. `MEILI_API_KEY` distinct from `MEILI_MASTER_KEY` (see §7.1 — scoped keys were **moved to Phase 1 by D1**, so a distinct value is the current minimum; `check-env.sh` warns rather than blocks)
+6. `API_URL`: **keep `http://api:8000`**. Q1 settled on a single hostname with the api inside the compose network (§0.3), so this stays a container-internal address — no public api URL exists. It is read server-side only: by the proxy route and by two server components. **Correction (PR B):** the earlier claim that the web tier inlines it at build time was wrong — `API_URL` is read at **runtime**, so changing it takes a restart, not a rebuild. Only `NEXT_PUBLIC_*` is inlined (see `2026-10-27-production-images.md` C7/D5)
 
 **Acceptance**:
 - Inside the production image, `ls .env` → does not exist
-- `scripts/check-env.sh` with `DATABASE_URL` unset exits non-zero and names the variable
+- `scripts/check-env.sh` with `DATABASE_URL` unset exits non-zero and names the variable — **verified in PR B (exit 1, `ERROR: DATABASE_URL is missing or empty`)**
 - After login, `curl -I` shows `Set-Cookie` with `Secure; HttpOnly; SameSite`
 
 **Consequence to accept**: the customer holds the secrets, so **you cannot read them**. When something breaks you will be asking the customer to paste redacted config. Design error messages to be diagnosable from logs alone — this is another reason §6.1 (structured logging) matters more under self-hosting than under cloud hosting.
@@ -479,14 +479,18 @@ The three paths already check ownership (see the correction above). Add a test a
 
 Add `docker-compose.prod.yml`, fully separate from dev — **do not reuse the same file**.
 
-| dev (`docker-compose.yml`, keep) | prod (new) |
+| dev (`docker-compose.yml`, keep) | prod (`docker-compose.prod.yml`, PR B) |
 | --- | --- |
 | `postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off` | **all removed** |
-| `uvicorn --reload` + `pnpm dev` | `uvicorn --workers 4` + `pnpm start` |
+| `uvicorn --reload` + `pnpm dev` + `target: dev` | runtime images with `target: runtime`: `--workers 2` (D4) and `node …/next start` (C16) — **not** the `--workers 4` / `pnpm start` originally sketched here |
 | Source mount `./apps/api:/code` | **no mount**; the code is in the image |
-| `ports: ["5432:5432", "8000:8000"]`, everything exposed | **Only the web tier is published** (and only to the proxy). Under Q1 neither 5432 nor 8000 is reachable from outside the compose network |
-| `env_file: .env` | Environment variables / injected secrets |
-| `uvicorn app.main:app ...` | add `--proxy-headers`, so absolute URLs built later respect `X-Forwarded-Proto` |
+| `ports: ["5432:5432", "8000:8000"]`, everything exposed | **Only web is published**, to `${JF_WEB_BIND:-127.0.0.1}:${JF_WEB_PORT:-3000}:3000`. db / meili / api / search-worker have no `ports:`; Q1 leaves 5432 and 8000 unreachable |
+| `env_file: .env` | host-owned `${JF_ENV_FILE:-/opt/joineryflow/.env}`, also passed as `--env-file` for `${...}` interpolation |
+| `uvicorn app.main:app ...` | image CMD already has `--proxy-headers` and `--forwarded-allow-ips=*`, so `X-Forwarded-Proto` is honoured |
+| `MEILI_ENV: development` | `MEILI_ENV: production` (≥16-byte master key) |
+| no restart policy | `restart: unless-stopped` on all five services |
+
+**Implementation record:** `deploy/README.md` (decisions, first install, dev/prod diff, Q12 blocker), `deploy/proxy/` (nginx snippet + rationale), `scripts/check-env.sh`. **`nginx -t` was not run** — nginx is not installed in the environment PR B was written in; the snippet must be syntax-checked when merged into the customer's config.
 
 **Also ship a proxy configuration snippet** (`deploy/proxy/`), because Q1 puts TLS in the customer's hands and three defaults there will break the app before anyone suspects the proxy:
 
@@ -512,12 +516,12 @@ This is the biggest shape difference from a cloud deployment. CI must not hold c
 
 | Stage | Where it runs | What it does |
 | --- | --- | --- |
-| **Build and publish** | GitHub Actions | Build the prod images, tag with an immutable version, push to a registry the customer can pull from. Also publish a release note |
-| **Upgrade** | On the customer's host, by the customer (or by you in an agreed window) | `scripts/upgrade.sh <version>`: pull → `alembic upgrade head` → replace containers → poll `/health/ready` → on failure, re-tag back to the previous version |
+| **Build and publish** | GitHub Actions | Build the prod images and tag them `${JF_REGISTRY:-joineryflow}/{api,web}:${JF_VERSION}`. **Q4 (decided 2026-11-08): emit BOTH** — push immutable tags to a registry the customer can reach, and publish a `docker save` bundle (two runtime images + `postgres:16` + `getmeili/meilisearch:v1.54.0` + compose file + `deploy/` + `scripts/` + release manifest + checksums). Also publish a release note |
+| **Upgrade** | On the customer's host, **performed by the customer** (Q7, decided 2026-11-08) | `scripts/upgrade.sh <version>`: pull **or** `docker load` → `alembic upgrade head` → replace containers → poll `/health/ready` → on failure, re-tag back to the previous version |
 
-**Image delivery is an open question the customer has to answer (Q4 in §0.2)**: a registry they can reach, or an offline bundle (`docker save` / `load`) for air-gapped sites. Air-gapped changes the artefact format, so ask before building the pipeline — bolting it on afterwards is a rewrite, not a flag.
+**Q4 is settled as "both"**, so air-gapped support is part of the artefact format from the start, not a flag bolted on later. The customer chooses the mode by setting `JF_REGISTRY`: a registry prefix for online sites, or the default `joineryflow` with images pre-loaded from the bundle. CI holds no credentials for customer machines.
 
-**Who runs the upgrade row of that table is Q7**, and it is not a detail: customer-run means `upgrade.sh` has to be documented for someone who did not write it, while us-run means we need host access and a staffed rollback window.
+**Q7 is settled as customer-run.** That makes `upgrade.sh` a customer-facing document, not an internal runbook: clear prompts, errors diagnosable from logs alone, and a rollback path needing no access from us. It also means no staffed rollback window on our side — which is why the Q2 gates (mandatory dump, destructive-revision confirmation, schema-head proof) matter more, not less.
 
 #### 9.2 Add a version endpoint — you will be asked which version a customer is on
 
@@ -567,12 +571,12 @@ Moved to Phase 1 by D1 — no longer blockers, see §7.0
 | 1 | Production images contain no dev dependencies and the process is not root | ❌ |
 | 2 | A failing `pnpm install` fails the build | ❌ (swallowed by `|| true`) |
 | 3 | With the DB down, `/health/ready` returns non-200 | ❌ (`/health` does not query the DB) |
-| 4 | Production does not mount `.env` and `COOKIE_SECURE=true` | ❌ |
+| 4 | Production does not mount `.env` and `COOKIE_SECURE=true` | **PR B (branch)**: `deploy/.env.prod.example` sets `true`, `check-env.sh` refuses otherwise; no `.env` in either image (PR A §8). Customer-proxy `Set-Cookie` check still to be run on a real install |
 | 5 | Backups exist **and a restore drill has succeeded once**, with RTO/RPO recorded — database **and** `uploads`, consistent per §5.2 | ❌ (no backups) |
 | 6 | One 500 can be traced end to end by `request_id` | ❌ (no structured logging) |
 | 7 | Releases are one-click rollbackable, and rollback has been rehearsed | ❌ (no deploy workflow) |
 | 8 | Any running environment reports its version and migration head | ❌ (only `/health`, no version) |
-| 9 | No dev-only flags such as `fsync=off` in production config | ❌ (only one dev compose file exists) |
+| 9 | No dev-only flags such as `fsync=off` in production config | **PR B (branch)**: `grep -c "fsync=off"` = 0; `config` expansion and `docker inspect` show only web has `PortBindings` (`127.0.0.1`); full five-service stack ran locally with all healthchecks green (`2026-10-27-production-images.md` §11.5). External `nc` checks still need a real host |
 | ~~10~~ | ~~Credentials for tenant A cannot reach tenant B's search results~~ | ❌ (master key) — **moved to Phase 1 by D1**, §7.0 |
 
 Row 10 is struck through rather than deleted on purpose: it is deferred, not fixed, and the reason it is safe to defer is a deployment decision that can be reversed.
